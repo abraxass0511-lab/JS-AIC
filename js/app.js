@@ -10,15 +10,28 @@ let pinInput = '';
 let targetFixRecord = null;
 let fixPhotoData = null;
 let recordViewMode = 'card'; // 'card' or 'table'
+let listPeriodMode = 'month'; // 'month' or 'range'
+let exportPeriodMode = 'month'; // 'month' or 'range'
+let currentLoadedRecords = [];
 
 // ── App Init ──
 window.addEventListener('DOMContentLoaded', async () => {
   // 1. 이벤트 리스너를 가장 먼저 바인딩하여 모든 UI 상호작용 즉시 활성화
   bindEvents();
 
-  // 초기 날짜 설정
-  if ($('#txtInspectDate')) $('#txtInspectDate').value = todayStr();
-  if ($('#selExportMonth')) $('#selExportMonth').value = monthStr();
+  // 초기 날짜 및 기간 설정
+  const today = todayStr();
+  const curMonth = monthStr();
+  const firstDay = `${curMonth}-01`;
+
+  if ($('#txtInspectDate')) $('#txtInspectDate').value = today;
+  if ($('#selListMonth')) $('#selListMonth').value = curMonth;
+  if ($('#txtListStartDate')) $('#txtListStartDate').value = firstDay;
+  if ($('#txtListEndDate')) $('#txtListEndDate').value = today;
+
+  if ($('#selExportMonth')) $('#selExportMonth').value = curMonth;
+  if ($('#txtExportStartDate')) $('#txtExportStartDate').value = firstDay;
+  if ($('#txtExportEndDate')) $('#txtExportEndDate').value = today;
 
   try {
     await store.init();
@@ -354,27 +367,46 @@ function bindEvents() {
     }
   });
 
-  // Excel Download Action
+  // Excel Download Action (월별 또는 기간 직접지정 지원)
   $('#btnDownloadExcel').addEventListener('click', async () => {
-    const bucket = $('#selExportMonth').value;
     const filterSite = $('#selExportSite').value;
-    if (!bucket) {
-      toast('대상 월을 선택해주세요.', 'danger');
-      return;
-    }
-
     const btn = $('#btnDownloadExcel');
     btn.disabled = true;
     btn.textContent = '엑셀 생성 중...';
 
     try {
-      let records = await store.listMonth(bucket);
+      let records = [];
+      let periodLabel = '';
+
+      if (exportPeriodMode === 'month') {
+        const bucket = $('#selExportMonth').value;
+        if (!bucket) {
+          toast('대상 월을 선택해주세요.', 'danger');
+          btn.disabled = false;
+          btn.textContent = '📥 부적합사항대장.xlsx 다운로드';
+          return;
+        }
+        records = await store.listMonth(bucket);
+        periodLabel = bucket;
+      } else {
+        const start = $('#txtExportStartDate').value;
+        const end = $('#txtExportEndDate').value;
+        if (!start || !end) {
+          toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
+          btn.disabled = false;
+          btn.textContent = '📥 부적합사항대장.xlsx 다운로드';
+          return;
+        }
+        records = await store.listPeriod(start, end);
+        periodLabel = `${start}_${end}`;
+      }
+
       if (filterSite !== 'all') {
         records = records.filter(r => r.site === filterSite);
       }
 
       if (!records.length) {
-        toast(`${bucket} 월에 등록된 부적합 데이터가 없습니다.`, 'danger');
+        toast(`선택한 기간에 등록된 부적합 데이터가 없습니다.`, 'danger');
         btn.disabled = false;
         btn.textContent = '📥 부적합사항대장.xlsx 다운로드';
         return;
@@ -397,7 +429,7 @@ function bindEvents() {
       const blob = new Blob([buffer], { 
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
-      const filename = `부적합사항대장_${bucket}${filterSite !== 'all' ? '_' + filterSite : ''}.xlsx`;
+      const filename = `부적합사항대장_${periodLabel}${filterSite !== 'all' ? '_' + filterSite : ''}.xlsx`;
       downloadBlob(blob, filename);
 
       toast('부적합사항대장 엑셀 파일이 다운로드되었습니다.', 'success');
@@ -432,9 +464,8 @@ function bindEvents() {
     }
   });
 
-  // ── 회의용 PPT 자동 생성 핸들러 ──
+  // ── 회의용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
   $('#btnDownloadPPT').addEventListener('click', async () => {
-    const bucket = $('#selExportMonth').value;
     const filterSite = $('#selExportSite').value;
     const btn = $('#btnDownloadPPT');
 
@@ -442,7 +473,32 @@ function bindEvents() {
     btn.textContent = 'PPT 프레젠테이션 제작 중...';
 
     try {
-      let records = await store.listMonth(bucket);
+      let records = [];
+      let periodLabel = '';
+
+      if (exportPeriodMode === 'month') {
+        const bucket = $('#selExportMonth').value;
+        if (!bucket) {
+          toast('대상 월을 선택해주세요.', 'danger');
+          btn.disabled = false;
+          btn.textContent = '📑 회의용 분석 PPT (.pptx) 다운로드';
+          return;
+        }
+        records = await store.listMonth(bucket);
+        periodLabel = bucket;
+      } else {
+        const start = $('#txtExportStartDate').value;
+        const end = $('#txtExportEndDate').value;
+        if (!start || !end) {
+          toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
+          btn.disabled = false;
+          btn.textContent = '📑 회의용 분석 PPT (.pptx) 다운로드';
+          return;
+        }
+        records = await store.listPeriod(start, end);
+        periodLabel = `${start} ~ ${end}`;
+      }
+
       if (filterSite !== 'all') {
         records = records.filter(r => r.site === filterSite);
       }
@@ -456,7 +512,7 @@ function bindEvents() {
       await window.SafePPT.generatePresentation({
         records,
         siteName: filterSite === 'all' ? '전 현장 종합' : filterSite,
-        month: bucket,
+        month: periodLabel,
         inspector: (store.user && store.user.name) || '안전관리자',
         loadPhotoBase64: async (path) => {
           const blob = await store.photoBlob(path);
@@ -514,6 +570,46 @@ function bindEvents() {
     }
   });
 
+  // 대장 목록 기간 선택 모드 전환 (월별 vs 직접지정)
+  $('#btnPeriodModeMonth')?.addEventListener('click', () => {
+    listPeriodMode = 'month';
+    $('#btnPeriodModeMonth')?.classList.add('selected');
+    $('#btnPeriodModeRange')?.classList.remove('selected');
+    if ($('#boxListPeriodMonth')) $('#boxListPeriodMonth').style.display = 'flex';
+    if ($('#boxListPeriodRange')) $('#boxListPeriodRange').style.display = 'none';
+    renderRecordList();
+  });
+
+  $('#btnPeriodModeRange')?.addEventListener('click', () => {
+    listPeriodMode = 'range';
+    $('#btnPeriodModeRange')?.classList.add('selected');
+    $('#btnPeriodModeMonth')?.classList.remove('selected');
+    if ($('#boxListPeriodMonth')) $('#boxListPeriodMonth').style.display = 'none';
+    if ($('#boxListPeriodRange')) $('#boxListPeriodRange').style.display = 'flex';
+    renderRecordList();
+  });
+
+  $('#btnQueryMonth')?.addEventListener('click', () => renderRecordList());
+  $('#btnQueryRange')?.addEventListener('click', () => renderRecordList());
+  $('#selListMonth')?.addEventListener('change', () => renderRecordList());
+
+  // 엑셀/PPT 내보내기 기간 선택 모드 전환 (월별 vs 직접지정)
+  $('#btnExportModeMonth')?.addEventListener('click', () => {
+    exportPeriodMode = 'month';
+    $('#btnExportModeMonth')?.classList.add('selected');
+    $('#btnExportModeRange')?.classList.remove('selected');
+    if ($('#boxExportPeriodMonth')) $('#boxExportPeriodMonth').style.display = 'block';
+    if ($('#boxExportPeriodRange')) $('#boxExportPeriodRange').style.display = 'none';
+  });
+
+  $('#btnExportModeRange')?.addEventListener('click', () => {
+    exportPeriodMode = 'range';
+    $('#btnExportModeRange')?.classList.add('selected');
+    $('#btnExportModeMonth')?.classList.remove('selected');
+    if ($('#boxExportPeriodMonth')) $('#boxExportPeriodMonth').style.display = 'none';
+    if ($('#boxExportPeriodRange')) $('#boxExportPeriodRange').style.display = 'flex';
+  });
+
   // 대장 목록 뷰 모드 토글 (카드 vs 엑셀 표)
   const toggleBtn = $('#btnToggleViewMode');
   if (toggleBtn) {
@@ -556,12 +652,9 @@ function bindEvents() {
       if (!confirm(`선택한 ${count}건의 부적합 내역을 영구 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.`)) return;
 
       toast(`${count}건의 부적합 데이터 삭제 중...`, 'info');
-      const curMonth = monthStr();
-      const records = await store.listMonth(curMonth);
-
       for (const chk of checkedBoxes) {
         const id = chk.dataset.id;
-        const rec = records.find(x => x.id === id);
+        const rec = currentLoadedRecords.find(x => x.id === id);
         if (rec) {
           try { await store.deleteRecord(rec); } catch (e) { console.error('Delete error:', e); }
         }
@@ -608,12 +701,10 @@ async function deleteOneRecord(rec) {
 // ── 1페이지 교육자료 미리보기 갱신 ──
 async function updateEduPreview() {
   const sel = $('#selEduRecord');
-  const recordId = sel.value;
+  const recordId = sel?.value;
   if (!recordId) return;
 
-  const curMonth = monthStr();
-  const records = await store.listMonth(curMonth);
-  const rec = records.find(r => r.id === recordId);
+  const rec = currentLoadedRecords.find(r => r.id === recordId) || (await store.listMonth(monthStr())).find(r => r.id === recordId);
   if (!rec) return;
 
   // 관련 법령 핵심 수칙 찾기 (taxonomy.categories에서 item 검색)
@@ -773,12 +864,27 @@ async function renderRecordList() {
   if ($('#chkAllRecords')) $('#chkAllRecords').checked = false;
   updateSelectedCount();
 
-  const curMonth = monthStr();
-  const records = await store.listMonth(curMonth);
+  let records = [];
+  try {
+    if (listPeriodMode === 'month') {
+      const m = $('#selListMonth')?.value || monthStr();
+      records = await store.listMonth(m);
+    } else {
+      const start = $('#txtListStartDate')?.value || `${monthStr()}-01`;
+      const end = $('#txtListEndDate')?.value || todayStr();
+      records = await store.listPeriod(start, end);
+    }
+  } catch (e) {
+    console.error('List query error:', e);
+    records = [];
+  }
+
+  currentLoadedRecords = records;
 
   if (!records.length) {
-    if (c) c.innerHTML = '<div style="text-align:center; padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</div>';
-    if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</td></tr>';
+    const msg = listPeriodMode === 'month' ? '해당 월에 등록된 내역이 없습니다.' : '선택한 기간에 등록된 내역이 없습니다.';
+    if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-400);">${msg}</div>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:30px; color:var(--gray-400);">${msg}</td></tr>`;
     return;
   }
 

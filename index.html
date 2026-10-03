@@ -177,6 +177,33 @@
           </div>
         </div>
         
+        <!-- 기간 선택 컨트롤 바 -->
+        <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+            <div style="font-size: 0.82rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 4px;">
+              <span>📅</span> <span>조회 기간 설정</span>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" id="btnPeriodModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
+              <button type="button" id="btnPeriodModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
+            </div>
+          </div>
+
+          <!-- 월별 선택기 -->
+          <div id="boxListPeriodMonth" style="display: flex; gap: 8px; align-items: center;">
+            <input type="month" id="selListMonth" class="form-control" style="padding: 6px 10px; font-size: 0.85rem; flex: 1;">
+            <button type="button" id="btnQueryMonth" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">조회</button>
+          </div>
+
+          <!-- 시작일~종료일 직접지정기 -->
+          <div id="boxListPeriodRange" style="display: none; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <input type="date" id="txtListStartDate" class="form-control" style="padding: 6px 8px; font-size: 0.82rem; flex: 1; min-width: 120px;">
+            <span style="font-size: 0.85rem; color: var(--gray-600);">~</span>
+            <input type="date" id="txtListEndDate" class="form-control" style="padding: 6px 8px; font-size: 0.82rem; flex: 1; min-width: 120px;">
+            <button type="button" id="btnQueryRange" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">조회</button>
+          </div>
+        </div>
+
         <!-- 필터 탭 & 일괄 삭제 툴바 -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
           <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
@@ -260,30 +287,34 @@
     <section id="viewExport" class="view-section">
       <div class="card">
         <div class="card-title">
-          <span>📊 안전회의용 PPT 자동 생성</span>
+          <span>📦 기간 및 현장 내보내기 설정</span>
         </div>
         <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 14px; line-height: 1.5;">
-          축적된 패트롤 데이터를 바탕으로 조치율, 유형별 차트, 발생원인 분포, <strong>규칙 기반 핵심 시사점</strong>을 자동 도출하여 편집 가능한 파워포인트(.pptx)로 제작합니다.
+          출력할 대상 기간(월별 또는 시작일~종료일 직접 지정)과 현장을 선택한 뒤 엑셀 대장이나 회의용 PPT를 내려받으세요.
         </p>
 
-        <button type="button" id="btnDownloadPPT" class="btn btn-accent btn-block" style="padding: 14px; margin-bottom: 20px;">
-          📑 회의용 분석 PPT (.pptx) 다운로드
-        </button>
+        <!-- 기간 선택기 -->
+        <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+            <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.85rem;">📅 대상 기간 선택</label>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" id="btnExportModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
+              <button type="button" id="btnExportModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
+            </div>
+          </div>
 
-        <hr style="border: 0; border-top: 1px solid var(--gray-200); margin-bottom: 20px;">
+          <div id="boxExportPeriodMonth">
+            <input type="month" id="selExportMonth" class="form-control">
+          </div>
 
-        <div class="card-title">
-          <span>📥 부적합사항대장 엑셀 다운로드</span>
+          <div id="boxExportPeriodRange" style="display: none; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <input type="date" id="txtExportStartDate" class="form-control" style="flex: 1; min-width: 120px;">
+            <span style="color: var(--gray-600);">~</span>
+            <input type="date" id="txtExportEndDate" class="form-control" style="flex: 1; min-width: 120px;">
+          </div>
         </div>
-        <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 16px; line-height: 1.5;">
-          첨부 엑셀 원본 서식(2단 병합 헤더, 노란색 헤더, 사진 셀 삽입, 드롭다운 목록) 그대로 브라우저에서 즉시 .xlsx 파일을 생성합니다.
-        </p>
-        
-        <div class="form-group">
-          <label class="form-label">대상 월 선택</label>
-          <input type="month" id="selExportMonth" class="form-control">
-        </div>
 
+        <!-- 현장 필터 -->
         <div class="form-group">
           <label class="form-label">현장 필터</label>
           <select id="selExportSite" class="form-control">
@@ -291,8 +322,28 @@
           </select>
         </div>
 
-        <button type="button" id="btnDownloadExcel" class="btn btn-primary btn-block" style="padding: 14px;">
+        <hr style="border: 0; border-top: 1px solid var(--gray-200); margin: 20px 0;">
+
+        <!-- 1. 엑셀 다운로드 -->
+        <div class="card-title" style="margin-bottom: 6px;">
+          <span>📥 부적합사항대장 엑셀 다운로드</span>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
+          선택한 기간의 모든 부적합 데이터를 원본 서식(2단 병합 헤더, 노란색 헤더, 사진 셀 삽입) 그대로 .xlsx로 생성합니다.
+        </p>
+        <button type="button" id="btnDownloadExcel" class="btn btn-primary btn-block" style="padding: 13px; margin-bottom: 24px;">
           📥 부적합사항대장.xlsx 다운로드
+        </button>
+
+        <!-- 2. PPT 다운로드 -->
+        <div class="card-title" style="margin-bottom: 6px;">
+          <span>📊 안전회의용 PPT 자동 생성</span>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
+          선택한 기간의 조치율, 유형별 차트, 발생원인 분포, 규칙 기반 종합 대책을 16:9 와이드 프레젠테이션(.pptx)으로 제작합니다.
+        </p>
+        <button type="button" id="btnDownloadPPT" class="btn btn-accent btn-block" style="padding: 13px;">
+          📑 회의용 분석 PPT (.pptx) 다운로드
         </button>
       </div>
     </section>
@@ -376,6 +427,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261003_6"></script>
+  <script type="module" src="js/app.js?v=20261003_7"></script>
 </body>
 </html>
