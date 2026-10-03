@@ -216,9 +216,30 @@
       fill: { color: C_BG_LIGHT }, margin: 24, border: { pt: 1, color: 'E2E8F0' }
     });
 
-    // 파일 내보내기
+    // 파일 내보내기 (모바일/PC 공용 안전 Blob 다운로드)
     const filename = `안전회의_패트롤부적합분석_${month}_${siteName}.pptx`;
-    await pptx.writeFile({ fileName: filename });
+    const pptxBlob = await pptx.write({ outputType: 'blob' });
+    const mimeBlob = new Blob([pptxBlob], { 
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' 
+    });
+
+    if (window.SafeUtil && window.SafeUtil.downloadBlob) {
+      window.SafeUtil.downloadBlob(mimeBlob, filename);
+    } else {
+      const url = URL.createObjectURL(mimeBlob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try {
+          if (a.parentNode) a.parentNode.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (e) {}
+      }, 60000);
+    }
   }
 
   return {

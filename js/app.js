@@ -1,6 +1,6 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_5';
-import { store } from './store.js?v=20261003_5';
-import { processImageFile } from './image-processor.js?v=20261003_5';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261003_6';
+import { store } from './store.js?v=20261003_6';
+import { processImageFile } from './image-processor.js?v=20261003_6';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -394,13 +394,11 @@ function bindEvents() {
       });
 
       const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `부적합사항대장_${bucket}${filterSite !== 'all' ? '_' + filterSite : ''}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const filename = `부적합사항대장_${bucket}${filterSite !== 'all' ? '_' + filterSite : ''}.xlsx`;
+      downloadBlob(blob, filename);
 
       toast('부적합사항대장 엑셀 파일이 다운로드되었습니다.', 'success');
     } catch (e) {
@@ -846,9 +844,9 @@ async function renderRecordList() {
       ));
 
       const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isFixed ? 'var(--success)' : 'var(--danger)'}` } },
-        h('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '6px' } },
-          h('strong', { style: { fontSize: '0.95rem' } }, `[${r.site}] ${r.location}`),
-          h('span.badge', { class: isFixed ? 'success' : 'danger', style: { color: isFixed ? 'var(--success)' : 'var(--danger)' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px' } },
+          h('strong', { style: { fontSize: '0.95rem', minWidth: '0', wordBreak: 'keep-all' } }, `[${r.site}] ${r.location}`),
+          h('span.badge', { class: isFixed ? 'success' : 'danger', style: { flexShrink: '0', whiteSpace: 'nowrap' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
         ),
         cardBody,
         isFixed ? h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px', marginBottom: '6px' } }, `조치결과: ${r.fix.content}`) : '',
@@ -879,7 +877,7 @@ async function renderRecordList() {
         <td style="padding:8px; color:var(--gray-700);">${r.agent || '-'}</td>
         <td style="padding:8px; color:var(--gray-600);">${r.condition || '-'}</td>
         <td style="padding:8px; color:var(--gray-600);">${(r.causes || []).join(', ') || '-'}</td>
-        <td style="padding:8px;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
+        <td style="padding:8px; white-space:nowrap;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
         <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">
           <div style="display:flex; align-items:center; gap:6px;">
             ${fixPhotoThumbUrl ? `<img src="${fixPhotoThumbUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer; flex-shrink:0;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" title="조치완료 사진">` : ''}
