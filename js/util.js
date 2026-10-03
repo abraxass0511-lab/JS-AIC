@@ -101,23 +101,176 @@ export function escapeHtml(s) {
 
 /**
  * 모바일(안드로이드/아이폰) 및 PC 공용 안전 파일 다운로더
- * - DOM에 숨김 a 태그를 부착 후 클릭
- * - 안드로이드 다운로드 매니저가 파일 스트림을 온전히 읽을 수 있도록 60초 후 revoke
+ * - PC: 숨김 a 태그 클릭으로 즉시 다운로드
+ * - 모바일: 파일 생성(비동기) 후 사용자 제스처가 만료되어 다운로드가 차단/손상되는 문제를 막기 위해
+ *   '저장 시트'를 띄워 사용자가 직접 탭할 때 저장/공유를 실행
+ * - 카카오톡·네이버 등 인앱 브라우저는 blob 다운로드를 지원하지 않으므로 외부 브라우저 열기 안내
  */
-export function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
+const MIME_BY_EXT = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  pdf: 'application/pdf'
+};
+
+function getEnv() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
+  const isKakao = /KAKAOTALK/i.test(ua);
+  const isInApp = isKakao || /NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|; wv\)/i.test(ua);
+  return { isIOS, isAndroid, isMobile: isIOS || isAndroid, isKakao, isInApp };
+}
+
+function normalizeBlob(blob, filename) {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  const mime = MIME_BY_EXT[ext];
+  if (mime && blob.type !== mime) return new Blob([blob], { type: mime });
+  return blob;
+}
+
+function anchorDownload(href, filename) {
   const a = document.createElement('a');
   a.style.display = 'none';
-  a.href = url;
+  a.href = href;
   a.download = filename;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => {
-    try {
-      if (a.parentNode) a.parentNode.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (e) {}
-  }, 60000);
+  setTimeout(() => { try { a.remove(); } catch (e) {} }, 1000);
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+
+function showSaveSheet(blob, filename, env) {
+  document.getElementById('dlSaveSheet')?.remove();
+  const url = URL.createObjectURL(blob);
+  const ext = (filename.split('.').pop() || '').toUpperCase();
+  const sizeKB = Math.max(1, Math.round(blob.size / 1024));
+
+  const overlay = document.createElement('div');
+  overlay.id = 'dlSaveSheet';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,0.55);display:flex;align-items:flex-end;justify-content:center;';
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'width:100%;max-width:480px;background:#fff;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,0.2);font-family:inherit;';
+  overlay.appendChild(sheet);
+
+  const btnCss = 'display:block;width:100%;padding:14px;margin-top:10px;border-radius:12px;font-size:1rem;font-weight:700;border:none;cursor:pointer;';
+  const title = `<div style="font-size:1.05rem;font-weight:800;color:#1e293b;margin-bottom:4px;">📄 파일이 준비되었습니다</div>
+    <div style="font-size:0.85rem;color:#64748b;word-break:break-all;margin-bottom:8px;">${filename} · ${ext} · ${sizeKB}KB</div>`;
+
+  const close = () => {
+    overlay.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+  };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  if (env.isInApp) {
+    sheet.innerHTML = title + `<div style="font-size:0.88rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;line-height:1.5;">
+      현재 <b>앱 내부 브라우저</b>(카카오톡 등)에서는 파일 다운로드가 지원되지 않습니다.<br>
+      <b>Chrome / 삼성인터넷 / Safari</b>에서 열어 다시 다운로드해 주세요.</div>`;
+    const btnExt = document.createElement('button');
+    btnExt.style.cssText = btnCss + 'background:#2d3a8c;color:#fff;';
+    btnExt.textContent = '🌐 외부 브라우저로 열기';
+    btnExt.onclick = () => {
+      const pageUrl = location.href;
+      if (env.isKakao) {
+        location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(pageUrl);
+      } else if (env.isAndroid) {
+        location.href = `intent://${pageUrl.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.android.chrome;end`;
+      } else {
+        navigator.clipboard?.writeText(pageUrl);
+        alert('주소가 복사되었습니다. Safari에 붙여넣어 열어주세요.');
+      }
+    };
+    sheet.appendChild(btnExt);
+  } else {
+    sheet.innerHTML = title;
+    const btnSave = document.createElement('button');
+    btnSave.style.cssText = btnCss + 'background:#2d3a8c;color:#fff;';
+    btnSave.textContent = '💾 휴대폰에 저장';
+    btnSave.onclick = async () => {
+      try {
+        if (env.isIOS) {
+          // iOS Safari: blob 다운로드가 불안정하므로 공유 시트(파일에 저장) 우선
+          const file = new File([blob], filename, { type: blob.type });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: filename });
+            close();
+            return;
+          }
+        }
+        anchorDownload(url, filename);
+        toastLite('다운로드를 시작했습니다. 알림창 또는 [내 파일 > 다운로드]에서 확인하세요.');
+        close();
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        // 최후 수단: data URL 다운로드
+        try {
+          anchorDownload(await blobToDataURL(blob), filename);
+          close();
+        } catch (e2) {
+          alert('저장에 실패했습니다: ' + (e2.message || e2));
+        }
+      }
+    };
+    sheet.appendChild(btnSave);
+
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      const btnShare = document.createElement('button');
+      btnShare.style.cssText = btnCss + 'background:#fee500;color:#191919;';
+      btnShare.textContent = '📤 공유하기 (카카오톡 · 드라이브 등)';
+      btnShare.onclick = async () => {
+        try {
+          await navigator.share({ files: [file], title: filename });
+          close();
+        } catch (e) {
+          if (e && e.name !== 'AbortError') alert('공유에 실패했습니다: ' + e.message);
+        }
+      };
+      sheet.appendChild(btnShare);
+    }
+  }
+
+  const btnClose = document.createElement('button');
+  btnClose.style.cssText = btnCss + 'background:#f1f5f9;color:#475569;';
+  btnClose.textContent = '닫기';
+  btnClose.onclick = close;
+  sheet.appendChild(btnClose);
+
+  document.body.appendChild(overlay);
+}
+
+function toastLite(msg) {
+  const box = document.getElementById('toasts');
+  if (!box) return;
+  const t = document.createElement('div');
+  t.className = 'toast info';
+  t.textContent = msg;
+  box.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+export function downloadBlob(blob, filename) {
+  const env = getEnv();
+  const fixed = normalizeBlob(blob, filename);
+  if (env.isMobile || env.isInApp) {
+    showSaveSheet(fixed, filename, env);
+    return;
+  }
+  const url = URL.createObjectURL(fixed);
+  anchorDownload(url, filename);
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
 }
 
 if (typeof window !== 'undefined') {
