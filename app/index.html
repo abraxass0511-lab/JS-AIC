@@ -168,8 +168,11 @@
     <section id="viewList" class="view-section">
       <div class="card">
         <div class="card-title">
-          <span>현장 패트롤 부적합 내역</span>
-          <button id="btnRefreshList" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">새로고침</button>
+          <span>현장 패트롤 부적합 대장</span>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="btnToggleViewMode" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;">📊 엑셀 표로 보기</button>
+            <button type="button" id="btnRefreshList" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">새로고침</button>
+          </div>
         </div>
         
         <!-- 필터 탭 -->
@@ -178,8 +181,35 @@
           <button class="chip filter-status" data-status="unfixed">미조치만 보기</button>
         </div>
 
+        <!-- 1. 모바일 카드형 뷰 -->
         <div id="recordListContainer" style="display: flex; flex-direction: column; gap: 12px;">
           <!-- 목록 카드 동적 주입 -->
+        </div>
+
+        <!-- 2. 엑셀 스프레드시트형 전체 표 뷰 (좌우 스크롤 지원) -->
+        <div id="recordTableContainer" style="display: none; overflow-x: auto; margin-top: 4px; border: 1px solid var(--gray-200); border-radius: 8px;">
+          <table id="tblRecords" style="width: 100%; min-width: 1200px; border-collapse: collapse; font-size: 0.82rem; text-align: center;">
+            <thead style="background: #fef08a; color: #713f12; font-weight: 600; border-bottom: 2px solid #ca8a04;">
+              <tr>
+                <th style="padding: 10px 6px; border: 1px solid #fde047; width: 45px;">No</th>
+                <th style="padding: 10px 6px; border: 1px solid #fde047; width: 65px;">사진</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 130px;">현장명</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">점검일자</th>
+                <th style="padding: 10px 10px; border: 1px solid #fde047; text-align: left; min-width: 200px;">부적합 내용</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 110px;">장소/위치</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 110px;">작업명</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 85px;">유형</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">기인물</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 100px;">불안전상태</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">발생원인</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">조치상태</th>
+                <th style="padding: 10px 10px; border: 1px solid #fde047; text-align: left; min-width: 170px;">조치내용</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 80px;">점검자</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">조치관리</th>
+              </tr>
+            </thead>
+            <tbody id="tblRecordsBody"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -336,6 +366,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261003_2"></script>
+  <script type="module" src="js/app.js?v=20261003_3"></script>
 </body>
 </html>
