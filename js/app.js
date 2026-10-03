@@ -16,6 +16,8 @@ let listPeriodMode = 'all'; // 'all', 'month', or 'range'
 let exportPeriodMode = 'all'; // 'all', 'month', or 'range'
 let eduPeriodMode = 'all'; // 'all', 'month', or 'range'
 let currentLoadedRecords = [];
+let listOnlyUnfixed = false;
+let listSiteFilter = 'all';
 let currentEduRecords = [];
 let currentEduPeriodLabel = '';
 
@@ -658,6 +660,24 @@ function bindEvents() {
   $('#btnQueryRange')?.addEventListener('click', () => renderRecordList());
   $('#selListMonth')?.addEventListener('change', () => renderRecordList());
 
+  // ── 대장 목록 필터 (미조치만 보기 토글 & 전체 현장) ──
+  $('#btnFilterUnfixed')?.addEventListener('click', () => {
+    listOnlyUnfixed = !listOnlyUnfixed;
+    if (listOnlyUnfixed) {
+      $('#btnFilterUnfixed')?.classList.add('selected');
+    } else {
+      $('#btnFilterUnfixed')?.classList.remove('selected');
+    }
+    applyListFiltersAndRender();
+  });
+
+  $('#btnFilterSiteAll')?.addEventListener('click', () => {
+    listSiteFilter = 'all';
+    $('#btnFilterSiteAll')?.classList.add('selected');
+    document.querySelectorAll('.filter-site-item').forEach(el => el.classList.remove('selected'));
+    applyListFiltersAndRender();
+  });
+
   // ── 1페이지 교육자료 대상 기간 선택 모드 전환 (전체 vs 월별 vs 직접지정) ──
   $('#btnEduModeAll')?.addEventListener('click', () => {
     eduPeriodMode = 'all';
@@ -1038,20 +1058,65 @@ async function renderRecordList() {
   }
 
   currentLoadedRecords = records;
+  updateSiteFilterChips(records);
+  await applyListFiltersAndRender();
+}
 
-  if (!records.length) {
+function updateSiteFilterChips(records) {
+  const container = $('#boxDynamicSiteChips');
+  if (!container) return;
+  container.innerHTML = '';
+  const sites = [...new Set(records.map(r => r.site).filter(Boolean))];
+  if (sites.length <= 1) return;
+  for (const s of sites) {
+    const btn = h('button.chip.filter-site-item', {
+      type: 'button',
+      class: listSiteFilter === s ? 'selected' : '',
+      style: { padding: '4px 10px', fontSize: '0.8rem', whiteSpace: 'nowrap' },
+      onclick: () => {
+        listSiteFilter = s;
+        $('#btnFilterSiteAll')?.classList.remove('selected');
+        document.querySelectorAll('.filter-site-item').forEach(el => el.classList.remove('selected'));
+        btn.classList.add('selected');
+        applyListFiltersAndRender();
+      }
+    }, s);
+    container.append(btn);
+  }
+}
+
+async function applyListFiltersAndRender() {
+  const c = $('#recordListContainer');
+  const tbody = $('#tblRecordsBody');
+  if ($('#chkAllRecords')) $('#chkAllRecords').checked = false;
+  updateSelectedCount();
+
+  let filtered = currentLoadedRecords;
+  if (listOnlyUnfixed) {
+    filtered = filtered.filter(r => r.status !== '조치완료');
+  }
+  if (listSiteFilter !== 'all') {
+    filtered = filtered.filter(r => r.site === listSiteFilter);
+  }
+
+  if (!filtered.length) {
     let msg = '선택한 기간에 등록된 내역이 없습니다.';
-    if (listPeriodMode === 'all') msg = '누적된 부적합 내역이 없습니다.';
-    else if (listPeriodMode === 'month') msg = '해당 월에 등록된 내역이 없습니다.';
-    if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-400);">${msg}</div>`;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:30px; color:var(--gray-400);">${msg}</td></tr>`;
+    if (listOnlyUnfixed) {
+      msg = '🎉 미조치된 부적합 내역이 없습니다. (모든 항목 조치 완료)';
+    } else if (listPeriodMode === 'all') {
+      msg = '누적된 부적합 내역이 없습니다.';
+    } else if (listPeriodMode === 'month') {
+      msg = '해당 월에 등록된 내역이 없습니다.';
+    }
+    if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-500); font-weight:500;">${msg}</div>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
     return;
   }
 
   if (c) c.innerHTML = '';
   if (tbody) tbody.innerHTML = '';
 
-  for (const [idx, r] of records.entries()) {
+  for (const [idx, r] of filtered.entries()) {
     const isFixed = r.status === '조치완료';
 
     // 사진 Object URL 비동기 변환 (IndexedDB Blob -> Object URL)
