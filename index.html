@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SafePatrol - 현장 패트롤 부적합 관리</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Vendor Libraries (Offline / Local) -->
+  <script src="vendor/exifr.lite.umd.js"></script>
+  <script src="vendor/exceljs.min.js"></script>
+  <script src="vendor/html2canvas.min.js"></script>
+  <script src="vendor/pptxgen.bundle.js"></script>
+  <!-- App logic & Modules -->
+  <script src="js/classifier.js"></script>
+  <script src="js/excel-builder.js"></script>
+  <script src="js/onepage-generator.js"></script>
+  <script src="js/ppt-generator.js"></script>
+</head>
+<body>
+
+  <!-- Top Header -->
+  <header>
+    <div class="brand">
+      <span>🦺</span>
+      <span>SafePatrol</span>
+    </div>
+    <div id="userBadge" class="user-badge" style="display: none; cursor: pointer;">
+      <span id="userName">점검자</span>
+      <span style="font-size: 0.7rem;">▾</span>
+    </div>
+  </header>
+
+  <!-- Main Views Container -->
+  <main>
+    <!-- View 1: 부적합 등록 (현장용) -->
+    <section id="viewRegister" class="view-section active">
+      <div class="card">
+        <div class="card-title">
+          <span>현장 부적합 등록</span>
+          <span id="saveStatus" style="font-size: 0.78rem; font-weight: normal; color: var(--gray-400);">임시저장 됨</span>
+        </div>
+
+        <!-- 1. 현장 선택 및 직접 수기입력 -->
+        <div class="form-group">
+          <label class="form-label">현장명<span class="required">*</span></label>
+          <input type="text" id="txtSite" class="form-control" list="listSites" placeholder="현장명을 직접 입력하거나 목록에서 선택하세요">
+          <datalist id="listSites"></datalist>
+        </div>
+
+        <!-- 2. 사진 등록 (갤러리/기기 사진 선택) -->
+        <div class="form-group">
+          <label class="form-label">부적합 사진 (갤러리 선택)<span class="required">*</span></label>
+          <div id="photoDropArea" class="photo-uploader">
+            <span style="font-size: 1.8rem; display: block; margin-bottom: 4px;">📷</span>
+            <span style="font-weight: 600; font-size: 0.95rem; color: var(--primary);">사진 불러오기</span>
+            <span style="display: block; font-size: 0.8rem; color: var(--gray-400); margin-top: 4px;">대표 1장 + 추가 2장 (자동 압축 및 촬영일자 인식)</span>
+            <input type="file" id="filePhotos" accept="image/*" multiple style="display: none;">
+          </div>
+          <div id="photoPreviews" class="photo-preview-grid"></div>
+        </div>
+
+        <!-- 3. 내용 입력 (AI 없는 무료 스마트 자동분류 연동) -->
+        <div class="form-group">
+          <label class="form-label">부적합 내용<span class="required">*</span></label>
+          <textarea id="txtContent" class="form-control" placeholder="예: 비계시설 작업발판 수평재 미설치, 안전난간대 미설치 등 입력"></textarea>
+          
+          <!-- 자동분류 추천 박스 -->
+          <div id="smartClassifyBox" class="smart-classify-box">
+            <div class="smart-title">
+              <span>💡</span> <span>내용 기반 자동분류 추천</span>
+            </div>
+            <div id="smartDesc" class="smart-desc"></div>
+            <div id="smartTags" class="smart-tags"></div>
+            <button type="button" id="btnApplySmart" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">추천 분류 적용하기</button>
+          </div>
+        </div>
+
+        <!-- 4. 장소 / 작업명 -->
+        <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label class="form-label">장소/위치<span class="required">*</span></label>
+            <input type="text" id="txtLocation" class="form-control" placeholder="예: 106동 5층">
+          </div>
+          <div>
+            <label class="form-label">작업명<span class="required">*</span></label>
+            <input type="text" id="txtWorkName" class="form-control" list="listWorkNames" placeholder="직접입력/선택">
+            <datalist id="listWorkNames"></datalist>
+          </div>
+        </div>
+
+        <!-- 5. 부적합 분류 (종류, 항목, 기인물, 공종, 유형) -->
+        <div class="card" style="padding: 14px; background: var(--gray-50); border: 1px solid var(--gray-200); margin-bottom: 16px;">
+          <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 10px;">📋 표준 분류 체계 (직접입력 가능)</div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">종류</label>
+              <input type="text" id="txtKind" class="form-control" list="listKinds" placeholder="가시설 등">
+              <datalist id="listKinds"></datalist>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">항목</label>
+              <input type="text" id="txtItem" class="form-control" list="listItems" placeholder="시스템비계 등">
+              <datalist id="listItems"></datalist>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">기인물</label>
+              <input type="text" id="txtAgent" class="form-control" list="listAgents" placeholder="수평재 등">
+              <datalist id="listAgents"></datalist>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">공종</label>
+              <input type="text" id="txtWorkGroup" class="form-control" list="listWorkGroups" placeholder="가설공사 등">
+              <datalist id="listWorkGroups"></datalist>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">유형(발생형태)</label>
+              <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="떨어짐 등">
+              <datalist id="listTypes"></datalist>
+            </div>
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">산업안전보건법</label>
+              <input type="text" id="txtLaw" class="form-control" placeholder="관련 조문 자동추천">
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. 불안전 상황 & 발생원인 (체크박스/칩) -->
+        <div class="form-group">
+          <label class="form-label">불안전 상황</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <input type="text" id="txtCondition" class="form-control" list="listConditions" placeholder="상태: 방호장치 결함 등">
+            <datalist id="listConditions"></datalist>
+            <input type="text" id="txtAction" class="form-control" list="listActions" placeholder="행동: 방치, 미착용 등">
+            <datalist id="listActions"></datalist>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">발생원인 (복수 선택)</label>
+          <div id="causeChips" class="chip-grid">
+            <button type="button" class="chip" data-cause="인적">인적</button>
+            <button type="button" class="chip" data-cause="물적">물적</button>
+            <button type="button" class="chip" data-cause="기술적">기술적</button>
+            <button type="button" class="chip" data-cause="시스템적">시스템적</button>
+          </div>
+        </div>
+
+        <!-- 7. 점검일자 (사진 EXIF 자동) -->
+        <div class="form-group">
+          <label class="form-label">점검일자</label>
+          <input type="date" id="txtInspectDate" class="form-control">
+        </div>
+
+        <button type="button" id="btnSubmitRecord" class="btn btn-primary btn-block" style="padding: 14px; font-size: 1.05rem;">
+          등록 저장하기
+        </button>
+      </div>
+    </section>
+
+    <!-- View 2: 대장 목록 / 조치 등록 -->
+    <section id="viewList" class="view-section">
+      <div class="card">
+        <div class="card-title">
+          <span>현장 패트롤 부적합 내역</span>
+          <button id="btnRefreshList" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">새로고침</button>
+        </div>
+        
+        <!-- 필터 탭 -->
+        <div style="display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 4px;">
+          <button class="chip selected filter-site" data-site="all">전체 현장</button>
+          <button class="chip filter-status" data-status="unfixed">미조치만 보기</button>
+        </div>
+
+        <div id="recordListContainer" style="display: flex; flex-direction: column; gap: 12px;">
+          <!-- 목록 카드 동적 주입 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- View 3: 1페이지 교육자료 생성기 -->
+    <section id="viewEdu" class="view-section">
+      <div class="card">
+        <div class="card-title">
+          <span>🖼️ 1페이지 근로자 안전교육자료</span>
+        </div>
+        <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 14px; line-height: 1.5;">
+          지적된 부적합과 개선 조치 완료 사진(Before/After), 산안법 핵심 수칙을 합성하여 TBM이나 카톡 공지용 1장 이미지(PNG)로 자동 제작합니다.
+        </p>
+        
+        <div class="form-group">
+          <label class="form-label">교육자료 대상 부적합 건 선택</label>
+          <select id="selEduRecord" class="form-control">
+            <option value="">-- 등록된 부적합 목록 불러오는 중 --</option>
+          </select>
+        </div>
+
+        <button type="button" id="btnPreviewEdu" class="btn btn-secondary btn-block" style="margin-bottom: 14px;">
+          미리보기 갱신
+        </button>
+
+        <!-- 1페이지 미리보기 컨테이너 -->
+        <div id="eduPreviewWrapper" style="overflow-x: auto; background: var(--gray-100); padding: 12px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: center;">
+          <div id="eduContainer"></div>
+        </div>
+
+        <button type="button" id="btnDownloadEduImg" class="btn btn-primary btn-block" style="padding: 14px;">
+          📸 1페이지 교육자료 이미지(PNG) 다운로드
+        </button>
+      </div>
+    </section>
+
+    <!-- View 4: 엑셀 및 회의용 PPT 다운로드 -->
+    <section id="viewExport" class="view-section">
+      <div class="card">
+        <div class="card-title">
+          <span>📊 안전회의용 PPT 자동 생성</span>
+        </div>
+        <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 14px; line-height: 1.5;">
+          축적된 패트롤 데이터를 바탕으로 조치율, 유형별 차트, 발생원인 분포, <strong>규칙 기반 핵심 시사점</strong>을 자동 도출하여 편집 가능한 파워포인트(.pptx)로 제작합니다.
+        </p>
+
+        <button type="button" id="btnDownloadPPT" class="btn btn-accent btn-block" style="padding: 14px; margin-bottom: 20px;">
+          📑 회의용 분석 PPT (.pptx) 다운로드
+        </button>
+
+        <hr style="border: 0; border-top: 1px solid var(--gray-200); margin-bottom: 20px;">
+
+        <div class="card-title">
+          <span>📥 부적합사항대장 엑셀 다운로드</span>
+        </div>
+        <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 16px; line-height: 1.5;">
+          첨부 엑셀 원본 서식(2단 병합 헤더, 노란색 헤더, 사진 셀 삽입, 드롭다운 목록) 그대로 브라우저에서 즉시 .xlsx 파일을 생성합니다.
+        </p>
+        
+        <div class="form-group">
+          <label class="form-label">대상 월 선택</label>
+          <input type="month" id="selExportMonth" class="form-control">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">현장 필터</label>
+          <select id="selExportSite" class="form-control">
+            <option value="all">전체 현장 통합</option>
+          </select>
+        </div>
+
+        <button type="button" id="btnDownloadExcel" class="btn btn-primary btn-block" style="padding: 14px;">
+          📥 부적합사항대장.xlsx 다운로드
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-view="viewRegister">
+      <span class="icon">✏️</span>
+      <span>부적합 등록</span>
+    </button>
+    <button class="nav-item" data-view="viewList">
+      <span class="icon">📋</span>
+      <span>대장 목록</span>
+    </button>
+    <button class="nav-item" data-view="viewEdu">
+      <span class="icon">🖼️</span>
+      <span>1p 교육자료</span>
+    </button>
+    <button class="nav-item" data-view="viewExport">
+      <span class="icon">📑</span>
+      <span>엑셀/PPT</span>
+    </button>
+  </nav>
+
+  <!-- PIN Login Modal -->
+  <div id="pinModal" class="modal-overlay" style="display: none;">
+    <div class="pin-card">
+      <div style="font-size: 2rem; margin-bottom: 6px;">🔐</div>
+      <h3 style="font-size: 1.2rem; color: var(--gray-900);">SafePatrol PIN 로그인</h3>
+      <p style="font-size: 0.82rem; color: var(--gray-600); margin-top: 4px;">지정된 6자리 개인 PIN을 입력하세요</p>
+      
+      <div id="pinDots" class="pin-display">······</div>
+      
+      <div class="pin-keypad">
+        <button class="key-btn" data-key="1">1</button>
+        <button class="key-btn" data-key="2">2</button>
+        <button class="key-btn" data-key="3">3</button>
+        <button class="key-btn" data-key="4">4</button>
+        <button class="key-btn" data-key="5">5</button>
+        <button class="key-btn" data-key="6">6</button>
+        <button class="key-btn" data-key="7">7</button>
+        <button class="key-btn" data-key="8">8</button>
+        <button class="key-btn" data-key="9">9</button>
+        <button class="key-btn" data-key="clear" style="font-size: 0.9rem;">취소</button>
+        <button class="key-btn" data-key="0">0</button>
+        <button class="key-btn" data-key="back">←</button>
+      </div>
+      <div style="margin-top: 14px; font-size: 0.75rem; color: var(--gray-400);">
+        * 데모 PIN: 점검자1(111111) / 점검자2(222222) / 관리자(000000)
+      </div>
+    </div>
+  </div>
+
+  <!-- 조치 등록 모달 -->
+  <div id="fixModal" class="modal-overlay" style="display: none;">
+    <div class="pin-card" style="max-width: 480px; text-align: left;">
+      <h3 style="margin-bottom: 12px;">🔧 조치사항 등록</h3>
+      <div class="form-group">
+        <label class="form-label">조치내용<span class="required">*</span></label>
+        <textarea id="txtFixContent" class="form-control" placeholder="예: 작업발판 수평재 즉시 보강 설치 및 근로자 교육 완료"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">조치 완료 사진</label>
+        <input type="file" id="fileFixPhoto" accept="image/*" class="form-control">
+        <div id="fixPhotoPreview" style="margin-top: 8px;"></div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button type="button" id="btnCancelFix" class="btn btn-secondary" style="flex: 1;">닫기</button>
+        <button type="button" id="btnSaveFix" class="btn btn-primary" style="flex: 1;">조치 완료 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+  <!-- Entry Script -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
