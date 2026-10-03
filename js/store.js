@@ -117,6 +117,7 @@ export const store = {
   keywords: null,
   sites: [],
   custom: { customValues: {} },
+  rlWeights: null,
   _monthCache: new Map(),
   _photoCache: new Map(),
 
@@ -165,17 +166,35 @@ export const store = {
   },
   get isAdmin() { return this.user && this.user.role === 'admin'; },
 
-  // ── 설정 (현장, 직접입력 값) ──
+  // ── 설정 (현장, 직접입력 값, 강화학습 가중치) ──
   async loadConfig() {
-    const [s, c] = await Promise.all([this.backend.readJSON('config/sites.json'), this.backend.readJSON('config/custom.json')]);
-    this.sites = (s && s.data.sites) || [];
+    const [s, c, rl] = await Promise.all([
+      this.backend.readJSON('config/sites.json').catch(() => null),
+      this.backend.readJSON('config/custom.json').catch(() => null),
+      this.backend.readJSON('data/rl_weights.json').catch(() => null)
+    ]);
+    this.sites = (s && s.data && s.data.sites) || [];
     this.custom = (c && c.data) || { customValues: {} };
     if (!this.custom.customValues) this.custom.customValues = {};
+    this.rlWeights = (rl && rl.data) || {
+      itemWeights: {},
+      typeWeights: {},
+      conditionWeights: {},
+      actionWeights: {},
+      stats: { totalFeedbacks: 0, totalRewards: 0, positiveCount: 0, penaltyCount: 0 }
+    };
   },
   async saveSites(sites) {
     const author = (this.user && this.user.name) || '시스템';
     const d = await rmw(this.backend, 'config/sites.json', () => ({ sites }), { sites: [] }, `[SafePatrol] 현장 설정 변경 (${author})`);
     this.sites = d.sites;
+  },
+  async saveRLWeights(weightsData) {
+    const author = (this.user && this.user.name) || '점검자';
+    const msg = `[SafePatrol] 강화학습 가중치 갱신 (피드백: ${weightsData.stats?.totalFeedbacks || 0}건) (${author})`;
+    const d = await rmw(this.backend, 'data/rl_weights.json', () => weightsData, weightsData, msg);
+    this.rlWeights = d;
+    return d;
   },
   /** 직접입력 값 저장: { field: [value, ...] } */
   async addCustomValues(map) {
