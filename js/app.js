@@ -1,6 +1,6 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_2';
-import { store } from './store.js?v=20261003_2';
-import { processImageFile } from './image-processor.js?v=20261003_2';
+import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_3';
+import { store } from './store.js?v=20261003_3';
+import { processImageFile } from './image-processor.js?v=20261003_3';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -9,6 +9,7 @@ let smartResult = null;
 let pinInput = '';
 let targetFixRecord = null;
 let fixPhotoData = null;
+let recordViewMode = 'card'; // 'card' or 'table'
 
 // ── App Init ──
 window.addEventListener('DOMContentLoaded', async () => {
@@ -514,6 +515,38 @@ function bindEvents() {
       toast(`조치 저장 실패: ${e.message}`, 'danger');
     }
   });
+
+  // 대장 목록 뷰 모드 토글 (카드 vs 엑셀 표)
+  const toggleBtn = $('#btnToggleViewMode');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      recordViewMode = recordViewMode === 'card' ? 'table' : 'card';
+      if (recordViewMode === 'table') {
+        $('#recordListContainer').style.display = 'none';
+        $('#recordTableContainer').style.display = 'block';
+        toggleBtn.textContent = '📋 카드형으로 보기';
+        toggleBtn.style.background = '#fef3c7';
+        toggleBtn.style.borderColor = '#fde047';
+        toggleBtn.style.color = '#854d0e';
+      } else {
+        $('#recordListContainer').style.display = 'flex';
+        $('#recordTableContainer').style.display = 'none';
+        toggleBtn.textContent = '📊 엑셀 표로 보기';
+        toggleBtn.style.background = '#eff6ff';
+        toggleBtn.style.borderColor = '#bfdbfe';
+        toggleBtn.style.color = '#1e40af';
+      }
+      renderRecordList();
+    });
+  }
+
+  const refreshBtn = $('#btnRefreshList');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      renderRecordList();
+      toast('대장 목록을 새로고침했습니다.', 'info');
+    });
+  }
 }
 
 // ── 1페이지 교육자료 미리보기 갱신 ──
@@ -677,39 +710,91 @@ function clearDraft() {
 // ── Record List View ──
 async function renderRecordList() {
   const c = $('#recordListContainer');
-  c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
+  const tbody = $('#tblRecordsBody');
+  if (c) c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="15" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
   
   const curMonth = monthStr();
   const records = await store.listMonth(curMonth);
 
   if (!records.length) {
-    c.innerHTML = '<div style="text-align:center; padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</div>';
+    if (c) c.innerHTML = '<div style="text-align:center; padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</div>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="15" style="padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</td></tr>';
     return;
   }
 
-  c.innerHTML = '';
-  for (const r of records) {
+  if (c) c.innerHTML = '';
+  if (tbody) tbody.innerHTML = '';
+
+  for (const [idx, r] of records.entries()) {
     const isFixed = r.status === '조치완료';
-    const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isFixed ? 'var(--success)' : 'var(--danger)'}` } },
-      h('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '6px' } },
-        h('strong', { style: { fontSize: '0.95rem' } }, `[${r.site}] ${r.location}`),
-        h('span.badge', { class: isFixed ? 'success' : 'danger', style: { color: isFixed ? 'var(--success)' : 'var(--danger)' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
-      ),
-      h('div', { style: { fontSize: '0.92rem', marginBottom: '8px', color: 'var(--gray-900)' } }, r.content),
-      h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)', marginBottom: '8px' } },
-        `${r.kind} › ${r.item} (${r.agent || '-'}) · ${r.inspectedDate} (${r.inspector})`
-      ),
-      !isFixed ? h('button.btn.btn-outline', {
-        style: { fontSize: '0.82rem', padding: '6px 12px' },
-        onclick: () => {
+
+    // 1) 모바일 카드형 뷰
+    if (c) {
+      const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isFixed ? 'var(--success)' : 'var(--danger)'}` } },
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '6px' } },
+          h('strong', { style: { fontSize: '0.95rem' } }, `[${r.site}] ${r.location}`),
+          h('span.badge', { class: isFixed ? 'success' : 'danger', style: { color: isFixed ? 'var(--success)' : 'var(--danger)' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
+        ),
+        h('div', { style: { fontSize: '0.92rem', marginBottom: '8px', color: 'var(--gray-900)' } }, r.content),
+        h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)', marginBottom: '8px' } },
+          `${r.kind} › ${r.item} (${r.agent || '-'}) · ${r.inspectedDate} (${r.inspector})`
+        ),
+        !isFixed ? h('button.btn.btn-outline', {
+          style: { fontSize: '0.82rem', padding: '6px 12px' },
+          onclick: () => {
+            targetFixRecord = r;
+            fixPhotoData = null;
+            $('#txtFixContent').value = '';
+            $('#fixPhotoPreview').innerHTML = '';
+            $('#fixModal').style.display = 'flex';
+          }
+        }, '🔧 조치내용/조치사진 등록') : h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px' } }, `조치결과: ${r.fix.content}`)
+      );
+      c.append(card);
+    }
+
+    // 2) 엑셀 스프레드시트 테이블 뷰
+    if (tbody) {
+      let photoThumb = '-';
+      if (r.photos && r.photos[0]) {
+        photoThumb = `<img src="${r.photos[0]}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${r.photos[0]}', '_blank')" title="클릭하여 원본보기">`;
+      }
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #e2e8f0';
+      tr.style.background = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      tr.innerHTML = `
+        <td style="padding:8px 4px; font-weight:600; color:var(--gray-700);">${idx + 1}</td>
+        <td style="padding:4px;">${photoThumb}</td>
+        <td style="padding:8px; font-weight:500;">${r.site || '-'}</td>
+        <td style="padding:8px; color:var(--gray-600);">${r.inspectedDate || '-'}</td>
+        <td style="padding:8px 10px; text-align:left; font-weight:500; color:var(--gray-900);">${r.content}</td>
+        <td style="padding:8px; color:var(--gray-700);">${r.location || '-'}</td>
+        <td style="padding:8px; color:var(--gray-700);">${r.workName || '-'}</td>
+        <td style="padding:8px;"><span class="badge" style="font-size:0.75rem;">${r.type || '-'}</span></td>
+        <td style="padding:8px; color:var(--gray-700);">${r.agent || '-'}</td>
+        <td style="padding:8px; color:var(--gray-600);">${r.condition || '-'}</td>
+        <td style="padding:8px; color:var(--gray-600);">${(r.causes || []).join(', ') || '-'}</td>
+        <td style="padding:8px;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
+        <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">${(r.fix && r.fix.content) || '(미조치)'}</td>
+        <td style="padding:8px; color:var(--gray-600);">${r.inspector || '-'}</td>
+        <td style="padding:8px;">
+          ${!isFixed ? `<button type="button" class="btn btn-outline btn-table-fix" style="padding:3px 8px; font-size:0.75rem;">조치등록</button>` : '<span style="color:var(--success); font-weight:600; font-size:0.75rem;">완료</span>'}
+        </td>
+      `;
+
+      const fixBtn = tr.querySelector('.btn-table-fix');
+      if (fixBtn) {
+        fixBtn.addEventListener('click', () => {
           targetFixRecord = r;
           fixPhotoData = null;
           $('#txtFixContent').value = '';
           $('#fixPhotoPreview').innerHTML = '';
           $('#fixModal').style.display = 'flex';
-        }
-      }, '🔧 조치내용/조치사진 등록') : h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px' } }, `조치결과: ${r.fix.content}`)
-    );
-    c.append(card);
+        });
+      }
+
+      tbody.appendChild(tr);
+    }
   }
 }

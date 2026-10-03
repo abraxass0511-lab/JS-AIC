@@ -79,47 +79,52 @@
 
     const { records = [], siteName = '전체 현장', month = '2026-10', inspector = '안전관리자', loadPhotoBase64 } = options;
     const pptx = new window.PptxGenJS();
-    pptx.layout = 'LAYOUT_16x9';
+    // 16:9 와이드 표준 규격 명시 (13.333 x 7.5 인치)
+    pptx.defineLayout({ name: 'WIDE_16_9', width: 13.333, height: 7.5 });
+    pptx.layout = 'WIDE_16_9';
 
     // ── 슬라이드 1: 표지 ──
     const s1 = pptx.addSlide();
     s1.background = { color: C_NAVY };
     s1.addText('현장 패트롤 안전점검 및 부적합 분석', {
-      x: 1.0, y: 2.2, w: '85%', fontSize: 32, bold: true, color: 'FFFFFF'
+      x: 1.0, y: 2.2, w: 11.3, h: 1.2, fontSize: 34, bold: true, color: 'FFFFFF'
     });
     s1.addText('데이터 기반 위험요인 분석 및 개선 대책 회의', {
-      x: 1.0, y: 3.2, w: '85%', fontSize: 18, color: '93C5FD'
+      x: 1.0, y: 3.4, w: 11.3, h: 0.8, fontSize: 20, color: '93C5FD'
     });
     s1.addText(`현장명: ${siteName} | 대상기간: ${month} | 작성자: ${inspector}`, {
-      x: 1.0, y: 5.5, w: '85%', fontSize: 14, color: 'CBD5E1'
+      x: 1.0, y: 6.0, w: 11.3, h: 0.6, fontSize: 14, color: 'CBD5E1'
     });
 
     // ── 슬라이드 2: 패트롤 점검 총괄 현황 ──
     const s2 = pptx.addSlide();
-    s2.addText('1. 패트롤 안전점검 총괄 현황', { x: 0.8, y: 0.6, fontSize: 22, bold: true, color: C_NAVY });
+    s2.addText('1. 패트롤 안전점검 총괄 현황', { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 26, bold: true, color: C_NAVY });
 
     const total = records.length;
     const unfixed = records.filter(r => r.status !== '조치완료').length;
     const fixed = total - unfixed;
     const fixRate = total ? Math.round((fixed / total) * 100) : 0;
 
-    // 요약 카드 3개
-    s2.addText(`총 지적 건수\n${total} 건`, {
-      x: 0.8, y: 1.6, w: 3.5, h: 2.0, fontSize: 24, bold: true, color: C_BLUE,
-      fill: { color: C_BG_LIGHT }, align: 'center', lineSpacing: 32
+    // 요약 카드 3개 (가로 11.3 인치 폭 균등 배분)
+    s2.addText(`총 지적 건수\n\n${total} 건`, {
+      x: 1.0, y: 1.8, w: 3.5, h: 4.5, fontSize: 24, bold: true, color: C_BLUE,
+      fill: { color: C_BG_LIGHT }, align: 'center', lineSpacing: 28,
+      border: { pt: 1, color: 'E2E8F0' }
     });
-    s2.addText(`개선 조치 완료\n${fixed} 건`, {
-      x: 4.8, y: 1.6, w: 3.5, h: 2.0, fontSize: 24, bold: true, color: C_GREEN,
-      fill: { color: C_BG_LIGHT }, align: 'center', lineSpacing: 32
+    s2.addText(`개선 조치 완료\n\n${fixed} 건`, {
+      x: 4.9, y: 1.8, w: 3.5, h: 4.5, fontSize: 24, bold: true, color: C_GREEN,
+      fill: { color: C_BG_LIGHT }, align: 'center', lineSpacing: 28,
+      border: { pt: 1, color: 'E2E8F0' }
     });
-    s2.addText(`미조치 (진행중)\n${unfixed} 건 (조치율 ${fixRate}%)`, {
-      x: 8.8, y: 1.6, w: 3.5, h: 2.0, fontSize: 24, bold: true, color: unfixed ? C_RED : C_GREEN,
-      fill: { color: C_BG_LIGHT }, align: 'center', lineSpacing: 32
+    s2.addText(`미조치 (진행중)\n\n${unfixed} 건\n(조치율 ${fixRate}%)`, {
+      x: 8.8, y: 1.8, w: 3.5, h: 4.5, fontSize: 24, bold: true, color: unfixed ? C_RED : C_GREEN,
+      fill: { color: C_BG_LIGHT }, align: 'center', lineSpacing: 28,
+      border: { pt: 1, color: 'E2E8F0' }
     });
 
     // ── 슬라이드 3: 유형별/원인별 통계 분석 ──
     const s3 = pptx.addSlide();
-    s3.addText('2. 부적합 유형 및 발생원인 분포', { x: 0.8, y: 0.6, fontSize: 22, bold: true, color: C_NAVY });
+    s3.addText('2. 부적합 유형 및 발생원인 분포', { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 26, bold: true, color: C_NAVY });
 
     const typeCount = {};
     records.forEach(r => { typeCount[r.type || '기타'] = (typeCount[r.type || '기타'] || 0) + 1; });
@@ -133,7 +138,7 @@
 
     if (Object.keys(typeCount).length) {
       s3.addChart(pptx.ChartType.bar, chartData, {
-        x: 0.8, y: 1.5, w: 6.0, h: 4.5,
+        x: 1.0, y: 1.8, w: 6.2, h: 4.8,
         chartColors: [C_BLUE],
         showValue: true
       });
@@ -158,18 +163,18 @@
     ];
 
     s3.addTable(causeRows, {
-      x: 7.2, y: 1.8, w: 5.2,
-      fontSize: 12, rowH: 0.5, border: { pt: 1, color: 'E2E8F0' }, align: 'center'
+      x: 7.6, y: 2.2, w: 4.7,
+      fontSize: 13, rowH: 0.65, border: { pt: 1, color: 'E2E8F0' }, align: 'center'
     });
 
     // ── 슬라이드 4: 주요 지적 및 조치 사례 (사진 포함) ──
     const s4 = pptx.addSlide();
-    s4.addText('3. 현장 주요 지적 및 조치 사례', { x: 0.8, y: 0.6, fontSize: 22, bold: true, color: C_NAVY });
+    s4.addText('3. 현장 주요 지적 및 조치 사례', { x: 1.0, y: 0.8, w: 11.3, h: 0.5, fontSize: 26, bold: true, color: C_NAVY });
 
     const sample = records[0];
     if (sample) {
       s4.addText(`사례: [${sample.site}] ${sample.content} (${sample.location})`, {
-        x: 0.8, y: 1.3, fontSize: 14, bold: true, color: C_BLUE
+        x: 1.0, y: 1.4, w: 11.3, h: 0.4, fontSize: 16, bold: true, color: C_BLUE
       });
 
       // 사진 로드 시도
@@ -182,33 +187,33 @@
       }
 
       if (b64Before) {
-        s4.addImage({ data: b64Before, x: 1.0, y: 1.8, w: 5.0, h: 3.75 });
-        s4.addText('❌ 부적합 지적 상태', { x: 1.0, y: 5.7, w: 5.0, fontSize: 13, bold: true, color: C_RED, align: 'center' });
+        s4.addImage({ data: b64Before, x: 1.2, y: 2.1, w: 5.0, h: 3.8 });
+        s4.addText('❌ 부적합 지적 상태', { x: 1.2, y: 6.1, w: 5.0, h: 0.4, fontSize: 14, bold: true, color: C_RED, align: 'center' });
       } else {
-        s4.addText('부적합 사진', { x: 1.0, y: 1.8, w: 5.0, h: 3.75, fill: { color: 'E2E8F0' }, align: 'center' });
+        s4.addText('부적합 사진', { x: 1.2, y: 2.1, w: 5.0, h: 3.8, fill: { color: 'E2E8F0' }, align: 'center' });
       }
 
       if (b64After) {
-        s4.addImage({ data: b64After, x: 6.8, y: 1.8, w: 5.0, h: 3.75 });
-        s4.addText('✅ 조치 완료 상태', { x: 6.8, y: 5.7, w: 5.0, fontSize: 13, bold: true, color: C_GREEN, align: 'center' });
+        s4.addImage({ data: b64After, x: 7.1, y: 2.1, w: 5.0, h: 3.8 });
+        s4.addText('✅ 조치 완료 상태', { x: 7.1, y: 6.1, w: 5.0, h: 0.4, fontSize: 14, bold: true, color: C_GREEN, align: 'center' });
       } else {
-        s4.addText(sample.fix && sample.fix.content ? `조치내용: ${sample.fix.content}` : '미조치 상태', {
-          x: 6.8, y: 1.8, w: 5.0, h: 3.75, fill: { color: 'E2E8F0' }, align: 'center', fontSize: 14
+        s4.addText(sample.fix && sample.fix.content ? `조치내용:\n${sample.fix.content}` : '미조치 상태', {
+          x: 7.1, y: 2.1, w: 5.0, h: 3.8, fill: { color: 'E2E8F0' }, align: 'center', fontSize: 15
         });
       }
     }
 
     // ── 슬라이드 5: 데이터 기반 핵심 시사점 및 대책 (자동 도출) ──
     const s5 = pptx.addSlide();
-    s5.addText('4. 데이터 기반 종합 시사점 및 대책', { x: 0.8, y: 0.6, fontSize: 22, bold: true, color: C_NAVY });
+    s5.addText('4. 데이터 기반 종합 시사점 및 대책', { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 26, bold: true, color: C_NAVY });
 
     const insights = extractInsights(records);
     const insightLines = insights.map((msg, i) => `${i + 1}. ${msg}`).join('\n\n');
 
     s5.addText(insightLines, {
-      x: 0.8, y: 1.5, w: 11.5, h: 4.8,
-      fontSize: 15, color: '1E293B', lineSpacing: 28,
-      fill: { color: C_BG_LIGHT }, margin: 20
+      x: 1.0, y: 1.8, w: 11.3, h: 4.8,
+      fontSize: 16, color: '1E293B', lineSpacing: 26,
+      fill: { color: C_BG_LIGHT }, margin: 24, border: { pt: 1, color: 'E2E8F0' }
     });
 
     // 파일 내보내기
