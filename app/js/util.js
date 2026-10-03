@@ -98,3 +98,29 @@ export const idbClear = (db, s) => tx(db, s, 'readwrite', st => st.clear());
 export function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+/**
+ * 모바일(안드로이드/아이폰) 및 PC 공용 안전 파일 다운로더
+ * - DOM에 숨김 a 태그를 부착 후 클릭
+ * - 안드로이드 다운로드 매니저가 파일 스트림을 온전히 읽을 수 있도록 60초 후 revoke
+ */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    try {
+      if (a.parentNode) a.parentNode.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {}
+  }, 60000);
+}
+
+if (typeof window !== 'undefined') {
+  window.SafeUtil = window.SafeUtil || {};
+  window.SafeUtil.downloadBlob = downloadBlob;
+}

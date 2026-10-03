@@ -267,17 +267,38 @@ textarea.form-control {
 }
 
 .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 0.78rem;
   padding: 3px 8px;
   border-radius: 4px;
   background: white;
   border: 1px solid var(--gray-300);
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .badge.primary {
   background: var(--primary-light);
   color: var(--primary);
   border-color: #bfdbfe;
+}
+
+.badge.success {
+  background: var(--success-light);
+  color: var(--success);
+  border-color: #86efac;
+  font-weight: 600;
+}
+
+.badge.danger {
+  background: var(--danger-light);
+  color: var(--danger);
+  border-color: #fca5a5;
+  font-weight: 600;
 }
 
 /* Photo Uploader / Preview */
