@@ -98,7 +98,7 @@
 
     // ── 슬라이드 2: 패트롤 점검 총괄 현황 ──
     const s2 = pptx.addSlide();
-    s2.addText('1. 패트롤 안전점검 총괄 현황', { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 26, bold: true, color: C_NAVY });
+    s2.addText(`1. 패트롤 안전점검 총괄 현황 (${month})`, { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 24, bold: true, color: C_NAVY });
 
     const total = records.length;
     const unfixed = records.filter(r => r.status !== '조치완료').length;
@@ -124,7 +124,7 @@
 
     // ── 슬라이드 3: 유형별/원인별 통계 분석 ──
     const s3 = pptx.addSlide();
-    s3.addText('2. 부적합 유형 및 발생원인 분포', { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 26, bold: true, color: C_NAVY });
+    s3.addText(`2. 부적합 유형 및 발생원인 분포 (${month})`, { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 24, bold: true, color: C_NAVY });
 
     const typeCount = {};
     records.forEach(r => { typeCount[r.type || '기타'] = (typeCount[r.type || '기타'] || 0) + 1; });
@@ -169,7 +169,7 @@
 
     // ── 슬라이드 4: 주요 지적 및 조치 사례 (사진 포함) ──
     const s4 = pptx.addSlide();
-    s4.addText('3. 현장 주요 지적 및 조치 사례', { x: 1.0, y: 0.8, w: 11.3, h: 0.5, fontSize: 26, bold: true, color: C_NAVY });
+    s4.addText(`3. 현장 주요 지적 및 조치 사례 (${month})`, { x: 1.0, y: 0.8, w: 11.3, h: 0.5, fontSize: 24, bold: true, color: C_NAVY });
 
     const sample = records[0];
     if (sample) {
@@ -205,7 +205,7 @@
 
     // ── 슬라이드 5: 데이터 기반 핵심 시사점 및 대책 (자동 도출) ──
     const s5 = pptx.addSlide();
-    s5.addText('4. 데이터 기반 종합 시사점 및 대책', { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 26, bold: true, color: C_NAVY });
+    s5.addText(`4. 데이터 기반 종합 시사점 및 대책 (${month})`, { x: 1.0, y: 0.8, w: 11.3, h: 0.6, fontSize: 24, bold: true, color: C_NAVY });
 
     const insights = extractInsights(records);
     const insightLines = insights.map((msg, i) => `${i + 1}. ${msg}`).join('\n\n');
@@ -217,7 +217,8 @@
     });
 
     // 파일 내보내기 (모바일/PC 공용 안전 Blob 다운로드)
-    const filename = `안전회의_패트롤부적합분석_${month}_${siteName}.pptx`;
+    const safeMonthStr = (month || '전체기간').replace(/[\s~:\/\\]+/g, '_');
+    const filename = `안전회의_패트롤부적합분석_${safeMonthStr}_${siteName}.pptx`;
     const pptxBlob = await pptx.write({ outputType: 'blob' });
     const mimeBlob = new Blob([pptxBlob], { 
       type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' 

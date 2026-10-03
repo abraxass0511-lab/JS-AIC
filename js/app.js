@@ -1,6 +1,6 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261003_6';
-import { store } from './store.js?v=20261003_6';
-import { processImageFile } from './image-processor.js?v=20261003_6';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261004_1';
+import { store } from './store.js?v=20261004_1';
+import { processImageFile } from './image-processor.js?v=20261004_1';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -10,9 +10,12 @@ let pinInput = '';
 let targetFixRecord = null;
 let fixPhotoData = null;
 let recordViewMode = 'card'; // 'card' or 'table'
-let listPeriodMode = 'month'; // 'month' or 'range'
-let exportPeriodMode = 'month'; // 'month' or 'range'
+let listPeriodMode = 'month'; // 'all', 'month', or 'range'
+let exportPeriodMode = 'month'; // 'all', 'month', or 'range'
+let eduPeriodMode = 'month'; // 'all', 'month', or 'range'
 let currentLoadedRecords = [];
+let currentEduRecords = [];
+let currentEduPeriodLabel = '';
 
 // ── App Init ──
 window.addEventListener('DOMContentLoaded', async () => {
@@ -28,6 +31,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   if ($('#selListMonth')) $('#selListMonth').value = curMonth;
   if ($('#txtListStartDate')) $('#txtListStartDate').value = firstDay;
   if ($('#txtListEndDate')) $('#txtListEndDate').value = today;
+
+  if ($('#selEduMonth')) $('#selEduMonth').value = curMonth;
+  if ($('#txtEduStartDate')) $('#txtEduStartDate').value = firstDay;
+  if ($('#txtEduEndDate')) $('#txtEduEndDate').value = today;
 
   if ($('#selExportMonth')) $('#selExportMonth').value = curMonth;
   if ($('#txtExportStartDate')) $('#txtExportStartDate').value = firstDay;
@@ -378,7 +385,10 @@ function bindEvents() {
       let records = [];
       let periodLabel = '';
 
-      if (exportPeriodMode === 'month') {
+      if (exportPeriodMode === 'all') {
+        records = await store.listAll();
+        periodLabel = '전체누적';
+      } else if (exportPeriodMode === 'month') {
         const bucket = $('#selExportMonth').value;
         if (!bucket) {
           toast('대상 월을 선택해주세요.', 'danger');
@@ -476,7 +486,10 @@ function bindEvents() {
       let records = [];
       let periodLabel = '';
 
-      if (exportPeriodMode === 'month') {
+      if (exportPeriodMode === 'all') {
+        records = await store.listAll();
+        periodLabel = '전체 누적 기간';
+      } else if (exportPeriodMode === 'month') {
         const bucket = $('#selExportMonth').value;
         if (!bucket) {
           toast('대상 월을 선택해주세요.', 'danger');
@@ -570,11 +583,24 @@ function bindEvents() {
     }
   });
 
-  // 대장 목록 기간 선택 모드 전환 (월별 vs 직접지정)
+  // ── 대장 목록 기간 선택 모드 전환 (전체 vs 월별 vs 직접지정) ──
+  $('#btnPeriodModeAll')?.addEventListener('click', () => {
+    listPeriodMode = 'all';
+    $('#btnPeriodModeAll')?.classList.add('selected');
+    $('#btnPeriodModeMonth')?.classList.remove('selected');
+    $('#btnPeriodModeRange')?.classList.remove('selected');
+    if ($('#boxListPeriodAll')) $('#boxListPeriodAll').style.display = 'flex';
+    if ($('#boxListPeriodMonth')) $('#boxListPeriodMonth').style.display = 'none';
+    if ($('#boxListPeriodRange')) $('#boxListPeriodRange').style.display = 'none';
+    renderRecordList();
+  });
+
   $('#btnPeriodModeMonth')?.addEventListener('click', () => {
     listPeriodMode = 'month';
     $('#btnPeriodModeMonth')?.classList.add('selected');
+    $('#btnPeriodModeAll')?.classList.remove('selected');
     $('#btnPeriodModeRange')?.classList.remove('selected');
+    if ($('#boxListPeriodAll')) $('#boxListPeriodAll').style.display = 'none';
     if ($('#boxListPeriodMonth')) $('#boxListPeriodMonth').style.display = 'flex';
     if ($('#boxListPeriodRange')) $('#boxListPeriodRange').style.display = 'none';
     renderRecordList();
@@ -583,21 +609,75 @@ function bindEvents() {
   $('#btnPeriodModeRange')?.addEventListener('click', () => {
     listPeriodMode = 'range';
     $('#btnPeriodModeRange')?.classList.add('selected');
+    $('#btnPeriodModeAll')?.classList.remove('selected');
     $('#btnPeriodModeMonth')?.classList.remove('selected');
+    if ($('#boxListPeriodAll')) $('#boxListPeriodAll').style.display = 'none';
     if ($('#boxListPeriodMonth')) $('#boxListPeriodMonth').style.display = 'none';
     if ($('#boxListPeriodRange')) $('#boxListPeriodRange').style.display = 'flex';
     renderRecordList();
   });
 
+  $('#btnQueryAll')?.addEventListener('click', () => renderRecordList());
   $('#btnQueryMonth')?.addEventListener('click', () => renderRecordList());
   $('#btnQueryRange')?.addEventListener('click', () => renderRecordList());
   $('#selListMonth')?.addEventListener('change', () => renderRecordList());
 
-  // 엑셀/PPT 내보내기 기간 선택 모드 전환 (월별 vs 직접지정)
+  // ── 1페이지 교육자료 대상 기간 선택 모드 전환 (전체 vs 월별 vs 직접지정) ──
+  $('#btnEduModeAll')?.addEventListener('click', () => {
+    eduPeriodMode = 'all';
+    $('#btnEduModeAll')?.classList.add('selected');
+    $('#btnEduModeMonth')?.classList.remove('selected');
+    $('#btnEduModeRange')?.classList.remove('selected');
+    if ($('#boxEduPeriodAll')) $('#boxEduPeriodAll').style.display = 'block';
+    if ($('#boxEduPeriodMonth')) $('#boxEduPeriodMonth').style.display = 'none';
+    if ($('#boxEduPeriodRange')) $('#boxEduPeriodRange').style.display = 'none';
+    populateEduOptions();
+  });
+
+  $('#btnEduModeMonth')?.addEventListener('click', () => {
+    eduPeriodMode = 'month';
+    $('#btnEduModeMonth')?.classList.add('selected');
+    $('#btnEduModeAll')?.classList.remove('selected');
+    $('#btnEduModeRange')?.classList.remove('selected');
+    if ($('#boxEduPeriodAll')) $('#boxEduPeriodAll').style.display = 'none';
+    if ($('#boxEduPeriodMonth')) $('#boxEduPeriodMonth').style.display = 'flex';
+    if ($('#boxEduPeriodRange')) $('#boxEduPeriodRange').style.display = 'none';
+    populateEduOptions();
+  });
+
+  $('#btnEduModeRange')?.addEventListener('click', () => {
+    eduPeriodMode = 'range';
+    $('#btnEduModeRange')?.classList.add('selected');
+    $('#btnEduModeAll')?.classList.remove('selected');
+    $('#btnEduModeMonth')?.classList.remove('selected');
+    if ($('#boxEduPeriodAll')) $('#boxEduPeriodAll').style.display = 'none';
+    if ($('#boxEduPeriodMonth')) $('#boxEduPeriodMonth').style.display = 'none';
+    if ($('#boxEduPeriodRange')) $('#boxEduPeriodRange').style.display = 'flex';
+    populateEduOptions();
+  });
+
+  $('#selEduMonth')?.addEventListener('change', () => populateEduOptions());
+  $('#txtEduStartDate')?.addEventListener('change', () => populateEduOptions());
+  $('#txtEduEndDate')?.addEventListener('change', () => populateEduOptions());
+  $('#selEduRecord')?.addEventListener('change', () => updateEduPreview());
+
+  // ── 엑셀/PPT 내보내기 기간 선택 모드 전환 (전체 vs 월별 vs 직접지정) ──
+  $('#btnExportModeAll')?.addEventListener('click', () => {
+    exportPeriodMode = 'all';
+    $('#btnExportModeAll')?.classList.add('selected');
+    $('#btnExportModeMonth')?.classList.remove('selected');
+    $('#btnExportModeRange')?.classList.remove('selected');
+    if ($('#boxExportPeriodAll')) $('#boxExportPeriodAll').style.display = 'block';
+    if ($('#boxExportPeriodMonth')) $('#boxExportPeriodMonth').style.display = 'none';
+    if ($('#boxExportPeriodRange')) $('#boxExportPeriodRange').style.display = 'none';
+  });
+
   $('#btnExportModeMonth')?.addEventListener('click', () => {
     exportPeriodMode = 'month';
     $('#btnExportModeMonth')?.classList.add('selected');
+    $('#btnExportModeAll')?.classList.remove('selected');
     $('#btnExportModeRange')?.classList.remove('selected');
+    if ($('#boxExportPeriodAll')) $('#boxExportPeriodAll').style.display = 'none';
     if ($('#boxExportPeriodMonth')) $('#boxExportPeriodMonth').style.display = 'block';
     if ($('#boxExportPeriodRange')) $('#boxExportPeriodRange').style.display = 'none';
   });
@@ -605,34 +685,35 @@ function bindEvents() {
   $('#btnExportModeRange')?.addEventListener('click', () => {
     exportPeriodMode = 'range';
     $('#btnExportModeRange')?.classList.add('selected');
+    $('#btnExportModeAll')?.classList.remove('selected');
     $('#btnExportModeMonth')?.classList.remove('selected');
+    if ($('#boxExportPeriodAll')) $('#boxExportPeriodAll').style.display = 'none';
     if ($('#boxExportPeriodMonth')) $('#boxExportPeriodMonth').style.display = 'none';
     if ($('#boxExportPeriodRange')) $('#boxExportPeriodRange').style.display = 'flex';
   });
 
-  // 대장 목록 뷰 모드 토글 (카드 vs 엑셀 표)
-  const toggleBtn = $('#btnToggleViewMode');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      recordViewMode = recordViewMode === 'card' ? 'table' : 'card';
-      if (recordViewMode === 'table') {
-        $('#recordListContainer').style.display = 'none';
-        $('#recordTableContainer').style.display = 'block';
-        toggleBtn.textContent = '📋 카드형으로 보기';
-        toggleBtn.style.background = '#fef3c7';
-        toggleBtn.style.borderColor = '#fde047';
-        toggleBtn.style.color = '#854d0e';
-      } else {
-        $('#recordListContainer').style.display = 'flex';
-        $('#recordTableContainer').style.display = 'none';
-        toggleBtn.textContent = '📊 엑셀 표로 보기';
-        toggleBtn.style.background = '#eff6ff';
-        toggleBtn.style.borderColor = '#bfdbfe';
-        toggleBtn.style.color = '#1e40af';
-      }
-      renderRecordList();
-    });
-  }
+  // ── 대장 목록 뷰 모드 토글 (카드 vs 엑셀 표) ──
+  $('#btnViewCard')?.addEventListener('click', () => {
+    recordViewMode = 'card';
+    $('#recordListContainer').style.display = 'flex';
+    $('#recordTableContainer').style.display = 'none';
+    $('#btnViewCard').classList.remove('btn-outline');
+    $('#btnViewCard').classList.add('btn-primary');
+    $('#btnViewTable').classList.remove('btn-primary');
+    $('#btnViewTable').classList.add('btn-outline');
+    renderRecordList();
+  });
+
+  $('#btnViewTable')?.addEventListener('click', () => {
+    recordViewMode = 'table';
+    $('#recordListContainer').style.display = 'none';
+    $('#recordTableContainer').style.display = 'block';
+    $('#btnViewTable').classList.remove('btn-outline');
+    $('#btnViewTable').classList.add('btn-primary');
+    $('#btnViewCard').classList.remove('btn-primary');
+    $('#btnViewCard').classList.add('btn-outline');
+    renderRecordList();
+  });
 
   const refreshBtn = $('#btnRefreshList');
   if (refreshBtn) {
@@ -704,12 +785,14 @@ async function updateEduPreview() {
   const recordId = sel?.value;
   if (!recordId) return;
 
-  const rec = currentLoadedRecords.find(r => r.id === recordId) || (await store.listMonth(monthStr())).find(r => r.id === recordId);
+  const rec = currentEduRecords.find(r => r.id === recordId) || currentLoadedRecords.find(r => r.id === recordId);
   if (!rec) return;
 
   // 관련 법령 핵심 수칙 찾기 (taxonomy.categories에서 item 검색)
   let rules = [];
-  const allItems = store.taxonomy.categories.list.flatMap(c => c.items);
+  const allItems = (store.taxonomy && store.taxonomy.categories) 
+    ? store.taxonomy.categories.list.flatMap(c => c.items)
+    : [];
   const foundItem = allItems.find(it => it.name === rec.item);
   if (foundItem && foundItem.rules) {
     rules = foundItem.rules;
@@ -724,16 +807,23 @@ async function updateEduPreview() {
     afterUrl = await store.photoURL(rec.fix.photo);
   }
 
+  // 선택된 기간 내의 해당 위험유형 통계 자동 계산
+  const totalCount = currentEduRecords.length || 1;
+  const sameTypeCount = currentEduRecords.filter(r => r.type === rec.type).length;
+  const typePct = Math.round((sameTypeCount / totalCount) * 100);
+  const statsText = `선택 기간(${currentEduPeriodLabel}) 총 ${totalCount}건 중 '${rec.type}' 위험요인이 ${sameTypeCount}건(${typePct}%)을 차지했습니다. 작업 전 철저한 예방 및 안전수칙 준수가 요구됩니다.`;
+
   const html = window.SafeOnePage.renderTemplate({
     title: `${rec.item} 안전수칙 및 개선 사례`,
     site: rec.site,
     date: rec.inspectedDate,
+    period: currentEduPeriodLabel,
     beforePhoto: beforeUrl,
     afterPhoto: afterUrl,
     itemName: `${rec.item} (${rec.agent || '부속자재'}) ${rec.content}`,
     law: (rec.basis && rec.basis.law) || (foundItem && foundItem.law) || '산업안전보건기준에 관한 규칙',
     rules,
-    statsText: `최근 패트롤 점검 결과 '${rec.type}' 위험요인이 빈번히 지적되고 있습니다. 작업 전 철저한 점검을 당부드립니다.`,
+    statsText,
     inspector: rec.inspector
   });
 
@@ -743,12 +833,40 @@ async function updateEduPreview() {
 async function populateEduOptions() {
   const sel = $('#selEduRecord');
   if (!sel) return;
-  const curMonth = monthStr();
-  const records = await store.listMonth(curMonth);
+
+  let records = [];
+  let periodLabel = '';
+
+  try {
+    if (eduPeriodMode === 'all') {
+      records = await store.listAll();
+      periodLabel = '전체 누적 기간';
+    } else if (eduPeriodMode === 'month') {
+      const curMonth = $('#selEduMonth')?.value || monthStr();
+      records = await store.listMonth(curMonth);
+      periodLabel = curMonth;
+    } else {
+      const start = $('#txtEduStartDate')?.value || `${monthStr()}-01`;
+      const end = $('#txtEduEndDate')?.value || todayStr();
+      records = await store.listPeriod(start, end);
+      periodLabel = `${start} ~ ${end}`;
+    }
+  } catch (e) {
+    console.error('Edu list query error:', e);
+    records = [];
+  }
+
+  currentEduRecords = records;
+  currentEduPeriodLabel = periodLabel;
   
   if (!records.length) {
-    sel.innerHTML = '<option value="">등록된 부적합 내역이 없습니다.</option>';
-    $('#eduContainer').innerHTML = '';
+    sel.innerHTML = '<option value="">선택한 기간에 등록된 부적합 내역이 없습니다.</option>';
+    $('#eduContainer').innerHTML = `
+      <div style="text-align: center; padding: 30px; color: var(--gray-500); font-size: 0.9rem;">
+        선택한 기간(<strong>${periodLabel}</strong>)에 등록된 부적합 데이터가 없습니다.<br>
+        다른 기간을 선택하시거나 부적합 사항을 등록해주세요.
+      </div>
+    `;
     return;
   }
 
@@ -866,7 +984,9 @@ async function renderRecordList() {
 
   let records = [];
   try {
-    if (listPeriodMode === 'month') {
+    if (listPeriodMode === 'all') {
+      records = await store.listAll();
+    } else if (listPeriodMode === 'month') {
       const m = $('#selListMonth')?.value || monthStr();
       records = await store.listMonth(m);
     } else {
@@ -882,7 +1002,9 @@ async function renderRecordList() {
   currentLoadedRecords = records;
 
   if (!records.length) {
-    const msg = listPeriodMode === 'month' ? '해당 월에 등록된 내역이 없습니다.' : '선택한 기간에 등록된 내역이 없습니다.';
+    let msg = '선택한 기간에 등록된 내역이 없습니다.';
+    if (listPeriodMode === 'all') msg = '누적된 부적합 내역이 없습니다.';
+    else if (listPeriodMode === 'month') msg = '해당 월에 등록된 내역이 없습니다.';
     if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-400);">${msg}</div>`;
     if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:30px; color:var(--gray-400);">${msg}</td></tr>`;
     return;

@@ -56,6 +56,7 @@ class WorkerBackend {
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`읽기 실패 (${r.status})`);
     const j = await r.json();
+    if (Array.isArray(j)) return { data: j };
     let text;
     if (j.content && j.encoding === 'base64') text = b64ToUtf8(j.content);
     else { const raw = await this._fetch(this._u(path, '&raw=1')); text = await raw.text(); } // 1MB 초과 파일
@@ -230,6 +231,41 @@ export const store = {
       const d = r.inspectedDate || '';
       return d >= startDate && d <= endDate;
     });
+  },
+  async listAllBuckets() {
+    const buckets = new Set([monthStr()]);
+    if (this.mode === 'github') {
+      const curY = new Date().getFullYear();
+      for (const y of [curY - 1, curY, curY + 1]) {
+        try {
+          const res = await this.backend.readJSON(`data/${y}/index`);
+          if (res && res.data && Array.isArray(res.data)) {
+            res.data.forEach(item => {
+              if (item.name && item.name.endsWith('.json')) {
+                buckets.add(item.name.replace('.json', ''));
+              }
+            });
+          }
+        } catch (e) {}
+      }
+    } else {
+      try {
+        const db = await this.backend.dbp;
+        const tx = db.transaction('files', 'readonly');
+        const keys = await tx.objectStore('files').getAllKeys();
+        keys.forEach(k => {
+          if (typeof k === 'string' && k.includes('/index/')) {
+            const m = k.match(/(\d{4}-\d{2})\.json$/);
+            if (m) buckets.add(m[1]);
+          }
+        });
+      } catch (e) {}
+    }
+    return Array.from(buckets).sort().reverse();
+  },
+  async listAll(force = false) {
+    const buckets = await this.listAllBuckets();
+    return this.listMonths(buckets, force);
   },
   async getRecord(bucket, id) {
     const list = await this.listMonth(bucket);
