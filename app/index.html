@@ -184,20 +184,20 @@
               <span>📅</span> <span>조회 기간 설정</span>
             </div>
             <div style="display: flex; gap: 4px;">
-              <button type="button" id="btnPeriodModeAll" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
-              <button type="button" id="btnPeriodModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
+              <button type="button" id="btnPeriodModeAll" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
+              <button type="button" id="btnPeriodModeMonth" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
               <button type="button" id="btnPeriodModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
             </div>
           </div>
 
           <!-- 전체 선택 안내 -->
-          <div id="boxListPeriodAll" style="display: none; align-items: center; justify-content: space-between; padding: 4px 2px;">
+          <div id="boxListPeriodAll" style="display: flex; align-items: center; justify-content: space-between; padding: 4px 2px;">
             <span style="font-size: 0.82rem; color: var(--gray-600);">누적된 모든 기간의 부적합 데이터를 조회합니다.</span>
             <button type="button" id="btnQueryAll" class="btn btn-primary" style="padding: 5px 12px; font-size: 0.8rem;">전체 조회</button>
           </div>
 
           <!-- 월별 선택기 -->
-          <div id="boxListPeriodMonth" style="display: flex; gap: 8px; align-items: center;">
+          <div id="boxListPeriodMonth" style="display: none; gap: 8px; align-items: center;">
             <input type="month" id="selListMonth" class="form-control" style="padding: 6px 10px; font-size: 0.85rem; flex: 1;">
             <button type="button" id="btnQueryMonth" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.82rem; white-space: nowrap;">조회</button>
           </div>
@@ -273,15 +273,15 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
             <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.82rem;">📅 분석 및 교육 대상 기간</label>
             <div style="display: flex; gap: 4px;">
-              <button type="button" id="btnEduModeAll" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
-              <button type="button" id="btnEduModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
+              <button type="button" id="btnEduModeAll" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
+              <button type="button" id="btnEduModeMonth" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
               <button type="button" id="btnEduModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
             </div>
           </div>
-          <div id="boxEduPeriodAll" style="display: none; font-size: 0.82rem; color: var(--gray-600); padding: 4px 0;">
+          <div id="boxEduPeriodAll" style="display: block; font-size: 0.82rem; color: var(--gray-600); padding: 4px 0;">
             전체 누적된 부적합 데이터 및 종합 통계를 기반으로 교육자료를 생성합니다.
           </div>
-          <div id="boxEduPeriodMonth" style="display: flex; gap: 8px; align-items: center;">
+          <div id="boxEduPeriodMonth" style="display: none; gap: 8px; align-items: center;">
             <input type="month" id="selEduMonth" class="form-control" style="padding: 6px 10px; font-size: 0.85rem; flex: 1;">
           </div>
           <div id="boxEduPeriodRange" style="display: none; gap: 6px; align-items: center; flex-wrap: wrap;">
@@ -328,17 +328,17 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
             <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.85rem;">📅 대상 기간 선택</label>
             <div style="display: flex; gap: 4px;">
-              <button type="button" id="btnExportModeAll" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
-              <button type="button" id="btnExportModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
+              <button type="button" id="btnExportModeAll" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
+              <button type="button" id="btnExportModeMonth" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
               <button type="button" id="btnExportModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
             </div>
           </div>
 
-          <div id="boxExportPeriodAll" style="display: none; padding: 6px 2px; font-size: 0.85rem; color: var(--primary); font-weight: 600;">
+          <div id="boxExportPeriodAll" style="display: block; padding: 6px 2px; font-size: 0.85rem; color: var(--primary); font-weight: 600;">
             🌟 전체 누적 데이터 (모든 등록 기간의 부적합 데이터 포함)
           </div>
 
-          <div id="boxExportPeriodMonth">
+          <div id="boxExportPeriodMonth" style="display: none;">
             <input type="month" id="selExportMonth" class="form-control">
           </div>
 

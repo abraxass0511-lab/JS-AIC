@@ -1,7 +1,7 @@
 // 데이터 저장 계층
 // - 데모 모드: 이 기기 브라우저(IndexedDB)에만 저장 → 설치 전 체험·테스트용
 // - GitHub 모드: Cloudflare Worker를 거쳐 GitHub 비공개 저장소에 저장
-import { openDB, idbGet, idbPut, idbDel, idbClear, utf8ToB64, b64ToUtf8, blobToB64, makeId, sleep } from './util.js';
+import { openDB, idbGet, idbPut, idbDel, idbClear, utf8ToB64, b64ToUtf8, blobToB64, makeId, sleep, monthStr, todayStr } from './util.js?v=20261004_2';
 
 export class AuthError extends Error { constructor() { super('PIN이 올바르지 않습니다'); } }
 export class ConflictError extends Error { constructor() { super('동시에 수정되어 다시 시도합니다'); } }
