@@ -226,7 +226,11 @@ function showSaveSheet(blob, filename, env) {
     sheet.appendChild(btnSave);
 
     const file = new File([blob], filename, { type: blob.type });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    const extLower = ext.toLowerCase();
+    // 안드로이드 크롬은 Web Share로 이미지·PDF·텍스트만 허용 (xlsx/pptx는 'Permission denied'로 거부됨)
+    const ANDROID_SHAREABLE = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf', 'txt', 'csv'];
+    const shareAllowed = !env.isAndroid || ANDROID_SHAREABLE.includes(extLower);
+    if (shareAllowed && navigator.canShare && navigator.canShare({ files: [file] })) {
       const btnShare = document.createElement('button');
       btnShare.style.cssText = btnCss + 'background:#fee500;color:#191919;';
       btnShare.textContent = '📤 공유하기 (카카오톡 · 드라이브 등)';
@@ -235,10 +239,22 @@ function showSaveSheet(blob, filename, env) {
           await navigator.share({ files: [file], title: filename });
           close();
         } catch (e) {
-          if (e && e.name !== 'AbortError') alert('공유에 실패했습니다: ' + e.message);
+          if (e && e.name === 'AbortError') return;
+          if (e && e.name === 'NotAllowedError') {
+            anchorDownload(url, filename);
+            alert('이 기기에서는 해당 파일 형식의 바로 공유가 지원되지 않아 휴대폰에 저장했습니다.\n카카오톡 채팅방 [+] → [파일]에서 다운로드 폴더의 파일을 첨부해 주세요.');
+            close();
+            return;
+          }
+          alert('공유에 실패했습니다: ' + e.message);
         }
       };
       sheet.appendChild(btnShare);
+    } else if (env.isAndroid) {
+      const guide = document.createElement('div');
+      guide.style.cssText = 'margin-top:10px;font-size:0.83rem;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;line-height:1.55;';
+      guide.innerHTML = `💬 <b>카카오톡으로 보내려면</b><br>① [휴대폰에 저장] → ② 카카오톡 채팅방 <b>[+] → [파일]</b> → ③ <b>다운로드</b> 폴더에서 <b>${ext}</b> 파일 선택<br><span style="color:#94a3b8;">※ 안드로이드 크롬은 ${ext} 파일의 바로 공유를 지원하지 않습니다.</span>`;
+      sheet.appendChild(guide);
     }
   }
 
