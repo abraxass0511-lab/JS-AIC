@@ -1,6 +1,6 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js';
-import { store } from './store.js';
-import { processImageFile } from './image-processor.js';
+import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_2';
+import { store } from './store.js?v=20261003_2';
+import { processImageFile } from './image-processor.js?v=20261003_2';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
