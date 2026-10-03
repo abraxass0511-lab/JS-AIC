@@ -1,0 +1,4 @@
+# .gitignore for SafePatrol
+node_modules/
+.system_generated/
+*.log
