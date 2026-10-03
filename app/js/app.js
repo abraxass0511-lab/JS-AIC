@@ -1,11 +1,13 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261004_1';
-import { store } from './store.js?v=20261004_1';
-import { processImageFile } from './image-processor.js?v=20261004_1';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261004_2';
+import { store } from './store.js?v=20261004_2';
+import { processImageFile } from './image-processor.js?v=20261004_2';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
 let selectedCauses = new Set();
 let smartResult = null;
+let smartRecommendationApplied = false;
+let appliedSmartResult = null;
 let pinInput = '';
 let targetFixRecord = null;
 let fixPhotoData = null;
@@ -44,10 +46,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     await store.init();
     await store.seedDemoIfEmpty();
     
-    // 자동분류기 인스턴스 초기화
-    if (window.SafeClassifier && store.taxonomy && store.keywords) {
-      classifier = window.SafeClassifier.createClassifier(store.taxonomy, store.keywords);
-    }
+    // 자동분류기 인스턴스 초기화 (강화학습 가중치 포함)
+    reinitClassifier();
 
     // 기본 현장 셋업이 비어있다면 샘플 현장 3개 등록
     if (!store.sites || !store.sites.length) {
@@ -72,6 +72,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+function reinitClassifier() {
+  if (window.SafeClassifier && store.taxonomy && store.keywords) {
+    classifier = window.SafeClassifier.createClassifier(store.taxonomy, store.keywords, store.rlWeights);
+  }
+}
+
 // ── PIN Authentication Flow ──
 function checkAuth() {
   if (!store.user) {
@@ -80,6 +86,7 @@ function checkAuth() {
     $('#userBadge').style.display = 'flex';
     $('#userName').textContent = `${store.user.name} (${store.user.role === 'admin' ? '관리자' : '점검자'})`;
     hidePinModal();
+    reinitClassifier();
     loadDraft();
   }
 }
@@ -236,7 +243,10 @@ function bindEvents() {
     if (res && res.matched) {
       smartResult = res.result;
       const x = res.result;
-      $('#smartDesc').innerHTML = `<strong>${x.종류} › ${x.항목}</strong> (${x.유형})<br><small style="color:var(--gray-600);">${x.산업안전보건법}</small>`;
+      const rlBadge = (res.rlBoost && res.rlBoost > 0)
+        ? `<span class="badge" style="background:#fef08a; color:#854d0e; font-weight:700; margin-left:6px;">⚡ 강화학습 추천 (+${res.rlBoost})</span>`
+        : '';
+      $('#smartDesc').innerHTML = `<strong>${x.종류} › ${x.항목}</strong> (${x.유형})${rlBadge}<br><small style="color:var(--gray-600);">${x.산업안전보건법}</small>`;
       $('#smartTags').innerHTML = `
         <span class="badge primary">기인물: ${x.기인물.join(', ') || '-'}</span>
         <span class="badge">상태: ${x.상태 || '-'}</span>
@@ -252,6 +262,8 @@ function bindEvents() {
   // Apply Smart Recommendation
   $('#btnApplySmart').addEventListener('click', () => {
     if (!smartResult) return;
+    smartRecommendationApplied = true;
+    appliedSmartResult = { ...smartResult };
     $('#txtKind').value = smartResult.종류 || '';
     $('#txtItem').value = smartResult.항목 || '';
     $('#txtAgent').value = (smartResult.기인물 && smartResult.기인물[0]) || '';
@@ -266,7 +278,7 @@ function bindEvents() {
     updateCauseChips();
 
     $('#smartClassifyBox').classList.remove('active');
-    toast('스마트 자동분류가 적용되었습니다.', 'success');
+    toast('스마트 자동분류가 적용되었습니다. 필요 시 수정하시면 AI가 학습합니다.', 'success');
     saveDraft();
   });
 
@@ -361,6 +373,30 @@ function bindEvents() {
         workName: [record.workName],
         workGroup: [record.workGroup]
       });
+
+      // ── 사용자 피드백 기반 강화학습(Online Bandit RL) 훈련 및 가중치 저장 ──
+      if (classifier && classifier.trainFeedback) {
+        try {
+          const fb = classifier.trainFeedback({
+            inputContent: record.content,
+            recommendedResult: smartRecommendationApplied ? appliedSmartResult : null,
+            finalSavedRecord: record,
+            applied: smartRecommendationApplied
+          });
+          if (fb) {
+            await store.saveRLWeights(classifier.getWeightsData()).catch(e => console.warn('Save RL error:', e));
+            if (fb.diffs && fb.diffs.length) {
+              toast(`🧠 추천 수정사항(${fb.diffs.length}건)을 분석하여 오답 감점 및 정답 가중치를 강화학습했습니다!`, 'info', 3200);
+            } else if (fb.reward >= 1.0) {
+              toast(`🎯 추천 분류가 완벽 적중하여 정확도 보상(+${fb.reward.toFixed(1)}) 가중치가 강화되었습니다!`, 'success', 3000);
+            }
+          }
+        } catch (rlErr) {
+          console.warn('RL feedback error:', rlErr);
+        }
+      }
+      smartRecommendationApplied = false;
+      appliedSmartResult = null;
 
       toast('부적합 사항이 정상 등록되었습니다!', 'success');
       clearForm();
@@ -905,6 +941,8 @@ function renderPhotoPreviews() {
 function clearForm() {
   currentPhotos = [];
   selectedCauses.clear();
+  smartRecommendationApplied = false;
+  appliedSmartResult = null;
   renderPhotoPreviews();
   updateCauseChips();
   $('#txtContent').value = '';
