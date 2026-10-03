@@ -50,12 +50,12 @@
         <!-- 2. 사진 등록 (갤러리/기기 사진 선택) -->
         <div class="form-group">
           <label class="form-label">부적합 사진 (갤러리 선택)<span class="required">*</span></label>
-          <div id="photoDropArea" class="photo-uploader">
+          <label for="filePhotos" id="photoDropArea" class="photo-uploader" style="cursor: pointer; display: block;">
             <span style="font-size: 1.8rem; display: block; margin-bottom: 4px;">📷</span>
             <span style="font-weight: 600; font-size: 0.95rem; color: var(--primary);">사진 불러오기</span>
             <span style="display: block; font-size: 0.8rem; color: var(--gray-400); margin-top: 4px;">대표 1장 + 추가 2장 (자동 압축 및 촬영일자 인식)</span>
             <input type="file" id="filePhotos" accept="image/*" multiple style="display: none;">
-          </div>
+          </label>
           <div id="photoPreviews" class="photo-preview-grid"></div>
         </div>
 
@@ -283,8 +283,14 @@
     <div class="pin-card">
       <div style="font-size: 2rem; margin-bottom: 6px;">🔐</div>
       <h3 style="font-size: 1.2rem; color: var(--gray-900);">SafePatrol PIN 로그인</h3>
-      <p style="font-size: 0.82rem; color: var(--gray-600); margin-top: 4px;">지정된 6자리 개인 PIN을 입력하세요</p>
+      <p style="font-size: 0.82rem; color: var(--gray-600); margin-top: 4px;">지정된 6자리 개인 PIN을 입력하거나 아래에서 바로 선택하세요</p>
       
+      <div style="display: flex; gap: 6px; margin: 14px 0 8px 0;">
+        <button type="button" class="btn btn-secondary btn-quick-pin" data-pin="111111" style="flex: 1; padding: 7px 4px; font-size: 0.8rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;">점검자1<br><span style="font-size:0.7rem; color:#6b7280;">111111</span></button>
+        <button type="button" class="btn btn-secondary btn-quick-pin" data-pin="222222" style="flex: 1; padding: 7px 4px; font-size: 0.8rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;">점검자2<br><span style="font-size:0.7rem; color:#6b7280;">222222</span></button>
+        <button type="button" class="btn btn-secondary btn-quick-pin" data-pin="000000" style="flex: 1; padding: 7px 4px; font-size: 0.8rem; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;">관리자<br><span style="font-size:0.7rem; color:#6b7280;">000000</span></button>
+      </div>
+
       <div id="pinDots" class="pin-display">······</div>
       
       <div class="pin-keypad">

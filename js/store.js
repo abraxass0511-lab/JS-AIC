@@ -123,13 +123,24 @@ export const store = {
     const cfg = window.SAFEPATROL_CONFIG || {};
     this.mode = cfg.workerUrl ? 'github' : 'demo';
     this.backend = this.mode === 'github' ? new WorkerBackend(cfg.workerUrl) : new DemoBackend();
-    const [tax, kw] = await Promise.all([
-      fetch('data/taxonomy.json').then(r => r.json()),
-      fetch('data/keywords.json').then(r => r.json()),
-    ]);
+    let tax = null, kw = null;
+    try {
+      [tax, kw] = await Promise.all([
+        fetch('data/taxonomy.json').then(r => r.json()),
+        fetch('data/keywords.json').then(r => r.json()),
+      ]);
+    } catch (e) {
+      console.warn('Failed to load taxonomy/keywords:', e);
+    }
     this.taxonomy = tax; this.keywords = kw;
 
-    const pin = localStorage.getItem('sp_pin');
+    let pin = localStorage.getItem('sp_pin');
+    // 처음 방문 시 기본 데모 점검자1로 자동 로그인하여 즉시 테스트 가능하도록 지원
+    if (!pin && this.mode === 'demo') {
+      pin = '111111';
+      localStorage.setItem('sp_pin', pin);
+    }
+
     if (pin) {
       try { this.user = await this.backend.auth(pin); localStorage.setItem('sp_user', JSON.stringify(this.user)); }
       catch (e) {
@@ -161,13 +172,15 @@ export const store = {
     if (!this.custom.customValues) this.custom.customValues = {};
   },
   async saveSites(sites) {
-    const d = await rmw(this.backend, 'config/sites.json', () => ({ sites }), { sites: [] }, `[SafePatrol] 현장 설정 변경 (${this.user.name})`);
+    const author = (this.user && this.user.name) || '시스템';
+    const d = await rmw(this.backend, 'config/sites.json', () => ({ sites }), { sites: [] }, `[SafePatrol] 현장 설정 변경 (${author})`);
     this.sites = d.sites;
   },
   /** 직접입력 값 저장: { field: [value, ...] } */
   async addCustomValues(map) {
     const entries = Object.entries(map).filter(([, v]) => v && v.length);
     if (!entries.length) return;
+    const author = (this.user && this.user.name) || '시스템';
     const d = await rmw(this.backend, 'config/custom.json', cur => {
       cur.customValues = cur.customValues || {};
       entries.forEach(([f, vals]) => {
@@ -176,7 +189,7 @@ export const store = {
         cur.customValues[f] = [...set];
       });
       return cur;
-    }, { customValues: {} }, `[SafePatrol] 직접입력 값 추가 (${this.user.name})`);
+    }, { customValues: {} }, `[SafePatrol] 직접입력 값 추가 (${author})`);
     this.custom = d;
   },
 
@@ -205,15 +218,16 @@ export const store = {
   async saveRecord(rec, media, onStep = () => {}) {
     const isNew = !rec.id;
     const now = new Date().toISOString();
+    const author = (this.user && this.user.name) || '점검자';
     if (isNew) {
       rec.id = makeId(rec.inspectedDate);
       rec.bucket = rec.inspectedDate.slice(0, 7);
       rec.createdAt = now;
-      rec.inspector = this.user.name;
+      rec.inspector = author;
     }
     rec.updatedAt = now;
-    rec.updatedBy = this.user.name;
-    const msg = `[SafePatrol] ${isNew ? '등록' : '수정'} ${rec.id} (${this.user.name})`;
+    rec.updatedBy = author;
+    const msg = `[SafePatrol] ${isNew ? '등록' : '수정'} ${rec.id} (${author})`;
 
     // 1) 사진 업로드
     const photos = [];
@@ -255,7 +269,8 @@ export const store = {
   },
 
   async deleteRecord(rec) {
-    const msg = `[SafePatrol] 삭제 ${rec.id} (${this.user.name})`;
+    const author = (this.user && this.user.name) || '관리자';
+    const msg = `[SafePatrol] 삭제 ${rec.id} (${author})`;
     const d = await rmw(this.backend, indexPath(rec.bucket), cur => {
       cur.records = (cur.records || []).filter(r => r.id !== rec.id); return cur;
     }, { records: [] }, msg);
@@ -265,15 +280,96 @@ export const store = {
   },
 
   // ── 사진 ──
-  async photoBlob(path) { return this.backend.readBlob(path); },
+  async photoBlob(path) {
+    if (!path) return null;
+    if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:')) {
+      const res = await fetch(path);
+      return res.blob();
+    }
+    return this.backend.readBlob(path);
+  },
   async photoURL(path) {
     if (!path) return '';
+    if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
-    const url = URL.createObjectURL(await this.backend.readBlob(path));
-    this._photoCache.set(path, url);
-    return url;
+    try {
+      const blob = await this.backend.readBlob(path);
+      const url = URL.createObjectURL(blob);
+      this._photoCache.set(path, url);
+      return url;
+    } catch (e) {
+      return '';
+    }
   },
 
-  // ── 데모 전용 ──
+  // ── 데모 초기 샘플 자동 주입 ──
+  async seedDemoIfEmpty() {
+    if (this.mode !== 'demo') return;
+    const bucket = new Date().toISOString().slice(0, 7);
+    const existing = await this.listMonth(bucket);
+    if (!existing || existing.length === 0) {
+      const d1 = new Date().toISOString().slice(0, 10);
+      const sample1 = {
+        id: 'DEMO-' + Date.now().toString(36) + '-1',
+        bucket,
+        site: 'OO아파트 신축공사',
+        content: '비계시설 작업발판 안전난간대 미설치 및 단부 추락 방호조치 미흡',
+        location: '106동 5층 외부비계',
+        workName: '외부비계설치',
+        workGroup: '가설공사',
+        kind: '가설공사',
+        item: '비계',
+        agent: '비계',
+        type: '떨어짐',
+        condition: '안전난간 미설치',
+        action: '보호구 미착용',
+        causes: ['물적', '인적'],
+        workPlan: '미작성',
+        basis: { ra: '미반영', cp: '미반영', st: '미실시', guide: 'KOSHA G-1-2023', law: '제13조(안전난간의 구조 및 설치요건)' },
+        siteInfo: { progress: '45%', scale: '지하2층/지상25층 8개동', amount: '850억' },
+        inspectedDate: d1,
+        inspector: '점검자1',
+        status: '조치완료',
+        photos: ['samples/sample_before.jpg'],
+        fix: {
+          content: '비계 상단 안전난간 및 발판 즉시 보강 설치 완료 및 작업팀 TBM 안전교육 실시',
+          photo: 'samples/sample_after.jpg',
+          fixedDate: d1
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const sample2 = {
+        id: 'DEMO-' + Date.now().toString(36) + '-2',
+        bucket,
+        site: 'OO물류센터 신축공사',
+        content: '슬래브 개구부 단부 안전난간 및 덮개 미설치, 위험 경고표지 미부착',
+        location: '2층 하역장 인근 슬래브',
+        workName: '골조공사',
+        workGroup: '골조공사',
+        kind: '가설공사',
+        item: '개구부',
+        agent: '개구부',
+        type: '떨어짐',
+        condition: '개구부 방호조치 미흡',
+        action: '위험장소 접근',
+        causes: ['물적'],
+        workPlan: '작성',
+        basis: { ra: '반영', cp: '반영', st: '해당없음', guide: 'KOSHA G-2-2022', law: '제42조(추락 등의 위험 방지)' },
+        siteInfo: { progress: '62%', scale: '지상5층 연면적 6만㎡', amount: '620억' },
+        inspectedDate: d1,
+        inspector: '점검자2',
+        status: '미조치',
+        photos: ['samples/sample_before.jpg'],
+        fix: { content: '', photo: null },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await rmw(this.backend, indexPath(bucket), () => ({ records: [sample1, sample2] }), { records: [] });
+      this._monthCache.set(bucket, [sample1, sample2]);
+    }
+  },
+
+  // ── 데모 전용 리셋 ──
   async resetDemo() { if (this.mode === 'demo') { await this.backend.reset(); this._monthCache.clear(); this.sites = []; this.custom = { customValues: {} }; } },
 };

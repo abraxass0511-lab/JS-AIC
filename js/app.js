@@ -12,11 +12,19 @@ let fixPhotoData = null;
 
 // ── App Init ──
 window.addEventListener('DOMContentLoaded', async () => {
+  // 1. 이벤트 리스너를 가장 먼저 바인딩하여 모든 UI 상호작용 즉시 활성화
+  bindEvents();
+
+  // 초기 날짜 설정
+  if ($('#txtInspectDate')) $('#txtInspectDate').value = todayStr();
+  if ($('#selExportMonth')) $('#selExportMonth').value = monthStr();
+
   try {
     await store.init();
+    await store.seedDemoIfEmpty();
     
     // 자동분류기 인스턴스 초기화
-    if (window.SafeClassifier) {
+    if (window.SafeClassifier && store.taxonomy && store.keywords) {
       classifier = window.SafeClassifier.createClassifier(store.taxonomy, store.keywords);
     }
 
@@ -32,18 +40,14 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    bindEvents();
     renderSites();
-    populateDatalists();
+    if (store.taxonomy) populateDatalists();
     checkAuth();
-
-    // 초기 날짜 설정
-    $('#txtInspectDate').value = todayStr();
-    $('#selExportMonth').value = monthStr();
 
   } catch (err) {
     console.error('App init error:', err);
-    toast('시스템 초기화 중 오류가 발생했습니다.', 'danger');
+    toast('초기화 알림: ' + err.message, 'warning');
+    checkAuth();
   }
 });
 
@@ -133,6 +137,20 @@ function bindEvents() {
     }
   });
 
+  // Quick PIN buttons
+  $$('.btn-quick-pin').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pin = btn.dataset.pin;
+      try {
+        await store.login(pin);
+        toast(`반갑습니다, ${store.user.name}님`, 'success');
+        checkAuth();
+      } catch (e) {
+        toast(e.message, 'danger');
+      }
+    });
+  });
+
   // PIN Keypad
   $$('.pin-keypad .key-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -161,7 +179,11 @@ function bindEvents() {
   });
 
   // Photo Selector
-  $('#photoDropArea').addEventListener('click', () => $('#filePhotos').click());
+  $('#photoDropArea').addEventListener('click', (e) => {
+    if (e.target !== $('#filePhotos')) {
+      $('#filePhotos').click();
+    }
+  });
   $('#filePhotos').addEventListener('change', async (e) => {
     const files = [...e.target.files];
     if (!files.length) return;
