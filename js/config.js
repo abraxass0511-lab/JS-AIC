@@ -4,5 +4,5 @@
  * - workerUrl을 입력하면: Cloudflare Worker를 거쳐 GitHub 비공개 저장소(safepatrol-data-2026)와 실시간 동기화
  */
 window.SAFEPATROL_CONFIG = {
-  workerUrl: '' // 배포된 Cloudflare Worker 주소 (예: https://safepatrol-relay.<subdomain>.workers.dev)
+  workerUrl: 'https://safepatrol-relay.abraxass0511.workers.dev'
 };
