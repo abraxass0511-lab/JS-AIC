@@ -205,6 +205,32 @@ export const store = {
     const all = await Promise.all(buckets.map(b => this.listMonth(b, force)));
     return all.flat().sort((a, b) => (b.inspectedDate + b.createdAt).localeCompare(a.inspectedDate + a.createdAt));
   },
+  async listPeriod(startDate, endDate, force = false) {
+    if (!startDate && !endDate) return this.listMonth(monthStr(), force);
+    if (!startDate) startDate = '2020-01-01';
+    if (!endDate) endDate = '2099-12-31';
+
+    const startM = startDate.slice(0, 7);
+    const endM = endDate.slice(0, 7);
+    const buckets = [];
+
+    const startD = new Date(startM + '-01');
+    const endD = new Date(endM + '-01');
+    let cur = new Date(startD);
+
+    while (cur <= endD) {
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      buckets.push(`${y}-${m}`);
+      cur.setMonth(cur.getMonth() + 1);
+    }
+
+    const all = await this.listMonths(buckets, force);
+    return all.filter(r => {
+      const d = r.inspectedDate || '';
+      return d >= startDate && d <= endDate;
+    });
+  },
   async getRecord(bucket, id) {
     const list = await this.listMonth(bucket);
     return list.find(r => r.id === id) || null;
