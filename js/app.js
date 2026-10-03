@@ -1,6 +1,6 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_3';
-import { store } from './store.js?v=20261003_3';
-import { processImageFile } from './image-processor.js?v=20261003_3';
+import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_4';
+import { store } from './store.js?v=20261003_4';
+import { processImageFile } from './image-processor.js?v=20261003_4';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -547,6 +547,64 @@ function bindEvents() {
       toast('대장 목록을 새로고침했습니다.', 'info');
     });
   }
+
+  // 선택 일괄 삭제 (대량 삭제)
+  const btnDelSelected = $('#btnDeleteSelected');
+  if (btnDelSelected) {
+    btnDelSelected.addEventListener('click', async () => {
+      const checkedBoxes = Array.from(document.querySelectorAll('.chk-record-item:checked'));
+      if (!checkedBoxes.length) return;
+      const count = checkedBoxes.length;
+      if (!confirm(`선택한 ${count}건의 부적합 내역을 영구 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.`)) return;
+
+      toast(`${count}건의 부적합 데이터 삭제 중...`, 'info');
+      const curMonth = monthStr();
+      const records = await store.listMonth(curMonth);
+
+      for (const chk of checkedBoxes) {
+        const id = chk.dataset.id;
+        const rec = records.find(x => x.id === id);
+        if (rec) {
+          try { await store.deleteRecord(rec); } catch (e) { console.error('Delete error:', e); }
+        }
+      }
+      toast(`${count}건의 부적합 데이터가 삭제되었습니다.`, 'success');
+      renderRecordList();
+    });
+  }
+
+  // 테이블 전체 선택 체크박스
+  const chkAll = $('#chkAllRecords');
+  if (chkAll) {
+    chkAll.addEventListener('change', (e) => {
+      const isChecked = e.target.checked;
+      document.querySelectorAll('.chk-record-item').forEach(cb => {
+        cb.checked = isChecked;
+      });
+      updateSelectedCount();
+    });
+  }
+}
+
+function updateSelectedCount() {
+  const checked = document.querySelectorAll('.chk-record-item:checked').length;
+  const cntSpan = $('#selectedCount');
+  const btnDel = $('#btnDeleteSelected');
+  if (cntSpan) cntSpan.textContent = checked;
+  if (btnDel) {
+    btnDel.style.display = checked > 0 ? 'inline-block' : 'none';
+  }
+}
+
+async function deleteOneRecord(rec) {
+  if (!confirm(`[${rec.site}]\n"${rec.content}"\n\n해당 부적합 건을 삭제하시겠습니까?`)) return;
+  try {
+    await store.deleteRecord(rec);
+    toast('부적합 건이 삭제되었습니다.', 'info');
+    renderRecordList();
+  } catch (e) {
+    toast(`삭제 실패: ${e.message}`, 'danger');
+  }
 }
 
 // ── 1페이지 교육자료 미리보기 갱신 ──
@@ -712,14 +770,17 @@ async function renderRecordList() {
   const c = $('#recordListContainer');
   const tbody = $('#tblRecordsBody');
   if (c) c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
-  if (tbody) tbody.innerHTML = '<tr><td colspan="15" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
   
+  if ($('#chkAllRecords')) $('#chkAllRecords').checked = false;
+  updateSelectedCount();
+
   const curMonth = monthStr();
   const records = await store.listMonth(curMonth);
 
   if (!records.length) {
     if (c) c.innerHTML = '<div style="text-align:center; padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</div>';
-    if (tbody) tbody.innerHTML = '<tr><td colspan="15" style="padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="padding:30px; color:var(--gray-400);">이번 달 등록된 내역이 없습니다.</td></tr>';
     return;
   }
 
@@ -731,6 +792,24 @@ async function renderRecordList() {
 
     // 1) 모바일 카드형 뷰
     if (c) {
+      const btnGroup = h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px' } });
+      if (!isFixed) {
+        btnGroup.append(h('button.btn.btn-outline', {
+          style: { fontSize: '0.82rem', padding: '6px 12px', flex: '1' },
+          onclick: () => {
+            targetFixRecord = r;
+            fixPhotoData = null;
+            $('#txtFixContent').value = '';
+            $('#fixPhotoPreview').innerHTML = '';
+            $('#fixModal').style.display = 'flex';
+          }
+        }, '🔧 조치등록'));
+      }
+      btnGroup.append(h('button.btn.btn-outline', {
+        style: { fontSize: '0.82rem', padding: '6px 12px', color: 'var(--danger)', borderColor: '#fca5a5' },
+        onclick: () => deleteOneRecord(r)
+      }, '🗑️ 삭제'));
+
       const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isFixed ? 'var(--success)' : 'var(--danger)'}` } },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '6px' } },
           h('strong', { style: { fontSize: '0.95rem' } }, `[${r.site}] ${r.location}`),
@@ -740,16 +819,8 @@ async function renderRecordList() {
         h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)', marginBottom: '8px' } },
           `${r.kind} › ${r.item} (${r.agent || '-'}) · ${r.inspectedDate} (${r.inspector})`
         ),
-        !isFixed ? h('button.btn.btn-outline', {
-          style: { fontSize: '0.82rem', padding: '6px 12px' },
-          onclick: () => {
-            targetFixRecord = r;
-            fixPhotoData = null;
-            $('#txtFixContent').value = '';
-            $('#fixPhotoPreview').innerHTML = '';
-            $('#fixModal').style.display = 'flex';
-          }
-        }, '🔧 조치내용/조치사진 등록') : h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px' } }, `조치결과: ${r.fix.content}`)
+        isFixed ? h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px', marginBottom: '6px' } }, `조치결과: ${r.fix.content}`) : '',
+        btnGroup
       );
       c.append(card);
     }
@@ -764,6 +835,7 @@ async function renderRecordList() {
       tr.style.borderBottom = '1px solid #e2e8f0';
       tr.style.background = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
       tr.innerHTML = `
+        <td style="padding:6px 4px;"><input type="checkbox" class="chk-record-item" data-id="${r.id}"></td>
         <td style="padding:8px 4px; font-weight:600; color:var(--gray-700);">${idx + 1}</td>
         <td style="padding:4px;">${photoThumb}</td>
         <td style="padding:8px; font-weight:500;">${r.site || '-'}</td>
@@ -778,10 +850,18 @@ async function renderRecordList() {
         <td style="padding:8px;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
         <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">${(r.fix && r.fix.content) || '(미조치)'}</td>
         <td style="padding:8px; color:var(--gray-600);">${r.inspector || '-'}</td>
-        <td style="padding:8px;">
-          ${!isFixed ? `<button type="button" class="btn btn-outline btn-table-fix" style="padding:3px 8px; font-size:0.75rem;">조치등록</button>` : '<span style="color:var(--success); font-weight:600; font-size:0.75rem;">완료</span>'}
+        <td style="padding:6px 4px;">
+          <div style="display:flex; gap:3px; justify-content:center;">
+            ${!isFixed ? `<button type="button" class="btn btn-outline btn-table-fix" style="padding:3px 6px; font-size:0.75rem;">조치</button>` : ''}
+            <button type="button" class="btn btn-outline btn-table-del" style="padding:3px 6px; font-size:0.75rem; color:var(--danger); border-color:#fca5a5;" title="삭제">삭제</button>
+          </div>
         </td>
       `;
+
+      const chkBox = tr.querySelector('.chk-record-item');
+      if (chkBox) {
+        chkBox.addEventListener('change', updateSelectedCount);
+      }
 
       const fixBtn = tr.querySelector('.btn-table-fix');
       if (fixBtn) {
@@ -792,6 +872,11 @@ async function renderRecordList() {
           $('#fixPhotoPreview').innerHTML = '';
           $('#fixModal').style.display = 'flex';
         });
+      }
+
+      const delBtn = tr.querySelector('.btn-table-del');
+      if (delBtn) {
+        delBtn.addEventListener('click', () => deleteOneRecord(r));
       }
 
       tbody.appendChild(tr);
