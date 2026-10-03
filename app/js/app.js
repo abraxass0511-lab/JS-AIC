@@ -1,6 +1,6 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_4';
-import { store } from './store.js?v=20261003_4';
-import { processImageFile } from './image-processor.js?v=20261003_4';
+import { $, $$, h, todayStr, monthStr, toast, debounce } from './util.js?v=20261003_5';
+import { store } from './store.js?v=20261003_5';
+import { processImageFile } from './image-processor.js?v=20261003_5';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -790,6 +790,25 @@ async function renderRecordList() {
   for (const [idx, r] of records.entries()) {
     const isFixed = r.status === '조치완료';
 
+    // 사진 Object URL 비동기 변환 (IndexedDB Blob -> Object URL)
+    let photoThumbUrl = '';
+    if (r.photos && r.photos[0]) {
+      try {
+        photoThumbUrl = await store.photoURL(r.photos[0]);
+      } catch (e) {
+        console.warn('Failed to resolve photo URL:', r.photos[0], e);
+      }
+    }
+
+    let fixPhotoThumbUrl = '';
+    if (r.fix && r.fix.photo) {
+      try {
+        fixPhotoThumbUrl = await store.photoURL(r.fix.photo);
+      } catch (e) {
+        console.warn('Failed to resolve fix photo URL:', r.fix.photo, e);
+      }
+    }
+
     // 1) 모바일 카드형 뷰
     if (c) {
       const btnGroup = h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px' } });
@@ -810,15 +829,28 @@ async function renderRecordList() {
         onclick: () => deleteOneRecord(r)
       }, '🗑️ 삭제'));
 
+      const cardBody = h('div', { style: { display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '8px' } });
+      if (photoThumbUrl) {
+        cardBody.append(h('img', {
+          src: photoThumbUrl,
+          style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer', flexShrink: '0' },
+          onclick: () => window.open(photoThumbUrl, '_blank'),
+          title: '클릭하여 원본보기'
+        }));
+      }
+      cardBody.append(h('div', { style: { flex: '1', minWidth: '0' } },
+        h('div', { style: { fontSize: '0.92rem', marginBottom: '4px', color: 'var(--gray-900)', fontWeight: '500' } }, r.content),
+        h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)' } },
+          `${r.kind} › ${r.item} (${r.agent || '-'}) · ${r.inspectedDate} (${r.inspector})`
+        )
+      ));
+
       const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isFixed ? 'var(--success)' : 'var(--danger)'}` } },
         h('div', { style: { display: 'flex', justifyContent: 'space-between', marginBottom: '6px' } },
           h('strong', { style: { fontSize: '0.95rem' } }, `[${r.site}] ${r.location}`),
           h('span.badge', { class: isFixed ? 'success' : 'danger', style: { color: isFixed ? 'var(--success)' : 'var(--danger)' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
         ),
-        h('div', { style: { fontSize: '0.92rem', marginBottom: '8px', color: 'var(--gray-900)' } }, r.content),
-        h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)', marginBottom: '8px' } },
-          `${r.kind} › ${r.item} (${r.agent || '-'}) · ${r.inspectedDate} (${r.inspector})`
-        ),
+        cardBody,
         isFixed ? h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px', marginBottom: '6px' } }, `조치결과: ${r.fix.content}`) : '',
         btnGroup
       );
@@ -827,9 +859,9 @@ async function renderRecordList() {
 
     // 2) 엑셀 스프레드시트 테이블 뷰
     if (tbody) {
-      let photoThumb = '-';
-      if (r.photos && r.photos[0]) {
-        photoThumb = `<img src="${r.photos[0]}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${r.photos[0]}', '_blank')" title="클릭하여 원본보기">`;
+      let photoThumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
+      if (photoThumbUrl) {
+        photoThumb = `<img src="${photoThumbUrl}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photoThumbUrl}', '_blank')" title="클릭하여 원본보기">`;
       }
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e2e8f0';
@@ -848,7 +880,12 @@ async function renderRecordList() {
         <td style="padding:8px; color:var(--gray-600);">${r.condition || '-'}</td>
         <td style="padding:8px; color:var(--gray-600);">${(r.causes || []).join(', ') || '-'}</td>
         <td style="padding:8px;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
-        <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">${(r.fix && r.fix.content) || '(미조치)'}</td>
+        <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">
+          <div style="display:flex; align-items:center; gap:6px;">
+            ${fixPhotoThumbUrl ? `<img src="${fixPhotoThumbUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer; flex-shrink:0;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" title="조치완료 사진">` : ''}
+            <span>${(r.fix && r.fix.content) || '(미조치)'}</span>
+          </div>
+        </td>
         <td style="padding:8px; color:var(--gray-600);">${r.inspector || '-'}</td>
         <td style="padding:6px 4px;">
           <div style="display:flex; gap:3px; justify-content:center;">

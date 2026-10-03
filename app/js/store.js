@@ -282,7 +282,7 @@ export const store = {
   // ── 사진 ──
   async photoBlob(path) {
     if (!path) return null;
-    if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:')) {
+    if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) {
       const res = await fetch(path);
       return res.blob();
     }
@@ -290,14 +290,16 @@ export const store = {
   },
   async photoURL(path) {
     if (!path) return '';
-    if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:')) return path;
+    if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
     try {
       const blob = await this.backend.readBlob(path);
+      if (!blob) return '';
       const url = URL.createObjectURL(blob);
       this._photoCache.set(path, url);
       return url;
     } catch (e) {
+      console.warn('photoURL error for:', path, e);
       return '';
     }
   },
