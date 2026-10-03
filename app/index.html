@@ -213,9 +213,10 @@
 
         <!-- 필터 탭 & 일괄 삭제 툴바 -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
-          <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
-            <button class="chip selected filter-site" data-site="all">전체 현장</button>
-            <button class="chip filter-status" data-status="unfixed">미조치만 보기</button>
+          <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; align-items: center;">
+            <button type="button" id="btnFilterSiteAll" class="chip selected filter-site" data-site="all">전체 현장</button>
+            <div id="boxDynamicSiteChips" style="display: inline-flex; gap: 6px;"></div>
+            <button type="button" id="btnFilterUnfixed" class="chip filter-status" data-status="unfixed">미조치만 보기</button>
           </div>
           <div>
             <button type="button" id="btnDeleteSelected" class="btn btn-outline" style="padding: 5px 12px; font-size: 0.8rem; color: var(--danger); border-color: #fca5a5; display: none;">
@@ -462,6 +463,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261004_2"></script>
+  <script type="module" src="js/app.js?v=20261004_3"></script>
 </body>
 </html>
