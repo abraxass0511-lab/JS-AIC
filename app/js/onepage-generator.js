@@ -12,7 +12,7 @@
    * 1페이지 HTML 마크업 렌더링
    */
   function renderTemplate(data) {
-    const { title, site, date, beforePhoto, afterPhoto, itemName, law, rules = [], statsText, inspector } = data;
+    const { title, site, date, period, beforePhoto, afterPhoto, itemName, law, rules = [], statsText, inspector } = data;
 
     const rulesHtml = rules.length 
       ? rules.map((r, i) => `<li style="margin-bottom:6px; font-size:0.95rem; line-height:1.4;"><strong>${i + 1}.</strong> ${r}</li>`).join('')
@@ -40,7 +40,8 @@
           </div>
           <div style="text-align:right; font-size:0.75rem; color:#64748b; white-space:nowrap;">
             <div><strong>현장:</strong> ${site || '전 현장'}</div>
-            <div><strong>발행:</strong> ${date || '2026.10'} | <strong>점검:</strong> ${inspector || '안전관리자'}</div>
+            <div><strong>점검일:</strong> ${date || '2026.10'} | <strong>점검자:</strong> ${inspector || '안전관리자'}</div>
+            ${period ? `<div style="color:#1e3a8a; font-weight:700; margin-top:2px;"><strong>분석 기간:</strong> ${period}</div>` : ''}
           </div>
         </div>
 

@@ -166,17 +166,17 @@
       </div>
     </section>
 
-    <!-- View 2: 대장 목록 / 조치 등록 -->
+    <!-- View 2: 순회점검 대장 목록 -->
     <section id="viewList" class="view-section">
       <div class="card">
         <div class="card-title">
-          <span>현장 패트롤 부적합 대장</span>
+          <span>📋 순회점검 대장</span>
           <div style="display: flex; gap: 6px;">
-            <button type="button" id="btnToggleViewMode" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;">📊 엑셀 표로 보기</button>
-            <button type="button" id="btnRefreshList" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;">새로고침</button>
+            <button type="button" id="btnViewCard" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.8rem;">📱 카드</button>
+            <button type="button" id="btnViewTable" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.8rem;">📊 전체 표</button>
           </div>
         </div>
-        
+
         <!-- 기간 선택 컨트롤 바 -->
         <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
@@ -184,9 +184,16 @@
               <span>📅</span> <span>조회 기간 설정</span>
             </div>
             <div style="display: flex; gap: 4px;">
+              <button type="button" id="btnPeriodModeAll" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
               <button type="button" id="btnPeriodModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
               <button type="button" id="btnPeriodModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
             </div>
+          </div>
+
+          <!-- 전체 선택 안내 -->
+          <div id="boxListPeriodAll" style="display: none; align-items: center; justify-content: space-between; padding: 4px 2px;">
+            <span style="font-size: 0.82rem; color: var(--gray-600);">누적된 모든 기간의 부적합 데이터를 조회합니다.</span>
+            <button type="button" id="btnQueryAll" class="btn btn-primary" style="padding: 5px 12px; font-size: 0.8rem;">전체 조회</button>
           </div>
 
           <!-- 월별 선택기 -->
@@ -260,6 +267,29 @@
         <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 14px; line-height: 1.5;">
           지적된 부적합과 개선 조치 완료 사진(Before/After), 산안법 핵심 수칙을 합성하여 TBM이나 카톡 공지용 1장 이미지(PNG)로 자동 제작합니다.
         </p>
+
+        <!-- 1p 교육자료 대상 기간 선택기 -->
+        <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+            <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.82rem;">📅 분석 및 교육 대상 기간</label>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" id="btnEduModeAll" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
+              <button type="button" id="btnEduModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
+              <button type="button" id="btnEduModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
+            </div>
+          </div>
+          <div id="boxEduPeriodAll" style="display: none; font-size: 0.82rem; color: var(--gray-600); padding: 4px 0;">
+            전체 누적된 부적합 데이터 및 종합 통계를 기반으로 교육자료를 생성합니다.
+          </div>
+          <div id="boxEduPeriodMonth" style="display: flex; gap: 8px; align-items: center;">
+            <input type="month" id="selEduMonth" class="form-control" style="padding: 6px 10px; font-size: 0.85rem; flex: 1;">
+          </div>
+          <div id="boxEduPeriodRange" style="display: none; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <input type="date" id="txtEduStartDate" class="form-control" style="padding: 6px 8px; font-size: 0.82rem; flex: 1; min-width: 120px;">
+            <span style="color: var(--gray-600);">~</span>
+            <input type="date" id="txtEduEndDate" class="form-control" style="padding: 6px 8px; font-size: 0.82rem; flex: 1; min-width: 120px;">
+          </div>
+        </div>
         
         <div class="form-group">
           <label class="form-label">교육자료 대상 부적합 건 선택</label>
@@ -290,7 +320,7 @@
           <span>📦 기간 및 현장 내보내기 설정</span>
         </div>
         <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 14px; line-height: 1.5;">
-          출력할 대상 기간(월별 또는 시작일~종료일 직접 지정)과 현장을 선택한 뒤 엑셀 대장이나 회의용 PPT를 내려받으세요.
+          출력할 대상 기간(전체 누적, 월별, 시작일~종료일 직접 지정)과 현장을 선택한 뒤 엑셀 대장이나 회의용 PPT를 내려받으세요.
         </p>
 
         <!-- 기간 선택기 -->
@@ -298,9 +328,14 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
             <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.85rem;">📅 대상 기간 선택</label>
             <div style="display: flex; gap: 4px;">
+              <button type="button" id="btnExportModeAll" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
               <button type="button" id="btnExportModeMonth" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
               <button type="button" id="btnExportModeRange" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">기간 직접지정</button>
             </div>
+          </div>
+
+          <div id="boxExportPeriodAll" style="display: none; padding: 6px 2px; font-size: 0.85rem; color: var(--primary); font-weight: 600;">
+            🌟 전체 누적 데이터 (모든 등록 기간의 부적합 데이터 포함)
           </div>
 
           <div id="boxExportPeriodMonth">
@@ -427,6 +462,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261003_7"></script>
+  <script type="module" src="js/app.js?v=20261004_1"></script>
 </body>
 </html>
