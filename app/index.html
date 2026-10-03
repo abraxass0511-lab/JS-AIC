@@ -175,10 +175,17 @@
           </div>
         </div>
         
-        <!-- 필터 탭 -->
-        <div style="display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 4px;">
-          <button class="chip selected filter-site" data-site="all">전체 현장</button>
-          <button class="chip filter-status" data-status="unfixed">미조치만 보기</button>
+        <!-- 필터 탭 & 일괄 삭제 툴바 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
+          <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
+            <button class="chip selected filter-site" data-site="all">전체 현장</button>
+            <button class="chip filter-status" data-status="unfixed">미조치만 보기</button>
+          </div>
+          <div>
+            <button type="button" id="btnDeleteSelected" class="btn btn-outline" style="padding: 5px 12px; font-size: 0.8rem; color: var(--danger); border-color: #fca5a5; display: none;">
+              🗑️ 선택 삭제 (<span id="selectedCount">0</span>건)
+            </button>
+          </div>
         </div>
 
         <!-- 1. 모바일 카드형 뷰 -->
@@ -188,10 +195,11 @@
 
         <!-- 2. 엑셀 스프레드시트형 전체 표 뷰 (좌우 스크롤 지원) -->
         <div id="recordTableContainer" style="display: none; overflow-x: auto; margin-top: 4px; border: 1px solid var(--gray-200); border-radius: 8px;">
-          <table id="tblRecords" style="width: 100%; min-width: 1200px; border-collapse: collapse; font-size: 0.82rem; text-align: center;">
+          <table id="tblRecords" style="width: 100%; min-width: 1240px; border-collapse: collapse; font-size: 0.82rem; text-align: center;">
             <thead style="background: #fef08a; color: #713f12; font-weight: 600; border-bottom: 2px solid #ca8a04;">
               <tr>
-                <th style="padding: 10px 6px; border: 1px solid #fde047; width: 45px;">No</th>
+                <th style="padding: 10px 4px; border: 1px solid #fde047; width: 36px;"><input type="checkbox" id="chkAllRecords" title="전체 선택"></th>
+                <th style="padding: 10px 6px; border: 1px solid #fde047; width: 42px;">No</th>
                 <th style="padding: 10px 6px; border: 1px solid #fde047; width: 65px;">사진</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 130px;">현장명</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">점검일자</th>
@@ -205,7 +213,7 @@
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">조치상태</th>
                 <th style="padding: 10px 10px; border: 1px solid #fde047; text-align: left; min-width: 170px;">조치내용</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 80px;">점검자</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">조치관리</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 105px;">관리</th>
               </tr>
             </thead>
             <tbody id="tblRecordsBody"></tbody>
@@ -366,6 +374,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261003_3"></script>
+  <script type="module" src="js/app.js?v=20261003_4"></script>
 </body>
 </html>
