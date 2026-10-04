@@ -308,3 +308,75 @@ if (typeof window !== 'undefined') {
   window.SafeUtil = window.SafeUtil || {};
   window.SafeUtil.downloadBlob = downloadBlob;
 }
+
+/**
+ * 엑셀/PPT 메일 발송용: 파일 생성 후 사용자 탭 1번으로 [휴대폰 저장 + 메일 앱 열기]를 동시에 실행
+ * (비동기 생성 후에는 브라우저가 자동 다운로드를 막기 때문에 탭이 반드시 필요)
+ */
+export function saveAndEmail(blob, filename, subject, body) {
+  const env = getEnv();
+  const fixed = normalizeBlob(blob, filename);
+  const url = URL.createObjectURL(fixed);
+  const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  document.getElementById('dlSaveSheet')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'dlSaveSheet';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,0.55);display:flex;align-items:flex-end;justify-content:center;';
+  const sheet = document.createElement('div');
+  sheet.style.cssText = 'width:100%;max-width:480px;background:#fff;border-radius:18px 18px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,0.2);font-family:inherit;';
+  overlay.appendChild(sheet);
+  const btnCss = 'display:block;width:100%;padding:14px;margin-top:10px;border-radius:12px;font-size:1rem;font-weight:700;border:none;cursor:pointer;';
+  const ext = (filename.split('.').pop() || '').toUpperCase();
+  const sizeKB = Math.max(1, Math.round(fixed.size / 1024));
+
+  const close = () => {
+    overlay.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+  };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  sheet.innerHTML = `<div style="font-size:1.05rem;font-weight:800;color:#1e293b;margin-bottom:4px;">📧 메일 발송 준비 완료</div>
+    <div style="font-size:0.85rem;color:#64748b;word-break:break-all;margin-bottom:10px;">${filename} · ${ext} · ${sizeKB}KB</div>
+    <div style="font-size:0.84rem;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;line-height:1.6;">
+      ① 아래 버튼을 누르면 파일이 <b>휴대폰 [다운로드]</b>에 저장되고 메일 앱이 열립니다.<br>
+      ② 메일 앱에서 <b>클립(📎) → 파일 → 다운로드</b>에서 <b>${ext}</b> 파일을 선택해 첨부하세요.<br>
+      <span style="color:#94a3b8;">※ 브라우저 보안 정책상 ${ext} 파일은 메일에 자동 첨부할 수 없습니다.</span>
+    </div>`;
+
+  if (env.isInApp) {
+    const warn = document.createElement('div');
+    warn.style.cssText = 'margin-top:10px;font-size:0.84rem;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;';
+    warn.innerHTML = '카카오톡 등 <b>앱 내부 브라우저</b>에서는 저장이 되지 않습니다. Chrome/삼성인터넷에서 열어주세요.';
+    sheet.appendChild(warn);
+  }
+
+  const btnGo = document.createElement('button');
+  btnGo.style.cssText = btnCss + 'background:#0ea5e9;color:#fff;';
+  btnGo.textContent = '💾 저장하고 메일 앱 열기';
+  btnGo.onclick = () => {
+    anchorDownload(url, filename); // 사용자 탭 안에서 실행해야 저장이 허용됨
+    toastLite(`[${filename}] 저장됨 → 메일 앱에서 📎로 첨부하세요.`);
+    setTimeout(() => { location.href = mailto; }, 1500);
+    setTimeout(close, 1600);
+  };
+  sheet.appendChild(btnGo);
+
+  const btnSaveOnly = document.createElement('button');
+  btnSaveOnly.style.cssText = btnCss + 'background:#2d3a8c;color:#fff;';
+  btnSaveOnly.textContent = '💾 휴대폰에 저장만 하기';
+  btnSaveOnly.onclick = () => {
+    anchorDownload(url, filename);
+    toastLite('다운로드를 시작했습니다. [내 파일 > 다운로드]에서 확인하세요.');
+    close();
+  };
+  sheet.appendChild(btnSaveOnly);
+
+  const btnClose = document.createElement('button');
+  btnClose.style.cssText = btnCss + 'background:#f1f5f9;color:#475569;';
+  btnClose.textContent = '닫기';
+  btnClose.onclick = close;
+  sheet.appendChild(btnClose);
+
+  document.body.appendChild(overlay);
+}
