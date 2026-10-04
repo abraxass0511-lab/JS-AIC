@@ -310,14 +310,21 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * 엑셀/PPT 메일 발송용: 파일 생성 후 사용자 탭 1번으로 [휴대폰 저장 + 메일 앱 열기]를 동시에 실행
- * (비동기 생성 후에는 브라우저가 자동 다운로드를 막기 때문에 탭이 반드시 필요)
+ * 엑셀/PPT 메일 발송용 2단계 시트
+ *  ① [휴대폰에 저장] 탭 → 저장 (파일명에 시각을 붙여 '중복 파일 다시 다운로드?' 확인창으로 저장이 취소되는 문제 방지)
+ *  ② 저장 확인 후 [메일 앱 열기] 탭 → 메일 작성창 (자동 이동하지 않아 크롬 다운로드 확인창이 가려지지 않음)
  */
 export function saveAndEmail(blob, filename, subject, body) {
   const env = getEnv();
   const fixed = normalizeBlob(blob, filename);
   const url = URL.createObjectURL(fixed);
   const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  // 고유 파일명: 이름_HHMMSS.ext
+  const d = new Date();
+  const stamp = [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join('');
+  const dot = filename.lastIndexOf('.');
+  const saveName = dot > 0 ? `${filename.slice(0, dot)}_${stamp}${filename.slice(dot)}` : `${filename}_${stamp}`;
 
   document.getElementById('dlSaveSheet')?.remove();
   const overlay = document.createElement('div');
@@ -332,17 +339,19 @@ export function saveAndEmail(blob, filename, subject, body) {
 
   const close = () => {
     overlay.remove();
-    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 120000);
   };
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-  sheet.innerHTML = `<div style="font-size:1.05rem;font-weight:800;color:#1e293b;margin-bottom:4px;">📧 메일 발송 준비 완료</div>
-    <div style="font-size:0.85rem;color:#64748b;word-break:break-all;margin-bottom:10px;">${filename} · ${ext} · ${sizeKB}KB</div>
+  const header = document.createElement('div');
+  header.innerHTML = `<div style="font-size:1.05rem;font-weight:800;color:#1e293b;margin-bottom:4px;">📧 메일 발송 (2단계)</div>
+    <div style="font-size:0.85rem;color:#64748b;word-break:break-all;margin-bottom:10px;">${saveName} · ${sizeKB}KB</div>
     <div style="font-size:0.84rem;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;line-height:1.6;">
-      ① 아래 버튼을 누르면 파일이 <b>휴대폰 [다운로드]</b>에 저장되고 메일 앱이 열립니다.<br>
-      ② 메일 앱에서 <b>클립(📎) → 파일 → 다운로드</b>에서 <b>${ext}</b> 파일을 선택해 첨부하세요.<br>
+      <b>①</b> [휴대폰에 저장]을 누르고, 화면 하단에 <b>다운로드 완료</b> 알림이 뜨는지 확인하세요.<br>
+      <b>②</b> [메일 앱 열기] → 메일 앱의 <b>클립(📎) → 파일 → 다운로드</b>에서 위 파일을 첨부하세요.<br>
       <span style="color:#94a3b8;">※ 브라우저 보안 정책상 ${ext} 파일은 메일에 자동 첨부할 수 없습니다.</span>
     </div>`;
+  sheet.appendChild(header);
 
   if (env.isInApp) {
     const warn = document.createElement('div');
@@ -351,32 +360,39 @@ export function saveAndEmail(blob, filename, subject, body) {
     sheet.appendChild(warn);
   }
 
-  const btnGo = document.createElement('button');
-  btnGo.style.cssText = btnCss + 'background:#0ea5e9;color:#fff;';
-  btnGo.textContent = '💾 저장하고 메일 앱 열기';
-  btnGo.onclick = () => {
-    anchorDownload(url, filename); // 사용자 탭 안에서 실행해야 저장이 허용됨
-    toastLite(`[${filename}] 저장됨 → 메일 앱에서 📎로 첨부하세요.`);
-    setTimeout(() => { location.href = mailto; }, 1500);
-    setTimeout(close, 1600);
-  };
-  sheet.appendChild(btnGo);
+  const btnSave = document.createElement('button');
+  btnSave.style.cssText = btnCss + 'background:#2d3a8c;color:#fff;';
+  btnSave.textContent = '① 💾 휴대폰에 저장';
 
-  const btnSaveOnly = document.createElement('button');
-  btnSaveOnly.style.cssText = btnCss + 'background:#2d3a8c;color:#fff;';
-  btnSaveOnly.textContent = '💾 휴대폰에 저장만 하기';
-  btnSaveOnly.onclick = () => {
-    anchorDownload(url, filename);
-    toastLite('다운로드를 시작했습니다. [내 파일 > 다운로드]에서 확인하세요.');
-    close();
+  const btnMail = document.createElement('button');
+  btnMail.style.cssText = btnCss + 'background:#cbd5e1;color:#fff;';
+  btnMail.textContent = '② 📧 메일 앱 열기';
+
+  let saved = false;
+  btnSave.onclick = async () => {
+    try {
+      anchorDownload(url, saveName); // 사용자 탭 안에서 실행해야 저장 허용
+    } catch (e) {
+      try { anchorDownload(await blobToDataURL(fixed), saveName); } catch (e2) { alert('저장 실패: ' + (e2.message || e2)); return; }
+    }
+    saved = true;
+    btnSave.textContent = '✅ 저장 요청 완료 (다시 저장하려면 탭)';
+    btnSave.style.background = '#16a34a';
+    btnMail.style.background = '#0ea5e9';
+    toastLite(`[${saveName}] 다운로드를 시작했습니다.`);
   };
-  sheet.appendChild(btnSaveOnly);
+
+  btnMail.onclick = () => {
+    if (!saved && !confirm('아직 파일을 저장하지 않았습니다. 그래도 메일 앱을 여시겠습니까?')) return;
+    close();
+    location.href = mailto;
+  };
 
   const btnClose = document.createElement('button');
   btnClose.style.cssText = btnCss + 'background:#f1f5f9;color:#475569;';
   btnClose.textContent = '닫기';
   btnClose.onclick = close;
-  sheet.appendChild(btnClose);
 
+  sheet.append(btnSave, btnMail, btnClose);
   document.body.appendChild(overlay);
 }
