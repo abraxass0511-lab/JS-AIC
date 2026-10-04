@@ -859,6 +859,15 @@ function initVoiceInput() {
       return;
     }
 
+    // 두 번째(새로운) 음성 입력 버튼을 누를 때 이전 음성/입력 내용을 즉시 지움
+    const txt = $('#txtContent');
+    if (txt) {
+      txt.value = '';
+      txt.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const smartBox = $('#smartClassifyBox');
+    if (smartBox) smartBox.classList.remove('active');
+
     try {
       recognition = new SpeechRec();
       recognition.lang = 'ko-KR';
@@ -871,15 +880,20 @@ function initVoiceInput() {
         $('#voiceText').textContent = '중지';
         btn.classList.add('recording-active');
         if ($('#voiceStatusMsg')) $('#voiceStatusMsg').style.display = 'block';
+        if ($('#txtContent')) $('#txtContent').value = '';
+        if ($('#smartClassifyBox')) $('#smartClassifyBox').classList.remove('active');
       };
 
       recognition.onresult = (e) => {
         const transcript = e.results[0][0].transcript;
         if (transcript) {
-          const cur = $('#txtContent').value.trim();
-          $('#txtContent').value = cur ? `${cur} ${transcript}` : transcript;
-          // Input 이벤트 발생시켜 스마트 추천 분류 및 임시저장 즉시 연동
-          $('#txtContent').dispatchEvent(new Event('input', { bubbles: true }));
+          // 누적하지 않고 새로운 음성 텍스트로 완전히 대체
+          const target = $('#txtContent');
+          if (target) {
+            target.value = transcript;
+            // Input 이벤트 발생시켜 스마트 추천 분류 및 세션 임시저장 연동
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+          }
           toast(`음성 입력 완료: "${transcript}"`, 'success');
         }
       };
@@ -1040,6 +1054,44 @@ function renderSiteManageList() {
   });
 }
 
+// ── 공통: 메일 발송 / 파일 첨부 전송 ──
+// 모바일 환경: 핸드폰 다운로드 폴더 저장 없이(No local download) Web Share Level 2로 메일 앱에 파일 직접 첨부
+async function shareOrEmailFile({ blob, filename, subject, body, mimeType }) {
+  const type = mimeType || blob.type || 'application/octet-stream';
+  const file = new File([blob], filename, { type });
+
+  // 1. Web Share API Level 2 지원 브라우저 (모바일 크롬/사파리/삼성인터넷 등)
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        files: [file],
+        title: subject,
+        text: body
+      });
+      toast('메일/공유 앱에 파일이 직접 첨부되었습니다.', 'success');
+      return true;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        // 사용자가 취소한 경우
+        return false;
+      }
+      console.warn('Web Share 실패, 대체 방식 시도:', err);
+    }
+  }
+
+  // 2. PC 또는 파일 공유 미지원 브라우저: 안내 후 다운로드 + mailto
+  const ok = confirm(
+    '현재 브라우저/PC 환경에서는 보안 정책으로 인해 메일 앱으로의 파일 직접 첨부가 지원되지 않습니다.\n\n파일을 다운로드한 후 메일 작성창을 여시겠습니까?'
+  );
+  if (ok) {
+    downloadBlob(blob, filename);
+    setTimeout(() => {
+      location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }, 600);
+  }
+  return false;
+}
+
 // ── 이메일 발송 핸들러 (1페이지 교육자료, 엑셀, 회의용 PPT) ──
 function initEmailExportHandlers() {
   // 1) 1페이지 교육자료 이메일 발송
@@ -1054,17 +1106,22 @@ function initEmailExportHandlers() {
     btn.textContent = '메일 준비 중...';
     try {
       const filename = `안전교육_1페이지_${todayStr()}.png`;
-      await window.SafeOnePage.downloadAsImage(el, filename);
+      // 핸드폰에 다운로드 저장하지 않고 메모리 Blob으로 즉시 렌더링
+      const blob = await window.SafeOnePage.renderAsBlob(el);
+      if (!blob) throw new Error('교육자료 이미지 생성에 실패했습니다.');
 
       const subject = `[SafePatrol] 현장 1페이지 안전교육자료 (${todayStr()})`;
-      const body = `안녕하세요,\n\nSafePatrol 현장 패트롤 순회점검을 통해 자동 생성된 [1페이지 안전교육자료]를 송부드립니다.\n\n- 자료명: ${filename}\n- 작성일자: ${todayStr()}\n\n※ 본 메일에 다운로드된 교육자료 이미지(${filename})를 첨부하여 발송합니다.`;
+      const body = `안녕하세요,\n\nSafePatrol 현장 패트롤 순회점검을 통해 자동 생성된 [1페이지 안전교육자료]를 송부드립니다.\n\n- 자료명: ${filename}\n- 작성일자: ${todayStr()}\n\n※ 첨부된 교육자료 이미지를 확인해 주시기 바랍니다.`;
 
-      setTimeout(() => {
-        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      }, 500);
-      toast('교육자료 이미지가 저장되었으며, 메일 작성창이 열립니다.', 'success');
+      await shareOrEmailFile({
+        blob,
+        filename,
+        subject,
+        body,
+        mimeType: 'image/png'
+      });
     } catch (e) {
-      toast(`메일 준비 실패: ${e.message}`, 'danger');
+      toast(`메일 발송 준비 실패: ${e.message}`, 'danger');
     } finally {
       btn.disabled = false;
       btn.textContent = '📧 메일 발송';
@@ -1077,27 +1134,59 @@ function initEmailExportHandlers() {
     const siteLabel = filterSite === 'all' ? '전체 현장 통합' : filterSite;
     let periodLabel = '전체 기간';
     let records = [];
+    const btn = $('#btnEmailExcel');
+    btn.disabled = true;
+    btn.textContent = '엑셀 생성 중...';
 
     try {
       if (exportPeriodMode === 'all') {
         records = await store.listAll();
-        periodLabel = '전체 누적 기간';
+        periodLabel = '전체누적';
       } else if (exportPeriodMode === 'month') {
         const m = $('#selExportMonth').value;
+        if (!m) {
+          toast('대상 월을 선택해주세요.', 'danger');
+          return;
+        }
         records = await store.listMonth(m);
-        periodLabel = `${m}월`;
+        periodLabel = m;
       } else {
         const start = $('#txtExportStartDate').value;
         const end = $('#txtExportEndDate').value;
+        if (!start || !end) {
+          toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
+          return;
+        }
         records = await store.listPeriod(start, end);
-        periodLabel = `${start} ~ ${end}`;
+        periodLabel = `${start}_${end}`;
       }
       if (filterSite !== 'all') {
         records = records.filter(r => r.site === filterSite);
       }
+      if (!records.length) {
+        toast('선택한 기간에 등록된 부적합 데이터가 없습니다.', 'danger');
+        return;
+      }
 
-      // 엑셀 다운로드 먼저 실행
-      $('#btnDownloadExcel').click();
+      // 핸드폰에 다운로드하지 않고 메모리에서 워크북 생성
+      const wb = await window.SafeExcel.build(window.ExcelJS, {
+        records,
+        taxonomy: store.taxonomy,
+        customValues: store.custom.customValues,
+        sites: store.sites,
+        loadImage: async (path) => {
+          const b = await store.photoBlob(path);
+          const buf = await b.arrayBuffer();
+          const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+          return { base64, extension: 'jpeg' };
+        }
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const filename = `부적합사항대장_${periodLabel}${filterSite !== 'all' ? '_' + filterSite : ''}.xlsx`;
 
       const total = records.length;
       const unfixed = records.filter(r => r.status !== '조치완료').length;
@@ -1105,56 +1194,95 @@ function initEmailExportHandlers() {
       const fixRate = total > 0 ? Math.round((fixed / total) * 100) : 0;
 
       const subject = `[SafePatrol] ${siteLabel} 부적합사항대장 엑셀 보고서 (${periodLabel})`;
-      const body = `안녕하세요,\n\nSafePatrol 현장 패트롤 [부적합사항대장] 현황을 보고드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 부적합 건수: ${total}건 (조치완료: ${fixed}건 / 미조치: ${unfixed}건, 조치율: ${fixRate}%)\n- 보고일자: ${todayStr()}\n\n※ 기기에 다운로드된 [부적합사항대장.xlsx] 파일을 본 메일에 첨부하여 송부해 주시기 바랍니다.`;
+      const body = `안녕하세요,\n\nSafePatrol 현장 패트롤 [부적합사항대장] 현황을 보고드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 부적합 건수: ${total}건 (조치완료: ${fixed}건 / 미조치: ${unfixed}건, 조치율: ${fixRate}%)\n- 보고일자: ${todayStr()}\n\n※ 첨부된 [부적합사항대장.xlsx] 파일을 확인해 주시기 바랍니다.`;
 
-      setTimeout(() => {
-        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      }, 600);
+      await shareOrEmailFile({
+        blob,
+        filename,
+        subject,
+        body,
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
     } catch (e) {
       toast(`엑셀 메일 발송 준비 실패: ${e.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📧 메일 발송';
     }
   });
 
   // 3) 회의용 PPT 이메일 발송
   $('#btnEmailPPT')?.addEventListener('click', async () => {
     const filterSite = $('#selExportSite').value;
-    const siteLabel = filterSite === 'all' ? '전체 현장' : filterSite;
+    const siteLabel = filterSite === 'all' ? '전체 현장 통합' : filterSite;
     let periodLabel = '전체 기간';
     let records = [];
+    const btn = $('#btnEmailPPT');
+    btn.disabled = true;
+    btn.textContent = 'PPT 생성 중...';
 
     try {
       if (exportPeriodMode === 'all') {
         records = await store.listAll();
-        periodLabel = '전체 누적 기간';
+        periodLabel = '전체누적';
       } else if (exportPeriodMode === 'month') {
         const m = $('#selExportMonth').value;
+        if (!m) {
+          toast('대상 월을 선택해주세요.', 'danger');
+          return;
+        }
         records = await store.listMonth(m);
-        periodLabel = `${m}월`;
+        periodLabel = m;
       } else {
         const start = $('#txtExportStartDate').value;
         const end = $('#txtExportEndDate').value;
+        if (!start || !end) {
+          toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
+          return;
+        }
         records = await store.listPeriod(start, end);
-        periodLabel = `${start} ~ ${end}`;
+        periodLabel = `${start}_${end}`;
       }
       if (filterSite !== 'all') {
         records = records.filter(r => r.site === filterSite);
       }
+      if (!records.length) {
+        toast('선택한 기간에 등록된 부적합 데이터가 없습니다.', 'danger');
+        return;
+      }
 
-      // PPT 다운로드 먼저 실행
-      $('#btnDownloadPPT').click();
+      // 핸드폰에 저장하지 않고(download: false) 메모리에서 PPT 생성
+      const { blob, filename } = await window.SafePPT.generatePresentation({
+        records,
+        sites: store.sites,
+        siteName: siteLabel,
+        month: periodLabel,
+        download: false,
+        loadImage: async (path) => {
+          const b = await store.photoBlob(path);
+          const buf = await b.arrayBuffer();
+          return 'data:image/jpeg;base64,' + btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+        }
+      });
 
       const total = records.length;
       const unfixed = records.filter(r => r.status !== '조치완료').length;
-      const fixed = total - unfixed;
 
       const subject = `[SafePatrol] ${siteLabel} 안전회의용 패트롤 분석 PPT (${periodLabel})`;
-      const body = `안녕하세요,\n\nSafePatrol 데이터 기반 [안전회의용 패트롤 부적합 분석 PPT] 자료를 공유드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 분석 건수: ${total}건 (미조치: ${unfixed}건)\n- 작성일자: ${todayStr()}\n\n※ 기기에 다운로드된 PPT 프레젠테이션(.pptx) 파일을 본 메일에 첨부하여 발송해 주시기 바랍니다.`;
+      const body = `안녕하세요,\n\nSafePatrol 데이터 기반 [안전회의용 패트롤 부적합 분석 PPT] 자료를 공유드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 분석 건수: ${total}건 (미조치: ${unfixed}건)\n- 작성일자: ${todayStr()}\n\n※ 첨부된 PPT 프레젠테이션(.pptx) 파일을 확인해 주시기 바랍니다.`;
 
-      setTimeout(() => {
-        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      }, 600);
+      await shareOrEmailFile({
+        blob,
+        filename,
+        subject,
+        body,
+        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+      });
     } catch (e) {
       toast(`PPT 메일 발송 준비 실패: ${e.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📧 메일 발송';
     }
   });
 }

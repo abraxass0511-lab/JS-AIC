@@ -224,23 +224,26 @@
       type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' 
     });
 
-    if (window.SafeUtil && window.SafeUtil.downloadBlob) {
-      window.SafeUtil.downloadBlob(mimeBlob, filename);
-    } else {
-      const url = URL.createObjectURL(mimeBlob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        try {
-          if (a.parentNode) a.parentNode.removeChild(a);
-          URL.revokeObjectURL(url);
-        } catch (e) {}
-      }, 60000);
+    if (download !== false) {
+      if (window.SafeUtil && window.SafeUtil.downloadBlob) {
+        window.SafeUtil.downloadBlob(mimeBlob, filename);
+      } else {
+        const url = URL.createObjectURL(mimeBlob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          try {
+            if (a.parentNode) a.parentNode.removeChild(a);
+            URL.revokeObjectURL(url);
+          } catch (e) {}
+        }, 60000);
+      }
     }
+    return { blob: mimeBlob, filename };
   }
 
   return {
