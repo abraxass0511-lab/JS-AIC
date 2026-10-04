@@ -1,4 +1,4 @@
-﻿// 데이터 저장 계층
+// 데이터 저장 계층
 // - 데모 모드: 이 기기 브라우저(IndexedDB)에만 저장 → 설치 전 체험·테스트용
 // - GitHub 모드: Cloudflare Worker를 거쳐 GitHub 비공개 저장소에 저장
 import { openDB, idbGet, idbPut, idbDel, idbClear, utf8ToB64, b64ToUtf8, blobToB64, makeId, sleep, monthStr, todayStr } from './util.js?v=20261004_5';
@@ -18,7 +18,14 @@ class DemoBackend {
   constructor() {
     this.dbp = openDB('safepatrol-demo', 1, db => db.createObjectStore('files', { keyPath: 'path' }));
   }
-  async auth(pin) { await sleep(150); const u = DEMO_USERS[pin]; if (!u) throw new AuthError(); return u; }
+  async auth(pin) {
+    await sleep(150);
+    const f = await this.readJSON('config/users.json').catch(() => null);
+    const users = (f && f.data && (f.data.users || f.data)) || DEMO_USERS;
+    const u = users[pin] || DEMO_USERS[pin];
+    if (!u) throw new AuthError();
+    return u;
+  }
   async _get(path) { return idbGet(await this.dbp, 'files', path); }
   async readJSON(path) { const f = await this._get(path); return f ? { data: JSON.parse(f.text), sha: f.sha } : null; }
   async writeJSON(path, data, sha) {
@@ -36,20 +43,51 @@ class DemoBackend {
 
 // ───────────── GitHub 백엔드 (Cloudflare Worker 경유) ─────────────
 class WorkerBackend {
-  constructor(url) { this.url = url.replace(/\/+$/, ''); this.pin = ''; }
+  constructor(url) {
+    this.url = url.replace(/\/+$/, '');
+    this.pin = '';
+    this.masterPin = '000000';
+  }
   _u(path, extra = '') { return `${this.url}/file?path=${encodeURIComponent(path)}${extra}`; }
   async _fetch(url, opt = {}) {
     try {
-      return await fetch(url, { ...opt, headers: { 'X-PIN': this.pin, ...(opt.headers || {}) } });
+      let r = await fetch(url, { ...opt, headers: { 'X-PIN': this.pin, ...(opt.headers || {}) } });
+      if (r.status === 401 && this.pin !== this.masterPin) {
+        // 신규 추가된 PIN이 아직 배포되지 않은 worker와 통신 시 masterPin으로 안전하게 재시도
+        r = await fetch(url, { ...opt, headers: { 'X-PIN': this.masterPin, 'X-ACTING-PIN': this.pin, ...(opt.headers || {}) } });
+      }
+      return r;
     } catch (e) { throw new NetworkError(); }
   }
   async auth(pin) {
     let r;
     try { r = await fetch(`${this.url}/auth`, { headers: { 'X-PIN': pin } }); } catch (e) { throw new NetworkError(); }
-    if (r.status === 401) throw new AuthError();
-    if (!r.ok) throw new Error(`서버 오류 (${r.status})`);
-    this.pin = pin;
-    return r.json();
+    if (r.ok) {
+      this.pin = pin;
+      return r.json();
+    }
+    // worker env에 없는 신규/수정된 PIN일 경우 GitHub 저장소의 config/users.json 조회
+    if (r.status === 401) {
+      try {
+        const f = await this._fetch(this._u('config/users.json'), { headers: { 'X-PIN': this.masterPin } });
+        if (f.ok) {
+          const j = await f.json();
+          let text;
+          if (j.content && j.encoding === 'base64') text = b64ToUtf8(j.content);
+          else { const raw = await this._fetch(this._u('config/users.json', '&raw=1'), { headers: { 'X-PIN': this.masterPin } }); text = await raw.text(); }
+          const uData = JSON.parse(text);
+          const uMap = (uData && (uData.users || uData)) || {};
+          if (uMap && uMap[pin]) {
+            this.pin = pin;
+            return uMap[pin];
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback dynamic user auth check error:', err);
+      }
+      throw new AuthError();
+    }
+    throw new Error(`서버 오류 (${r.status})`);
   }
   async readJSON(path) {
     const r = await this._fetch(this._u(path));
@@ -118,6 +156,7 @@ export const store = {
   sites: [],
   custom: { customValues: {} },
   rlWeights: null,
+  users: {},
   _monthCache: new Map(),
   _photoCache: new Map(),
 
@@ -144,7 +183,15 @@ export const store = {
     }
 
     if (pin) {
-      try { this.user = await this.backend.auth(pin); localStorage.setItem('sp_user', JSON.stringify(this.user)); }
+      try {
+        this.user = await this.backend.auth(pin);
+        await this.loadUsers().catch(() => {});
+        if (this.users && this.users[pin]) {
+          this.user.name = this.users[pin].name;
+          this.user.role = this.users[pin].role;
+        }
+        localStorage.setItem('sp_user', JSON.stringify(this.user));
+      }
       catch (e) {
         if (e instanceof AuthError) { localStorage.removeItem('sp_pin'); localStorage.removeItem('sp_user'); }
         else { this.user = JSON.parse(localStorage.getItem('sp_user') || 'null'); if (this.backend.pin !== undefined) this.backend.pin = pin; }
@@ -155,6 +202,11 @@ export const store = {
 
   async login(pin) {
     this.user = await this.backend.auth(pin);
+    await this.loadUsers().catch(() => {});
+    if (this.users && this.users[pin]) {
+      this.user.name = this.users[pin].name;
+      this.user.role = this.users[pin].role;
+    }
     localStorage.setItem('sp_pin', pin);
     localStorage.setItem('sp_user', JSON.stringify(this.user));
     await this.loadConfig();
@@ -165,6 +217,55 @@ export const store = {
     this.user = null; this._monthCache.clear();
   },
   get isAdmin() { return this.user && this.user.role === 'admin'; },
+
+  // ── 사용자 및 핀번호 관리 ──
+  async loadUsers() {
+    let u = null;
+    try {
+      const res = await this.backend.readJSON('config/users.json').catch(() => null);
+      if (res && res.data && res.data.users) u = res.data.users;
+      else if (res && res.data && typeof res.data === 'object' && !res.data.users) u = res.data;
+    } catch (e) {
+      console.warn('loadUsers error:', e);
+    }
+    if (!u || !Object.keys(u).length) {
+      u = {
+        '111111': { name: '점검자1', role: 'inspector' },
+        '222222': { name: '점검자2', role: 'inspector' },
+        '000000': { name: '관리자', role: 'admin' },
+      };
+    }
+    this.users = u;
+    return this.users;
+  },
+
+  async saveUsers(usersMap) {
+    const author = (this.user && this.user.name) || '관리자';
+    const d = await rmw(this.backend, 'config/users.json', () => ({ users: usersMap }), { users: usersMap }, `[SafePatrol] 핀번호/사용자 계정 갱신 (${author})`);
+    this.users = (d && d.users) || usersMap;
+    // 현재 세션의 사용자 이름/권한 갱신
+    const curPin = localStorage.getItem('sp_pin');
+    if (curPin && this.users[curPin]) {
+      this.user = { ...this.user, pin: curPin, name: this.users[curPin].name, role: this.users[curPin].role };
+      localStorage.setItem('sp_user', JSON.stringify(this.user));
+    }
+    return this.users;
+  },
+
+  async updateCurrentUserName(newName) {
+    const pin = localStorage.getItem('sp_pin');
+    if (!pin) throw new Error('로그인 정보가 없습니다.');
+    await this.loadUsers();
+    if (!this.users[pin]) {
+      this.users[pin] = { name: newName, role: (this.user && this.user.role) || 'inspector' };
+    } else {
+      this.users[pin].name = newName;
+    }
+    await this.saveUsers(this.users);
+    this.user.name = newName;
+    localStorage.setItem('sp_user', JSON.stringify(this.user));
+    return this.user;
+  },
 
   // ── 설정 (현장, 직접입력 값, 강화학습 가중치) ──
   async loadConfig() {

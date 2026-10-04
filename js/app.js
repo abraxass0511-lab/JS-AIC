@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261004_5';
+import { store } from './store.js?v=20261004_11';
 import { processImageFile } from './image-processor.js?v=20261004_2';
 
 let classifier = null;
@@ -97,8 +97,10 @@ function checkAuth() {
 
 function updateAdminControls() {
   const isAdmin = store.isAdmin;
-  const btn = $('#btnManageSites');
-  if (btn) btn.style.display = isAdmin ? 'inline-flex' : 'none';
+  const btnSites = $('#btnManageSites');
+  if (btnSites) btnSites.style.display = isAdmin ? 'inline-flex' : 'none';
+  const btnPins = $('#btnManagePins');
+  if (btnPins) btnPins.style.display = isAdmin ? 'inline-flex' : 'none';
 }
 
 function showPinModal() {
@@ -167,12 +169,9 @@ function bindEvents() {
     });
   });
 
-  // Logout/Change PIN
-  $('#userBadge').addEventListener('click', () => {
-    if (confirm('PIN 변경 또는 다른 사용자로 전환하시겠습니까?')) {
-      store.logout();
-      checkAuth();
-    }
+  // User Profile & Settings
+  $('#userBadge')?.addEventListener('click', () => {
+    openUserProfileModal();
   });
 
   // Quick PIN buttons
@@ -821,9 +820,12 @@ function bindEvents() {
     });
   }
 
-  // 음성입력, 현장관리, 이메일 전송 초기화
+  // 음성입력, 현장관리, 프로필관리, 핀번호관리, 이메일 전송 초기화
   initVoiceInput();
+  initFixVoiceInput();
   initSiteManagement();
+  initUserProfile();
+  initPinManagement();
   initEmailExportHandlers();
 }
 
@@ -918,6 +920,86 @@ function initVoiceInput() {
       recognition.start();
     } catch (err) {
       console.error('Failed to start speech recognition:', err);
+      toast('음성 인식을 시작할 수 없습니다: ' + err.message, 'danger');
+    }
+  });
+}
+
+// ── 조치사항 등록 음성 입력 (Web Speech API) ──
+function initFixVoiceInput() {
+  const btn = $('#btnVoiceFixRecord');
+  if (!btn) return;
+
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    btn.addEventListener('click', () => {
+      alert('현재 브라우저 환경에서는 음성 인식을 지원하지 않습니다.\n모바일 크롬(Chrome), 삼성인터넷 또는 사파리(Safari)를 이용해 주세요.');
+    });
+    return;
+  }
+
+  let recognition = null;
+  let isListening = false;
+
+  btn.addEventListener('click', () => {
+    if (isListening) {
+      if (recognition) recognition.stop();
+      return;
+    }
+
+    // 두 번째(새로운) 음성 입력 버튼을 누를 때 이전 음성/입력 내용을 즉시 지움
+    const txt = $('#txtFixContent');
+    if (txt) {
+      txt.value = '';
+    }
+
+    try {
+      recognition = new SpeechRec();
+      recognition.lang = 'ko-KR';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        isListening = true;
+        $('#voiceFixIcon').textContent = '⏹️';
+        $('#voiceFixText').textContent = '중지';
+        btn.classList.add('recording-active');
+        if ($('#voiceFixStatusMsg')) $('#voiceFixStatusMsg').style.display = 'block';
+        if ($('#txtFixContent')) $('#txtFixContent').value = '';
+      };
+
+      recognition.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        if (transcript) {
+          // 누적하지 않고 새로운 음성 텍스트로 완전히 대체
+          const target = $('#txtFixContent');
+          if (target) {
+            target.value = transcript;
+          }
+          toast(`조치내용 음성 입력 완료: "${transcript}"`, 'success');
+        }
+      };
+
+      recognition.onerror = (e) => {
+        console.warn('Voice recognition error:', e.error);
+        if (e.error === 'not-allowed') {
+          alert('마이크 사용 권한이 거부되었습니다.\n브라우저 주소창 왼쪽의 설정 아이콘을 눌러 마이크 권한을 허용해 주세요.');
+        } else {
+          toast(`음성 인식 오류: ${e.error}`, 'warning');
+        }
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        $('#voiceFixIcon').textContent = '🎙️';
+        $('#voiceFixText').textContent = '음성 입력';
+        btn.classList.remove('recording-active');
+        if ($('#voiceFixStatusMsg')) $('#voiceFixStatusMsg').style.display = 'none';
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition for fix:', err);
       toast('음성 인식을 시작할 수 없습니다: ' + err.message, 'danger');
     }
   });
@@ -1043,6 +1125,251 @@ function renderSiteManageList() {
           toast(`[${site.name}] 현장이 삭제되었습니다.`, 'info');
           renderSites();
           renderSiteManageList();
+        } catch (e) {
+          toast(`삭제 실패: ${e.message}`, 'danger');
+        }
+      }
+    }, '🗑️ 삭제'));
+
+    item.append(info, actions);
+    list.append(item);
+  });
+}
+
+// ── 사용자 프로필 및 점검자 이름 변경 모달 ──
+function initUserProfile() {
+  $('#btnCloseProfileModal')?.addEventListener('click', () => {
+    $('#userProfileModal').style.display = 'none';
+  });
+
+  $('#btnOpenPinManageFromProfile')?.addEventListener('click', () => {
+    $('#userProfileModal').style.display = 'none';
+    openPinManageModal();
+  });
+
+  $('#btnLogoutUser')?.addEventListener('click', () => {
+    if (confirm('현재 계정에서 로그아웃하고 다른 사용자로 전환하시겠습니까?')) {
+      $('#userProfileModal').style.display = 'none';
+      store.logout();
+      checkAuth();
+    }
+  });
+
+  $('#btnSaveUserName')?.addEventListener('click', async () => {
+    const newName = $('#txtMyName')?.value.trim();
+    if (!newName) {
+      toast('변경할 점검자 이름을 입력해주세요.', 'danger');
+      return;
+    }
+    const btn = $('#btnSaveUserName');
+    btn.disabled = true;
+    btn.textContent = '저장 중...';
+    try {
+      await store.updateCurrentUserName(newName);
+      $('#userName').textContent = `${store.user.name} (${store.user.role === 'admin' ? '관리자' : '점검자'})`;
+      toast(`점검자 이름이 [${newName}](으)로 변경되었습니다. 이후 등록되는 모든 점검에 반영됩니다.`, 'success');
+      $('#userProfileModal').style.display = 'none';
+    } catch (e) {
+      toast(`이름 변경 실패: ${e.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '💾 이름 변경 저장';
+    }
+  });
+}
+
+function openUserProfileModal() {
+  if (!store.user) return;
+  $('#txtMyName').value = store.user.name || '';
+  $('#lblMyRole').textContent = store.user.role === 'admin' ? '관리자 (현장 및 핀번호 관리 가능)' : '점검자 (현장 부적합 등록 및 조회)';
+  const btnAdminPins = $('#btnOpenPinManageFromProfile');
+  if (btnAdminPins) btnAdminPins.style.display = store.isAdmin ? 'block' : 'none';
+  $('#userProfileModal').style.display = 'flex';
+}
+
+// ── 관리자 전용 핀번호 및 계정 관리 모달 ──
+function initPinManagement() {
+  $('#btnManagePins')?.addEventListener('click', () => {
+    openPinManageModal();
+  });
+
+  $('#btnClosePinManage')?.addEventListener('click', () => {
+    $('#pinManageModal').style.display = 'none';
+  });
+
+  $('#btnDonePinManage')?.addEventListener('click', () => {
+    $('#pinManageModal').style.display = 'none';
+  });
+
+  // 새 핀번호 계정 추가
+  $('#btnAddPinUser')?.addEventListener('click', async () => {
+    const pin = $('#txtNewUserPin')?.value.trim();
+    const name = $('#txtNewUserName')?.value.trim();
+    const role = $('#selNewUserRole')?.value || 'inspector';
+
+    if (!pin || pin.length < 4) {
+      toast('PIN 번호는 4자리 이상(숫자 6자리 권장)이어야 합니다.', 'danger');
+      return;
+    }
+    if (!name) {
+      toast('점검자 이름을 입력해주세요.', 'danger');
+      return;
+    }
+    await store.loadUsers();
+    if (store.users[pin]) {
+      toast(`PIN [${pin}]는 이미 [${store.users[pin].name}] 님에게 등록되어 있습니다. 다른 PIN을 지정해주세요.`, 'warning');
+      return;
+    }
+
+    store.users[pin] = { name, role };
+    const btn = $('#btnAddPinUser');
+    btn.disabled = true;
+    btn.textContent = '추가 중...';
+    try {
+      await store.saveUsers(store.users);
+      toast(`[${name} (PIN: ${pin})] 계정이 추가되었습니다.`, 'success');
+      $('#txtNewUserPin').value = '';
+      $('#txtNewUserName').value = '';
+      renderPinManageList();
+    } catch (e) {
+      toast(`계정 추가 실패: ${e.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '추가하기';
+    }
+  });
+}
+
+async function openPinManageModal() {
+  await store.loadUsers();
+  renderPinManageList();
+  $('#pinManageModal').style.display = 'flex';
+}
+
+function renderPinManageList() {
+  const list = $('#pinManageList');
+  const countSpan = $('#pinTotalCount');
+  if (!list) return;
+
+  const entries = Object.entries(store.users || {});
+  if (countSpan) countSpan.textContent = entries.length;
+
+  list.innerHTML = '';
+  if (!entries.length) {
+    list.innerHTML = '<div style="text-align:center; padding:15px; color:var(--gray-400); font-size:0.85rem;">등록된 핀번호 계정이 없습니다.</div>';
+    return;
+  }
+
+  const curPin = localStorage.getItem('sp_pin');
+
+  entries.forEach(([pin, u]) => {
+    const isMe = pin === curPin;
+    const item = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 12px',
+        background: isMe ? '#f0fdf4' : 'var(--gray-50)',
+        border: `1px solid ${isMe ? '#86efac' : 'var(--gray-200)'}`,
+        borderRadius: '8px',
+        gap: '8px'
+      }
+    });
+
+    const info = h('div', { style: { flex: '1', minWidth: '0' } });
+    const nameLine = h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } });
+    nameLine.append(h('span', { style: { fontWeight: '700', fontSize: '0.88rem', color: 'var(--gray-900)' } }, u.name));
+    nameLine.append(h('span', {
+      style: {
+        fontSize: '0.72rem',
+        padding: '1px 6px',
+        borderRadius: '4px',
+        fontWeight: '600',
+        background: u.role === 'admin' ? '#ede9fe' : '#e0f2fe',
+        color: u.role === 'admin' ? '#7c3aed' : '#0369a1'
+      }
+    }, u.role === 'admin' ? '관리자' : '점검자'));
+    if (isMe) {
+      nameLine.append(h('span', { style: { fontSize: '0.7rem', color: '#16a34a', fontWeight: '700' } }, '(현재 로그인 중)'));
+    }
+
+    const sub = h('div', { style: { fontSize: '0.78rem', color: 'var(--gray-500)', marginTop: '2px', fontFamily: 'monospace' } }, `PIN: ${pin}`);
+    info.append(nameLine, sub);
+
+    const actions = h('div', { style: { display: 'flex', gap: '6px', flexShrink: '0' } });
+
+    // 수정 버튼
+    actions.append(h('button.btn.btn-outline', {
+      type: 'button',
+      style: { padding: '4px 8px', fontSize: '0.75rem' },
+      onclick: async () => {
+        const newName = prompt(`[${pin}] 점검자 이름을 입력하세요:`, u.name);
+        if (newName === null) return;
+        const trimmedName = newName.trim();
+        if (!trimmedName) {
+          toast('이름은 비워둘 수 없습니다.', 'danger');
+          return;
+        }
+
+        const newRole = confirm(`관리자 권한을 부여하시겠습니까?\n[확인] = 관리자 (admin)\n[취소] = 점검자 (inspector)`) ? 'admin' : 'inspector';
+
+        const changePin = confirm(`PIN 번호(${pin})도 변경하시겠습니까?`);
+        let finalPin = pin;
+        if (changePin) {
+          const promptPin = prompt('새로운 6자리 PIN 번호를 입력하세요:', pin);
+          if (promptPin === null) return;
+          const trimmedPin = promptPin.trim();
+          if (trimmedPin.length < 4) {
+            toast('PIN 번호는 4자리 이상이어야 합니다.', 'danger');
+            return;
+          }
+          if (trimmedPin !== pin && store.users[trimmedPin]) {
+            toast('이미 존재하는 다른 PIN 번호입니다.', 'danger');
+            return;
+          }
+          finalPin = trimmedPin;
+        }
+
+        // 삭제 후 새 PIN으로 이전 또는 갱신
+        if (finalPin !== pin) {
+          delete store.users[pin];
+          if (isMe) localStorage.setItem('sp_pin', finalPin);
+        }
+        store.users[finalPin] = { name: trimmedName, role: newRole };
+
+        try {
+          await store.saveUsers(store.users);
+          toast(`[${trimmedName}] 계정 정보가 수정되었습니다.`, 'success');
+          renderPinManageList();
+          checkAuth();
+        } catch (e) {
+          toast(`수정 실패: ${e.message}`, 'danger');
+        }
+      }
+    }, '✏️ 수정'));
+
+    // 삭제 버튼
+    actions.append(h('button.btn.btn-outline', {
+      type: 'button',
+      style: { padding: '4px 8px', fontSize: '0.75rem', color: 'var(--danger)', borderColor: '#fca5a5' },
+      onclick: async () => {
+        if (isMe) {
+          alert('현재 로그인되어 사용 중인 본인 계정은 삭제할 수 없습니다.');
+          return;
+        }
+        const adminCount = Object.values(store.users).filter(x => x.role === 'admin').length;
+        if (u.role === 'admin' && adminCount <= 1) {
+          alert('최소 1명 이상의 관리자 계정이 유지되어야 하므로 이 관리자 계정을 삭제할 수 없습니다.');
+          return;
+        }
+        if (!confirm(`[${u.name}] (PIN: ${pin}) 계정을 목록에서 완전히 삭제하시겠습니까?`)) return;
+
+        delete store.users[pin];
+        try {
+          await store.saveUsers(store.users);
+          toast(`[${u.name}] 계정이 삭제되었습니다.`, 'info');
+          renderPinManageList();
         } catch (e) {
           toast(`삭제 실패: ${e.message}`, 'danger');
         }
