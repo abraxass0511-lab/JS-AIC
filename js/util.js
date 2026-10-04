@@ -256,6 +256,21 @@ function showSaveSheet(blob, filename, env) {
       guide.innerHTML = `💬 <b>카카오톡으로 보내려면</b><br>① [휴대폰에 저장] → ② 카카오톡 채팅방 <b>[+] → [파일]</b> → ③ <b>다운로드</b> 폴더에서 <b>${ext}</b> 파일 선택<br><span style="color:#94a3b8;">※ 안드로이드 크롬은 ${ext} 파일의 바로 공유를 지원하지 않습니다.</span>`;
       sheet.appendChild(guide);
     }
+
+    // 📧 이메일 발송 버튼 (메일 앱 열기 & 파일 첨부 안내)
+    const btnEmail = document.createElement('button');
+    btnEmail.style.cssText = btnCss + 'background:#0ea5e9;color:#fff;';
+    btnEmail.textContent = '📧 이메일로 보내기';
+    btnEmail.onclick = () => {
+      anchorDownload(url, filename);
+      const subject = `[SafePatrol] ${filename}`;
+      const body = `안녕하세요,\n\nSafePatrol에서 생성된 [${filename}] 파일을 공유드립니다.\n\n※ 휴대폰 다운로드 폴더에 저장된 해당 파일을 본 메일에 첨부하여 발송해 주세요.`;
+      setTimeout(() => {
+        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 500);
+      close();
+    };
+    sheet.appendChild(btnEmail);
   }
 
   const btnClose = document.createElement('button');
