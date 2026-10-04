@@ -1,4 +1,4 @@
-﻿import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261004_5';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261004_5';
 import { store } from './store.js?v=20261004_5';
 import { processImageFile } from './image-processor.js?v=20261004_2';
 
@@ -88,9 +88,17 @@ function checkAuth() {
     $('#userBadge').style.display = 'flex';
     $('#userName').textContent = `${store.user.name} (${store.user.role === 'admin' ? '관리자' : '점검자'})`;
     hidePinModal();
+    renderSites();
     reinitClassifier();
     loadDraft();
+    updateAdminControls();
   }
+}
+
+function updateAdminControls() {
+  const isAdmin = store.isAdmin;
+  const btn = $('#btnManageSites');
+  if (btn) btn.style.display = isAdmin ? 'inline-flex' : 'none';
 }
 
 function showPinModal() {
@@ -812,6 +820,11 @@ function bindEvents() {
       updateSelectedCount();
     });
   }
+
+  // 음성입력, 현장관리, 이메일 전송 초기화
+  initVoiceInput();
+  initSiteManagement();
+  initEmailExportHandlers();
 }
 
 function updateSelectedCount() {
@@ -822,6 +835,328 @@ function updateSelectedCount() {
   if (btnDel) {
     btnDel.style.display = checked > 0 ? 'inline-block' : 'none';
   }
+}
+
+// ── 음성 입력 (Web Speech API - 100% 무료 브라우저 내장 STT) ──
+function initVoiceInput() {
+  const btn = $('#btnVoiceRecord');
+  if (!btn) return;
+
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    btn.addEventListener('click', () => {
+      alert('현재 브라우저 환경에서는 음성 인식을 지원하지 않습니다.\n모바일 크롬(Chrome), 삼성인터넷 또는 사파리(Safari)를 이용해 주세요.');
+    });
+    return;
+  }
+
+  let recognition = null;
+  let isListening = false;
+
+  btn.addEventListener('click', () => {
+    if (isListening) {
+      if (recognition) recognition.stop();
+      return;
+    }
+
+    try {
+      recognition = new SpeechRec();
+      recognition.lang = 'ko-KR';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        isListening = true;
+        $('#voiceIcon').textContent = '⏹️';
+        $('#voiceText').textContent = '중지';
+        btn.classList.add('recording-active');
+        if ($('#voiceStatusMsg')) $('#voiceStatusMsg').style.display = 'block';
+      };
+
+      recognition.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        if (transcript) {
+          const cur = $('#txtContent').value.trim();
+          $('#txtContent').value = cur ? `${cur} ${transcript}` : transcript;
+          // Input 이벤트 발생시켜 스마트 추천 분류 및 임시저장 즉시 연동
+          $('#txtContent').dispatchEvent(new Event('input', { bubbles: true }));
+          toast(`음성 입력 완료: "${transcript}"`, 'success');
+        }
+      };
+
+      recognition.onerror = (e) => {
+        console.warn('Voice recognition error:', e.error);
+        if (e.error === 'not-allowed') {
+          alert('마이크 사용 권한이 거부되었습니다.\n브라우저 주소창 왼쪽의 설정 아이콘을 눌러 마이크 권한을 허용해 주세요.');
+        } else {
+          toast(`음성 인식 오류: ${e.error}`, 'warning');
+        }
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        $('#voiceIcon').textContent = '🎙️';
+        $('#voiceText').textContent = '음성 입력';
+        btn.classList.remove('recording-active');
+        if ($('#voiceStatusMsg')) $('#voiceStatusMsg').style.display = 'none';
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+      toast('음성 인식을 시작할 수 없습니다: ' + err.message, 'danger');
+    }
+  });
+}
+
+// ── 현장 관리 모달 (관리자 전용) ──
+function initSiteManagement() {
+  $('#btnManageSites')?.addEventListener('click', () => {
+    openSiteManageModal();
+  });
+
+  $('#btnCloseSiteManage')?.addEventListener('click', () => {
+    $('#siteManageModal').style.display = 'none';
+  });
+
+  $('#btnDoneSiteManage')?.addEventListener('click', () => {
+    $('#siteManageModal').style.display = 'none';
+  });
+
+  $('#btnAddSite')?.addEventListener('click', async () => {
+    const name = $('#txtNewSiteName')?.value.trim();
+    if (!name) {
+      toast('추가할 현장명을 입력해주세요.', 'danger');
+      return;
+    }
+    if (store.sites.some(s => s.name === name)) {
+      toast('이미 등록되어 있는 현장명입니다.', 'warning');
+      return;
+    }
+    const progress = $('#txtNewSiteProgress')?.value.trim() || '';
+    const scale = $('#txtNewSiteScale')?.value.trim() || '';
+    const amount = $('#txtNewSiteAmount')?.value.trim() || '';
+
+    store.sites.push({ name, progress, scale, amount });
+    try {
+      await store.saveSites(store.sites);
+      toast(`[${name}] 현장이 추가되었습니다.`, 'success');
+      $('#txtNewSiteName').value = '';
+      $('#txtNewSiteProgress').value = '';
+      $('#txtNewSiteScale').value = '';
+      $('#txtNewSiteAmount').value = '';
+      renderSites();
+      renderSiteManageList();
+    } catch (e) {
+      toast(`현장 저장 실패: ${e.message}`, 'danger');
+    }
+  });
+}
+
+function openSiteManageModal() {
+  renderSiteManageList();
+  $('#siteManageModal').style.display = 'flex';
+}
+
+function renderSiteManageList() {
+  const list = $('#siteManageList');
+  const countSpan = $('#siteTotalCount');
+  if (countSpan) countSpan.textContent = store.sites.length;
+  if (!list) return;
+
+  list.innerHTML = '';
+  if (!store.sites.length) {
+    list.innerHTML = '<div style="text-align:center; padding:15px; color:var(--gray-400); font-size:0.85rem;">등록된 현장이 없습니다.</div>';
+    return;
+  }
+
+  store.sites.forEach((site, index) => {
+    const item = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 12px',
+        background: 'var(--gray-50)',
+        border: '1px solid var(--gray-200)',
+        borderRadius: '8px',
+        gap: '8px'
+      }
+    });
+
+    const info = h('div', { style: { flex: '1', minWidth: '0' } });
+    info.append(h('div', { style: { fontWeight: '700', fontSize: '0.88rem', color: 'var(--gray-900)' } }, site.name));
+    const subParts = [site.scale, site.progress ? `공정 ${site.progress}` : '', site.amount].filter(Boolean);
+    if (subParts.length) {
+      info.append(h('div', { style: { fontSize: '0.75rem', color: 'var(--gray-500)', marginTop: '2px' } }, subParts.join(' · ')));
+    }
+
+    const actions = h('div', { style: { display: 'flex', gap: '6px', flexShrink: '0' } });
+
+    // 수정 버튼
+    actions.append(h('button.btn.btn-outline', {
+      type: 'button',
+      style: { padding: '4px 8px', fontSize: '0.75rem' },
+      onclick: async () => {
+        const newName = prompt('수정할 현장명을 입력하세요:', site.name);
+        if (newName === null) return;
+        const trimmed = newName.trim();
+        if (!trimmed) {
+          toast('현장명은 비워둘 수 없습니다.', 'danger');
+          return;
+        }
+        site.name = trimmed;
+        try {
+          await store.saveSites(store.sites);
+          toast('현장명이 수정되었습니다.', 'success');
+          renderSites();
+          renderSiteManageList();
+        } catch (e) {
+          toast(`수정 실패: ${e.message}`, 'danger');
+        }
+      }
+    }, '✏️ 수정'));
+
+    // 삭제 버튼
+    actions.append(h('button.btn.btn-outline', {
+      type: 'button',
+      style: { padding: '4px 8px', fontSize: '0.75rem', color: 'var(--danger)', borderColor: '#fca5a5' },
+      onclick: async () => {
+        if (!confirm(`[${site.name}] 현장을 목록에서 삭제하시겠습니까?\n(기존에 등록된 부적합 데이터는 유지됩니다)`)) return;
+        store.sites.splice(index, 1);
+        try {
+          await store.saveSites(store.sites);
+          toast(`[${site.name}] 현장이 삭제되었습니다.`, 'info');
+          renderSites();
+          renderSiteManageList();
+        } catch (e) {
+          toast(`삭제 실패: ${e.message}`, 'danger');
+        }
+      }
+    }, '🗑️ 삭제'));
+
+    item.append(info, actions);
+    list.append(item);
+  });
+}
+
+// ── 이메일 발송 핸들러 (1페이지 교육자료, 엑셀, 회의용 PPT) ──
+function initEmailExportHandlers() {
+  // 1) 1페이지 교육자료 이메일 발송
+  $('#btnEmailEduImg')?.addEventListener('click', async () => {
+    const el = document.getElementById('eduCardContainer');
+    if (!el) {
+      toast('먼저 교육자료 대상을 선택해주세요.', 'danger');
+      return;
+    }
+    const btn = $('#btnEmailEduImg');
+    btn.disabled = true;
+    btn.textContent = '메일 준비 중...';
+    try {
+      const filename = `안전교육_1페이지_${todayStr()}.png`;
+      await window.SafeOnePage.downloadAsImage(el, filename);
+
+      const subject = `[SafePatrol] 현장 1페이지 안전교육자료 (${todayStr()})`;
+      const body = `안녕하세요,\n\nSafePatrol 현장 패트롤 순회점검을 통해 자동 생성된 [1페이지 안전교육자료]를 송부드립니다.\n\n- 자료명: ${filename}\n- 작성일자: ${todayStr()}\n\n※ 본 메일에 다운로드된 교육자료 이미지(${filename})를 첨부하여 발송합니다.`;
+
+      setTimeout(() => {
+        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 500);
+      toast('교육자료 이미지가 저장되었으며, 메일 작성창이 열립니다.', 'success');
+    } catch (e) {
+      toast(`메일 준비 실패: ${e.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📧 메일 발송';
+    }
+  });
+
+  // 2) 엑셀 부적합 대장 이메일 발송
+  $('#btnEmailExcel')?.addEventListener('click', async () => {
+    const filterSite = $('#selExportSite').value;
+    const siteLabel = filterSite === 'all' ? '전체 현장 통합' : filterSite;
+    let periodLabel = '전체 기간';
+    let records = [];
+
+    try {
+      if (exportPeriodMode === 'all') {
+        records = await store.listAll();
+        periodLabel = '전체 누적 기간';
+      } else if (exportPeriodMode === 'month') {
+        const m = $('#selExportMonth').value;
+        records = await store.listMonth(m);
+        periodLabel = `${m}월`;
+      } else {
+        const start = $('#txtExportStartDate').value;
+        const end = $('#txtExportEndDate').value;
+        records = await store.listPeriod(start, end);
+        periodLabel = `${start} ~ ${end}`;
+      }
+      if (filterSite !== 'all') {
+        records = records.filter(r => r.site === filterSite);
+      }
+
+      // 엑셀 다운로드 먼저 실행
+      $('#btnDownloadExcel').click();
+
+      const total = records.length;
+      const unfixed = records.filter(r => r.status !== '조치완료').length;
+      const fixed = total - unfixed;
+      const fixRate = total > 0 ? Math.round((fixed / total) * 100) : 0;
+
+      const subject = `[SafePatrol] ${siteLabel} 부적합사항대장 엑셀 보고서 (${periodLabel})`;
+      const body = `안녕하세요,\n\nSafePatrol 현장 패트롤 [부적합사항대장] 현황을 보고드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 부적합 건수: ${total}건 (조치완료: ${fixed}건 / 미조치: ${unfixed}건, 조치율: ${fixRate}%)\n- 보고일자: ${todayStr()}\n\n※ 기기에 다운로드된 [부적합사항대장.xlsx] 파일을 본 메일에 첨부하여 송부해 주시기 바랍니다.`;
+
+      setTimeout(() => {
+        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 600);
+    } catch (e) {
+      toast(`엑셀 메일 발송 준비 실패: ${e.message}`, 'danger');
+    }
+  });
+
+  // 3) 회의용 PPT 이메일 발송
+  $('#btnEmailPPT')?.addEventListener('click', async () => {
+    const filterSite = $('#selExportSite').value;
+    const siteLabel = filterSite === 'all' ? '전체 현장' : filterSite;
+    let periodLabel = '전체 기간';
+    let records = [];
+
+    try {
+      if (exportPeriodMode === 'all') {
+        records = await store.listAll();
+        periodLabel = '전체 누적 기간';
+      } else if (exportPeriodMode === 'month') {
+        const m = $('#selExportMonth').value;
+        records = await store.listMonth(m);
+        periodLabel = `${m}월`;
+      } else {
+        const start = $('#txtExportStartDate').value;
+        const end = $('#txtExportEndDate').value;
+        records = await store.listPeriod(start, end);
+        periodLabel = `${start} ~ ${end}`;
+      }
+      if (filterSite !== 'all') {
+        records = records.filter(r => r.site === filterSite);
+      }
+
+      // PPT 다운로드 먼저 실행
+      $('#btnDownloadPPT').click();
+
+      const total = records.length;
+      const unfixed = records.filter(r => r.status !== '조치완료').length;
+      const fixed = total - unfixed;
+
+      const subject = `[SafePatrol] ${siteLabel} 안전회의용 패트롤 분석 PPT (${periodLabel})`;
+      const body = `안녕하세요,\n\nSafePatrol 데이터 기반 [안전회의용 패트롤 부적합 분석 PPT] 자료를 공유드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 분석 건수: ${total}건 (미조치: ${unfixed}건)\n- 작성일자: ${todayStr()}\n\n※ 기기에 다운로드된 PPT 프레젠테이션(.pptx) 파일을 본 메일에 첨부하여 발송해 주시기 바랍니다.`;
+
+      setTimeout(() => {
+        location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 600);
+    } catch (e) {
+      toast(`PPT 메일 발송 준비 실패: ${e.message}`, 'danger');
+    }
+  });
 }
 
 async function deleteOneRecord(rec) {
@@ -979,31 +1314,36 @@ function clearForm() {
   $('#smartClassifyBox').classList.remove('active');
 }
 
-// ── Local Draft (시간제한 없는 안전 임시저장) ──
+// ── Local Draft (창이 켜있는 동안만 유지되는 세션 임시저장) ──
 function saveDraft() {
   const draft = {
-    site: $('#txtSite').value,
-    content: $('#txtContent').value,
-    location: $('#txtLocation').value,
-    workName: $('#txtWorkName').value,
-    kind: $('#txtKind').value,
-    item: $('#txtItem').value,
-    agent: $('#txtAgent').value,
-    workGroup: $('#txtWorkGroup').value,
-    type: $('#txtType').value,
-    law: $('#txtLaw').value,
-    condition: $('#txtCondition').value,
-    action: $('#txtAction').value,
+    site: $('#txtSite')?.value || '',
+    content: $('#txtContent')?.value || '',
+    location: $('#txtLocation')?.value || '',
+    workName: $('#txtWorkName')?.value || '',
+    kind: $('#txtKind')?.value || '',
+    item: $('#txtItem')?.value || '',
+    agent: $('#txtAgent')?.value || '',
+    workGroup: $('#txtWorkGroup')?.value || '',
+    type: $('#txtType')?.value || '',
+    law: $('#txtLaw')?.value || '',
+    condition: $('#txtCondition')?.value || '',
+    action: $('#txtAction')?.value || '',
     causes: [...selectedCauses],
-    inspectedDate: $('#txtInspectDate').value
+    inspectedDate: $('#txtInspectDate')?.value || ''
   };
-  localStorage.setItem('sp_draft', JSON.stringify(draft));
-  $('#saveStatus').textContent = '자동 임시저장 완료';
+  sessionStorage.setItem('sp_draft', JSON.stringify(draft));
+  $('#saveStatus').textContent = '세션 임시저장 됨';
 }
 
 function loadDraft() {
-  const raw = localStorage.getItem('sp_draft');
-  if (!raw) return;
+  // 새 창을 열었을 때는 공란으로 시작 (임시저장은 창이 켜져 있는 동안만 유지)
+  const raw = sessionStorage.getItem('sp_draft');
+  if (!raw) {
+    localStorage.removeItem('sp_draft');
+    if ($('#txtContent')) $('#txtContent').value = '';
+    return;
+  }
   try {
     const d = JSON.parse(raw);
     if (d.site) $('#txtSite').value = d.site;
@@ -1022,11 +1362,14 @@ function loadDraft() {
       selectedCauses = new Set(d.causes);
       updateCauseChips();
     }
+    if (d.inspectedDate) $('#txtInspectDate').value = d.inspectedDate;
   } catch (e) {}
 }
 
 function clearDraft() {
+  sessionStorage.removeItem('sp_draft');
   localStorage.removeItem('sp_draft');
+  if ($('#txtContent')) $('#txtContent').value = '';
   $('#saveStatus').textContent = '';
 }
 
@@ -1072,7 +1415,7 @@ function updateSiteFilterChips(records) {
     const btn = h('button.chip.filter-site-item', {
       type: 'button',
       class: listSiteFilter === s ? 'selected' : '',
-      style: { padding: '4px 10px', fontSize: '0.8rem', whiteSpace: 'nowrap' },
+      style: { padding: '6px 14px', fontSize: '0.82rem', whiteSpace: 'nowrap', flexShrink: '0' },
       onclick: () => {
         listSiteFilter = s;
         $('#btnFilterSiteAll')?.classList.remove('selected');

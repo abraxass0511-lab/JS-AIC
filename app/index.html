@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -44,7 +44,12 @@
 
         <!-- 1. 현장 선택 및 직접 수기입력 -->
         <div class="form-group">
-          <label class="form-label">현장명<span class="required">*</span></label>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label class="form-label" style="margin-bottom: 0;">현장명<span class="required">*</span></label>
+            <button type="button" id="btnManageSites" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.75rem; border-color: var(--primary); color: var(--primary); font-weight: 600;">
+              ⚙️ 현장 목록 관리
+            </button>
+          </div>
           <input type="text" id="txtSite" class="form-control" list="listSites" placeholder="현장명을 직접 입력하거나 목록에서 선택하세요">
           <datalist id="listSites"></datalist>
         </div>
@@ -61,10 +66,18 @@
           <div id="photoPreviews" class="photo-preview-grid"></div>
         </div>
 
-        <!-- 3. 내용 입력 (AI 없는 무료 스마트 자동분류 연동) -->
+        <!-- 3. 내용 입력 (AI 없는 무료 스마트 자동분류 연동 & 무료 음성입력) -->
         <div class="form-group">
-          <label class="form-label">부적합 내용<span class="required">*</span></label>
-          <textarea id="txtContent" class="form-control" placeholder="예: 비계시설 작업발판 수평재 미설치, 안전난간대 미설치 등 입력"></textarea>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label class="form-label" style="margin-bottom: 0;">부적합 내용<span class="required">*</span></label>
+            <button type="button" id="btnVoiceRecord" class="btn btn-outline" style="padding: 3px 10px; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 4px; border-color: #3b82f6; color: #2563eb; font-weight: 600;" title="음성으로 말하여 자동 텍스트 입력">
+              <span id="voiceIcon">🎙️</span> <span id="voiceText">음성 입력</span>
+            </button>
+          </div>
+          <textarea id="txtContent" class="form-control" placeholder="예: 비계시설 작업발판 수평재 미설치, 안전난간대 미설치 등 직접 입력 또는 🎙️음성으로 말씀하세요"></textarea>
+          <div id="voiceStatusMsg" style="display: none; font-size: 0.8rem; color: #2563eb; margin-top: 5px; font-weight: 600; padding: 6px 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
+            🔴 음성을 듣고 있습니다... 말씀이 끝나면 텍스트로 자동 입력됩니다.
+          </div>
           
           <!-- 자동분류 추천 박스 -->
           <div id="smartClassifyBox" class="smart-classify-box">
@@ -211,14 +224,14 @@
           </div>
         </div>
 
-        <!-- 필터 탭 & 일괄 삭제 툴바 -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap;">
-          <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; align-items: center;">
+        <!-- 필터 탭 & 일괄 삭제 툴바 (모바일 가로 스와이프 최적화) -->
+        <div style="margin-bottom: 10px;">
+          <div id="listFilterContainer" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px 2px; align-items: center; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap;">
             <button type="button" id="btnFilterSiteAll" class="chip selected filter-site" data-site="all">전체 현장</button>
-            <div id="boxDynamicSiteChips" style="display: inline-flex; gap: 6px;"></div>
-            <button type="button" id="btnFilterUnfixed" class="chip filter-status" data-status="unfixed">미조치만 보기</button>
+            <div id="boxDynamicSiteChips" style="display: flex; gap: 8px; flex-shrink: 0;"></div>
+            <button type="button" id="btnFilterUnfixed" class="chip filter-status" data-status="unfixed">⚠️ 미조치만 보기</button>
           </div>
-          <div>
+          <div style="display: flex; justify-content: flex-end; margin-top: 2px;">
             <button type="button" id="btnDeleteSelected" class="btn btn-outline" style="padding: 5px 12px; font-size: 0.8rem; color: var(--danger); border-color: #fca5a5; display: none;">
               🗑️ 선택 삭제 (<span id="selectedCount">0</span>건)
             </button>
@@ -308,9 +321,14 @@
           <div id="eduContainer"></div>
         </div>
 
-        <button type="button" id="btnDownloadEduImg" class="btn btn-primary btn-block" style="padding: 14px;">
-          📸 1페이지 교육자료 이미지(PNG) 다운로드
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btnDownloadEduImg" class="btn btn-primary" style="flex: 2; padding: 14px;">
+            📸 1페이지 교육자료(PNG) 다운로드
+          </button>
+          <button type="button" id="btnEmailEduImg" class="btn btn-outline" style="flex: 1; padding: 14px; border-color: #3b82f6; color: #2563eb; font-weight: 600; white-space: nowrap;">
+            📧 메일 발송
+          </button>
+        </div>
       </div>
     </section>
 
@@ -367,9 +385,14 @@
         <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
           선택한 기간의 모든 부적합 데이터를 원본 서식(2단 병합 헤더, 노란색 헤더, 사진 셀 삽입) 그대로 .xlsx로 생성합니다.
         </p>
-        <button type="button" id="btnDownloadExcel" class="btn btn-primary btn-block" style="padding: 13px; margin-bottom: 24px;">
-          📥 부적합사항대장.xlsx 다운로드
-        </button>
+        <div style="display: flex; gap: 8px; margin-bottom: 24px;">
+          <button type="button" id="btnDownloadExcel" class="btn btn-primary" style="flex: 2; padding: 13px;">
+            📥 부적합사항대장.xlsx 다운로드
+          </button>
+          <button type="button" id="btnEmailExcel" class="btn btn-outline" style="flex: 1; padding: 13px; border-color: #10b981; color: #047857; font-weight: 600; white-space: nowrap;">
+            📧 메일 발송
+          </button>
+        </div>
 
         <!-- 2. PPT 다운로드 -->
         <div class="card-title" style="margin-bottom: 6px;">
@@ -378,9 +401,14 @@
         <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
           선택한 기간의 조치율, 유형별 차트, 발생원인 분포, 규칙 기반 종합 대책을 16:9 와이드 프레젠테이션(.pptx)으로 제작합니다.
         </p>
-        <button type="button" id="btnDownloadPPT" class="btn btn-accent btn-block" style="padding: 13px;">
-          📑 회의용 분석 PPT (.pptx) 다운로드
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btnDownloadPPT" class="btn btn-accent" style="flex: 2; padding: 13px;">
+            📑 회의용 PPT (.pptx) 다운로드
+          </button>
+          <button type="button" id="btnEmailPPT" class="btn btn-outline" style="flex: 1; padding: 13px; border-color: #d97706; color: #b45309; font-weight: 600; white-space: nowrap;">
+            📧 메일 발송
+          </button>
+        </div>
       </div>
     </section>
   </main>
@@ -460,9 +488,54 @@
     </div>
   </div>
 
+  <!-- 관리자 전용 현장 관리 모달 -->
+  <div id="siteManageModal" class="modal-overlay" style="display: none;">
+    <div class="pin-card" style="max-width: 520px; text-align: left; padding: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--gray-200); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.15rem; color: var(--gray-900); display: flex; align-items: center; gap: 6px;">
+          <span>🏢</span> <span>현장 목록 관리 (관리자)</span>
+        </h3>
+        <button type="button" id="btnCloseSiteManage" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.85rem;">✕</button>
+      </div>
+
+      <!-- 신규 현장 등록 박스 -->
+      <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+        <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; color: var(--primary);">➕ 새 현장 추가</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <input type="text" id="txtNewSiteName" class="form-control" placeholder="현장명 (예: 반포현장, 한남3구역 재개발)" style="font-size: 0.88rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;">
+            <input type="text" id="txtNewSiteProgress" class="form-control" placeholder="공정률 (선택)" style="font-size: 0.8rem; padding: 6px 8px;">
+            <input type="text" id="txtNewSiteScale" class="form-control" placeholder="규모 (선택)" style="font-size: 0.8rem; padding: 6px 8px;">
+            <input type="text" id="txtNewSiteAmount" class="form-control" placeholder="금액 (선택)" style="font-size: 0.8rem; padding: 6px 8px;">
+          </div>
+          <button type="button" id="btnAddSite" class="btn btn-primary" style="padding: 8px; font-size: 0.88rem; font-weight: 700;">
+            + 현장 목록에 추가
+          </button>
+        </div>
+      </div>
+
+      <!-- 현재 등록된 현장 목록 -->
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-weight: 700; font-size: 0.85rem; color: var(--gray-800);">등록된 현장 목록 (<span id="siteTotalCount">0</span>개)</span>
+          <span style="font-size: 0.72rem; color: var(--gray-500);">수정/삭제 시 모든 기기 즉시 동기화</span>
+        </div>
+        <div id="siteManageList" style="display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 2px;">
+          <!-- JS로 동적 주입 -->
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; border-top: 1px solid var(--gray-200); padding-top: 12px;">
+        <button type="button" id="btnDoneSiteManage" class="btn btn-primary" style="padding: 8px 20px; font-size: 0.88rem;">
+          확인 완료
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261004_5"></script>
+  <script type="module" src="js/app.js?v=20261004_6"></script>
 </body>
 </html>
