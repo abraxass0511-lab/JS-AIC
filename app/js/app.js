@@ -1,4 +1,4 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob } from './util.js?v=20261004_5';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_8';
 import { store } from './store.js?v=20261004_5';
 import { processImageFile } from './image-processor.js?v=20261004_2';
 
@@ -1081,12 +1081,8 @@ async function shareOrEmailFile({ blob, filename, subject, body, mimeType }) {
 
   // 2. 브라우저 보안 정책상 파일 직접 첨부가 차단된 경우 (엑셀 .xlsx, PPT .pptx 등)
   // 기기 다운로드 즉시 실행 + 메일 작성창 열기 + 클립(📎) 첨부 명확한 안내
-  downloadBlob(blob, filename);
-  toast(`📥 [${filename}] 다운로드 완료!\n메일 앱 상단의 클립(📎)을 눌러 방금 저장된 파일을 첨부해 주세요.`, 'info');
-
-  setTimeout(() => {
-    location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  }, 800);
+  // 파일 생성(비동기) 후에는 브라우저가 자동 저장을 막으므로, 탭 1번으로 [저장 + 메일 앱 열기] 실행하는 시트 표시
+  saveAndEmail(blob, filename, subject, body);
   return true;
 }
 
@@ -1252,14 +1248,15 @@ function initEmailExportHandlers() {
       // 핸드폰에 저장하지 않고(download: false) 메모리에서 PPT 생성
       const { blob, filename } = await window.SafePPT.generatePresentation({
         records,
-        sites: store.sites,
-        siteName: siteLabel,
+        siteName: filterSite === 'all' ? '전 현장 종합' : filterSite,
         month: periodLabel,
+        inspector: (store.user && store.user.name) || '안전관리자',
         download: false,
-        loadImage: async (path) => {
+        loadPhotoBase64: async (path) => {
           const b = await store.photoBlob(path);
           const buf = await b.arrayBuffer();
-          return 'data:image/jpeg;base64,' + btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+          const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+          return `image/jpeg;base64,${base64}`;
         }
       });
 

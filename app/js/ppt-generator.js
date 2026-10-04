@@ -77,7 +77,7 @@
       throw new Error('PptxGenJS 라이브러리가 로드되지 않았습니다.');
     }
 
-    const { records = [], siteName = '전체 현장', month = '2026-10', inspector = '안전관리자', loadPhotoBase64 } = options;
+    const { records = [], siteName = '전체 현장', month = '2026-10', inspector = '안전관리자', loadPhotoBase64, download = true } = options;
     const pptx = new window.PptxGenJS();
     // 16:9 와이드 표준 규격 명시 (13.333 x 7.5 인치)
     pptx.defineLayout({ name: 'WIDE_16_9', width: 13.333, height: 7.5 });
