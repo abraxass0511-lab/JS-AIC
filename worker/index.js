@@ -25,7 +25,31 @@ export default {
     const url = new URL(request.url);
     const pin = request.headers.get('X-PIN');
     const pins = JSON.parse(env.PINS_JSON || '{}');
-    const user = pins[pin];
+    let user = pins[pin];
+
+    // env.PINS_JSON에 없는 신규/수정된 핀번호는 GitHub 저장소의 config/users.json에서 동적 조회
+    if (!user && pin && env.GITHUB_OWNER && env.GITHUB_REPO && env.GITHUB_TOKEN) {
+      try {
+        const ghUrl = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/contents/config/users.json`;
+        const ghRes = await fetch(ghUrl, {
+          headers: {
+            'User-Agent': 'SafePatrol-Relay',
+            'Authorization': `token ${env.GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3.raw'
+          }
+        });
+        if (ghRes.ok) {
+          const raw = await ghRes.text();
+          const parsed = JSON.parse(raw);
+          const uMap = parsed.users || parsed;
+          if (uMap && uMap[pin]) {
+            user = uMap[pin];
+          }
+        }
+      } catch (e) {
+        console.warn('Worker dynamic PIN lookup error:', e);
+      }
+    }
 
     // Auth verification endpoint
     if (url.pathname === '/auth') {

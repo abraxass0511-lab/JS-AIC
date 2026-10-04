@@ -46,9 +46,14 @@
         <div class="form-group">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
             <label class="form-label" style="margin-bottom: 0;">현장명<span class="required">*</span></label>
-            <button type="button" id="btnManageSites" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.75rem; border-color: var(--primary); color: var(--primary); font-weight: 600;">
-              ⚙️ 현장 목록 관리
-            </button>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btnManageSites" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.75rem; border-color: var(--primary); color: var(--primary); font-weight: 600;">
+                ⚙️ 현장 관리
+              </button>
+              <button type="button" id="btnManagePins" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.75rem; border-color: #8b5cf6; color: #7c3aed; font-weight: 600;">
+                👥 핀번호 관리
+              </button>
+            </div>
           </div>
           <input type="text" id="txtSite" class="form-control" list="listSites" placeholder="현장명을 직접 입력하거나 목록에서 선택하세요">
           <datalist id="listSites"></datalist>
@@ -479,8 +484,16 @@
     <div class="pin-card" style="max-width: 480px; text-align: left;">
       <h3 style="margin-bottom: 12px;">🔧 조치사항 등록</h3>
       <div class="form-group">
-        <label class="form-label">조치내용<span class="required">*</span></label>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label class="form-label" style="margin-bottom: 0;">조치내용<span class="required">*</span></label>
+          <button type="button" id="btnVoiceFixRecord" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.78rem; display: flex; align-items: center; gap: 4px; border-color: var(--primary); color: var(--primary); font-weight: 600;">
+            <span id="voiceFixIcon">🎙️</span> <span id="voiceFixText">음성 입력</span>
+          </button>
+        </div>
         <textarea id="txtFixContent" class="form-control" placeholder="예: 작업발판 수평재 즉시 보강 설치 및 근로자 교육 완료"></textarea>
+        <div id="voiceFixStatusMsg" style="display: none; font-size: 0.75rem; color: #dc2626; margin-top: 4px; font-weight: 600;">
+          🔴 음성을 듣고 있습니다... 말씀해 주세요.
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">조치 완료 사진</label>
@@ -539,9 +552,98 @@
     </div>
   </div>
 
+  <!-- 사용자 프로필 / 이름 수정 모달 -->
+  <div id="userProfileModal" class="modal-overlay" style="display: none;">
+    <div class="pin-card" style="max-width: 420px; text-align: left; padding: 22px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--gray-200); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.15rem; color: var(--gray-900); display: flex; align-items: center; gap: 6px;">
+          <span>👤</span> <span>내 계정 정보 및 이름 수정</span>
+        </h3>
+        <button type="button" id="btnCloseProfileModal" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.85rem;">✕</button>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label class="form-label">점검자 이름 (보고서 및 대장 기록용)</label>
+        <input type="text" id="txtMyName" class="form-control" placeholder="이름을 입력하세요 (예: 홍길동, 점검자1)">
+        <p style="font-size: 0.75rem; color: var(--gray-500); margin-top: 4px; line-height: 1.4;">
+          * 이름을 변경하시면 이후 등록되는 모든 점검 및 대장에 수정된 이름으로 자동 기록됩니다.
+        </p>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label">현재 권한</label>
+        <div id="lblMyRole" style="font-size: 0.88rem; font-weight: 600; color: var(--gray-700); padding: 6px 10px; background: var(--gray-100); border-radius: 6px;">
+          점검자
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+        <button type="button" id="btnSaveUserName" class="btn btn-primary" style="flex: 1; padding: 12px; font-weight: 700;">
+          💾 이름 변경 저장
+        </button>
+      </div>
+
+      <hr style="border: 0; border-top: 1px solid var(--gray-200); margin: 14px 0;">
+
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button type="button" id="btnOpenPinManageFromProfile" class="btn btn-outline" style="display: none; padding: 10px; border-color: #8b5cf6; color: #7c3aed; font-weight: 600;">
+          👥 핀번호 및 계정 전체 관리 (관리자 전용)
+        </button>
+        <button type="button" id="btnLogoutUser" class="btn btn-outline" style="padding: 10px; color: var(--danger); border-color: #fca5a5; font-weight: 600;">
+          🚪 다른 사용자로 전환 (로그아웃)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 관리자 전용 핀번호 관리 모달 -->
+  <div id="pinManageModal" class="modal-overlay" style="display: none;">
+    <div class="pin-card" style="max-width: 520px; text-align: left; padding: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid var(--gray-200); padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.15rem; color: var(--gray-900); display: flex; align-items: center; gap: 6px;">
+          <span>👥</span> <span>핀번호 및 계정 관리 (관리자)</span>
+        </h3>
+        <button type="button" id="btnClosePinManage" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.85rem;">✕</button>
+      </div>
+
+      <!-- 신규 핀번호 등록 박스 -->
+      <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+        <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; color: var(--primary);">➕ 새 핀번호 계정 추가</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="txtNewUserPin" class="form-control" placeholder="PIN 6자리 (예: 333333)" maxlength="10" style="flex: 1;">
+            <input type="text" id="txtNewUserName" class="form-control" placeholder="점검자 이름" style="flex: 1;">
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select id="selNewUserRole" class="form-control" style="flex: 1;">
+              <option value="inspector">점검자 (기본)</option>
+              <option value="admin">관리자 (모든 설정 가능)</option>
+            </select>
+            <button type="button" id="btnAddPinUser" class="btn btn-primary" style="padding: 9px 16px; white-space: nowrap; font-weight: 700;">
+              추가하기
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 등록된 핀번호 목록 -->
+      <div style="font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; display: flex; justify-content: space-between;">
+        <span>등록된 핀번호 목록</span>
+        <span id="pinTotalCount" style="color: var(--primary); font-weight: 700;">0</span>
+      </div>
+      <div id="pinManageList" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+        <!-- JS 렌더링 -->
+      </div>
+
+      <div style="margin-top: 16px; text-align: right;">
+        <button type="button" id="btnDonePinManage" class="btn btn-secondary" style="padding: 9px 18px;">닫기</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261004_10"></script>
+  <script type="module" src="js/app.js?v=20261004_11"></script>
 </body>
 </html>
