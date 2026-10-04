@@ -146,8 +146,24 @@
     }
   }
 
+  /**
+   * HTML 컨테이너를 캡처하여 다운로드 없이 메모리 Blob으로 반환
+   */
+  async function renderAsBlob(containerEl) {
+    if (!window.html2canvas) {
+      throw new Error('html2canvas 라이브러리가 로드되지 않았습니다.');
+    }
+    const canvas = await window.html2canvas(containerEl, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff'
+    });
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  }
+
   return {
     renderTemplate,
+    renderAsBlob,
     downloadAsImage
   };
 });
