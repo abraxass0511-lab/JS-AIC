@@ -1055,12 +1055,12 @@ function renderSiteManageList() {
 }
 
 // ── 공통: 메일 발송 / 파일 첨부 전송 ──
-// 모바일 환경: 핸드폰 다운로드 폴더 저장 없이(No local download) Web Share Level 2로 메일 앱에 파일 직접 첨부
+// 모바일 환경: 이미지는 Web Share로 자동 첨부, 엑셀/PPT는 브라우저 보안 정책에 따라 다운로드 후 메일 앱(📎 첨부) 자동 연동
 async function shareOrEmailFile({ blob, filename, subject, body, mimeType }) {
   const type = mimeType || blob.type || 'application/octet-stream';
   const file = new File([blob], filename, { type });
 
-  // 1. Web Share API Level 2 지원 브라우저 (모바일 크롬/사파리/삼성인터넷 등)
+  // 1. Web Share API Level 2 지원되는 경우 (이미지 등 브라우저 허용 파일)
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
@@ -1075,21 +1075,19 @@ async function shareOrEmailFile({ blob, filename, subject, body, mimeType }) {
         // 사용자가 취소한 경우
         return false;
       }
-      console.warn('Web Share 실패, 대체 방식 시도:', err);
+      console.warn('Web Share 실패, 다운로드 및 메일 연동 진행:', err);
     }
   }
 
-  // 2. PC 또는 파일 공유 미지원 브라우저: 안내 후 다운로드 + mailto
-  const ok = confirm(
-    '현재 브라우저/PC 환경에서는 보안 정책으로 인해 메일 앱으로의 파일 직접 첨부가 지원되지 않습니다.\n\n파일을 다운로드한 후 메일 작성창을 여시겠습니까?'
-  );
-  if (ok) {
-    downloadBlob(blob, filename);
-    setTimeout(() => {
-      location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    }, 600);
-  }
-  return false;
+  // 2. 브라우저 보안 정책상 파일 직접 첨부가 차단된 경우 (엑셀 .xlsx, PPT .pptx 등)
+  // 기기 다운로드 즉시 실행 + 메일 작성창 열기 + 클립(📎) 첨부 명확한 안내
+  downloadBlob(blob, filename);
+  toast(`📥 [${filename}] 다운로드 완료!\n메일 앱 상단의 클립(📎)을 눌러 방금 저장된 파일을 첨부해 주세요.`, 'info');
+
+  setTimeout(() => {
+    location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }, 800);
+  return true;
 }
 
 // ── 이메일 발송 핸들러 (1페이지 교육자료, 엑셀, 회의용 PPT) ──

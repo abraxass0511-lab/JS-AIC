@@ -385,7 +385,7 @@
         <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
           선택한 기간의 모든 부적합 데이터를 원본 서식(2단 병합 헤더, 노란색 헤더, 사진 셀 삽입) 그대로 .xlsx로 생성합니다.
         </p>
-        <div style="display: flex; gap: 8px; margin-bottom: 24px;">
+        <div style="display: flex; gap: 8px; margin-bottom: 6px;">
           <button type="button" id="btnDownloadExcel" class="btn btn-primary" style="flex: 2; padding: 13px;">
             📥 부적합사항대장.xlsx 다운로드
           </button>
@@ -393,6 +393,9 @@
             📧 메일 발송
           </button>
         </div>
+        <p style="font-size: 0.76rem; color: var(--gray-500); margin-bottom: 22px;">
+          💡 [메일 발송] 시 파일이 다운로드되며 메일 앱이 열립니다. 메일 앱 상단의 클립(📎)을 눌러 방금 저장된 파일을 첨부해 주세요.
+        </p>
 
         <!-- 2. PPT 다운로드 -->
         <div class="card-title" style="margin-bottom: 6px;">
@@ -401,7 +404,7 @@
         <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
           선택한 기간의 조치율, 유형별 차트, 발생원인 분포, 규칙 기반 종합 대책을 16:9 와이드 프레젠테이션(.pptx)으로 제작합니다.
         </p>
-        <div style="display: flex; gap: 8px;">
+        <div style="display: flex; gap: 8px; margin-bottom: 6px;">
           <button type="button" id="btnDownloadPPT" class="btn btn-accent" style="flex: 2; padding: 13px;">
             📑 회의용 PPT (.pptx) 다운로드
           </button>
@@ -409,6 +412,9 @@
             📧 메일 발송
           </button>
         </div>
+        <p style="font-size: 0.76rem; color: var(--gray-500); margin-bottom: 10px;">
+          💡 [메일 발송] 시 파일이 다운로드되며 메일 앱이 열립니다. 메일 앱 상단의 클립(📎)을 눌러 방금 저장된 파일을 첨부해 주세요.
+        </p>
       </div>
     </section>
   </main>
@@ -536,6 +542,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261004_7"></script>
+  <script type="module" src="js/app.js?v=20261004_8"></script>
 </body>
 </html>
