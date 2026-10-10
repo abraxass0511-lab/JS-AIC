@@ -67,76 +67,132 @@
   }
 
   /**
-   * 0.05초 즉시 1차 규칙 판정 (오프라인 산안법 룰 엔진)
+   * 고속 규칙 매칭 엔진 (특정 키워드가 명확할 때만 즉시 보조, 기본값 추락 강제 금지)
    */
   function quickRuleAnalysis(content) {
+    if (!content) return null;
     const text = content.toLowerCase();
-    let severity = '경부적합';
-    let law = '산안규칙 제42조(추락의 방지)';
-    let item = '가시설';
-    let hazardType = '추락';
-    let mgmtCauses = ['불안전 상태'];
-    let holdPoint = false;
-    let analysis = '현장 안전기준 위반 사항이 감지되었습니다.';
-    let pmVerdict = '즉시 시정 조치 및 이행 확인';
 
+    // 1. 밀폐공간 및 질식/유해가스 (산안규칙 제619조~)
+    if (text.includes('밀폐') || text.includes('농도') || text.includes('산소') || text.includes('유해가스') || text.includes('질식') || text.includes('환기팬') || text.includes('송기마스크')) {
+      return {
+        severity: '중부적합',
+        law: '산안규칙 제619조의2(산소 및 유해가스 농도의 측정)',
+        item: '밀폐공간',
+        hazardType: '질식',
+        mgmtCauses: ['계획 미이행', '불안전 행동'],
+        holdPoint: true,
+        analysis: '밀폐공간 작업 전 산소 및 유해가스 농도 미측정 또는 환기 미실시로 질식 사망 위험',
+        pmVerdict: '즉시 작업 중지, 적정 공기 측정(산소 18~23.5%) 및 송풍기 가동 확인 후 재개'
+      };
+    }
+    // 2. 비계 및 작업발판
     if (text.includes('비계') || text.includes('발판') || text.includes('틈새')) {
-      item = '비계';
-      law = '산안규칙 제56조(작업발판의 구조)';
-      hazardType = '추락';
-      severity = '중부적합';
-      mgmtCauses = ['불안전 상태', '계획 미이행'];
-      holdPoint = true;
-      analysis = '비계 작업발판 틈새 3cm 초과 또는 발판 폭 기준 미달로 추락 위험';
-      pmVerdict = '즉시 해당 구간 작업중지 및 발판 틈새 3cm 이하 보강 후 재검측';
-    } else if (text.includes('개구부') || text.includes('피트') || text.includes('덮개')) {
-      item = '개구부';
-      law = '산안규칙 제43조(개구부 등의 방호 조치)';
-      hazardType = '추락';
-      severity = '중부적합';
-      mgmtCauses = ['불안전 상태', '계획 미이행'];
-      holdPoint = true;
-      analysis = '바닥 개구부 고정 덮개 미설치 또는 임의 개방으로 추락 위험 극심';
-      pmVerdict = '즉시 위험구역 출입통제 및 규격 덮개(고정/추락주의 표지) 설치';
-    } else if (text.includes('난간') || text.includes('단부') || text.includes('슬래브')) {
-      item = '안전난간';
-      law = '산안규칙 제13조(안전난간의 구조 및 요건)';
-      hazardType = '추락';
-      severity = '중부적합';
-      mgmtCauses = ['불안전 상태', '불안전 행동'];
-      holdPoint = true;
-      analysis = '높이 2m 이상 슬래브 단부 안전난간 미설치로 추락 사망 위험';
-      pmVerdict = '즉시 단부 접근 금지 및 상부·중간난간대 완벽 설치 후 검측';
-    } else if (text.includes('안전대') || text.includes('구명줄')) {
-      item = '안전대';
-      law = '산안규칙 제44조(안전대의 부착설비 등)';
-      hazardType = '추락';
-      severity = '중부적합';
-      mgmtCauses = ['불안전 행동', '계획 미이행'];
-      holdPoint = true;
-      analysis = '고소작업자 안전대 미체결 또는 수직/수평 구명줄 미설치';
-      pmVerdict = '즉시 안전대 이중고리 체결 지도 및 구명줄 보강 설치';
-    } else if (text.includes('용접') || text.includes('불티') || text.includes('화재')) {
-      item = '화기작업';
-      law = '산안규칙 제241조(화재위험작업 시의 안전조치)';
-      hazardType = '화재·폭발';
-      severity = '중부적합';
-      mgmtCauses = ['불안전 상태', '계획 미이행'];
-      holdPoint = true;
-      analysis = '용접 불티 비산방지포 미설치 또는 소화기 미비치로 화재 위험';
-      pmVerdict = '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개';
-    } else if (text.includes('조명') || text.includes('어두') || text.includes('정리') || text.includes('통로')) {
-      item = '가설통로';
-      law = '산안규칙 제21조(통로의 조명), 제22조(통로의 설치)';
-      hazardType = '전도';
-      severity = '경부적합';
-      mgmtCauses = ['불안전 상태'];
-      holdPoint = false;
-      analysis = '가설통로 조도 75럭스 미달 또는 통로 상 자재 방치로 보행 장애';
-      pmVerdict = '당일 작업 종료 전 통로 자재 구획 정리 및 고효율 LED 조명 추가 설치';
+      return {
+        item: '비계',
+        law: '산안규칙 제56조(작업발판의 구조)',
+        hazardType: '추락',
+        severity: '중부적합',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: true,
+        analysis: '비계 작업발판 틈새 3cm 초과 또는 발판 폭 기준 미달로 추락 위험',
+        pmVerdict: '즉시 해당 구간 작업중지 및 발판 틈새 3cm 이하 보강 후 재검측'
+      };
+    }
+    // 3. 개구부
+    if (text.includes('개구부') || text.includes('피트') || text.includes('덮개')) {
+      return {
+        item: '개구부',
+        law: '산안규칙 제43조(개구부 등의 방호 조치)',
+        hazardType: '추락',
+        severity: '중부적합',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: true,
+        analysis: '바닥 개구부 고정 덮개 미설치 또는 임의 개방으로 추락 위험 극심',
+        pmVerdict: '즉시 위험구역 출입통제 및 규격 덮개(고정/추락주의 표지) 설치'
+      };
+    }
+    // 4. 안전난간
+    if (text.includes('난간') || text.includes('단부') || text.includes('슬래브')) {
+      return {
+        item: '안전난간',
+        law: '산안규칙 제13조(안전난간의 구조 및 요건)',
+        hazardType: '추락',
+        severity: '중부적합',
+        mgmtCauses: ['불안전 상태', '불안전 행동'],
+        holdPoint: true,
+        analysis: '높이 2m 이상 슬래브 단부 안전난간 미설치로 추락 사망 위험',
+        pmVerdict: '즉시 단부 접근 금지 및 상부·중간난간대 완벽 설치 후 검측'
+      };
+    }
+    // 5. 안전대
+    if (text.includes('안전대') || text.includes('구명줄')) {
+      return {
+        item: '안전대',
+        law: '산안규칙 제44조(안전대의 부착설비 등)',
+        hazardType: '추락',
+        severity: '중부적합',
+        mgmtCauses: ['불안전 행동', '계획 미이행'],
+        holdPoint: true,
+        analysis: '고소작업자 안전대 미체결 또는 수직/수평 구명줄 미설치',
+        pmVerdict: '즉시 안전대 이중고리 체결 지도 및 구명줄 보강 설치'
+      };
+    }
+    // 6. 화재 및 용접
+    if (text.includes('용접') || text.includes('불티') || text.includes('화재')) {
+      return {
+        item: '화기작업',
+        law: '산안규칙 제241조(화재위험작업 시의 안전조치)',
+        hazardType: '화재·폭발',
+        severity: '중부적합',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: true,
+        analysis: '용접 불티 비산방지포 미설치 또는 소화기 미비치로 화재 위험',
+        pmVerdict: '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개'
+      };
+    }
+    // 7. 가설전기 / 감전
+    if (text.includes('전기') || text.includes('분전') || text.includes('접지') || text.includes('차단기') || text.includes('감전')) {
+      return {
+        item: '가설전기',
+        law: '산안규칙 제302조(전기 기계·기구의 접지)',
+        hazardType: '감전',
+        severity: '중부적합',
+        mgmtCauses: ['불안전 상태'],
+        holdPoint: false,
+        analysis: '임시 분전함 외함 접지 미시행 또는 누전차단기 불량',
+        pmVerdict: '해당 차단기 전원 즉시 차단 및 외함 접지선 체결 완료 후 통전'
+      };
+    }
+    // 8. 거푸집 동바리 / 붕괴
+    if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집') || text.includes('붕괴')) {
+      return {
+        item: '거푸집동바리',
+        law: '산안규칙 제332조(거푸집동바리등의 안전조치)',
+        hazardType: '붕괴·도괴',
+        severity: '중부적합',
+        mgmtCauses: ['계획 미이행', '불안전 상태'],
+        holdPoint: true,
+        analysis: '파이프서포트 수평연결재 미체결 또는 2본 이상 연결 사용',
+        pmVerdict: '타설작업 중지, 구조검토서 기준 수평연결재 2방향 보강 완료 후 타설 승인'
+      };
+    }
+    // 9. 통로 / 전도
+    if (text.includes('조명') || text.includes('어두') || text.includes('통로') || text.includes('넘어')) {
+      return {
+        item: '가설통로',
+        law: '산안규칙 제21조(통로의 조명), 제22조(통로의 설치)',
+        hazardType: '전도',
+        severity: '경부적합',
+        mgmtCauses: ['불안전 상태'],
+        holdPoint: false,
+        analysis: '가설통로 조도 75럭스 미달 또는 통로 상 자재 방치로 보행 장애',
+        pmVerdict: '당일 작업 종료 전 통로 자재 구획 정리 및 고효율 LED 조명 추가 설치'
+      };
     }
 
-    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict };
+    // 일치하는 특정 규칙이 없으면 임의로 추락을 부여하지 않고 null 반환 (AI가 자유롭게 전 조항 분석하도록 위임)
+    return null;
   }
 
   /**
@@ -174,13 +230,13 @@
           const data = await cfRes.json();
           return {
             severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
-            law: data.law || instantResult.law,
-            hazardType: data.hazardType || instantResult.hazardType,
-            item: data.item || instantResult.item,
-            mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : instantResult.mgmtCauses,
-            holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : instantResult.holdPoint,
-            analysis: data.analysis || instantResult.analysis,
-            pmVerdict: data.pmVerdict || instantResult.pmVerdict,
+            law: data.law || (instantResult ? instantResult.law : '산안법 관련 조항 검토'),
+            hazardType: data.hazardType || (instantResult ? instantResult.hazardType : '기타'),
+            item: data.item || (instantResult ? instantResult.item : '기타'),
+            mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : (instantResult ? instantResult.mgmtCauses : ['불안전 상태']),
+            holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : (instantResult ? instantResult.holdPoint : false),
+            analysis: data.analysis || (instantResult ? instantResult.analysis : '산업안전보건기준에 관한 규칙 위반 사항'),
+            pmVerdict: data.pmVerdict || (instantResult ? instantResult.pmVerdict : '즉시 시정 조치 및 현장 점검 완료 후 작업'),
             source: 'cloudflare_cloud_qwen'
           };
         }
@@ -191,13 +247,14 @@
 
     // ── [2단계-B] 내 노트북이 켜져 있는 경우: 로컬 LM Studio 스트리밍 추론 ──
     // 프롬프트: 생각을 3~4문장으로 극단적으로 압축하고 </think> 뒤에 즉시 JSON 출력 강제
-    const systemPrompt = `너는 대한민국 건설현장 산업안전보건법 및 부적합 점검 전문가 AI이다.
+    const systemPrompt = `너는 대한민국 산업안전보건법 및 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 전문 안전감사관 AI이다.
+주어진 지적내용을 면밀히 분석하여 가장 부합하는 현행 법령 조항과 재해형태를 도출하라.
 생각 과정(<think>)은 3~4문장 이내로 아주 짧게 끝내고, 반드시 </think> 태그 뒤에 아래 JSON 형식으로만 최종 답을 출력하라:
 {
   "severity": "중부적합" 또는 "경부적합",
-  "law": "산안규칙 제OO조(조항명)",
-  "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발",
-  "item": "비계" 또는 "개구부" 또는 "안전난간" 또는 "가설전기" 또는 "건설기계",
+  "law": "산안규칙 제OO조(조항명 전문)",
+  "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식" 또는 "온열질환" 또는 "직업병",
+  "item": "해당 작업 또는 기인물 명칭(예: 밀폐공간, 비계, 안전난간, 거푸집, 가설전기, 크레인, 굴착기 등)",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
