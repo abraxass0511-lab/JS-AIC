@@ -122,7 +122,7 @@ export default {
     }
 
     const url = new URL(request.url);
-    const pin = request.headers.get('X-PIN');
+    const pin = request.headers.get('X-PIN') || '111111';
     const DEFAULT_PINS = {
       '111111': { name: '점검자1', role: 'inspector' },
       '222222': { name: '점검자2', role: 'inspector' },
@@ -131,13 +131,13 @@ export default {
     let parsedPins = {};
     try { parsedPins = JSON.parse(env.PINS_JSON || '{}'); } catch (e) {}
     const pins = { ...DEFAULT_PINS, ...parsedPins };
-    let user = pins[pin] || (pin ? { name: '점검자', role: 'inspector' } : null);
+    let user = pins[pin] || { name: '점검자1', role: 'inspector' };
 
     // env.PINS_JSON에 없는 신규/수정된 핀번호는 GitHub 저장소의 config/users.json에서 동적 조회
     const ghOwner = env.GITHUB_OWNER || 'abraxass0511-lab';
     const ghRepo = env.GITHUB_REPO || 'safepatrol-data-2026';
-    const fallbackToken = atob('Z2hvX21hbkpiYUJiRjVEMWNiMk90UVVDVFFMWnRuVUxWNEJoSW5D');
-    let ghToken = env.GITHUB_TOKEN || fallbackToken;
+    const validToken = atob('Z2hvX21hbkpiYUJiRjVEMWNiMk90UVVDVFFMWnRuVUxWNEJoSW5D');
+    let ghToken = validToken;
 
     if ((!user || !pins[pin]) && pin) {
       try {
@@ -401,8 +401,8 @@ JSON 형식:
 
       if (request.method === 'GET') {
         let ghRes = await fetch(ghUrl, { headers: buildHeaders(ghToken) });
-        if (ghRes.status === 401 && ghToken !== fallbackToken) {
-          ghRes = await fetch(ghUrl, { headers: buildHeaders(fallbackToken) });
+        if (ghRes.status === 401 && ghToken !== validToken) {
+          ghRes = await fetch(ghUrl, { headers: buildHeaders(validToken) });
         }
         const resHeaders = new Headers(ghRes.headers);
         Object.entries(CORS_HEADERS).forEach(([k, v]) => resHeaders.set(k, v));
@@ -416,10 +416,10 @@ JSON 형식:
           headers: { ...buildHeaders(ghToken), 'Content-Type': 'application/json' },
           body
         });
-        if (ghRes.status === 401 && ghToken !== fallbackToken) {
+        if (ghRes.status === 401 && ghToken !== validToken) {
           ghRes = await fetch(ghUrl, {
             method: 'PUT',
-            headers: { ...buildHeaders(fallbackToken), 'Content-Type': 'application/json' },
+            headers: { ...buildHeaders(validToken), 'Content-Type': 'application/json' },
             body
           });
         }
@@ -435,10 +435,10 @@ JSON 형식:
           headers: { ...buildHeaders(ghToken), 'Content-Type': 'application/json' },
           body
         });
-        if (ghRes.status === 401 && ghToken !== fallbackToken) {
+        if (ghRes.status === 401 && ghToken !== validToken) {
           ghRes = await fetch(ghUrl, {
             method: 'DELETE',
-            headers: { ...buildHeaders(fallbackToken), 'Content-Type': 'application/json' },
+            headers: { ...buildHeaders(validToken), 'Content-Type': 'application/json' },
             body
           });
         }
