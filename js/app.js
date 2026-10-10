@@ -1,6 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
 import { store } from './store.js?v=20261004_11';
 import { processImageFile } from './image-processor.js?v=20261004_2';
+import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
+import { parsePPTX, parseImage } from './pptx-importer.js?v=20261010_1';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -20,6 +22,8 @@ let listOnlyUnfixed = false;
 let listSiteFilter = 'all';
 let currentEduRecords = [];
 let currentEduPeriodLabel = '';
+let currentManualSeverity = '중부적합';
+let importedRecords = []; // [{ severity, type, law, subcontractor, ... }]
 
 // ── App Init ──
 window.addEventListener('DOMContentLoaded', async () => {
@@ -212,7 +216,61 @@ function bindEvents() {
           updatePinDisplay();
         }
       }
-    });
+  // ── 수기 입력 vs PPT/장표 불러오기 모드 전환 ──
+  $('#btnModeManual')?.addEventListener('click', () => {
+    $('#btnModeManual')?.classList.add('selected');
+    $('#btnModeImport')?.classList.remove('selected');
+    if ($('#sectionManualMode')) $('#sectionManualMode').style.display = 'block';
+    if ($('#sectionImportMode')) $('#sectionImportMode').style.display = 'none';
+  });
+
+  $('#btnModeImport')?.addEventListener('click', () => {
+    $('#btnModeImport')?.classList.add('selected');
+    $('#btnModeManual')?.classList.remove('selected');
+    if ($('#sectionManualMode')) $('#sectionManualMode').style.display = 'none';
+    if ($('#sectionImportMode')) $('#sectionImportMode').style.display = 'block';
+    if ($('#txtSite')?.value && $('#txtImportSite')) {
+      $('#txtImportSite').value = $('#txtSite').value;
+    }
+    updateImportStageBadge();
+  });
+
+  // ── 부적합 등급 토글 (중부적합 vs 경부적합) ──
+  $('#btnSeverityMajor')?.addEventListener('click', () => {
+    currentManualSeverity = '중부적합';
+    $('#btnSeverityMajor')?.classList.add('active');
+    $('#btnSeverityMinor')?.classList.remove('active');
+    $('#btnSeverityMajor').style.background = '#fef2f2';
+    $('#btnSeverityMajor').style.color = '#dc2626';
+    $('#btnSeverityMinor').style.background = 'white';
+    $('#btnSeverityMinor').style.color = '#d97706';
+  });
+
+  $('#btnSeverityMinor')?.addEventListener('click', () => {
+    currentManualSeverity = '경부적합';
+    $('#btnSeverityMinor')?.classList.add('active');
+    $('#btnSeverityMajor')?.classList.remove('active');
+    $('#btnSeverityMinor').style.background = '#fffbeb';
+    $('#btnSeverityMinor').style.color = '#d97706';
+    $('#btnSeverityMajor').style.background = 'white';
+    $('#btnSeverityMajor').style.color = '#dc2626';
+  });
+
+  // ── 공정률 실시간 표준 단계 뱃지 갱신 ──
+  $('#txtProgressRate')?.addEventListener('input', () => updateManualStageBadge());
+  $('#selProductType')?.addEventListener('change', () => updateManualStageBadge());
+  $('#txtWorkGroup')?.addEventListener('input', () => updateManualStageBadge());
+  $('#txtImportProgressRate')?.addEventListener('input', () => updateImportStageBadge());
+  $('#selImportProductType')?.addEventListener('change', () => updateImportStageBadge());
+
+  // ── PPT / 장표 파일 임포트 ──
+  $('#filePptxImport')?.addEventListener('change', handlePptxImportChange);
+  $('#btnSaveImportedRecords')?.addEventListener('click', handleSaveImportedRecords);
+  $('#btnClearImported')?.addEventListener('click', () => {
+    importedRecords = [];
+    if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'none';
+    if ($('#importCardsContainer')) $('#importCardsContainer').innerHTML = '';
+    toast('불러온 장표 목록이 초기화되었습니다.', 'info');
   });
 
   // Photo Selector
@@ -335,23 +393,46 @@ function bindEvents() {
       await store.saveSites(store.sites);
       renderSites(); // datalist 및 필터 드롭다운 즉시 갱신
     }
+    const progressVal = parseFloat($('#txtProgressRate')?.value || 35);
+    const productTypeVal = $('#selProductType')?.value || '공동주택';
+    const workGroupVal = $('#txtWorkGroup')?.value.trim() || '';
+    const stageObj = determineStandardStage(progressVal, workGroupVal, productTypeVal);
+
+    const mgmtCauses = [
+      $('#chkMgmtPlanNotMade')?.checked ? '계획 미수립' : null,
+      $('#chkMgmtPlanNotFollowed')?.checked ? '계획 미이행' : null,
+      $('#chkMgmtUnsafeAction')?.checked ? '불안전 행동' : null,
+      $('#chkMgmtUnsafeCondition')?.checked ? '불안전 상태' : null,
+    ].filter(Boolean);
+
     const record = {
       site,
+      productType: productTypeVal,
+      progressRate: progressVal,
+      stage: stageObj.name,
+      severity: currentManualSeverity || '중부적합',
+      subcontractor: $('#txtSubcontractor')?.value.trim() || '',
+      inspectRound: $('#txtInspectRound')?.value.trim() || '1차',
       siteInfo: {
-        progress: siteObj.progress || '',
+        progress: progressVal + '%',
         scale: siteObj.scale || '',
         amount: siteObj.amount || ''
       },
       content,
       location,
       workName,
-      workGroup: $('#txtWorkGroup').value.trim(),
+      workGroup: workGroupVal,
       kind: $('#txtKind').value.trim(),
       item: $('#txtItem').value.trim(),
       agent: $('#txtAgent').value.trim(),
       type: $('#txtType').value.trim(),
       condition: $('#txtCondition').value.trim(),
       action: $('#txtAction').value.trim(),
+      mgmtCauses,
+      holdPoint: !!$('#chkHoldPoint')?.checked,
+      interviewOpinion: $('#txtInterviewOpinion')?.value.trim() || '',
+      auditProposal: $('#txtAuditProposal')?.value.trim() || '',
+      pmVerdict: $('#txtPmVerdict')?.value.trim() || '',
       workPlan: '해당없음',
       basis: {
         ra: '반영',
@@ -360,6 +441,7 @@ function bindEvents() {
         guide: '',
         law: $('#txtLaw').value.trim()
       },
+      law: $('#txtLaw').value.trim(),
       causes: [...selectedCauses],
       inspectedDate
     };
@@ -1967,12 +2049,31 @@ async function applyListFiltersAndRender() {
         )
       ));
 
-      const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isFixed ? 'var(--success)' : 'var(--danger)'}` } },
-        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px' } },
-          h('strong', { style: { fontSize: '0.95rem', minWidth: '0', wordBreak: 'keep-all' } }, `[${r.site}] ${r.location}`),
+      const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
+      const sevBadge = h('span.badge', {
+        style: {
+          background: isMajor ? '#fef2f2' : '#fffbeb',
+          color: isMajor ? '#dc2626' : '#d97706',
+          border: `1px solid ${isMajor ? '#fca5a5' : '#fde68a'}`,
+          fontSize: '0.72rem',
+          fontWeight: '700',
+          padding: '2px 6px',
+          borderRadius: '4px'
+        }
+      }, isMajor ? '🚨 중부적합' : '⚠️ 경부적합');
+
+      const card = h('div.card', { style: { padding: '14px', borderLeft: `5px solid ${isMajor ? '#ef4444' : '#f59e0b'}` } },
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+            sevBadge,
+            h('strong', { style: { fontSize: '0.95rem', minWidth: '0', wordBreak: 'keep-all' } }, `[${r.site}] ${r.location}`)
+          ),
           h('span.badge', { class: isFixed ? 'success' : 'danger', style: { flexShrink: '0', whiteSpace: 'nowrap' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
         ),
         cardBody,
+        (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
+          `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate || 0}% (${r.stage || '지상골조'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
+        ) : '',
         isFixed ? h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px', marginBottom: '6px' } }, `조치결과: ${r.fix.content}`) : '',
         btnGroup
       );
@@ -1985,6 +2086,7 @@ async function applyListFiltersAndRender() {
       if (photoThumbUrl) {
         photoThumb = `<img src="${photoThumbUrl}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photoThumbUrl}', '_blank')" title="클릭하여 원본보기">`;
       }
+      const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e2e8f0';
       tr.style.background = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
@@ -1992,7 +2094,10 @@ async function applyListFiltersAndRender() {
         <td style="padding:6px 4px;"><input type="checkbox" class="chk-record-item" data-id="${r.id}"></td>
         <td style="padding:8px 4px; font-weight:600; color:var(--gray-700);">${idx + 1}</td>
         <td style="padding:4px;">${photoThumb}</td>
-        <td style="padding:8px; font-weight:500;">${r.site || '-'}</td>
+        <td style="padding:8px; font-weight:500;">
+          <div style="font-size:0.75rem; color:${isMajor ? '#dc2626' : '#d97706'}; font-weight:700;">${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}</div>
+          <div>${r.site || '-'}</div>
+        </td>
         <td style="padding:8px; color:var(--gray-600);">${r.inspectedDate || '-'}</td>
         <td style="padding:8px 10px; text-align:left; font-weight:500; color:var(--gray-900);">${r.content}</td>
         <td style="padding:8px; color:var(--gray-700);">${r.location || '-'}</td>
@@ -2018,9 +2123,7 @@ async function applyListFiltersAndRender() {
       `;
 
       const chkBox = tr.querySelector('.chk-record-item');
-      if (chkBox) {
-        chkBox.addEventListener('change', updateSelectedCount);
-      }
+      if (chkBox) chkBox.addEventListener('change', updateSelectedCount);
 
       const fixBtn = tr.querySelector('.btn-table-fix');
       if (fixBtn) {
@@ -2034,11 +2137,282 @@ async function applyListFiltersAndRender() {
       }
 
       const delBtn = tr.querySelector('.btn-table-del');
-      if (delBtn) {
-        delBtn.addEventListener('click', () => deleteOneRecord(r));
-      }
+      if (delBtn) delBtn.addEventListener('click', () => deleteOneRecord(r));
 
       tbody.appendChild(tr);
     }
+  }
+}
+
+// ── 단일 삭제 헬퍼 ──
+async function deleteOneRecord(r) {
+  if (!confirm(`[${r.site}] ${r.content}\n해당 부적합 건을 완전히 삭제하시겠습니까?`)) return;
+  try {
+    await store.deleteRecord(r);
+    toast('부적합 내역이 삭제되었습니다.', 'info');
+    renderRecordList();
+  } catch (e) {
+    toast(`삭제 실패: ${e.message}`, 'danger');
+  }
+}
+
+// ── 표준 공정단계 뱃지 실시간 갱신 ──
+function updateManualStageBadge() {
+  const p = parseFloat($('#txtProgressRate')?.value || 35);
+  const wg = $('#txtWorkGroup')?.value || '';
+  const pt = $('#selProductType')?.value || '공동주택';
+  const stage = determineStandardStage(p, wg, pt);
+  const badge = $('#badgeManualStage');
+  if (badge) badge.textContent = stage.name;
+}
+
+function updateImportStageBadge() {
+  const p = parseFloat($('#txtImportProgressRate')?.value || 35);
+  const pt = $('#selImportProductType')?.value || '공동주택';
+  const stage = determineStandardStage(p, '', pt);
+  const badge = $('#badgeImportStage');
+  if (badge) badge.textContent = stage.name;
+}
+
+// ── PPTX / 장표 파일 임포트 처리 ──
+async function handlePptxImportChange(e) {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+
+  toast(`${files.length}개 파일 분석 중...`, 'info', 2000);
+  importedRecords = [];
+
+  for (const f of files) {
+    try {
+      if (f.name.toLowerCase().endsWith('.pptx')) {
+        const records = await parsePPTX(f);
+        records.forEach(r => { r._sourceFile = f.name; });
+        importedRecords.push(...records);
+      } else if (f.type.startsWith('image/')) {
+        const record = await parseImage(f);
+        record._sourceFile = f.name;
+        importedRecords.push(record);
+      }
+    } catch (err) {
+      console.error('File parse error:', f.name, err);
+      toast(`[${f.name}] 파싱 실패: ${err.message}`, 'danger');
+    }
+  }
+
+  if (importedRecords.length > 0) {
+    toast(`총 ${importedRecords.length}건의 부적합 장표 데이터를 추출했습니다!`, 'success');
+    if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'block';
+    if ($('#importCount')) $('#importCount').textContent = importedRecords.length;
+    renderImportedCards();
+  } else {
+    toast('추출할 수 있는 부적합 슬라이드를 찾지 못했습니다.', 'warning');
+  }
+}
+
+function renderImportedCards() {
+  const container = $('#importCardsContainer');
+  if (!container) return;
+  container.innerHTML = '';
+
+  importedRecords.forEach((rec, idx) => {
+    const isMajor = rec.severity === '중부적합';
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background: white; border: 1px solid ${isMajor ? '#fca5a5' : '#fde68a'};
+      border-left: 4px solid ${isMajor ? '#ef4444' : '#f59e0b'};
+      border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem;
+    `;
+
+    const thumbHtml = rec.photos && rec.photos[0]
+      ? `<img src="${rec.photos[0]}" style="width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; flex-shrink: 0;">`
+      : `<div style="width: 64px; height: 64px; background: #f1f5f9; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.72rem; flex-shrink: 0;">사진없음</div>`;
+
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="background: ${isMajor ? '#fef2f2' : '#fffbeb'}; color: ${isMajor ? '#dc2626' : '#d97706'}; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid ${isMajor ? '#fca5a5' : '#fde68a'}; font-size: 0.72rem;">
+            ${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}
+          </span>
+          <span style="font-weight: 700; color: var(--gray-800);">${rec.type || '추락'}</span>
+          <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
+        </div>
+        <button type="button" class="btn btn-outline btn-load-to-form" data-idx="${idx}" style="padding: 2px 8px; font-size: 0.72rem; border-color: var(--primary); color: var(--primary);">
+          ✏️ 직접입력 폼에 채우기
+        </button>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        ${thumbHtml}
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 600; color: var(--gray-900); margin-bottom: 2px; word-break: break-all;">
+            ${rec.content}
+          </div>
+          <div style="font-size: 0.75rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
+            📜 ${rec.law}
+          </div>
+          <div style="color: var(--gray-600); font-size: 0.75rem;">
+            협력사: ${rec.subcontractor || '-'} | 공종: ${rec.workGroup || '-'} | 장소: ${rec.location || '-'}
+          </div>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.btn-load-to-form').addEventListener('click', () => {
+      loadImportedRecordToManualForm(rec);
+    });
+
+    container.appendChild(card);
+  });
+}
+
+function loadImportedRecordToManualForm(rec) {
+  // 모드 전환
+  $('#btnModeManual')?.click();
+
+  // 값 채우기
+  if (rec.severity === '경부적합') {
+    $('#btnSeverityMinor')?.click();
+  } else {
+    $('#btnSeverityMajor')?.click();
+  }
+
+  if ($('#txtContent')) $('#txtContent').value = rec.content || '';
+  if ($('#txtLaw')) $('#txtLaw').value = rec.law || '';
+  if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
+  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
+  if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
+  if ($('#txtInspectRound')) $('#txtInspectRound').value = rec.inspectRound || '1차';
+  if ($('#txtType')) $('#txtType').value = rec.type || '';
+  if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
+  if ($('#txtAuditProposal')) $('#txtAuditProposal').value = rec.auditProposal || '';
+  if ($('#txtPmVerdict')) $('#txtPmVerdict').value = rec.pmVerdict || '';
+  if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!rec.holdPoint;
+
+  // 관리적 원인 체크박스
+  const causes = rec.mgmtCauses || [];
+  if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = causes.includes('계획 미수립');
+  if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = causes.includes('계획 미이행');
+  if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = causes.includes('불안전 행동');
+  if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = causes.includes('불안전 상태');
+
+  // 사진 채우기
+  if (rec.photos && rec.photos.length) {
+    currentPhotos = rec.photos.map(url => ({
+      previewUrl: url,
+      dataUrl: url
+    }));
+    renderPhotoPreviews();
+  }
+
+  updateManualStageBadge();
+  toast('선택한 장표 내용이 직접 입력 폼에 채워졌습니다. 확인 후 저장하세요.', 'info');
+}
+
+// ── 파싱된 전체 장표 대장에 일괄 저장 ──
+async function handleSaveImportedRecords() {
+  if (!importedRecords.length) {
+    toast('저장할 장표 데이터가 없습니다.', 'danger');
+    return;
+  }
+
+  const site = ($('#txtImportSite')?.value || $('#txtSite')?.value || '').trim();
+  if (!site) {
+    toast('현장명을 입력해주세요.', 'danger');
+    return;
+  }
+
+  const productType = $('#selImportProductType')?.value || '공동주택';
+  const progressRate = parseFloat($('#txtImportProgressRate')?.value || 35);
+  const inspectedDate = $('#txtImportInspectDate')?.value || todayStr();
+  const stage = determineStandardStage(progressRate, '', productType).name;
+
+  const btn = $('#btnSaveImportedRecords');
+  btn.disabled = true;
+  btn.textContent = `저장 중 (0/${importedRecords.length})...`;
+
+  try {
+    // 현장 등록 확인
+    let siteObj = store.sites.find(s => s.name === site);
+    if (!siteObj) {
+      siteObj = { name: site, progress: progressRate + '%', scale: '', amount: '' };
+      store.sites.push(siteObj);
+      await store.saveSites(store.sites);
+      renderSites();
+    }
+
+    let savedCount = 0;
+    for (const rec of importedRecords) {
+      btn.textContent = `저장 중 (${++savedCount}/${importedRecords.length})...`;
+
+      const finalRecord = {
+        site,
+        productType,
+        progressRate,
+        stage,
+        severity: rec.severity || '중부적합',
+        subcontractor: rec.subcontractor || '',
+        inspectRound: rec.inspectRound || '1차',
+        siteInfo: {
+          progress: progressRate + '%',
+          scale: siteObj.scale || '',
+          amount: siteObj.amount || ''
+        },
+        content: rec.content || '부적합 사항 지적',
+        location: rec.location || '현장 작업구역',
+        workName: rec.workName || '안전점검',
+        workGroup: rec.workGroup || '가설공사',
+        kind: rec.kind || '가시설',
+        item: rec.item || '비계',
+        agent: rec.agent || '수평재',
+        type: rec.type || '추락',
+        condition: (rec.mgmtCauses && rec.mgmtCauses[0]) || '방호장치 결함',
+        action: '해당없음',
+        mgmtCauses: rec.mgmtCauses || ['불안전 상태'],
+        holdPoint: !!rec.holdPoint,
+        interviewOpinion: rec.interviewOpinion || '',
+        auditProposal: rec.auditProposal || '',
+        pmVerdict: rec.pmVerdict || '',
+        workPlan: '해당없음',
+        basis: {
+          ra: '반영',
+          cp: '해당없음',
+          st: '해당없음',
+          guide: '',
+          law: rec.law || ''
+        },
+        law: rec.law || '',
+        causes: ['물적', '관리적'],
+        inspectedDate
+      };
+
+      // 사진 Blob 변환
+      const mediaPhotos = [];
+      for (const pUrl of (rec.photos || [])) {
+        try {
+          const res = await fetch(pUrl);
+          const blob = await res.blob();
+          mediaPhotos.push({ blob });
+        } catch (e) {
+          console.warn('Photo conversion error:', e);
+        }
+      }
+
+      await store.saveRecord(finalRecord, { photos: mediaPhotos });
+    }
+
+    toast(`🎉 총 ${importedRecords.length}건의 부적합 대장이 성공적으로 저장되었습니다!`, 'success');
+    importedRecords = [];
+    if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'none';
+    if ($('#filePptxImport')) $('#filePptxImport').value = '';
+
+    // 대장 목록 뷰로 자동 전환
+    const listNavBtn = document.querySelector('.bottom-nav .nav-item[data-view="viewList"]');
+    if (listNavBtn) listNavBtn.click();
+  } catch (err) {
+    console.error('Import save error:', err);
+    toast(`일괄 저장 실패: ${err.message}`, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📥 전체 대장에 일괄 저장하기';
   }
 }
