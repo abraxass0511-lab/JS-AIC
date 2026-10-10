@@ -1,0 +1,43 @@
+{
+ "site": "송도1",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "콘크리트 타설 전 펌프카 작업구획 미 설정 및 콘크리트 타설 중 붐대 하부로 근로자 통행",
+ "location": "104동 지상층",
+ "workName": "콘크리트 타설작업",
+ "workGroup": "콘크리트공사",
+ "kind": "건설장비",
+ "item": "타설기계장비",
+ "agent": "펌프카",
+ "type": "낙하",
+ "condition": "위험작업 구역설정 불량(통제시설 미설치)",
+ "action": "위험기계 하부로 통행",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": "안전보건규칙 제20조"
+ },
+ "causes": [],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-093025-feh7",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T00:30:25.323Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T00:30:25.323Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-093025-feh7_p1_muxdfkff.jpg",
+  "data/2026/photos/10/20261007-093025-feh7_p2_muxdfmcg.jpg",
+  "data/2026/photos/10/20261007-093025-feh7_p3_muxdfnmy.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

@@ -1,0 +1,44 @@
+{
+ "site": "송도3",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "창호설치작업 시 안전대 부착설비(생명줄) 미설치",
+ "location": "304동",
+ "workName": "창호설치작업",
+ "workGroup": "창호공사",
+ "kind": "작업방법",
+ "item": "고소단부작업",
+ "agent": "단부",
+ "type": "떨어짐",
+ "condition": "",
+ "action": "보호구 미착용·잘못 사용",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": "안전보건규칙 제44조"
+ },
+ "causes": [
+  "인적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-154928-jirq",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T06:49:28.275Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T06:49:28.275Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-154928-jirq_p1_muxqz103.jpg",
+  "data/2026/photos/10/20261007-154928-jirq_p2_muxqz3b3.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

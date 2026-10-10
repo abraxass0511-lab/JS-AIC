@@ -1,0 +1,45 @@
+{
+ "site": "송도2",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "갱폼인양작업 시 타워크레인으로 연결하기 전에 갱폼의 연결핀을 선헤체함",
+ "location": "206동",
+ "workName": "갱폼인양작업",
+ "workGroup": "거푸집설치공사",
+ "kind": "가시설",
+ "item": "갱폼",
+ "agent": "연결핀(연결조인트)",
+ "type": "무너짐",
+ "condition": "갱폼이 상호 연결되어 구조적으로 안전하지 않은 상태",
+ "action": "연결핀 선해체",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": ""
+ },
+ "causes": [
+  "인적",
+  "시스템적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-095104-dmw1",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T00:51:04.836Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T00:51:04.836Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-095104-dmw1_p1_muxe64uc.jpg",
+  "data/2026/photos/10/20261007-095104-dmw1_p2_muxe66l7.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

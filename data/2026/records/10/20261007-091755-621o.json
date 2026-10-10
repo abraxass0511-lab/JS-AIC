@@ -1,0 +1,41 @@
+{
+ "site": "송도1",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "말비계 상부작업 시 하부 전도방지장치(아웃트리거) 미 설치 및 발판 단부에서 작업",
+ "location": "102동",
+ "workName": "가설전",
+ "workGroup": "가설공사",
+ "kind": "작업발판",
+ "item": "말비계",
+ "agent": "말비계",
+ "type": "",
+ "condition": "전도방지장치 없음",
+ "action": "단부 위험부위 작업",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": "안전보건규칙 제56조"
+ },
+ "causes": [],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-091755-621o",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T00:17:55.515Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T00:17:55.515Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-091755-621o_p1_muxczhvf.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

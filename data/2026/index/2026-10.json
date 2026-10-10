@@ -1,0 +1,484 @@
+{
+ "bucket": "2026-10",
+ "updatedAt": "2026-10-03T07:44:05.661Z",
+ "records": [
+  {
+   "id": "DEMO-202610-001",
+   "bucket": "2026-10",
+   "site": "OO아파트 신축공사",
+   "content": "비계시설 작업발판 안전난간대 미설치 및 단부 추락 방호조치 미흡",
+   "location": "106동 5층 외부비계",
+   "workName": "외부비계설치",
+   "workGroup": "가설공사",
+   "kind": "가설공사",
+   "item": "비계",
+   "agent": "비계",
+   "type": "떨어짐",
+   "condition": "안전난간 미설치",
+   "action": "보호구 미착용",
+   "causes": [
+    "물적",
+    "인적"
+   ],
+   "workPlan": "미작성",
+   "basis": {
+    "ra": "미반영",
+    "cp": "미반영",
+    "st": "미실시",
+    "guide": "KOSHA G-1-2023",
+    "law": "제13조(안전난간의 구조 및 설치요건)"
+   },
+   "siteInfo": {
+    "progress": "45%",
+    "scale": "지하2층/지상25층 8개동",
+    "amount": "850억"
+   },
+   "inspectedDate": "2026-10-03",
+   "inspector": "점검자1",
+   "status": "조치완료",
+   "photos": [
+    "data/2026/photos/10/DEMO-202610-001_p1.jpg"
+   ],
+   "fix": {
+    "content": "비계 상단 안전난간 및 발판 즉시 보강 설치 완료 및 작업팀 TBM 안전교육 실시",
+    "photo": "data/2026/photos/10/DEMO-202610-001_fix.jpg",
+    "fixedDate": "2026-10-03"
+   },
+   "createdAt": "2026-10-03T07:44:05.659Z",
+   "updatedAt": "2026-10-03T07:44:05.660Z"
+  },
+  {
+   "site": "송도1",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "말비계 사용작업 시 승하강용 답단에서 천장작업",
+   "location": "104동 필로티",
+   "workName": "가설전기작업",
+   "workGroup": "전기공사",
+   "kind": "작업발판",
+   "item": "말비계",
+   "agent": "말비계",
+   "type": "떨어짐",
+   "condition": "작업높이에 맞지 않는 말비계 높이",
+   "action": "기계·기구의 잘못 사용",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제56조"
+   },
+   "causes": [],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-090907-40b5",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T00:09:07.168Z",
+   "inspector": "점검자1",
+   "updatedAt": "2026-10-07T00:09:07.168Z",
+   "updatedBy": "점검자1",
+   "photos": [
+    "data/2026/photos/10/20261007-090907-40b5_p1_muxco674.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도1",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "말비계 상부작업 시 하부 전도방지장치(아웃트리거) 미 설치 및 발판 단부에서 작업",
+   "location": "102동",
+   "workName": "가설전",
+   "workGroup": "가설공사",
+   "kind": "작업발판",
+   "item": "말비계",
+   "agent": "말비계",
+   "type": "",
+   "condition": "전도방지장치 없음",
+   "action": "단부 위험부위 작업",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제56조"
+   },
+   "causes": [],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-091755-621o",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T00:17:55.515Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T00:17:55.515Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-091755-621o_p1_muxczhvf.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도1",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "콘크리트 타설 전 펌프카 작업구획 미 설정 및 콘크리트 타설 중 붐대 하부로 근로자 통행",
+   "location": "104동 지상층",
+   "workName": "콘크리트 타설작업",
+   "workGroup": "콘크리트공사",
+   "kind": "건설장비",
+   "item": "타설기계장비",
+   "agent": "펌프카",
+   "type": "낙하",
+   "condition": "위험작업 구역설정 불량(통제시설 미설치)",
+   "action": "위험기계 하부로 통행",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제20조"
+   },
+   "causes": [],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-093025-feh7",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T00:30:25.323Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T00:30:25.323Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-093025-feh7_p1_muxdfkff.jpg",
+    "data/2026/photos/10/20261007-093025-feh7_p2_muxdfmcg.jpg",
+    "data/2026/photos/10/20261007-093025-feh7_p3_muxdfnmy.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도1",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "상부층 작업 중임에도 하부층의 동바리 미 설치",
+   "location": "104동 14층",
+   "workName": "거푸집동바리 설치작업",
+   "workGroup": "거푸집설치공사",
+   "kind": "가시설",
+   "item": "거푸집동바리",
+   "agent": "동바리",
+   "type": "무너짐",
+   "condition": "거푸집동바리 미설치",
+   "action": "",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제331조"
+   },
+   "causes": [
+    "시스템적",
+    "인적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-093358-m1r0",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T00:33:58.976Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T00:33:58.976Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-093358-m1r0_p1_muxdk5a9.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도2",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "갱폼인양작업 시 타워크레인으로 연결하기 전에 갱폼의 연결핀을 선헤체함",
+   "location": "206동",
+   "workName": "갱폼인양작업",
+   "workGroup": "거푸집설치공사",
+   "kind": "가시설",
+   "item": "갱폼",
+   "agent": "연결핀(연결조인트)",
+   "type": "무너짐",
+   "condition": "갱폼이 상호 연결되어 구조적으로 안전하지 않은 상태",
+   "action": "연결핀 선해체",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+   },
+   "causes": [
+    "인적",
+    "시스템적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-095104-dmw1",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T00:51:04.836Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T00:51:04.836Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-095104-dmw1_p1_muxe64uc.jpg",
+    "data/2026/photos/10/20261007-095104-dmw1_p2_muxe66l7.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도2",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "갱폼에 볼트나 핀 등의 낙하물 방치",
+   "location": "206동",
+   "workName": "갱폼인양작업",
+   "workGroup": "철근콘크리트공사",
+   "kind": "가시설",
+   "item": "갱폼",
+   "agent": "낙하물",
+   "type": "떨어짐",
+   "condition": "상부발판에 낙하물 방치된 상태",
+   "action": "",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+   },
+   "causes": [
+    "인적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-095840-cavm",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T00:58:40.114Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T00:58:40.114Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-095840-cavm_p1_muxefw4y.jpg",
+    "data/2026/photos/10/20261007-095840-cavm_p2_muxefy3k.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도1",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "PC 슬래브 설치작업 시 안전벨트 체결부위가 잘못됨(별도의 안전대 부착설비를 설치하고 그곳에 체결해야 함)",
+   "location": "지하주차장 1층",
+   "workName": "PC설치작업",
+   "workGroup": "PC공사",
+   "kind": "작업방법",
+   "item": "양중작업",
+   "agent": "안전대",
+   "type": "떨어짐",
+   "condition": "",
+   "action": "보호구 미착용·잘못 사용",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+   },
+   "causes": [
+    "인적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-100241-omld",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T01:02:41.916Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T01:02:41.916Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-100241-omld_p1_muxel2po.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도3",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "멀티작업선에 내장된 누전차단기의 용량이 30A(사용기준 20A이하)",
+   "location": "303동",
+   "workName": "가설전기작업",
+   "workGroup": "가설전기공사",
+   "kind": "가시설",
+   "item": "전기시설",
+   "agent": "멀티작",
+   "type": "감전",
+   "condition": "안전방호장치의 결함 (미설치·해체·불량)",
+   "action": "",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+   },
+   "causes": [
+    "인적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-102434-qbzv",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T01:24:34.418Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T01:24:34.418Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-102434-qbzv_p1_muxfd7g3.jpg",
+    "data/2026/photos/10/20261007-102434-qbzv_p2_muxfd8x0.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도1",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "소화기 불량(충진재 압력 부족, 손잡이 파손 및 안전핀 빠짐)",
+   "location": "지상층 자재야적장",
+   "workName": "기타",
+   "workGroup": "",
+   "kind": "소방시설",
+   "item": "임시소방시설",
+   "agent": "소화기",
+   "type": "화재",
+   "condition": "불량소화기 배치",
+   "action": "",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+   },
+   "causes": [
+    "인적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-103133-no2g",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T01:31:33.829Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T01:31:33.829Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-103133-no2g_p1_muxfm72e.jpg",
+    "data/2026/photos/10/20261007-103133-no2g_p2_muxfm949.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  },
+  {
+   "site": "송도3",
+   "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+   },
+   "content": "창호설치작업 시 안전대 부착설비(생명줄) 미설치",
+   "location": "304동",
+   "workName": "창호설치작업",
+   "workGroup": "창호공사",
+   "kind": "작업방법",
+   "item": "고소단부작업",
+   "agent": "단부",
+   "type": "떨어짐",
+   "condition": "",
+   "action": "보호구 미착용·잘못 사용",
+   "workPlan": "해당없음",
+   "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제44조"
+   },
+   "causes": [
+    "인적"
+   ],
+   "inspectedDate": "2026-10-07",
+   "id": "20261007-154928-jirq",
+   "bucket": "2026-10",
+   "createdAt": "2026-10-07T06:49:28.275Z",
+   "inspector": "신이삭",
+   "updatedAt": "2026-10-07T06:49:28.275Z",
+   "updatedBy": "신이삭",
+   "photos": [
+    "data/2026/photos/10/20261007-154928-jirq_p1_muxqz103.jpg",
+    "data/2026/photos/10/20261007-154928-jirq_p2_muxqz3b3.jpg"
+   ],
+   "fix": {
+    "photo": null
+   },
+   "status": "미조치"
+  }
+ ]
+}

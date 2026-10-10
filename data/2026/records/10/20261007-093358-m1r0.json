@@ -1,0 +1,44 @@
+{
+ "site": "송도1",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "상부층 작업 중임에도 하부층의 동바리 미 설치",
+ "location": "104동 14층",
+ "workName": "거푸집동바리 설치작업",
+ "workGroup": "거푸집설치공사",
+ "kind": "가시설",
+ "item": "거푸집동바리",
+ "agent": "동바리",
+ "type": "무너짐",
+ "condition": "거푸집동바리 미설치",
+ "action": "",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": "안전보건규칙 제331조"
+ },
+ "causes": [
+  "시스템적",
+  "인적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-093358-m1r0",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T00:33:58.976Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T00:33:58.976Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-093358-m1r0_p1_muxdk5a9.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

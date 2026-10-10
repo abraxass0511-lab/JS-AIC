@@ -1,0 +1,45 @@
+{
+  "id": "DEMO-202610-001",
+  "bucket": "2026-10",
+  "site": "OO아파트 신축공사",
+  "content": "비계시설 작업발판 안전난간대 미설치 및 단부 추락 방호조치 미흡",
+  "location": "106동 5층 외부비계",
+  "workName": "외부비계설치",
+  "workGroup": "가설공사",
+  "kind": "가설공사",
+  "item": "비계",
+  "agent": "비계",
+  "type": "떨어짐",
+  "condition": "안전난간 미설치",
+  "action": "보호구 미착용",
+  "causes": [
+    "물적",
+    "인적"
+  ],
+  "workPlan": "미작성",
+  "basis": {
+    "ra": "미반영",
+    "cp": "미반영",
+    "st": "미실시",
+    "guide": "KOSHA G-1-2023",
+    "law": "제13조(안전난간의 구조 및 설치요건)"
+  },
+  "siteInfo": {
+    "progress": "45%",
+    "scale": "지하2층/지상25층 8개동",
+    "amount": "850억"
+  },
+  "inspectedDate": "2026-10-03",
+  "inspector": "점검자1",
+  "status": "조치완료",
+  "photos": [
+    "data/2026/photos/10/DEMO-202610-001_p1.jpg"
+  ],
+  "fix": {
+    "content": "비계 상단 안전난간 및 발판 즉시 보강 설치 완료 및 작업팀 TBM 안전교육 실시",
+    "photo": "data/2026/photos/10/DEMO-202610-001_fix.jpg",
+    "fixedDate": "2026-10-03"
+  },
+  "createdAt": "2026-10-03T07:44:05.659Z",
+  "updatedAt": "2026-10-03T07:44:05.660Z"
+}

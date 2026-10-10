@@ -1,0 +1,44 @@
+{
+ "site": "송도3",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "멀티작업선에 내장된 누전차단기의 용량이 30A(사용기준 20A이하)",
+ "location": "303동",
+ "workName": "가설전기작업",
+ "workGroup": "가설전기공사",
+ "kind": "가시설",
+ "item": "전기시설",
+ "agent": "멀티작",
+ "type": "감전",
+ "condition": "안전방호장치의 결함 (미설치·해체·불량)",
+ "action": "",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": ""
+ },
+ "causes": [
+  "인적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-102434-qbzv",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T01:24:34.418Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T01:24:34.418Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-102434-qbzv_p1_muxfd7g3.jpg",
+  "data/2026/photos/10/20261007-102434-qbzv_p2_muxfd8x0.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

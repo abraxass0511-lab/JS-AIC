@@ -90,15 +90,37 @@ class WorkerBackend {
     throw new Error(`서버 오류 (${r.status})`);
   }
   async readJSON(path) {
-    const r = await this._fetch(this._u(path));
-    if (r.status === 404) return null;
-    if (!r.ok) throw new Error(`읽기 실패 (${r.status})`);
-    const j = await r.json();
-    if (Array.isArray(j)) return { data: j };
-    let text;
-    if (j.content && j.encoding === 'base64') text = b64ToUtf8(j.content);
-    else { const raw = await this._fetch(this._u(path, '&raw=1')); text = await raw.text(); } // 1MB 초과 파일
-    return { data: JSON.parse(text), sha: j.sha };
+    let r = null;
+    try {
+      r = await this._fetch(this._u(path));
+    } catch (e) {
+      console.warn('Worker _fetch network error, trying static fallback:', path, e);
+    }
+    if (r && r.status === 404) return null;
+    if (r && r.ok) {
+      try {
+        const j = await r.json();
+        if (Array.isArray(j)) return { data: j };
+        let text;
+        if (j.content && j.encoding === 'base64') text = b64ToUtf8(j.content);
+        else { const raw = await this._fetch(this._u(path, '&raw=1')); text = await raw.text(); }
+        return { data: JSON.parse(text), sha: j.sha };
+      } catch (parseErr) {
+        console.warn('Failed parsing JSON from worker:', parseErr);
+      }
+    }
+    // Worker가 401, 500 등이거나 실패했을 때: 앱 번들 정적 파일 fallback 시도!
+    try {
+      const staticRes = await fetch(path);
+      if (staticRes.ok) {
+        const j = await staticRes.json();
+        return { data: j, sha: 'static-fallback' };
+      }
+    } catch (err) {
+      console.warn('Static fallback failed for:', path, err);
+    }
+    if (r && !r.ok) throw new Error(`읽기 실패 (${r.status})`);
+    return null;
   }
   async _put(path, content, sha, message) {
     const r = await this._fetch(this._u(path), {
@@ -114,9 +136,21 @@ class WorkerBackend {
   writeJSON(path, data, sha, message) { return this._put(path, utf8ToB64(JSON.stringify(data, null, 1)), sha, message || `update ${path}`); }
   async writeBlob(path, blob, message) { return this._put(path, await blobToB64(blob), null, message || `upload ${path}`); }
   async readBlob(path) {
-    const r = await this._fetch(this._u(path, '&raw=1'));
-    if (!r.ok) throw new Error(`사진 읽기 실패 (${r.status})`);
-    return r.blob();
+    let r = null;
+    try {
+      r = await this._fetch(this._u(path, '&raw=1'));
+    } catch (e) {
+      console.warn('Worker readBlob error, trying static fallback:', path, e);
+    }
+    if (r && r.ok) return r.blob();
+    // Worker 실패 시 정적 파일 직접 로드 시도
+    try {
+      const staticRes = await fetch(path);
+      if (staticRes.ok) return staticRes.blob();
+    } catch (err) {
+      console.warn('Static blob fallback failed for:', path, err);
+    }
+    throw new Error(`사진 읽기 실패 (${r ? r.status : '네트워크 오류'})`);
   }
   async remove(path, message) {
     const meta = await this._fetch(this._u(path));
@@ -348,10 +382,10 @@ export const store = {
     });
   },
   async listAllBuckets() {
-    const buckets = new Set([monthStr()]);
+    const buckets = new Set([monthStr(), '2026-10']);
     if (this.mode === 'github') {
       const curY = new Date().getFullYear();
-      for (const y of [curY - 1, curY, curY + 1]) {
+      for (const y of [curY - 1, curY, curY + 1, 2026]) {
         try {
           const res = await this.backend.readJSON(`data/${y}/index`);
           if (res && res.data && Array.isArray(res.data)) {
@@ -471,13 +505,13 @@ export const store = {
     if (this._photoCache.has(path)) return this._photoCache.get(path);
     try {
       const blob = await this.backend.readBlob(path);
-      if (!blob) return '';
+      if (!blob) return path;
       const url = URL.createObjectURL(blob);
       this._photoCache.set(path, url);
       return url;
     } catch (e) {
       console.warn('photoURL error for:', path, e);
-      return '';
+      return path; // 정적 파일 경로 fallback
     }
   },
 

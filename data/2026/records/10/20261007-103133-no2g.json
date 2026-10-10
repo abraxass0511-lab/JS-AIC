@@ -1,0 +1,44 @@
+{
+ "site": "송도1",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "소화기 불량(충진재 압력 부족, 손잡이 파손 및 안전핀 빠짐)",
+ "location": "지상층 자재야적장",
+ "workName": "기타",
+ "workGroup": "",
+ "kind": "소방시설",
+ "item": "임시소방시설",
+ "agent": "소화기",
+ "type": "화재",
+ "condition": "불량소화기 배치",
+ "action": "",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": ""
+ },
+ "causes": [
+  "인적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-103133-no2g",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T01:31:33.829Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T01:31:33.829Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-103133-no2g_p1_muxfm72e.jpg",
+  "data/2026/photos/10/20261007-103133-no2g_p2_muxfm949.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

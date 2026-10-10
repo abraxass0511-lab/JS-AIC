@@ -1,0 +1,43 @@
+{
+ "site": "송도1",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "PC 슬래브 설치작업 시 안전벨트 체결부위가 잘못됨(별도의 안전대 부착설비를 설치하고 그곳에 체결해야 함)",
+ "location": "지하주차장 1층",
+ "workName": "PC설치작업",
+ "workGroup": "PC공사",
+ "kind": "작업방법",
+ "item": "양중작업",
+ "agent": "안전대",
+ "type": "떨어짐",
+ "condition": "",
+ "action": "보호구 미착용·잘못 사용",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": ""
+ },
+ "causes": [
+  "인적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-100241-omld",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T01:02:41.916Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T01:02:41.916Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-100241-omld_p1_muxel2po.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}
