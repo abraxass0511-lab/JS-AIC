@@ -305,7 +305,6 @@ export const store = {
     ]);
     this.sites = (s && s.data && s.data.sites) || [];
     this.custom = (c && c.data) || { customValues: {} };
-    if (!this.custom.customValues) this.custom.customValues = {};
     this.rlWeights = (rl && rl.data) || {
       itemWeights: {},
       typeWeights: {},
@@ -313,6 +312,20 @@ export const store = {
       actionWeights: {},
       stats: { totalFeedbacks: 0, totalRewards: 0, positiveCount: 0, penaltyCount: 0 }
     };
+    if (this.rlWeights && this.rlWeights.typeWeights) {
+      ['밀폐공간', '농도', '측정', '밀폐', '폐공', '공간', '농도미측정', '농도측정'].forEach(t => {
+        if (this.rlWeights.typeWeights[t]) {
+          delete this.rlWeights.typeWeights[t]['추락'];
+          delete this.rlWeights.typeWeights[t]['떨어짐'];
+          this.rlWeights.typeWeights[t]['산소결핍'] = 1.35;
+        }
+        if (this.rlWeights.itemWeights && this.rlWeights.itemWeights[t]) {
+          delete this.rlWeights.itemWeights[t]['가시설'];
+          delete this.rlWeights.itemWeights[t]['비계'];
+          this.rlWeights.itemWeights[t]['밀폐공간'] = 1.35;
+        }
+      });
+    }
   },
   async saveSites(sites) {
     const author = (this.user && this.user.name) || '시스템';
