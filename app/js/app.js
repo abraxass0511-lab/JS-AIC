@@ -1904,9 +1904,9 @@ function initLmStudio() {
       $('#btnApplySmart')?.click();
     }
 
-    // [1단계] 0.05초 만에 산안법 룰 엔진으로 즉각 1차 자동 채움 (멈춤 현상 원천 차단)
+    // [1단계] 0.05초 고속 규칙 매칭 (명확한 규칙이 있고, 스마트 AI가 아직 적용 안 된 경우만 보조)
     const instant = window.SafeLocalAI ? window.SafeLocalAI.quickRuleAnalysis(content) : null;
-    if (instant) {
+    if (instant && !smartRecommendationApplied) {
       if (instant.severity === '중부적합') $('#btnSeverityMajor')?.click();
       else $('#btnSeverityMinor')?.click();
       if (instant.law && $('#txtLaw')) $('#txtLaw').value = instant.law;
@@ -1926,7 +1926,7 @@ function initLmStudio() {
             ⚡ 1차 즉시 판정 완료 (${instant.law})
           </div>
           <div style="font-size:0.78rem; color:#64748b; margin-bottom:4px;">
-            로컬 Qwen AI가 산안법 세부 기준을 실시간 검증하고 있습니다...
+            Qwen AI가 산안법 세부 기준을 실시간 검증하고 있습니다...
           </div>
         `;
         resultCard.style.display = 'block';
