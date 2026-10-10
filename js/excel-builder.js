@@ -12,7 +12,7 @@
   const COLS = [
     ['No', 'No', 5, null, (r, i) => i + 1],
     ['부적합 사항', '사진', 18, null, () => ''],
-    ['부적합 분류', '등급', 10, 'severities', r => r.severity || '중부적합'],
+    ['부적합 분류', '부적합 등급', 14, 'severities', r => r.severity || '중부적합'],
     ['부적합 사항', '내용', 26, null, r => r.content],
     ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],
     ['부적합 사항', '점검차수', 8, null, r => r.inspectRound || '1차'],
@@ -160,7 +160,16 @@
         const cell = row.getCell(i);
         cell.border = border;
         const v = String(cell.value == null ? '' : cell.value);
-        cell.font = { name: '맑은 고딕', size: 9, color: { argb: v === '(미조치)' ? 'FFC00000' : (v.startsWith('(사진') ? 'FFA6A6A6' : 'FF000000') } };
+        let fontColor = 'FF000000';
+        let isBold = false;
+        if (v === '(미조치)' || v.includes('중부적합')) { fontColor = 'FFDC2626'; isBold = true; }
+        else if (v.includes('경부적합')) { fontColor = 'FFD97706'; isBold = true; }
+        else if (v.startsWith('(사진')) { fontColor = 'FFA6A6A6'; }
+        cell.font = { name: '맑은 고딕', size: 9, bold: isBold, color: { argb: fontColor } };
+        if (COLS[i - 1][1].includes('등급')) {
+          if (v.includes('중부적합')) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+          else if (v.includes('경부적합')) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+        }
         cell.alignment = { horizontal: LEFT_COLS.includes(COLS[i - 1][1]) ? 'left' : 'center', vertical: 'middle', wrapText: true };
       }
     }
