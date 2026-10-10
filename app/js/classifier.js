@@ -93,28 +93,35 @@
       const tokens = tokenize(content);
 
       const scored = items.map(it => {
-        let score = 0;
+        let baseScore = 0;
         const hits = [];
         let rlBoost = 0;
 
         // 기본 키워드 매칭
         it.kws.forEach(k => {
           if (k && text.includes(k)) {
-            const w = getItemWeight(k, it.name);
-            score += (k.length + (k === norm(it.name) ? 3 : 0)) * w;
+            const w = Math.max(0.7, getItemWeight(k, it.name));
+            baseScore += (k.length + (k === norm(it.name) ? 3 : 0)) * w;
             hits.push(k);
           }
         });
+
+        let score = baseScore;
 
         // 텍스트 토큰에 축적된 강화학습 가중치 보너스 (현장 은어/신규 어휘 학습 효과)
         tokens.forEach(t => {
           const w = getItemWeight(t, it.name);
           if (w !== 1.0) {
-            const boost = (w - 1.0) * 3.5;
+            const boost = (w - 1.0) * 2.0;
             score += boost;
             rlBoost += boost;
           }
         });
+
+        // 키워드가 명시적으로 일치한 경우, 강화학습 감점이 과도하게 누적되어도 매칭이 무효화되지 않도록 보장
+        if (hits.length > 0 && score < baseScore * 0.7) {
+          score = Math.max(baseScore * 0.7, 2.0);
+        }
 
         // 기인물 매칭: 완전 일치(강) / 끝 3글자 일치(후보)
         const agents = [];
