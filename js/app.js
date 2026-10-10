@@ -1792,7 +1792,7 @@ function initLmStudio() {
     if (resultCard) resultCard.style.display = 'none';
   });
 
-  // ── ✨ 로컬 Qwen AI 자동 분석 버튼 실행 ──
+    // ── ✨ 로컬 Qwen AI 자동 분석 버튼 실행 (즉시 반영 + 스트리밍 보강) ──
   btnAnalyze?.addEventListener('click', async () => {
     const content = $('#txtContent')?.value.trim();
     if (!content) {
@@ -1803,9 +1803,40 @@ function initLmStudio() {
 
     const btnIcon = $('#lmStudioBtnIcon');
     const btnText = $('#lmStudioBtnText');
+
+    // [1단계] 0.05초 만에 산안법 룰 엔진으로 즉각 1차 자동 채움 (멈춤 현상 원천 차단)
+    const instant = window.SafeLocalAI ? window.SafeLocalAI.quickRuleAnalysis(content) : null;
+    if (instant) {
+      if (instant.severity === '중부적합') $('#btnSeverityMajor')?.click();
+      else $('#btnSeverityMinor')?.click();
+      if (instant.law && $('#txtLaw')) $('#txtLaw').value = instant.law;
+      if (instant.hazardType && $('#txtType')) $('#txtType').value = instant.hazardType;
+      if (instant.item && $('#txtItem')) $('#txtItem').value = instant.item;
+      if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = instant.mgmtCauses.includes('계획 미수립');
+      if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = instant.mgmtCauses.includes('계획 미이행');
+      if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = instant.mgmtCauses.includes('불안전 행동');
+      if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = instant.mgmtCauses.includes('불안전 상태');
+      if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!instant.holdPoint;
+      if (instant.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = instant.pmVerdict;
+
+      // 1차 즉시 요약 카드 렌더링
+      if (resultCard && resultBody) {
+        resultBody.innerHTML = `
+          <div style="margin-bottom: 4px; font-weight:700; color:#1e40af;">
+            ⚡ 1차 즉시 판정 완료 (${instant.law})
+          </div>
+          <div style="font-size:0.78rem; color:#64748b; margin-bottom:4px;">
+            로컬 Qwen AI가 산안법 세부 기준을 실시간 검증하고 있습니다...
+          </div>
+        `;
+        resultCard.style.display = 'block';
+      }
+    }
+
+    // [2단계] 로컬 Qwen AI 실시간 스트리밍 심층 분석
     btnAnalyze.disabled = true;
-    if (btnText) btnText.textContent = 'Qwen AI 산안법령 정밀 분석 중...';
     if (btnIcon) btnIcon.textContent = '⏳';
+    if (btnText) btnText.textContent = 'Qwen AI 추론 시작...';
 
     try {
       const extraContext = {
@@ -1814,39 +1845,19 @@ function initLmStudio() {
         progressRate: $('#txtProgressRate')?.value || 35
       };
 
-      const res = await window.SafeLocalAI.analyzeSafetyText(content, extraContext);
+      const res = await window.SafeLocalAI.streamAnalyzeSafetyText(content, extraContext, (prog) => {
+        if (btnText) btnText.textContent = prog.message;
+      });
 
-      // 1) 부적합 등급 적용 (중부적합 / 경부적합 버튼 토글)
-      if (res.severity === '중부적합') {
-        $('#btnSeverityMajor')?.click();
-      } else {
-        $('#btnSeverityMinor')?.click();
-      }
-
-      // 2) 법조항 자동 기입
-      if (res.law && $('#txtLaw')) {
-        $('#txtLaw').value = res.law;
-      }
-
-      // 3) 사고유형 및 항목 자동 기입
+      // 최종 정밀 결과로 보강 업데이트
+      if (res.severity === '중부적합') $('#btnSeverityMajor')?.click();
+      else $('#btnSeverityMinor')?.click();
+      if (res.law && $('#txtLaw')) $('#txtLaw').value = res.law;
       if (res.hazardType && $('#txtType')) $('#txtType').value = res.hazardType;
       if (res.item && $('#txtItem')) $('#txtItem').value = res.item;
-
-      // 4) 관리적 원인 4대 체크박스 자동 선택
-      if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = res.mgmtCauses.includes('계획 미수립');
-      if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = res.mgmtCauses.includes('계획 미이행');
-      if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = res.mgmtCauses.includes('불안전 행동');
-      if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = res.mgmtCauses.includes('불안전 상태');
-
-      // 5) Hold Point 체크
       if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!res.holdPoint;
+      if (res.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = res.pmVerdict;
 
-      // 6) PM 판정 권고 문구 자동 입력
-      if (res.pmVerdict && $('#txtPmVerdict')) {
-        $('#txtPmVerdict').value = res.pmVerdict;
-      }
-
-      // 7) 결과 안내 카드 렌더링
       if (resultCard && resultBody) {
         resultBody.innerHTML = `
           <div style="margin-bottom: 5px;">
@@ -1866,10 +1877,11 @@ function initLmStudio() {
         resultCard.style.display = 'block';
       }
 
-      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] 및 위반 법조항이 자동 채워졌습니다!`, 'success');
+      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] 및 위반 법조항이 완벽히 반영되었습니다!`, 'success');
     } catch (err) {
-      console.error('Qwen analysis error:', err);
-      toast(`AI 분석 실패: ${err.message}`, 'danger');
+      console.warn('AI 분석 처리:', err);
+      // 오류나 Mixed Content 차단 시에도 1단계 즉시 룰 결과는 이미 적용되어 있으므로 안전하게 안내
+      toast(`안내: 1차 룰 엔진 기준이 적용되었습니다. (${err.message})`, 'info');
     } finally {
       btnAnalyze.disabled = false;
       if (btnText) btnText.textContent = '로컬 Qwen AI 자동 분석 (법령·등급·원인)';
