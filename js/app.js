@@ -903,6 +903,7 @@ function bindEvents() {
   initUserProfile();
   initPinManagement();
   initEmailExportHandlers();
+  initLmStudio();
 }
 
 function updateSelectedCount() {
@@ -1681,6 +1682,198 @@ function initEmailExportHandlers() {
     } finally {
       btn.disabled = false;
       btn.textContent = '📧 메일 발송';
+    }
+  });
+}
+
+// ── 🤖 LM Studio 로컬 Qwen AI 연동 모듈 초기화 ──
+function initLmStudio() {
+  const badge = $('#lmStudioHeaderBadge');
+  const dot = $('#lmStudioDot');
+  const statusText = $('#lmStudioStatusText');
+  const modal = $('#lmStudioModal');
+  const txtEp = $('#txtLmStudioEndpoint');
+  const txtModel = $('#txtLmStudioModel');
+  const testBox = $('#lmStudioTestStatusBox');
+  const btnAnalyze = $('#btnLmStudioAnalyze');
+  const resultCard = $('#lmStudioResultCard');
+  const resultBody = $('#lmStudioResultBody');
+  const btnCloseResult = $('#btnCloseLmStudioResult');
+
+  async function refreshStatus() {
+    if (!window.SafeLocalAI) return;
+    try {
+      const res = await window.SafeLocalAI.checkConnection();
+      if (res.ok) {
+        if (dot) dot.style.background = '#22c55e';
+        if (statusText) statusText.textContent = '🟢 Qwen 연결됨';
+        if (badge) {
+          badge.style.background = '#f0fdf4';
+          badge.style.borderColor = '#86efac';
+          badge.style.color = '#15803d';
+          badge.title = `LM Studio 연결됨 (${res.model} @ ${res.endpoint}) - 클릭하여 설정`;
+        }
+        if ($('#lmStudioInlineStatus')) {
+          $('#lmStudioInlineStatus').textContent = `🟢 Qwen 로컬 AI 준비 완료 (${res.model})`;
+          $('#lmStudioInlineStatus').style.color = '#16a34a';
+        }
+      } else {
+        if (dot) dot.style.background = '#ef4444';
+        if (statusText) statusText.textContent = '🔴 LM Studio 오프라인';
+        if (badge) {
+          badge.style.background = '#fef2f2';
+          badge.style.borderColor = '#fca5a5';
+          badge.style.color = '#b91c1c';
+          badge.title = 'LM Studio 오프라인 - 클릭하여 설정 및 테스트';
+        }
+        if ($('#lmStudioInlineStatus')) {
+          $('#lmStudioInlineStatus').textContent = '⚠️ LM Studio 연결 필요 (포트 1234)';
+          $('#lmStudioInlineStatus').style.color = '#dc2626';
+        }
+      }
+    } catch (e) {
+      console.warn('LM Studio check error:', e);
+    }
+  }
+
+  // 초기 상태 확인 (1초 후 비동기 호출)
+  setTimeout(refreshStatus, 800);
+
+  // 헤더 뱃지 클릭 시 설정 모달 열기
+  badge?.addEventListener('click', () => {
+    if (modal) {
+      if (txtEp && window.SafeLocalAI) txtEp.value = window.SafeLocalAI.getEndpoint();
+      if (txtModel && window.SafeLocalAI) txtModel.value = window.SafeLocalAI.getModel();
+      if (testBox) testBox.style.display = 'none';
+      modal.style.display = 'flex';
+    }
+  });
+
+  // 연결 테스트 버튼
+  $('#btnTestLmStudioConn')?.addEventListener('click', async () => {
+    if (!testBox || !txtEp) return;
+    testBox.style.display = 'block';
+    testBox.style.background = '#eff6ff';
+    testBox.style.color = '#1d4ed8';
+    testBox.textContent = 'LM Studio 서버 연결 확인 중...';
+
+    const ep = txtEp.value.trim();
+    const res = await window.SafeLocalAI.checkConnection(ep);
+    if (res.ok) {
+      testBox.style.background = '#f0fdf4';
+      testBox.style.color = '#15803d';
+      testBox.innerHTML = `✅ <strong>연결 성공!</strong><br>• 엔드포인트: ${res.endpoint}<br>• 감지된 모델: <strong>${res.model}</strong>`;
+      if (txtModel && res.model) txtModel.value = res.model;
+    } else {
+      testBox.style.background = '#fef2f2';
+      testBox.style.color = '#b91c1c';
+      testBox.innerHTML = `❌ <strong>연결 실패</strong>: ${res.error}<br>• LM Studio 프로그램에서 [Start Server] 상태인지 확인하세요. (포트 1234)`;
+    }
+  });
+
+  // 설정 저장 및 닫기
+  $('#btnSaveLmStudioSetting')?.addEventListener('click', () => {
+    if (window.SafeLocalAI) {
+      if (txtEp?.value) window.SafeLocalAI.setEndpoint(txtEp.value.trim());
+      if (txtModel?.value) window.SafeLocalAI.setModel(txtModel.value.trim());
+    }
+    if (modal) modal.style.display = 'none';
+    refreshStatus();
+    toast('LM Studio 로컬 AI 설정이 저장되었습니다.', 'success');
+  });
+
+  // 모달 바깥 클릭 시 닫기
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+
+  // 결과 카드 닫기
+  btnCloseResult?.addEventListener('click', () => {
+    if (resultCard) resultCard.style.display = 'none';
+  });
+
+  // ── ✨ 로컬 Qwen AI 자동 분석 버튼 실행 ──
+  btnAnalyze?.addEventListener('click', async () => {
+    const content = $('#txtContent')?.value.trim();
+    if (!content) {
+      toast('먼저 [부적합 내용]에 현장 지적사항을 입력하거나 음성으로 말씀하세요.', 'warning');
+      $('#txtContent')?.focus();
+      return;
+    }
+
+    const btnIcon = $('#lmStudioBtnIcon');
+    const btnText = $('#lmStudioBtnText');
+    btnAnalyze.disabled = true;
+    if (btnText) btnText.textContent = 'Qwen AI 산안법령 정밀 분석 중...';
+    if (btnIcon) btnIcon.textContent = '⏳';
+
+    try {
+      const extraContext = {
+        workGroup: $('#txtWorkGroup')?.value || '',
+        productType: $('#selProductType')?.value || '공동주택',
+        progressRate: $('#txtProgressRate')?.value || 35
+      };
+
+      const res = await window.SafeLocalAI.analyzeSafetyText(content, extraContext);
+
+      // 1) 부적합 등급 적용 (중부적합 / 경부적합 버튼 토글)
+      if (res.severity === '중부적합') {
+        $('#btnSeverityMajor')?.click();
+      } else {
+        $('#btnSeverityMinor')?.click();
+      }
+
+      // 2) 법조항 자동 기입
+      if (res.law && $('#txtLaw')) {
+        $('#txtLaw').value = res.law;
+      }
+
+      // 3) 사고유형 및 항목 자동 기입
+      if (res.hazardType && $('#txtType')) $('#txtType').value = res.hazardType;
+      if (res.item && $('#txtItem')) $('#txtItem').value = res.item;
+
+      // 4) 관리적 원인 4대 체크박스 자동 선택
+      if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = res.mgmtCauses.includes('계획 미수립');
+      if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = res.mgmtCauses.includes('계획 미이행');
+      if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = res.mgmtCauses.includes('불안전 행동');
+      if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = res.mgmtCauses.includes('불안전 상태');
+
+      // 5) Hold Point 체크
+      if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!res.holdPoint;
+
+      // 6) PM 판정 권고 문구 자동 입력
+      if (res.pmVerdict && $('#txtPmVerdict')) {
+        $('#txtPmVerdict').value = res.pmVerdict;
+      }
+
+      // 7) 결과 안내 카드 렌더링
+      if (resultCard && resultBody) {
+        resultBody.innerHTML = `
+          <div style="margin-bottom: 5px;">
+            <strong>등급 판정:</strong> <span style="font-weight: 700; color: ${res.severity === '중부적합' ? '#dc2626' : '#d97706'};">${res.severity === '중부적합' ? '🚨 중부적합 (즉시 작업중지 요건)' : '⚠️ 경부적합 (시정조치 권고)'}</span>
+            ${res.holdPoint ? ' <span style="background:#fee2e2; color:#dc2626; padding:1px 5px; border-radius:3px; font-size:0.75rem; font-weight:700;">🚨 Hold Point 위반</span>' : ''}
+          </div>
+          <div style="margin-bottom: 5px;">
+            <strong>위반 법령:</strong> <span style="color:#1e40af; font-weight:700;">${res.law}</span>
+          </div>
+          <div style="margin-bottom: 5px;">
+            <strong>법적 판단:</strong> <span>${res.analysis}</span>
+          </div>
+          <div>
+            <strong>조치 권고:</strong> <span style="color:#475569;">${res.pmVerdict}</span>
+          </div>
+        `;
+        resultCard.style.display = 'block';
+      }
+
+      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] 및 위반 법조항이 자동 채워졌습니다!`, 'success');
+    } catch (err) {
+      console.error('Qwen analysis error:', err);
+      toast(`AI 분석 실패: ${err.message}`, 'danger');
+    } finally {
+      btnAnalyze.disabled = false;
+      if (btnText) btnText.textContent = '로컬 Qwen AI 자동 분석 (법령·등급·원인)';
+      if (btnIcon) btnIcon.textContent = '✨';
     }
   });
 }

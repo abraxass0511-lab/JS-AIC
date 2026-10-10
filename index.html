@@ -18,6 +18,7 @@
   <script src="js/excel-builder.js?v=20261004_2"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
   <script src="js/ppt-generator.js?v=20261004_9"></script>
+  <script src="js/lmstudio-client.js?v=20261010_1"></script>
 </head>
 <body>
 
@@ -27,9 +28,15 @@
       <span>🦺</span>
       <span>SafePatrol</span>
     </div>
-    <div id="userBadge" class="user-badge" style="display: none; cursor: pointer;">
-      <span id="userName">점검자</span>
-      <span style="font-size: 0.7rem;">▾</span>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <div id="lmStudioHeaderBadge" style="display: flex; align-items: center; gap: 5px; font-size: 0.72rem; padding: 4px 8px; border-radius: 20px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; cursor: pointer; transition: all 0.2s;" title="클릭하여 LM Studio 로컬 AI 연결 설정">
+        <span id="lmStudioDot" style="width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; display: inline-block;"></span>
+        <span id="lmStudioStatusText" style="font-weight: 600;">LM Studio 확인 중</span>
+      </div>
+      <div id="userBadge" class="user-badge" style="display: none; cursor: pointer;">
+        <span id="userName">점검자</span>
+        <span style="font-size: 0.7rem;">▾</span>
+      </div>
     </div>
   </header>
 
@@ -194,6 +201,26 @@
             <textarea id="txtContent" class="form-control" placeholder="예: 비계시설 작업발판 수평재 미설치, 안전난간대 미설치 등 직접 입력 또는 🎙️음성으로 말씀하세요"></textarea>
             <div id="voiceStatusMsg" style="display: none; font-size: 0.8rem; color: #2563eb; margin-top: 5px; font-weight: 600; padding: 6px 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;">
               🔴 음성을 듣고 있습니다... 말씀이 끝나면 텍스트로 자동 입력됩니다.
+            </div>
+
+            <!-- 🤖 LM Studio 로컬 Qwen AI 원클릭 분석 바 -->
+            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <button type="button" id="btnLmStudioAnalyze" class="btn" style="background: linear-gradient(135deg, #1e40af, #2563eb); color: white; padding: 7px 14px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 4px rgba(37,99,235,0.25); cursor: pointer;">
+                <span id="lmStudioBtnIcon">✨</span> <span id="lmStudioBtnText">로컬 Qwen AI 자동 분석 (법령·등급·원인)</span>
+              </button>
+              <span id="lmStudioInlineStatus" style="font-size: 0.74rem; color: #64748b; font-weight: 500;">
+                (LM Studio Qwen3.5 연동)
+              </span>
+            </div>
+            
+            <div id="lmStudioResultCard" style="display: none; margin-top: 8px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 10px 12px; font-size: 0.82rem; color: #166534; animation: fadeIn 0.3s ease;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <strong style="color: #15803d; font-size: 0.88rem; display: flex; align-items: center; gap: 5px;">
+                  <span>🤖</span> <span>Qwen AI 법적 분석 완료</span>
+                </strong>
+                <button type="button" id="btnCloseLmStudioResult" style="background: none; border: none; cursor: pointer; color: #15803d; font-weight: bold; font-size: 0.95rem;">✕</button>
+              </div>
+              <div id="lmStudioResultBody" style="line-height: 1.5; color: #1e293b;"></div>
             </div>
             
             <!-- 자동분류 추천 박스 -->
@@ -813,9 +840,45 @@
     </div>
   </div>
 
+  <!-- LM Studio 연결 설정 모달 -->
+  <div id="lmStudioModal" class="modal-backdrop" style="display: none;">
+    <div class="modal" style="max-width: 440px;">
+      <h3 style="font-size: 1.15rem; color: var(--gray-900); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+        <span>🤖</span> <span>LM Studio 로컬 AI 연동 설정</span>
+      </h3>
+      <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 16px; line-height: 1.5;">
+        사용자 PC에서 실행 중인 <strong>LM Studio 로컬 AI 서버</strong>와 연동하여 외부 데이터 유출 없이 100% 무료로 산안법 위반 및 부적합 등급을 자동 판정합니다.
+      </p>
+
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label class="form-label" style="font-size: 0.82rem;">LM Studio API 엔드포인트 URL</label>
+        <input type="text" id="txtLmStudioEndpoint" class="form-control" placeholder="http://localhost:1234/v1" value="http://localhost:1234/v1">
+        <span style="font-size: 0.74rem; color: var(--gray-400); display: block; margin-top: 4px;">
+          기본값: http://localhost:1234/v1 (또는 http://192.168.45.164:1234/v1)
+        </span>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 16px;">
+        <label class="form-label" style="font-size: 0.82rem;">사용 모델 ID (Model Identifier)</label>
+        <input type="text" id="txtLmStudioModel" class="form-control" placeholder="qwen3.5-9b-deepseek-v4-flash" value="qwen3.5-9b-deepseek-v4-flash">
+      </div>
+
+      <div id="lmStudioTestStatusBox" style="padding: 10px; border-radius: 6px; font-size: 0.82rem; margin-bottom: 16px; display: none;"></div>
+
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btnTestLmStudioConn" class="btn btn-outline" style="padding: 8px 14px; font-weight: 600;">
+          🔌 연결 테스트
+        </button>
+        <button type="button" id="btnSaveLmStudioSetting" class="btn btn-primary" style="padding: 8px 16px; font-weight: 700;">
+          설정 저장 및 닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261010_2"></script>
+  <script type="module" src="js/app.js?v=20261010_3"></script>
 </body>
 </html>
