@@ -280,8 +280,9 @@ JSON 형식:
       });
     }
 
-    if (!user) {
-      return new Response(JSON.stringify({ error: '인증이 필요합니다' }), {
+    // 등록/수정/삭제(PUT, DELETE)는 반드시 유효한 점검자 PIN 번호 인증 필요!
+    if (!user && (request.method === 'PUT' || request.method === 'DELETE')) {
+      return new Response(JSON.stringify({ error: '등록 및 수정 권한이 없습니다. 점검자 PIN 번호를 먼저 입력해주세요.' }), {
         status: 401,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
       });
