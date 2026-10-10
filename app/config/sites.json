@@ -1,0 +1,52 @@
+{
+ "sites": [
+  {
+   "name": "OO아파트 신축공사",
+   "progress": "45%",
+   "scale": "지하2층/지상25층 8개동",
+   "amount": "850억"
+  },
+  {
+   "name": "OO물류센터 신축공사",
+   "progress": "62%",
+   "scale": "지상5층 연면적 6만㎡",
+   "amount": "620억"
+  },
+  {
+   "name": "OO근린생활시설 신축공사",
+   "progress": "20%",
+   "scale": "지하1층/지상7층",
+   "amount": "95억"
+  },
+  {
+   "name": "반포현장",
+   "progress": "30%",
+   "scale": "지하3층/지상35층",
+   "amount": "1,500억"
+  },
+  {
+   "name": "송도1",
+   "progress": "",
+   "scale": "",
+   "amount": ""
+  },
+  {
+   "name": "송도2",
+   "progress": "",
+   "scale": "",
+   "amount": ""
+  },
+  {
+   "name": "송도3",
+   "progress": "",
+   "scale": "",
+   "amount": ""
+  },
+  {
+   "name": "테스트",
+   "progress": "",
+   "scale": "",
+   "amount": ""
+  }
+ ]
+}

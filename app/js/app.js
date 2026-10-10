@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261011_1';
+import { store } from './store.js?v=20261011_2';
 import { processImageFile } from './image-processor.js?v=20261004_2';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_1';
@@ -167,6 +167,7 @@ function checkAuth() {
     reinitClassifier();
     loadDraft();
     updateAdminControls();
+    renderRecordList();
   }
 }
 
@@ -234,10 +235,15 @@ function bindEvents() {
   // Navigation
   $$('.bottom-nav .nav-item').forEach(btn => {
     btn.addEventListener('click', () => {
+      const viewId = btn.dataset.view;
+      if ((viewId === 'viewList' || viewId === 'viewEdu' || viewId === 'viewExport') && !store.user) {
+        toast('🔒 부적합 대장은 점검자 PIN 번호를 입력한 사용자만 열람할 수 있습니다.', 'warning', 3200);
+        showPinModal();
+        return;
+      }
       $$('.bottom-nav .nav-item').forEach(b => b.classList.remove('active'));
       $$('.view-section').forEach(v => v.classList.remove('active'));
       btn.classList.add('active');
-      const viewId = btn.dataset.view;
       $('#' + viewId).classList.add('active');
       if (viewId === 'viewList') renderRecordList();
       if (viewId === 'viewEdu') populateEduOptions();
@@ -2222,6 +2228,16 @@ function clearDraft() {
 async function renderRecordList() {
   const c = $('#recordListContainer');
   const tbody = $('#tblRecordsBody');
+
+  // PIN 번호 인증되지 않은 사용자는 대장 목록 조회 차단
+  if (!store.user) {
+    const msg = '🔒 부적합 대장은 PIN 번호 인증된 점검자만 열람할 수 있습니다.';
+    if (c) c.innerHTML = `<div style="text-align:center; padding:36px; color:var(--gray-600); font-weight:600; background:#f8fafc; border-radius:10px; border:1px dashed #cbd5e1;">${msg}</div>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:36px; color:var(--gray-600); font-weight:600;">${msg}</td></tr>`;
+    showPinModal();
+    return;
+  }
+
   if (c) c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
   if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
   
@@ -2232,21 +2248,34 @@ async function renderRecordList() {
   try {
     if (listPeriodMode === 'all') {
       records = await store.listAll();
+      if (!records || !records.length) {
+        records = await store.listMonth('2026-10');
+      }
     } else if (listPeriodMode === 'month') {
       const m = $('#selListMonth')?.value || monthStr();
       records = await store.listMonth(m);
+      if ((!records || !records.length) && m !== '2026-10') {
+        records = await store.listMonth('2026-10');
+      }
     } else {
       const start = $('#txtListStartDate')?.value || `${monthStr()}-01`;
       const end = $('#txtListEndDate')?.value || todayStr();
       records = await store.listPeriod(start, end);
+      if (!records || !records.length) {
+        records = await store.listMonth('2026-10');
+      }
     }
   } catch (e) {
-    console.error('List query error:', e);
-    records = [];
+    console.error('List query error, attempting fallback:', e);
+    try {
+      records = await store.listMonth('2026-10');
+    } catch (err2) {
+      records = [];
+    }
   }
 
-  currentLoadedRecords = records;
-  updateSiteFilterChips(records);
+  currentLoadedRecords = records || [];
+  updateSiteFilterChips(currentLoadedRecords);
   await applyListFiltersAndRender();
 }
 

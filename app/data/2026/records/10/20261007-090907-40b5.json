@@ -1,0 +1,41 @@
+{
+ "site": "송도1",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "말비계 사용작업 시 승하강용 답단에서 천장작업",
+ "location": "104동 필로티",
+ "workName": "가설전기작업",
+ "workGroup": "전기공사",
+ "kind": "작업발판",
+ "item": "말비계",
+ "agent": "말비계",
+ "type": "떨어짐",
+ "condition": "작업높이에 맞지 않는 말비계 높이",
+ "action": "기계·기구의 잘못 사용",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": "안전보건규칙 제56조"
+ },
+ "causes": [],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-090907-40b5",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T00:09:07.168Z",
+ "inspector": "점검자1",
+ "updatedAt": "2026-10-07T00:09:07.168Z",
+ "updatedBy": "점검자1",
+ "photos": [
+  "data/2026/photos/10/20261007-090907-40b5_p1_muxco674.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}

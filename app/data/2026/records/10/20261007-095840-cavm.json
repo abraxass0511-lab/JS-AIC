@@ -1,0 +1,44 @@
+{
+ "site": "송도2",
+ "siteInfo": {
+  "progress": "",
+  "scale": "",
+  "amount": ""
+ },
+ "content": "갱폼에 볼트나 핀 등의 낙하물 방치",
+ "location": "206동",
+ "workName": "갱폼인양작업",
+ "workGroup": "철근콘크리트공사",
+ "kind": "가시설",
+ "item": "갱폼",
+ "agent": "낙하물",
+ "type": "떨어짐",
+ "condition": "상부발판에 낙하물 방치된 상태",
+ "action": "",
+ "workPlan": "해당없음",
+ "basis": {
+  "ra": "반영",
+  "cp": "해당없음",
+  "st": "해당없음",
+  "guide": "",
+  "law": ""
+ },
+ "causes": [
+  "인적"
+ ],
+ "inspectedDate": "2026-10-07",
+ "id": "20261007-095840-cavm",
+ "bucket": "2026-10",
+ "createdAt": "2026-10-07T00:58:40.114Z",
+ "inspector": "신이삭",
+ "updatedAt": "2026-10-07T00:58:40.114Z",
+ "updatedBy": "신이삭",
+ "photos": [
+  "data/2026/photos/10/20261007-095840-cavm_p1_muxefw4y.jpg",
+  "data/2026/photos/10/20261007-095840-cavm_p2_muxefy3k.jpg"
+ ],
+ "fix": {
+  "photo": null
+ },
+ "status": "미조치"
+}
