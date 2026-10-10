@@ -1885,6 +1885,11 @@ function initLmStudio() {
     const btnIcon = $('#lmStudioBtnIcon');
     const btnText = $('#lmStudioBtnText');
 
+    // [0단계] 기존 스마트 AI 분류가 나와 있다면 먼저 자동 적용하여 완벽 동기화
+    if (smartResult && !smartRecommendationApplied) {
+      $('#btnApplySmart')?.click();
+    }
+
     // [1단계] 0.05초 만에 산안법 룰 엔진으로 즉각 1차 자동 채움 (멈춤 현상 원천 차단)
     const instant = window.SafeLocalAI ? window.SafeLocalAI.quickRuleAnalysis(content) : null;
     if (instant) {
