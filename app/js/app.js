@@ -213,9 +213,11 @@ function bindEvents() {
         } catch (e) {
           toast(e.message, 'danger');
           pinInput = '';
-          updatePinDisplay();
         }
       }
+    });
+  });
+
   // ── 수기 입력 vs PPT/장표 불러오기 모드 전환 ──
   $('#btnModeManual')?.addEventListener('click', () => {
     $('#btnModeManual')?.classList.add('selected');
@@ -232,7 +234,6 @@ function bindEvents() {
     if ($('#txtSite')?.value && $('#txtImportSite')) {
       $('#txtImportSite').value = $('#txtSite').value;
     }
-    updateImportStageBadge();
   });
 
   // ── 부적합 등급 토글 (중부적합 vs 경부적합) ──
@@ -255,13 +256,6 @@ function bindEvents() {
     $('#btnSeverityMajor').style.background = 'white';
     $('#btnSeverityMajor').style.color = '#dc2626';
   });
-
-  // ── 공정률 실시간 표준 단계 뱃지 갱신 ──
-  $('#txtProgressRate')?.addEventListener('input', () => updateManualStageBadge());
-  $('#selProductType')?.addEventListener('change', () => updateManualStageBadge());
-  $('#txtWorkGroup')?.addEventListener('input', () => updateManualStageBadge());
-  $('#txtImportProgressRate')?.addEventListener('input', () => updateImportStageBadge());
-  $('#selImportProductType')?.addEventListener('change', () => updateImportStageBadge());
 
   // ── PPT / 장표 파일 임포트 ──
   $('#filePptxImport')?.addEventListener('change', handlePptxImportChange);
@@ -2144,36 +2138,6 @@ async function applyListFiltersAndRender() {
   }
 }
 
-// ── 단일 삭제 헬퍼 ──
-async function deleteOneRecord(r) {
-  if (!confirm(`[${r.site}] ${r.content}\n해당 부적합 건을 완전히 삭제하시겠습니까?`)) return;
-  try {
-    await store.deleteRecord(r);
-    toast('부적합 내역이 삭제되었습니다.', 'info');
-    renderRecordList();
-  } catch (e) {
-    toast(`삭제 실패: ${e.message}`, 'danger');
-  }
-}
-
-// ── 표준 공정단계 뱃지 실시간 갱신 ──
-function updateManualStageBadge() {
-  const p = parseFloat($('#txtProgressRate')?.value || 35);
-  const wg = $('#txtWorkGroup')?.value || '';
-  const pt = $('#selProductType')?.value || '공동주택';
-  const stage = determineStandardStage(p, wg, pt);
-  const badge = $('#badgeManualStage');
-  if (badge) badge.textContent = stage.name;
-}
-
-function updateImportStageBadge() {
-  const p = parseFloat($('#txtImportProgressRate')?.value || 35);
-  const pt = $('#selImportProductType')?.value || '공동주택';
-  const stage = determineStandardStage(p, '', pt);
-  const badge = $('#badgeImportStage');
-  if (badge) badge.textContent = stage.name;
-}
-
 // ── PPTX / 장표 파일 임포트 처리 ──
 async function handlePptxImportChange(e) {
   const files = Array.from(e.target.files || []);
@@ -2304,7 +2268,6 @@ function loadImportedRecordToManualForm(rec) {
     renderPhotoPreviews();
   }
 
-  updateManualStageBadge();
   toast('선택한 장표 내용이 직접 입력 폼에 채워졌습니다. 확인 후 저장하세요.', 'info');
 }
 
