@@ -1787,16 +1787,30 @@ function initLmStudio() {
       const res = await window.SafeLocalAI.checkConnection();
       if (res.ok) {
         if (dot) dot.style.background = '#22c55e';
-        if (statusText) statusText.textContent = '🟢 Qwen 연결됨';
-        if (badge) {
-          badge.style.background = '#f0fdf4';
-          badge.style.borderColor = '#86efac';
-          badge.style.color = '#15803d';
-          badge.title = `LM Studio 연결됨 (${res.model} @ ${res.endpoint}) - 클릭하여 설정`;
-        }
-        if ($('#lmStudioInlineStatus')) {
-          $('#lmStudioInlineStatus').textContent = `🟢 Qwen 로컬 AI 준비 완료 (${res.model})`;
-          $('#lmStudioInlineStatus').style.color = '#16a34a';
+        if (res.isCloud) {
+          if (statusText) statusText.textContent = '🟢 Qwen 24h 클라우드';
+          if (badge) {
+            badge.style.background = '#f0fdf4';
+            badge.style.borderColor = '#86efac';
+            badge.style.color = '#15803d';
+            badge.title = '노트북 종료 상태: Cloudflare 24시간 클라우드 AI 연결됨 (클릭하여 설정)';
+          }
+          if ($('#lmStudioInlineStatus')) {
+            $('#lmStudioInlineStatus').textContent = '🟢 Qwen 24시간 클라우드 AI 준비 완료 (노트북 꺼져도 동작)';
+            $('#lmStudioInlineStatus').style.color = '#16a34a';
+          }
+        } else {
+          if (statusText) statusText.textContent = '🟢 Qwen 로컬 AI';
+          if (badge) {
+            badge.style.background = '#f0fdf4';
+            badge.style.borderColor = '#86efac';
+            badge.style.color = '#15803d';
+            badge.title = `LM Studio 로컬 연결됨 (${res.model} @ ${res.endpoint}) - 클릭하여 설정`;
+          }
+          if ($('#lmStudioInlineStatus')) {
+            $('#lmStudioInlineStatus').textContent = `🟢 Qwen 로컬 AI 준비 완료 (${res.model})`;
+            $('#lmStudioInlineStatus').style.color = '#16a34a';
+          }
         }
       } else {
         if (dot) dot.style.background = '#ef4444';
