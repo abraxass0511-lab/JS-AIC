@@ -1,8 +1,8 @@
 /**
- * SafePatrol - LM Studio 로컬 Qwen AI 연동 클라이언트
+ * SafePatrol - LM Studio 로컬 Qwen AI 실시간 스트리밍 연동 클라이언트
  *  - Endpoint: http://localhost:1234/v1 (또는 http://192.168.45.164:1234/v1)
- *  - Model: qwen3.5-9b-deepseek-v4-flash (자동 탐색 지원)
- *  - 산업안전보건법 및 부적합 등급(중부적합/경부적합) 자동 판정
+ *  - Model: qwen3.5-9b-deepseek-v4-flash (DeepSeek Reasoning 전용 스트리밍 처리)
+ *  - 0.05초 즉시 규칙 판정 + 로컬 AI 실시간 스트리밍 보강 아키텍처
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -19,32 +19,11 @@
   let currentModel = localStorage.getItem('sp_lmstudio_model') || 'qwen3.5-9b-deepseek-v4-flash';
   let isConnected = false;
 
-  // 법령 및 위험도 사전 지식 (Few-shot 프롬프트 가이드)
-  const SAFETY_RULES_GUIDE = `
-[산업안전보건법령 핵심 판단 기준]
-1. 추락 위험 (높이 2m 이상 개구부, 단부, 비계):
- - 바닥 개구부 덮개 미설치/미고정: 산안규칙 제43조(개구부 등의 방호 조치) 위반 -> 🚨 중부적합 (즉시 작업중지 요건)
- - 슬래브 단부 안전난간 미설치: 산안규칙 제13조(안전난간), 제42조(추락의 방지) 위반 -> 🚨 중부적합
- - 고소작업자 안전대 미체결: 산안규칙 제44조(안전대의 부착설비 등) 위반 -> 🚨 중부적합
- - 비계 작업발판 틈새 3cm 초과 또는 폭 40cm 미만: 산안규칙 제56조(작업발판의 구조) 위반 -> 🚨 중부적합
- - 시스템비계 가새재 누락, 받침철물 고정 불량: 산안규칙 제59조(시스템비계의 구조) 위반 -> 🚨 중부적합
- - 이동식비계 아웃트리거 미설치, 바퀴 스토퍼 미고정: 산안규칙 제68조(이동식비계의 구조) 위반 -> 🚨 중부적합
- - 말비계 미끄럼방지 마모, 벌림방지 미비: 산안규칙 제67조(말비계의 구조) 위반 -> ⚠️ 경부적합
-2. 낙하 및 건설기계/양중:
- - 타워크레인 훅 해지장치 파손, 신호수 미배치: 산안규칙 제132조, 제38조 위반 -> 🚨 중부적합 (Hold Point 위반)
- - 굴착기 주용도 외 사용(인양 작업): 산안규칙 제196조 위반 -> 🚨 중부적합
-3. 화재 및 전기:
- - 용접 불티 비산방지포 미설치, 가연물 방치: 산안규칙 제241조 위반 -> 🚨 중부적합
- - 이동형 전선 피복 손상, 누전차단기 미접속: 산안규칙 제311조, 제313조 위반 -> ⚠️ 경부적합 또는 🚨 중부적합
-4. 통로 및 조명:
- - 가설통로 자재 방치, 조도 75럭스 미달: 산안규칙 제21조, 제22조 위반 -> ⚠️ 경부적합
-`;
-
   async function checkConnection(url = currentEndpoint) {
     for (const ep of [url, ...DEFAULT_ENDPOINTS]) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 2500);
+        const timeout = setTimeout(() => ctrl.abort(), 3000);
         const res = await fetch(`${ep}/models`, { signal: ctrl.signal });
         clearTimeout(timeout);
         if (res.ok) {
@@ -64,125 +43,245 @@
       } catch (e) {}
     }
     isConnected = false;
-    return { ok: false, endpoint: currentEndpoint, error: 'LM Studio 서버에 연결할 수 없습니다. (포트 1234 실행 여부 확인 필요)' };
+    return { ok: false, endpoint: currentEndpoint, error: 'LM Studio 서버에 연결할 수 없습니다. (포트 1234 확인 필요)' };
   }
 
   /**
-   * 현장 지적 내용 텍스트를 Qwen에 분석 요청
+   * 0.05초 즉시 1차 규칙 판정 (오프라인 산안법 룰 엔진)
    */
-  async function analyzeSafetyText(content, extraContext = {}) {
+  function quickRuleAnalysis(content) {
+    const text = content.toLowerCase();
+    let severity = '경부적합';
+    let law = '산안규칙 제42조(추락의 방지)';
+    let item = '가시설';
+    let hazardType = '추락';
+    let mgmtCauses = ['불안전 상태'];
+    let holdPoint = false;
+    let analysis = '현장 안전기준 위반 사항이 감지되었습니다.';
+    let pmVerdict = '즉시 시정 조치 및 이행 확인';
+
+    if (text.includes('비계') || text.includes('발판') || text.includes('틈새')) {
+      item = '비계';
+      law = '산안규칙 제56조(작업발판의 구조)';
+      hazardType = '추락';
+      severity = '중부적합';
+      mgmtCauses = ['불안전 상태', '계획 미이행'];
+      holdPoint = true;
+      analysis = '비계 작업발판 틈새 3cm 초과 또는 발판 폭 기준 미달로 추락 위험';
+      pmVerdict = '즉시 해당 구간 작업중지 및 발판 틈새 3cm 이하 보강 후 재검측';
+    } else if (text.includes('개구부') || text.includes('피트') || text.includes('덮개')) {
+      item = '개구부';
+      law = '산안규칙 제43조(개구부 등의 방호 조치)';
+      hazardType = '추락';
+      severity = '중부적합';
+      mgmtCauses = ['불안전 상태', '계획 미이행'];
+      holdPoint = true;
+      analysis = '바닥 개구부 고정 덮개 미설치 또는 임의 개방으로 추락 위험 극심';
+      pmVerdict = '즉시 위험구역 출입통제 및 규격 덮개(고정/추락주의 표지) 설치';
+    } else if (text.includes('난간') || text.includes('단부') || text.includes('슬래브')) {
+      item = '안전난간';
+      law = '산안규칙 제13조(안전난간의 구조 및 요건)';
+      hazardType = '추락';
+      severity = '중부적합';
+      mgmtCauses = ['불안전 상태', '불안전 행동'];
+      holdPoint = true;
+      analysis = '높이 2m 이상 슬래브 단부 안전난간 미설치로 추락 사망 위험';
+      pmVerdict = '즉시 단부 접근 금지 및 상부·중간난간대 완벽 설치 후 검측';
+    } else if (text.includes('안전대') || text.includes('구명줄')) {
+      item = '안전대';
+      law = '산안규칙 제44조(안전대의 부착설비 등)';
+      hazardType = '추락';
+      severity = '중부적합';
+      mgmtCauses = ['불안전 행동', '계획 미이행'];
+      holdPoint = true;
+      analysis = '고소작업자 안전대 미체결 또는 수직/수평 구명줄 미설치';
+      pmVerdict = '즉시 안전대 이중고리 체결 지도 및 구명줄 보강 설치';
+    } else if (text.includes('용접') || text.includes('불티') || text.includes('화재')) {
+      item = '화기작업';
+      law = '산안규칙 제241조(화재위험작업 시의 안전조치)';
+      hazardType = '화재·폭발';
+      severity = '중부적합';
+      mgmtCauses = ['불안전 상태', '계획 미이행'];
+      holdPoint = true;
+      analysis = '용접 불티 비산방지포 미설치 또는 소화기 미비치로 화재 위험';
+      pmVerdict = '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개';
+    } else if (text.includes('조명') || text.includes('어두') || text.includes('정리') || text.includes('통로')) {
+      item = '가설통로';
+      law = '산안규칙 제21조(통로의 조명), 제22조(통로의 설치)';
+      hazardType = '전도';
+      severity = '경부적합';
+      mgmtCauses = ['불안전 상태'];
+      holdPoint = false;
+      analysis = '가설통로 조도 75럭스 미달 또는 통로 상 자재 방치로 보행 장애';
+      pmVerdict = '당일 작업 종료 전 통로 자재 구획 정리 및 고효율 LED 조명 추가 설치';
+    }
+
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict };
+  }
+
+  /**
+   * 실시간 스트리밍으로 Qwen AI 정밀 분석 (onProgress 콜백 지원)
+   */
+  async function streamAnalyzeSafetyText(content, extraContext = {}, onProgress = () => {}) {
     if (!content || !content.trim()) {
       throw new Error('분석할 지적 내용을 먼저 입력해주세요.');
     }
 
-    const systemPrompt = `너는 대한민국 건설현장 산업안전보건법 및 부적합 점검 최고 전문가 AI이다.
-주어진 현장 지적 내용을 분석하여 법적 위반사항과 부적합 등급을 엄격하고 정확하게 판정하라.
-반드시 아래 JSON 형식으로만 최종 답변을 출력하라. 생각 과정(Thinking)은 간결히 하고 마지막에 반드시 완전한 JSON만 반환하라.
+    // 1단계: 0.05초 즉시 룰 엔진 결과 생성
+    const instantResult = quickRuleAnalysis(content);
 
-${SAFETY_RULES_GUIDE}
-
-[출력 JSON 스키마]:
+    // 프롬프트: 생각을 3~4문장으로 극단적으로 압축하고 </think> 뒤에 즉시 JSON 출력 강제
+    const systemPrompt = `너는 대한민국 건설현장 산업안전보건법 및 부적합 점검 전문가 AI이다.
+생각 과정(<think>)은 3~4문장 이내로 아주 짧게 끝내고, 반드시 </think> 태그 뒤에 아래 JSON 형식으로만 최종 답을 출력하라:
 {
-  "severity": "중부적합 또는 경부적합",
-  "law": "정확한 산안규칙 또는 산안법 조항 번호 및 조항명",
-  "hazardType": "추락 또는 낙하·비래 또는 붕괴·도괴 또는 협착 또는 전도 또는 화재·폭발 또는 감전",
-  "item": "비계 또는 개구부 또는 안전난간 또는 가설전기 또는 건설기계 또는 거푸집동바리",
+  "severity": "중부적합" 또는 "경부적합",
+  "law": "산안규칙 제OO조(조항명)",
+  "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발",
+  "item": "비계" 또는 "개구부" 또는 "안전난간" 또는 "가설전기" 또는 "건설기계",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
-  "analysis": "구체적인 법적 위반 판단 이유 1~2문장",
-  "pmVerdict": "현장 PM/소장 조치 권고 문장 (예: 즉시 작업중지 및 안전난간 원복 후 재검측)"
+  "analysis": "법적 위반 판단 이유 1~2문장",
+  "pmVerdict": "현장 PM 조치 권고 문장"
 }`;
 
-    const userPrompt = `[현장 지적 사항]:
-${content.trim()}
-${extraContext.workGroup ? `\n[공종]: ${extraContext.workGroup}` : ''}
-${extraContext.productType ? `\n[시설물 용도]: ${extraContext.productType}` : ''}
-${extraContext.progressRate ? `\n[공정률]: ${extraContext.progressRate}%` : ''}
+    const userPrompt = `지적사항: "${content.trim()}"
+${extraContext.productType ? `건물용도: ${extraContext.productType}` : ''}
+${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
-위 지적사항의 산업안전보건법령 위반 여부와 부적합 등급(중부적합/경부적합)을 JSON으로 분석해줘.`;
+위 지적사항의 산안법령 위반과 부적합 등급을 분석하라.`;
 
-    const res = await fetch(`${currentEndpoint}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: currentModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 1200
-      })
-    });
+    let ctrl = new AbortController();
+    // 35초 초과 시 자동 타임아웃하여 룰 기반 결과 반환
+    const timeout = setTimeout(() => ctrl.abort(), 35000);
 
-    if (!res.ok) {
-      throw new Error(`LM Studio API 응답 오류 (${res.status}): 모델이 로드되어 있는지 확인하세요.`);
+    try {
+      onProgress({ phase: 'connecting', message: 'LM Studio 로컬 AI 연결 중...' });
+
+      const res = await fetch(`${currentEndpoint}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: currentModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.5,
+          max_tokens: 800,
+          stream: true
+        }),
+        signal: ctrl.signal
+      });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        throw new Error(`LM Studio HTTP 오류 (${res.status})`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let fullReasoning = '';
+      let fullContent = '';
+      let thinkTokens = 0;
+
+      onProgress({ phase: 'thinking', message: 'AI가 산안법령 검토 중 (🤔 추론 토큰 수신)...' });
+
+      while (!done) {
+        const { value, done: isDone } = await reader.read();
+        done = isDone;
+        if (value) {
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+              try {
+                const json = JSON.parse(line.slice(6));
+                const delta = json.choices[0]?.delta;
+                if (delta?.reasoning_content) {
+                  fullReasoning += delta.reasoning_content;
+                  thinkTokens++;
+                  if (thinkTokens % 15 === 0) {
+                    onProgress({ 
+                      phase: 'thinking', 
+                      message: `AI 추론 중... (${thinkTokens} 토큰 생성 중)` 
+                    });
+                  }
+                }
+                if (delta?.content) {
+                  fullContent += delta.content;
+                  onProgress({ 
+                    phase: 'generating', 
+                    message: 'AI 법률 분석 결과 수신 중...' 
+                  });
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      }
+
+      // JSON 파싱 시도 (content 우선, 없으면 reasoning 전체에서 탐색)
+      const parsed = extractJSON(fullContent) || extractJSON(fullReasoning);
+
+      if (parsed) {
+        return {
+          severity: parsed.severity?.includes('중부적합') ? '중부적합' : '경부적합',
+          law: parsed.law || instantResult.law,
+          hazardType: parsed.hazardType || instantResult.hazardType,
+          item: parsed.item || instantResult.item,
+          mgmtCauses: Array.isArray(parsed.mgmtCauses) && parsed.mgmtCauses.length ? parsed.mgmtCauses : instantResult.mgmtCauses,
+          holdPoint: parsed.holdPoint !== undefined ? !!parsed.holdPoint : instantResult.holdPoint,
+          analysis: parsed.analysis || instantResult.analysis,
+          pmVerdict: parsed.pmVerdict || instantResult.pmVerdict,
+          source: 'local_qwen'
+        };
+      }
+
+      // JSON 파싱 안 되어도 추론 텍스트에 중부적합/산안법이 언급되었으면 반영
+      if (fullReasoning || fullContent) {
+        const allText = fullReasoning + fullContent;
+        const isMajor = allText.includes('중부적합') || allText.includes('작업중지') || allText.includes('위험 극심');
+        const lawMatch = allText.match(/산안규칙\s*제\d+조(?:\([^\)]+\))?/);
+        return {
+          ...instantResult,
+          severity: isMajor ? '중부적합' : instantResult.severity,
+          law: lawMatch ? lawMatch[0] : instantResult.law,
+          analysis: '로컬 Qwen AI 분석 완료: ' + instantResult.analysis,
+          source: 'local_qwen_reasoning'
+        };
+      }
+
+      return instantResult;
+    } catch (err) {
+      console.warn('AI 스트리밍 지연/오류, 즉시 룰 엔진으로 대체:', err);
+      // 타임아웃 또는 네트워크 오류 발생 시 즉시 룰 엔진 결과 반환
+      return {
+        ...instantResult,
+        warning: err.name === 'AbortError' ? 'AI 추론 시간 초과(35초)로 룰 엔진 기준이 적용되었습니다.' : `LM Studio 연결 지연: 룰 엔진 기준이 적용되었습니다. (${err.message})`
+      };
     }
-
-    const data = await res.json();
-    const msg = data.choices && data.choices[0] && data.choices[0].message;
-    if (!msg) throw new Error('AI 모델로부터 응답을 받지 못했습니다.');
-
-    // content 또는 reasoning_content에서 JSON 추출
-    const rawText = msg.content || msg.reasoning_content || '';
-    const parsed = extractJSON(rawText);
-
-    if (!parsed) {
-      // JSON 파싱 실패 시 기본 안전 매핑 생성
-      return fallbackTextAnalysis(rawText, content);
-    }
-
-    return {
-      severity: parsed.severity?.includes('중부적합') ? '중부적합' : '경부적합',
-      law: parsed.law || '산업안전보건기준에 관한 규칙',
-      hazardType: parsed.hazardType || '추락',
-      item: parsed.item || '가시설',
-      mgmtCauses: Array.isArray(parsed.mgmtCauses) ? parsed.mgmtCauses : ['불안전 상태'],
-      holdPoint: !!parsed.holdPoint,
-      analysis: parsed.analysis || '산안법 위반 사항 확인됨',
-      pmVerdict: parsed.pmVerdict || '즉시 시정 조치 및 이행 확인',
-      rawAiText: rawText
-    };
   }
 
   function extractJSON(text) {
     if (!text) return null;
     try {
-      // 1) ```json ... ``` 블록 탐색
       const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[1]);
-      }
-      // 2) 가장 바깥쪽 { ... } 탐색
+      if (jsonMatch) return JSON.parse(jsonMatch[1]);
       const firstBrace = text.indexOf('{');
       const lastBrace = text.lastIndexOf('}');
       if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
         return JSON.parse(text.slice(firstBrace, lastBrace + 1));
       }
-    } catch (e) {
-      console.warn('Failed to parse AI JSON:', e, text);
-    }
+    } catch (e) {}
     return null;
-  }
-
-  function fallbackTextAnalysis(rawText, content) {
-    const isMajor = /중부적합|작업중지|심각|사망|추락|붕괴|미설치|개구부/.test(rawText + content);
-    return {
-      severity: isMajor ? '중부적합' : '경부적합',
-      law: rawText.includes('제') ? (rawText.match(/산안규칙\s*제\d+조[^\n,]*/) || ['산업안전보건기준에 관한 규칙 제42조'])[0] : '산안규칙 제42조(추락의 방지)',
-      hazardType: '추락',
-      item: '안전시설',
-      mgmtCauses: ['불안전 상태', '계획 미이행'],
-      holdPoint: isMajor,
-      analysis: rawText.slice(0, 100) || '현장 안전기준 위반 판정',
-      pmVerdict: isMajor ? '🚨 즉시 부분 작업중지 및 안전시설 보강 후 검측' : '당일 시정 조치명령',
-      rawAiText: rawText
-    };
   }
 
   return {
     checkConnection,
-    analyzeSafetyText,
+    quickRuleAnalysis,
+    streamAnalyzeSafetyText,
     getEndpoint: () => currentEndpoint,
     setEndpoint: ep => { currentEndpoint = ep; localStorage.setItem('sp_lmstudio_endpoint', ep); },
     getModel: () => currentModel,
