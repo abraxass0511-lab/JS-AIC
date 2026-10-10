@@ -149,8 +149,8 @@ export default {
             'Accept': 'application/vnd.github.v3.raw'
           }
         });
-        if (ghRes.status === 401 && ghToken !== fallbackToken) {
-          ghToken = fallbackToken;
+        if (ghRes.status === 401 && ghToken !== validToken) {
+          ghToken = validToken;
           ghRes = await fetch(ghUrl, {
             headers: {
               'User-Agent': 'SafePatrol-Relay',
