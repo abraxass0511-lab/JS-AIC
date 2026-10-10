@@ -176,11 +176,6 @@ export const store = {
     this.taxonomy = tax; this.keywords = kw;
 
     let pin = localStorage.getItem('sp_pin');
-    // 처음 방문 시 기본 점검자1(111111)로 자동 로그인하여 스마트폰에서도 즉시 저장 가능하도록 지원
-    if (!pin) {
-      pin = '111111';
-      localStorage.setItem('sp_pin', pin);
-    }
 
     if (pin) {
       try {

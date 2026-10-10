@@ -437,6 +437,12 @@ function bindEvents() {
 
   // Submit Patrol Record
   $('#btnSubmitRecord').addEventListener('click', async () => {
+    if (!store.user) {
+      toast('🔒 부적합을 등록하려면 점검자 PIN 번호(6자리) 로그인이 필요합니다.', 'warning', 3500);
+      showPinModal();
+      return;
+    }
+
     const site = $('#txtSite').value.trim();
     const content = $('#txtContent').value.trim();
     const location = $('#txtLocation').value.trim();
@@ -569,7 +575,12 @@ function bindEvents() {
       clearDraft();
     } catch (err) {
       console.error(err);
-      toast(`저장 실패: ${err.message}`, 'danger');
+      if (err.message && (err.message.includes('401') || err.message.includes('인증') || err.message.includes('Auth'))) {
+        toast('🔒 점검자 인증이 필요합니다. 6자리 PIN 번호를 입력해주세요.', 'warning', 3500);
+        showPinModal();
+      } else {
+        toast(`저장 실패: ${err.message}`, 'danger');
+      }
     } finally {
       btn.disabled = false;
       btn.textContent = '등록 저장하기';

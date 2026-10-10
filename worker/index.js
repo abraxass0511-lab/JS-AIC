@@ -122,7 +122,7 @@ export default {
     }
 
     const url = new URL(request.url);
-    const pin = request.headers.get('X-PIN') || '111111';
+    const pin = request.headers.get('X-PIN');
     const DEFAULT_PINS = {
       '111111': { name: '점검자1', role: 'inspector' },
       '222222': { name: '점검자2', role: 'inspector' },
@@ -131,7 +131,7 @@ export default {
     let parsedPins = {};
     try { parsedPins = JSON.parse(env.PINS_JSON || '{}'); } catch (e) {}
     const pins = { ...DEFAULT_PINS, ...parsedPins };
-    let user = pins[pin] || { name: '점검자1', role: 'inspector' };
+    let user = pins[pin] || null;
 
     // env.PINS_JSON에 없는 신규/수정된 핀번호는 GitHub 저장소의 config/users.json에서 동적 조회
     const ghOwner = env.GITHUB_OWNER || 'abraxass0511-lab';
