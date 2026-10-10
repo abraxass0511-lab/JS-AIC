@@ -184,6 +184,7 @@ async function rmw(backend, path, mutate, fallback, message) {
 export const store = {
   mode: 'demo',
   backend: null,
+  localBackend: null,
   user: null,
   taxonomy: null,
   keywords: null,
@@ -195,9 +196,10 @@ export const store = {
   _photoCache: new Map(),
 
   async init() {
+    this.localBackend = new DemoBackend();
     const cfg = window.SAFEPATROL_CONFIG || {};
     this.mode = cfg.workerUrl ? 'github' : 'demo';
-    this.backend = this.mode === 'github' ? new WorkerBackend(cfg.workerUrl) : new DemoBackend();
+    this.backend = this.mode === 'github' ? new WorkerBackend(cfg.workerUrl) : this.localBackend;
     let tax = null, kw = null;
     try {
       [tax, kw] = await Promise.all([
@@ -359,8 +361,40 @@ export const store = {
   // ── 기록 조회 ──
   async listMonth(bucket, force = false) {
     if (!force && this._monthCache.has(bucket)) return this._monthCache.get(bucket);
-    const r = await this.backend.readJSON(indexPath(bucket));
-    const list = (r && r.data.records) || [];
+    const map = new Map();
+
+    // 1) 서버/정적 파일에서 목록 로드
+    try {
+      const r = await this.backend.readJSON(indexPath(bucket));
+      if (r && r.data && Array.isArray(r.data.records)) {
+        r.data.records.forEach(rec => map.set(rec.id, rec));
+      }
+    } catch (e) {
+      console.warn('Backend readJSON error for bucket:', bucket, e);
+    }
+
+    // 2) 로컬 IndexedDB에 저장된 신규 목록 병합
+    if (this.localBackend) {
+      try {
+        const lr = await this.localBackend.readJSON(indexPath(bucket)).catch(() => null);
+        if (lr && lr.data && Array.isArray(lr.data.records)) {
+          lr.data.records.forEach(rec => map.set(rec.id, rec));
+        }
+      } catch (le) {}
+    }
+
+    // 3) localStorage 백업 목록 병합
+    try {
+      const raw = localStorage.getItem(`sp_local_records_${bucket}`);
+      if (raw) {
+        const localList = JSON.parse(raw);
+        if (Array.isArray(localList)) {
+          localList.forEach(rec => map.set(rec.id, rec));
+        }
+      }
+    } catch (lse) {}
+
+    const list = Array.from(map.values()).sort((a, b) => (b.inspectedDate + (b.createdAt || '')).localeCompare(a.inspectedDate + (a.createdAt || '')));
     this._monthCache.set(bucket, list);
     return list;
   },
@@ -453,18 +487,19 @@ export const store = {
     rec.updatedBy = author;
     const msg = `[SafePatrol] ${isNew ? '등록' : '수정'} ${rec.id} (${author})`;
 
-    // 1) 사진 업로드
+    // 1) 사진 업로드 (로컬 IndexedDB 저장 + 서버 전송)
     const photos = [];
     const todo = (media.photos || []).filter(p => p.blob).length + (media.fixPhoto && media.fixPhoto.blob ? 1 : 0);
     let done = 0;
     for (const [i, p] of (media.photos || []).entries()) {
       if (p.blob) {
-        onStep(`사진 업로드 중 (${++done}/${todo})`);
+        onStep(`사진 저장 중 (${++done}/${todo})`);
         const path = photoPath(rec, `p${i + 1}`);
-        try {
-          await this.backend.writeBlob(path, p.blob, msg);
-        } catch (be) {
-          console.warn('Backend writeBlob error, cached locally:', path, be);
+        if (this.localBackend) {
+          try { await this.localBackend.writeBlob(path, p.blob); } catch (e) {}
+        }
+        if (this.backend && this.backend !== this.localBackend) {
+          try { await this.backend.writeBlob(path, p.blob, msg); } catch (be) { console.warn('Server writeBlob error:', be); }
         }
         this._photoCache.set(path, URL.createObjectURL(p.blob));
         photos.push(path);
@@ -473,44 +508,62 @@ export const store = {
     rec.photos = photos;
     rec.fix = rec.fix || {};
     if (media.fixPhoto && media.fixPhoto.blob) {
-      onStep(`조치사진 업로드 중 (${++done}/${todo})`);
+      onStep(`조치사진 저장 중 (${++done}/${todo})`);
       const path = photoPath(rec, 'fix');
-      try {
-        await this.backend.writeBlob(path, media.fixPhoto.blob, msg);
-      } catch (be) {
-        console.warn('Backend writeBlob error, cached locally:', path, be);
+      if (this.localBackend) {
+        try { await this.localBackend.writeBlob(path, media.fixPhoto.blob); } catch (e) {}
+      }
+      if (this.backend && this.backend !== this.localBackend) {
+        try { await this.backend.writeBlob(path, media.fixPhoto.blob, msg); } catch (be) { console.warn('Server writeBlob error:', be); }
       }
       this._photoCache.set(path, URL.createObjectURL(media.fixPhoto.blob));
       rec.fix.photo = path;
     } else rec.fix.photo = media.fixPhoto ? media.fixPhoto.path : null;
     rec.status = rec.fix.content ? '조치완료' : '미조치';
 
-    // 2) 개별 기록 파일 (원본 보관)
+    // 2) 로컬 IndexedDB 및 localStorage에 영구 보존
     onStep('기록 저장 중');
-    try {
-      await rmw(this.backend, recordPath(rec), () => rec, {}, msg);
-    } catch (be) {
-      console.warn('Backend recordPath error, cached locally:', be);
+    if (this.localBackend) {
+      try {
+        await rmw(this.localBackend, recordPath(rec), () => rec, {}, msg);
+        await rmw(this.localBackend, indexPath(rec.bucket), cur => {
+          cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+          cur.records.push(rec);
+          return cur;
+        }, { records: [] }, msg);
+      } catch (le) {
+        console.warn('Local IDB rmw error:', le);
+      }
     }
 
-    // 3) 월별 목록 갱신
-    onStep('목록 갱신 중');
-    let savedList = null;
     try {
-      const d = await rmw(this.backend, indexPath(rec.bucket), cur => {
-        cur.records = (cur.records || []).filter(r => r.id !== rec.id);
-        cur.records.push(rec);
-        return cur;
-      }, { records: [] }, msg);
-      savedList = d && d.records;
-    } catch (be) {
-      console.warn('Backend indexPath error, updating month cache directly:', be);
-      const curList = this._monthCache.get(rec.bucket) || [];
-      const updated = curList.filter(r => r.id !== rec.id);
-      updated.push(rec);
-      savedList = updated;
+      const key = `sp_local_records_${rec.bucket}`;
+      const curList = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = curList.filter(r => r.id !== rec.id);
+      filtered.push(rec);
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch (lse) {}
+
+    // 3) 서버 저장 시도 (백그라운드)
+    if (this.backend && this.backend !== this.localBackend) {
+      try {
+        await rmw(this.backend, recordPath(rec), () => rec, {}, msg);
+        await rmw(this.backend, indexPath(rec.bucket), cur => {
+          cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+          cur.records.push(rec);
+          return cur;
+        }, { records: [] }, msg);
+      } catch (be) {
+        console.warn('Server rmw error, saved safely to local storage:', be);
+      }
     }
-    this._monthCache.set(rec.bucket, savedList || [rec]);
+
+    // 4) 메모리 캐시 갱신
+    const cachedList = this._monthCache.get(rec.bucket) || [];
+    const mergedList = cachedList.filter(r => r.id !== rec.id);
+    mergedList.unshift(rec);
+    this._monthCache.set(rec.bucket, mergedList);
+
     return rec;
   },
 
@@ -532,6 +585,12 @@ export const store = {
       const res = await fetch(path);
       return res.blob();
     }
+    if (this.localBackend) {
+      try {
+        const b = await this.localBackend.readBlob(path);
+        if (b) return b;
+      } catch (e) {}
+    }
     return this.backend.readBlob(path);
   },
   async photoURL(path) {
@@ -539,7 +598,13 @@ export const store = {
     if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
     try {
-      const blob = await this.backend.readBlob(path);
+      let blob = null;
+      if (this.localBackend) {
+        try { blob = await this.localBackend.readBlob(path); } catch (e) {}
+      }
+      if (!blob) {
+        blob = await this.backend.readBlob(path);
+      }
       if (!blob) return path;
       const url = URL.createObjectURL(blob);
       this._photoCache.set(path, url);
