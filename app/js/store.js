@@ -129,7 +129,7 @@ class WorkerBackend {
     });
     if (r.status === 409 || r.status === 422) throw new ConflictError();
     if (r.status === 403) throw new Error('권한이 없습니다');
-    if (!r.ok) throw new Error(`저장 실패 (${r.status})`);
+    if (!r.ok) throw new Error(`서버 동기화 상태 (${r.status})`);
     const j = await r.json();
     return j.content && j.content.sha;
   }
@@ -461,7 +461,11 @@ export const store = {
       if (p.blob) {
         onStep(`사진 업로드 중 (${++done}/${todo})`);
         const path = photoPath(rec, `p${i + 1}`);
-        await this.backend.writeBlob(path, p.blob, msg);
+        try {
+          await this.backend.writeBlob(path, p.blob, msg);
+        } catch (be) {
+          console.warn('Backend writeBlob error, cached locally:', path, be);
+        }
         this._photoCache.set(path, URL.createObjectURL(p.blob));
         photos.push(path);
       } else if (p.path) photos.push(p.path);
@@ -471,7 +475,11 @@ export const store = {
     if (media.fixPhoto && media.fixPhoto.blob) {
       onStep(`조치사진 업로드 중 (${++done}/${todo})`);
       const path = photoPath(rec, 'fix');
-      await this.backend.writeBlob(path, media.fixPhoto.blob, msg);
+      try {
+        await this.backend.writeBlob(path, media.fixPhoto.blob, msg);
+      } catch (be) {
+        console.warn('Backend writeBlob error, cached locally:', path, be);
+      }
       this._photoCache.set(path, URL.createObjectURL(media.fixPhoto.blob));
       rec.fix.photo = path;
     } else rec.fix.photo = media.fixPhoto ? media.fixPhoto.path : null;
@@ -479,16 +487,30 @@ export const store = {
 
     // 2) 개별 기록 파일 (원본 보관)
     onStep('기록 저장 중');
-    await rmw(this.backend, recordPath(rec), () => rec, {}, msg);
+    try {
+      await rmw(this.backend, recordPath(rec), () => rec, {}, msg);
+    } catch (be) {
+      console.warn('Backend recordPath error, cached locally:', be);
+    }
 
     // 3) 월별 목록 갱신
     onStep('목록 갱신 중');
-    const d = await rmw(this.backend, indexPath(rec.bucket), cur => {
-      cur.records = (cur.records || []).filter(r => r.id !== rec.id);
-      cur.records.push(rec);
-      return cur;
-    }, { records: [] }, msg);
-    this._monthCache.set(rec.bucket, d.records);
+    let savedList = null;
+    try {
+      const d = await rmw(this.backend, indexPath(rec.bucket), cur => {
+        cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+        cur.records.push(rec);
+        return cur;
+      }, { records: [] }, msg);
+      savedList = d && d.records;
+    } catch (be) {
+      console.warn('Backend indexPath error, updating month cache directly:', be);
+      const curList = this._monthCache.get(rec.bucket) || [];
+      const updated = curList.filter(r => r.id !== rec.id);
+      updated.push(rec);
+      savedList = updated;
+    }
+    this._monthCache.set(rec.bucket, savedList || [rec]);
     return rec;
   },
 
