@@ -6,3 +6,6 @@ compatibility_date = "2024-01-01"
 GITHUB_OWNER = "abraxass0511-lab"
 GITHUB_REPO = "safepatrol-data-2026"
 PINS_JSON = '{"111111":{"name":"점검자1","role":"inspector"},"222222":{"name":"점검자2","role":"inspector"},"000000":{"name":"관리자","role":"admin"}}'
+
+[ai]
+binding = "AI"

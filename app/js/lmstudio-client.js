@@ -18,12 +18,14 @@
   let currentEndpoint = localStorage.getItem('sp_lmstudio_endpoint') || DEFAULT_ENDPOINTS[0];
   let currentModel = localStorage.getItem('sp_lmstudio_model') || 'qwen3.5-9b-deepseek-v4-flash';
   let isConnected = false;
+  let isCloudMode = false;
 
   async function checkConnection(url = currentEndpoint) {
+    // 1. 먼저 내 노트북의 LM Studio 로컬 서버 연결 시도 (우선순위 1)
     for (const ep of [url, ...DEFAULT_ENDPOINTS]) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 3000);
+        const timeout = setTimeout(() => ctrl.abort(), 1800);
         const res = await fetch(`${ep}/models`, { signal: ctrl.signal });
         clearTimeout(timeout);
         if (res.ok) {
@@ -38,12 +40,30 @@
             localStorage.setItem('sp_lmstudio_model', currentModel);
           }
           isConnected = true;
-          return { ok: true, endpoint: ep, model: currentModel, availableModels: models };
+          isCloudMode = false;
+          return { ok: true, isCloud: false, endpoint: ep, model: currentModel, availableModels: models };
         }
       } catch (e) {}
     }
+
+    // 2. LM Studio가 오프라인일 때 (노트북 종료 상태 / 핸드폰 단독 접속 시)
+    //    이미 연결된 Cloudflare Worker를 통해 24시간 클라우드 Qwen AI로 자동 전환
+    const workerUrl = window.SAFEPATROL_CONFIG?.workerUrl;
+    if (workerUrl) {
+      isConnected = true;
+      isCloudMode = true;
+      return {
+        ok: true,
+        isCloud: true,
+        endpoint: workerUrl,
+        model: 'Qwen-32B/7B (Cloudflare 24시간 클라우드)',
+        note: '노트북 종료 시 24시간 클라우드 자동 작동'
+      };
+    }
+
     isConnected = false;
-    return { ok: false, endpoint: currentEndpoint, error: 'LM Studio 서버에 연결할 수 없습니다. (포트 1234 확인 필요)' };
+    isCloudMode = false;
+    return { ok: false, endpoint: currentEndpoint, error: 'AI 서버에 연결할 수 없습니다.' };
   }
 
   /**
@@ -130,6 +150,46 @@
     // 1단계: 0.05초 즉시 룰 엔진 결과 생성
     const instantResult = quickRuleAnalysis(content);
 
+    // ── [2단계-A] 클라우드 모드이거나 LM Studio가 오프라인인 경우: Cloudflare 24시간 AI 즉시 호출 ──
+    const workerUrl = window.SAFEPATROL_CONFIG?.workerUrl;
+    if (isCloudMode && workerUrl) {
+      onProgress({ phase: 'connecting', message: '☁️ Cloudflare 24시간 클라우드 AI 분석 중...' });
+      try {
+        const pin = localStorage.getItem('sp_pin') || '111111';
+        const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PIN': pin
+          },
+          body: JSON.stringify({
+            content,
+            workGroup: extraContext.workGroup || '',
+            productType: extraContext.productType || '',
+            progressRate: extraContext.progressRate || 35
+          })
+        });
+
+        if (cfRes.ok) {
+          const data = await cfRes.json();
+          return {
+            severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
+            law: data.law || instantResult.law,
+            hazardType: data.hazardType || instantResult.hazardType,
+            item: data.item || instantResult.item,
+            mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : instantResult.mgmtCauses,
+            holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : instantResult.holdPoint,
+            analysis: data.analysis || instantResult.analysis,
+            pmVerdict: data.pmVerdict || instantResult.pmVerdict,
+            source: 'cloudflare_cloud_qwen'
+          };
+        }
+      } catch (cfErr) {
+        console.warn('Cloudflare AI 호출 오류, 룰 엔진으로 대체:', cfErr);
+      }
+    }
+
+    // ── [2단계-B] 내 노트북이 켜져 있는 경우: 로컬 LM Studio 스트리밍 추론 ──
     // 프롬프트: 생각을 3~4문장으로 극단적으로 압축하고 </think> 뒤에 즉시 JSON 출력 강제
     const systemPrompt = `너는 대한민국 건설현장 산업안전보건법 및 부적합 점검 전문가 AI이다.
 생각 과정(<think>)은 3~4문장 이내로 아주 짧게 끝내고, 반드시 </think> 태그 뒤에 아래 JSON 형식으로만 최종 답을 출력하라:
@@ -255,11 +315,42 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
       return instantResult;
     } catch (err) {
-      console.warn('AI 스트리밍 지연/오류, 즉시 룰 엔진으로 대체:', err);
-      // 타임아웃 또는 네트워크 오류 발생 시 즉시 룰 엔진 결과 반환
+      console.warn('LM Studio 호출 실패, Cloudflare 24시간 클라우드로 2차 재시도:', err);
+      if (workerUrl) {
+        try {
+          onProgress({ phase: 'connecting', message: '☁️ 24시간 클라우드 AI로 전환하여 분석 중...' });
+          const pin = localStorage.getItem('sp_pin') || '111111';
+          const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-PIN': pin },
+            body: JSON.stringify({
+              content,
+              workGroup: extraContext.workGroup || '',
+              productType: extraContext.productType || '',
+              progressRate: extraContext.progressRate || 35
+            })
+          });
+          if (cfRes.ok) {
+            const data = await cfRes.json();
+            return {
+              severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
+              law: data.law || instantResult.law,
+              hazardType: data.hazardType || instantResult.hazardType,
+              item: data.item || instantResult.item,
+              mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : instantResult.mgmtCauses,
+              holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : instantResult.holdPoint,
+              analysis: data.analysis || instantResult.analysis,
+              pmVerdict: data.pmVerdict || instantResult.pmVerdict,
+              source: 'cloudflare_cloud_qwen'
+            };
+          }
+        } catch (cfErr) {}
+      }
+
+      // 오프라인 룰 엔진 결과 반환
       return {
         ...instantResult,
-        warning: err.name === 'AbortError' ? 'AI 추론 시간 초과(35초)로 룰 엔진 기준이 적용되었습니다.' : `LM Studio 연결 지연: 룰 엔진 기준이 적용되었습니다. (${err.message})`
+        warning: err.name === 'AbortError' ? 'AI 추론 시간 초과로 기본 안전기준이 적용되었습니다.' : `산안법 안전기준이 적용되었습니다.`
       };
     }
   }
