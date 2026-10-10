@@ -12,30 +12,33 @@
   const COLS = [
     ['No', 'No', 5, null, (r, i) => i + 1],
     ['부적합 사항', '사진', 18, null, () => ''],
+    ['부적합 분류', '등급', 10, 'severities', r => r.severity || '중부적합'],
     ['부적합 사항', '내용', 26, null, r => r.content],
+    ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],
+    ['부적합 사항', '점검차수', 8, null, r => r.inspectRound || '1차'],
     ['부적합 사항', '장소/위치', 12, null, r => r.location],
     ['부적합 사항', '작업명', 14, 'works', r => r.workName],
-    ['불안전 상황', '상태', 16, 'conditions', r => r.condition],
-    ['불안전 상황', '행동', 16, 'actions', r => r.action],
     ['부적합 분류', '유형', 10, 'types', r => r.type],
     ['부적합 분류', '기인물', 12, 'agents', r => r.agent],
     ['부적합 분류', '공종', 12, 'workGroups', r => r.workGroup],
     ['부적합 분류', '항목', 13, 'items', r => r.item],
     ['부적합 분류', '종류', 11, 'kinds', r => r.kind],
-    ['작업계획', '작업계획', 9, 'workPlan', r => r.workPlan],
-    ['관련근거', '위험성평가', 9, 'basis3', r => r.basis && r.basis.ra],
-    ['관련근거', '시공계획', 9, 'basis3', r => r.basis && r.basis.cp],
-    ['관련근거', '구조검토', 9, 'structure', r => r.basis && r.basis.st],
-    ['관련근거', '관련작업지침', 14, null, r => r.basis && r.basis.guide],
-    ['관련근거', '산업안전보건법', 18, 'laws', r => r.basis && r.basis.law],
-    ['발생원인', '인적', 6, 'mark', r => mark(r, '인적')],
-    ['발생원인', '물적', 6, 'mark', r => mark(r, '물적')],
-    ['발생원인', '기술적', 6, 'mark', r => mark(r, '기술적')],
-    ['발생원인', '시스템적', 7, 'mark', r => mark(r, '시스템적')],
-    ['현장정보', '현장명', 16, 'sites', r => r.site],
-    ['현장정보', '공정률', 8, null, r => r.siteInfo && r.siteInfo.progress],
-    ['현장정보', '공사규모', 16, null, r => r.siteInfo && r.siteInfo.scale],
-    ['현장정보', '공사금액', 10, null, r => r.siteInfo && r.siteInfo.amount],
+    ['관련근거', '산업안전보건법', 22, 'laws', r => r.law || (r.basis && r.basis.law) || ''],
+    ['불안전 상황', '상태', 16, 'conditions', r => r.condition],
+    ['불안전 상황', '행동', 16, 'actions', r => r.action],
+    ['관리적 원인', '원인구분', 16, null, r => Array.isArray(r.mgmtCauses) ? r.mgmtCauses.join(', ') : (r.mgmtCauses || '')],
+    ['관리적 원인', 'Hold Point', 10, null, r => r.holdPoint ? '위반' : '정상'],
+    ['발생원인 (인터뷰)', '시공자/근로자 의견', 20, null, r => r.interviewOpinion || ''],
+    ['발생원인 (인터뷰)', '점검단 제안', 18, null, r => r.auditProposal || ''],
+    ['개선대책 (협의)', 'PM 판정결과', 18, null, r => r.pmVerdict || ''],
+    ['발생원인(통계)', '인적', 5, 'mark', r => mark(r, '인적')],
+    ['발생원인(통계)', '물적', 5, 'mark', r => mark(r, '물적')],
+    ['발생원인(통계)', '기술적', 5, 'mark', r => mark(r, '기술적')],
+    ['발생원인(통계)', '시스템적', 6, 'mark', r => mark(r, '시스템적')],
+    ['현장/컨설팅', '현장명', 16, 'sites', r => r.site],
+    ['현장/컨설팅', '상품유형', 12, 'productTypes', r => r.productType || '공동주택'],
+    ['현장/컨설팅', '공정률(%)', 8, null, r => r.progressRate !== undefined && r.progressRate !== null ? (r.progressRate + '%') : (r.siteInfo && r.siteInfo.progress ? r.siteInfo.progress + '%' : '')],
+    ['현장/컨설팅', '표준공정단계', 15, 'stages', r => r.stage || '지상 골조 단계'],
     ['조치사항', '조치내용', 24, null, r => (r.fix && r.fix.content) || '(미조치)'],
     ['조치사항', '조치사진', 18, null, () => ''],
     ['관리정보(자동)', '점검일자', 11, null, r => r.inspectedDate],
@@ -43,12 +46,19 @@
   ];
   function mark(r, c) { return (r.causes || []).includes(c) ? '●' : ''; }
 
-  const PHOTO_COL = 2, FIX_PHOTO_COL = 28;
+  const PHOTO_COL = 2, FIX_PHOTO_COL = 31;
   const YELLOW = 'FFFFFF00';
-  const GROUP_FILL = { '조치사항': 'FFC6EFCE', '관리정보(자동)': 'FFD9E1F2' };
+  const GROUP_FILL = {
+    '조치사항': 'FFC6EFCE',
+    '관리정보(자동)': 'FFD9E1F2',
+    '현장/컨설팅': 'FFE0E7FF',
+    '관리적 원인': 'FFFEF3C7',
+    '발생원인 (인터뷰)': 'FFFDE047',
+    '개선대책 (협의)': 'FFBBF7D0'
+  };
   const thin = { style: 'thin', color: { argb: 'FF7F7F7F' } };
   const border = { top: thin, left: thin, bottom: thin, right: thin };
-  const LEFT_COLS = ['내용', '조치내용', '관련작업지침', '산업안전보건법', '상태', '행동'];
+  const LEFT_COLS = ['내용', '조치내용', '시공자/근로자 의견', '점검단 제안', 'PM 판정결과', '산업안전보건법', '상태', '행동'];
 
   const uniq = a => [...new Set(a.filter(Boolean))];
 
@@ -58,6 +68,9 @@
     const add = (key, base) => uniq([...base, ...(custom[key] || [])]);
     return {
       lists: {
+        severities: ['중부적합', '경부적합'],
+        productTypes: ['공동주택', '오피스/지식산업센터', '물류센터/공장', '플랜트/산업설비', '토목/인프라', '기타'],
+        stages: ['착공 및 토공사 단계', '지하 골조 공사 단계', '지상 골조 및 외부 가설 단계', '마감 및 기계전기 설비 단계', '준공 및 부대토목 단계'],
         types: add('type', tax.accidentTypes.list.map(t => t.name)),
         conditions: add('condition', tax.unsafeConditions.list),
         actions: add('action', tax.unsafeActions.list),
@@ -77,6 +90,7 @@
     };
   }
   const LIST_TITLES = {
+    severities: '부적합 등급', productTypes: '상품유형', stages: '표준공정단계',
     types: '유형(발생형태)', conditions: '불안전한 상태', actions: '불안전한 행동', workGroups: '공종', works: '작업명',
     kinds: '종류', items: '항목', agents: '기인물', laws: '관련 조문', workPlan: '작업계획', basis3: '반영여부',
     structure: '구조검토', mark: '발생원인 표시', sites: '현장명',
