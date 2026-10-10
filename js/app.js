@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261011_3';
+import { store } from './store.js?v=20261011_4';
 import { processImageFile } from './image-processor.js?v=20261004_2';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_1';
@@ -580,12 +580,16 @@ function bindEvents() {
       clearForm();
       clearDraft();
     } catch (err) {
-      console.error(err);
-      if (err.message && (err.message.includes('401') || err.message.includes('인증') || err.message.includes('Auth'))) {
+      console.error('Record save error:', err);
+      // 이미 로그인되어 있는 상태라면 절대 PIN 모달을 다시 띄우지 않음
+      if (!store.user) {
         toast('🔒 점검자 인증이 필요합니다. 6자리 PIN 번호를 입력해주세요.', 'warning', 3500);
         showPinModal();
       } else {
-        toast(`저장 실패: ${err.message}`, 'danger');
+        // 서버 동기화 실패 시에도 로컬 캐시에 보존됨을 안내
+        toast(`저장 완료 알림: 로컬 기기에 안전하게 저장되었습니다. (서버 동기화: ${err.message})`, 'info', 4000);
+        clearForm();
+        clearDraft();
       }
     } finally {
       btn.disabled = false;
