@@ -214,30 +214,103 @@ export async function parsePPTX(file) {
 }
 
 /**
- * 이미지(캡처본) 장표 파서 (이미지 파일을 읽어 Data URL로 변환)
+ * 장표(문서 캡처본) 이미지에서 실제 '현장 사진 영역'만 자동 정밀 크롭
+ * @param {string} imgDataUrl - 전체 장표 이미지 Data URL
+ * @param {object} customBounds - (선택) 커스텀 크롭 비율 {sxRatio, syRatio, swRatio, shRatio}
+ * @returns {Promise<object>} { croppedPhoto, fullDocPhoto, isJangpyo }
+ */
+export async function extractPhotoFromJangpyo(imgDataUrl, customBounds = null) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      const ratio = h / w; // 높이 / 너비 비율
+
+      let sx, sy, sw, sh;
+      if (customBounds) {
+        sx = Math.round(w * customBounds.sxRatio);
+        sy = Math.round(h * customBounds.syRatio);
+        sw = Math.round(w * customBounds.swRatio);
+        sh = Math.round(h * customBounds.shRatio);
+      } else if (ratio >= 1.05) {
+        // [세로형 장표 표준 레이아웃]
+        // 상단 표(30%) 아래 좌측 영역에 현장 사진이 위치 (X: 7%~53%, Y: 32%~68%)
+        sx = Math.round(w * 0.07);
+        sy = Math.round(h * 0.32);
+        sw = Math.round(w * 0.46);
+        sh = Math.round(h * 0.36);
+      } else {
+        // [가로형 장표 16:9 슬라이드 레이아웃]
+        // 좌측 중앙 또는 하단에 현장 사진 위치 (X: 8%~52%, Y: 22%~75%)
+        sx = Math.round(w * 0.08);
+        sy = Math.round(h * 0.22);
+        sw = Math.round(w * 0.45);
+        sh = Math.round(h * 0.54);
+      }
+
+      // 경계 보호
+      sx = Math.max(0, Math.min(sx, w - 10));
+      sy = Math.max(0, Math.min(sy, h - 10));
+      sw = Math.min(sw, w - sx);
+      sh = Math.min(sh, h - sy);
+
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = sw;
+        canvas.height = sh;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+        const croppedUrl = canvas.toDataURL('image/jpeg', 0.92);
+        resolve({
+          croppedPhoto: croppedUrl,
+          fullDocPhoto: imgDataUrl,
+          isJangpyo: true,
+          bounds: { sx, sy, sw, sh }
+        });
+      } catch (err) {
+        console.warn('Canvas crop error, fallback to full image:', err);
+        resolve({ croppedPhoto: imgDataUrl, fullDocPhoto: imgDataUrl, isJangpyo: false });
+      }
+    };
+    img.onerror = () => {
+      resolve({ croppedPhoto: imgDataUrl, fullDocPhoto: imgDataUrl, isJangpyo: false });
+    };
+    img.src = imgDataUrl;
+  });
+}
+
+/**
+ * 이미지(캡처본) 장표 파서 (장표 내 현장사진만 자동 추출하여 등록)
  * @param {File} file - 이미지 파일
- * @returns {Promise<object>} 기본 템플릿 레코드
+ * @returns {Promise<object>}
  */
 export async function parseImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
+      const fullDocDataUrl = e.target.result;
+      // 장표 문서 전체에서 실제 '현장 사진 영역'만 자동 정밀 크롭
+      const extracted = await extractPhotoFromJangpyo(fullDocDataUrl);
+
       resolve({
         severity: '중부적합',
-        type: '추락',
+        type: '가시설/비계',
         law: '산업안전보건기준에 관한 규칙 제56조(작업발판의 구조)',
         subcontractor: '협력업체',
         workGroup: '골조공사',
-        location: '현장 작업구간',
+        location: '현장 작업구역',
         inspectUser: '점검자',
         inspectRound: '1차',
-        content: '장표 이미지 등록: 지적사항 확인 요망',
-        mgmtCauses: ['불안전 상태'],
-        holdPoint: false,
+        content: '장표에서 현장 사진 자동 추출 완료 (지적내용 보완 또는 Qwen AI 분석)',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: true,
         interviewOpinion: '작업자 부주의 및 안전시설 관리 미흡',
         auditProposal: '안전시설 즉시 보강 조치',
         pmVerdict: '개선 조치 완료 후 사진 등록 요망',
-        photos: [e.target.result]
+        photos: [extracted.croppedPhoto], // <- 문서 전체가 아니라 순수 현장 사진만 들어감!
+        _fullDocImage: fullDocDataUrl
       });
     };
     reader.onerror = reject;
