@@ -81,6 +81,77 @@ window.addEventListener('DOMContentLoaded', async () => {
 function reinitClassifier() {
   if (window.SafeClassifier && store.taxonomy && store.keywords) {
     classifier = window.SafeClassifier.createClassifier(store.taxonomy, store.keywords, store.rlWeights);
+    // 현재 입력창에 지적 내용이 작성되어 있다면 즉시 자동분류 재실행
+    if ($('#txtContent')?.value && $('#txtContent').value.trim().length >= 2) {
+      setTimeout(() => runSmartClassification(false), 80);
+    }
+  }
+}
+
+// ── [기존 스마트 AI] 내용 기반 온디바이스 자동분류 엔진 (상시 호출 가능) ──
+function runSmartClassification(forceShow = false) {
+  const txt = ($('#txtContent')?.value || '').trim();
+  const box = $('#smartClassifyBox');
+  const applyStatus = $('#smartApplyStatus');
+  if (applyStatus) applyStatus.style.display = 'none';
+
+  if (!txt || txt.length < 2) {
+    if (box) {
+      box.classList.remove('active');
+      box.style.display = 'none';
+    }
+    return null;
+  }
+
+  if (!classifier) {
+    reinitClassifier();
+  }
+
+  if (!classifier) {
+    if (forceShow) toast('분류 데이터를 로딩 중입니다. 1~2초 후 다시 눌러주세요.', 'warning');
+    return null;
+  }
+
+  const res = classifier.classify(txt);
+  if (res && res.matched) {
+    smartResult = res.result;
+    const x = res.result;
+    const rlBadge = (res.rlBoost && res.rlBoost > 0)
+      ? `<span class="badge" style="background:#fef08a; color:#854d0e; font-weight:700; margin-left:6px;">⚡ 강화학습 추천 (+${res.rlBoost})</span>`
+      : '';
+    
+    const descEl = $('#smartDesc');
+    if (descEl) {
+      descEl.innerHTML = `<strong>${x.종류} › ${x.항목}</strong> (${x.유형})${rlBadge}<br><small style="color:var(--gray-600);">${x.산업안전보건법 || ''}</small>`;
+    }
+    
+    const tagsEl = $('#smartTags');
+    if (tagsEl) {
+      tagsEl.innerHTML = `
+        <span class="badge primary">기인물: ${(x.기인물 && x.기인물.join(', ')) || '-'}</span>
+        <span class="badge">상태: ${x.상태 || '-'}</span>
+        <span class="badge">행동: ${x.행동 || '-'}</span>
+        <span class="badge">원인: ${(x.발생원인 && x.발생원인.join(', ')) || '-'}</span>
+      `;
+    }
+    
+    if (box) {
+      box.classList.add('active');
+      box.style.display = 'block';
+    }
+    if (forceShow) {
+      toast(`[기존 스마트 AI] "${x.종류} › ${x.항목}" 추천이 완료되었습니다.`, 'success');
+    }
+    return res;
+  } else {
+    if (box) {
+      box.classList.remove('active');
+      box.style.display = 'none';
+    }
+    if (forceShow) {
+      toast('일치하는 사전 지적사항을 찾지 못했습니다. 직접 입력하거나 Qwen AI 정밀 분석을 사용하세요.', 'info');
+    }
+    return null;
   }
 }
 
@@ -291,36 +362,42 @@ function bindEvents() {
     saveDraft();
   });
 
+  // ── [기존 스마트 AI] 내용 기반 온디바이스 자동분류 이벤트 리스너 ──
+
   // Realtime Smart Auto-classifier on Content Input
   $('#txtContent').addEventListener('input', debounce((e) => {
     saveDraft();
-    const txt = e.target.value.trim();
-    if (!classifier || txt.length < 2) {
-      $('#smartClassifyBox').classList.remove('active');
+    runSmartClassification(false);
+  }, 200));
+
+  // Focus 시에도 내용이 있으면 자동 표시
+  $('#txtContent').addEventListener('focus', () => {
+    if (($('#txtContent')?.value || '').trim().length >= 2) {
+      runSmartClassification(false);
+    }
+  });
+
+  // [기존 스마트 AI] 수동 원클릭 실행 버튼
+  $('#btnRunSmartClassifier')?.addEventListener('click', () => {
+    const txt = ($('#txtContent')?.value || '').trim();
+    if (!txt) {
+      toast('먼저 [부적합 내용]에 지적사항을 입력하세요.', 'warning');
+      $('#txtContent')?.focus();
       return;
     }
+    runSmartClassification(true);
+  });
 
-    const res = classifier.classify(txt);
-    if (res && res.matched) {
-      smartResult = res.result;
-      const x = res.result;
-      const rlBadge = (res.rlBoost && res.rlBoost > 0)
-        ? `<span class="badge" style="background:#fef08a; color:#854d0e; font-weight:700; margin-left:6px;">⚡ 강화학습 추천 (+${res.rlBoost})</span>`
-        : '';
-      $('#smartDesc').innerHTML = `<strong>${x.종류} › ${x.항목}</strong> (${x.유형})${rlBadge}<br><small style="color:var(--gray-600);">${x.산업안전보건법}</small>`;
-      $('#smartTags').innerHTML = `
-        <span class="badge primary">기인물: ${x.기인물.join(', ') || '-'}</span>
-        <span class="badge">상태: ${x.상태 || '-'}</span>
-        <span class="badge">행동: ${x.행동 || '-'}</span>
-        <span class="badge">원인: ${x.발생원인.join(', ') || '-'}</span>
-      `;
-      $('#smartClassifyBox').classList.add('active');
-    } else {
-      $('#smartClassifyBox').classList.remove('active');
+  // 추천 박스 닫기 버튼
+  $('#btnCloseSmartClassify')?.addEventListener('click', () => {
+    const box = $('#smartClassifyBox');
+    if (box) {
+      box.classList.remove('active');
+      box.style.display = 'none';
     }
-  }, 250));
+  });
 
-  // Apply Smart Recommendation
+  // Apply Smart Recommendation (추천 분류 적용)
   $('#btnApplySmart').addEventListener('click', () => {
     if (!smartResult) return;
     smartRecommendationApplied = true;
@@ -338,8 +415,12 @@ function bindEvents() {
     (smartResult.발생원인 || []).forEach(c => selectedCauses.add(c));
     updateCauseChips();
 
-    $('#smartClassifyBox').classList.remove('active');
-    toast('스마트 자동분류가 적용되었습니다. 필요 시 수정하시면 AI가 학습합니다.', 'success');
+    const applyStatus = $('#smartApplyStatus');
+    if (applyStatus) {
+      applyStatus.style.display = 'inline-block';
+      applyStatus.textContent = '✅ 아래 입력폼에 적용되었습니다';
+    }
+    toast('스마트 자동분류가 적용되었습니다. 필요 시 수정하시면 AI가 자동 학습합니다.', 'success');
     saveDraft();
   });
 
@@ -2078,7 +2159,10 @@ function loadDraft() {
   try {
     const d = JSON.parse(raw);
     if (d.site) $('#txtSite').value = d.site;
-    if (d.content) $('#txtContent').value = d.content;
+    if (d.content) {
+      $('#txtContent').value = d.content;
+      setTimeout(() => runSmartClassification(false), 120);
+    }
     if (d.location) $('#txtLocation').value = d.location;
     if (d.workName) $('#txtWorkName').value = d.workName;
     if (d.kind) $('#txtKind').value = d.kind;

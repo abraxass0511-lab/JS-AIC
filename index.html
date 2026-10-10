@@ -203,17 +203,53 @@
               🔴 음성을 듣고 있습니다... 말씀이 끝나면 텍스트로 자동 입력됩니다.
             </div>
 
-            <!-- 🤖 LM Studio 로컬 Qwen AI 원클릭 분석 바 -->
-            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-              <button type="button" id="btnLmStudioAnalyze" class="btn" style="background: linear-gradient(135deg, #1e40af, #2563eb); color: white; padding: 7px 14px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 4px rgba(37,99,235,0.25); cursor: pointer;">
-                <span id="lmStudioBtnIcon">✨</span> <span id="lmStudioBtnText">로컬 Qwen AI 자동 분석 (법령·등급·원인)</span>
-              </button>
-              <span id="lmStudioInlineStatus" style="font-size: 0.74rem; color: #64748b; font-weight: 500;">
-                (LM Studio Qwen3.5 연동)
-              </span>
+            <!-- 🤖 AI 자동 분석 도구 바 (기존 온디바이스 스마트 AI + 로컬 Qwen AI) -->
+            <div style="margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b; display: inline-flex; align-items: center; gap: 5px;">
+                  <span>🤖</span> <span>AI 자동 분류 & 정밀 분석</span>
+                </span>
+                <span id="lmStudioInlineStatus" style="font-size: 0.74rem; color: #16a34a; font-weight: 600;">
+                  (Qwen 로컬 AI 연동)
+                </span>
+              </div>
+              
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <!-- 1. 기존 내장 온디바이스 스마트 AI (0초 즉시 자동분류) -->
+                <button type="button" id="btnRunSmartClassifier" class="btn" style="background: #ffffff; color: #1d4ed8; border: 1.5px solid #60a5fa; padding: 7px 12px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="사전 및 강화학습 기반 온디바이스 0초 즉시 추천">
+                  <span>💡</span> <span>기존 스마트 AI (0초 즉시 분류)</span>
+                </button>
+
+                <!-- 2. 신규 로컬 Qwen AI (산안법·등급·원인 심층 추론) -->
+                <button type="button" id="btnLmStudioAnalyze" class="btn" style="background: linear-gradient(135deg, #1e40af, #2563eb); color: white; padding: 7px 13px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 4px rgba(37,99,235,0.25); cursor: pointer;" title="LM Studio 로컬 Qwen3.5 모델 연동 정밀 법적 분석">
+                  <span id="lmStudioBtnIcon">✨</span> <span id="lmStudioBtnText">로컬 Qwen AI 정밀 분석 (법령·등급)</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 기존 내장 스마트 AI 자동분류 추천 박스 -->
+            <div id="smartClassifyBox" class="smart-classify-box" style="margin-top: 10px;">
+              <div class="smart-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; font-weight: 700; color: #1d4ed8;">
+                  <span>💡</span> <span>[기존 스마트 AI] 내용 기반 자동분류 추천</span>
+                </span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-size: 0.72rem; color: #15803d; font-weight: 600; background: #dcfce7; padding: 2px 6px; border-radius: 4px;">
+                    ⚡ 온디바이스 즉시 분류
+                  </span>
+                  <button type="button" id="btnCloseSmartClassify" style="background: none; border: none; cursor: pointer; color: #64748b; font-weight: bold; font-size: 0.9rem;" title="닫기">✕</button>
+                </div>
+              </div>
+              <div id="smartDesc" class="smart-desc" style="font-size: 0.86rem; line-height: 1.5; margin-bottom: 6px;"></div>
+              <div id="smartTags" class="smart-tags" style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px;"></div>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button type="button" id="btnApplySmart" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.84rem; font-weight: 700;">추천 분류 적용하기</button>
+                <span id="smartApplyStatus" style="font-size: 0.8rem; color: #15803d; font-weight: 700; display: none;">✅ 아래 입력폼에 적용되었습니다</span>
+              </div>
             </div>
             
-            <div id="lmStudioResultCard" style="display: none; margin-top: 8px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 10px 12px; font-size: 0.82rem; color: #166534; animation: fadeIn 0.3s ease;">
+            <!-- 로컬 Qwen AI 결과 카드 -->
+            <div id="lmStudioResultCard" style="display: none; margin-top: 10px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 12px; font-size: 0.82rem; color: #166534; animation: fadeIn 0.3s ease;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <strong style="color: #15803d; font-size: 0.88rem; display: flex; align-items: center; gap: 5px;">
                   <span>🤖</span> <span>Qwen AI 법적 분석 완료</span>
@@ -221,16 +257,6 @@
                 <button type="button" id="btnCloseLmStudioResult" style="background: none; border: none; cursor: pointer; color: #15803d; font-weight: bold; font-size: 0.95rem;">✕</button>
               </div>
               <div id="lmStudioResultBody" style="line-height: 1.5; color: #1e293b;"></div>
-            </div>
-            
-            <!-- 자동분류 추천 박스 -->
-            <div id="smartClassifyBox" class="smart-classify-box">
-              <div class="smart-title">
-                <span>💡</span> <span>내용 기반 자동분류 추천</span>
-              </div>
-              <div id="smartDesc" class="smart-desc"></div>
-              <div id="smartTags" class="smart-tags"></div>
-              <button type="button" id="btnApplySmart" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">추천 분류 적용하기</button>
             </div>
           </div>
 
@@ -879,6 +905,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261010_3"></script>
+  <script type="module" src="js/app.js?v=20261010_5"></script>
 </body>
 </html>
