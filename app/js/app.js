@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261011_7';
+import { store } from './store.js?v=20261011_8';
 import { processImageFile } from './image-processor.js?v=20261011_6';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_6';
@@ -168,8 +168,30 @@ function checkAuth() {
     loadDraft();
     updateAdminControls();
     renderRecordList();
+
+    // ── 새로고침 / 앱 실행 즉시 로컬 미동기화 건 전자동 클라우드 업로드 ──
+    if (store.user && store.mode === 'github') {
+      store.syncLocalToServer().then(res => {
+        if (res && res.synced > 0) {
+          toast(`🔄 로컬 보관 데이터 ${res.synced}건이 클라우드에 자동 동기화되었습니다!`, 'success', 3500);
+          renderRecordList(false);
+        }
+      }).catch(e => console.warn('Auto sync on DOMContentLoaded error:', e));
+    }
   }
 }
+
+// ── 스마트폰 화면 켜짐 또는 다른 앱에서 복귀 시 무자각 전자동 동기화 ──
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && store.user && store.mode === 'github') {
+    store.syncLocalToServer().then(res => {
+      if (res && res.synced > 0) {
+        toast(`🔄 클라우드 자동 동기화 완료 (${res.synced}건)`, 'success', 2500);
+        renderRecordList(false);
+      }
+    }).catch(() => {});
+  }
+});
 
 function updateAdminControls() {
   const isAdmin = store.isAdmin;
@@ -584,6 +606,8 @@ function bindEvents() {
       appliedSmartResult = null;
 
       toast('부적합 사항이 정상 등록되었습니다!', 'success');
+      // 등록 직후 클라우드 서버 즉시 백그라운드 동기화
+      store.syncLocalToServer().catch(e => console.warn('Post-submit sync error:', e));
       clearForm();
       clearDraft();
     } catch (err) {

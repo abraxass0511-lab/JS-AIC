@@ -228,7 +228,11 @@ export const store = {
         else { this.user = JSON.parse(localStorage.getItem('sp_user') || 'null'); if (this.backend.pin !== undefined) this.backend.pin = pin; }
       }
     }
-    if (this.user) await this.loadConfig().catch(() => {});
+    if (this.user) {
+      await this.loadConfig().catch(() => {});
+      // 새로고침/앱 시작 즉시 로컬 미동기화 데이터 전자동 클라우드 업로드
+      this.syncLocalToServer().catch(e => console.warn('Auto sync on init warning:', e));
+    }
   },
 
   async login(pin) {
@@ -241,6 +245,7 @@ export const store = {
     localStorage.setItem('sp_pin', pin);
     localStorage.setItem('sp_user', JSON.stringify(this.user));
     await this.loadConfig();
+    this.syncLocalToServer().catch(e => console.warn('Auto sync on login warning:', e));
     return this.user;
   },
   logout() {
