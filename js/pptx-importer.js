@@ -185,7 +185,11 @@ export async function parsePPTX(file) {
           const base64 = await imgFile.async('base64');
           const ext = normalizedPath.split('.').pop().toLowerCase();
           const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-          photos.push(`data:${mime};base64,${base64}`);
+          const fullDataUrl = `data:${mime};base64,${base64}`;
+
+          // 슬라이드 내 삽입된 사진이 장표 전체 캡처본인지 확인 후 부적합 사진만 추출
+          const extracted = await extractPhotoFromJangpyo(fullDataUrl);
+          photos.push(extracted.croppedPhoto);
         }
       }
     }
@@ -243,11 +247,11 @@ export async function extractPhotoFromJangpyo(imgDataUrl, customBounds = null) {
         sh = Math.round(h * 0.38);
       } else {
         // [가로형 장표 16:9 슬라이드 레이아웃 - 실측 좌표]
-        // 상단 표 구분선 아래, 좌측부터 Hold Point 테두리선까지 현장 사진 위치 (X: 0.8%~44.3%, Y: 28.8%~98.5%)
+        // 상단 표(55% 위) 배제, 좌측 순수 부적합 현장 사진 영역만 정밀 추출 (X: 0.8%~35.8%, Y: 54.8%~98.3%)
         sx = Math.round(w * 0.008);
-        sy = Math.round(h * 0.288);
-        sw = Math.round(w * 0.435);
-        sh = Math.round(h * 0.697);
+        sy = Math.round(h * 0.548);
+        sw = Math.round(w * 0.350);
+        sh = Math.round(h * 0.435);
       }
 
       // 경계 보호
