@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
 import { store } from './store.js?v=20261011_5';
-import { processImageFile } from './image-processor.js?v=20261004_2';
+import { processImageFile } from './image-processor.js?v=20261011_6';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_1';
+import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_6';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -353,16 +353,23 @@ function bindEvents() {
   $('#filePhotos').addEventListener('change', async (e) => {
     const files = [...e.target.files];
     if (!files.length) return;
-    toast('사진 압축 및 촬영정보 분석 중...', 'info', 1500);
+    toast('사진 분석 및 최적화 중...', 'info', 1500);
 
+    let jangpyoDetectedCount = 0;
     for (const f of files.slice(0, 3 - currentPhotos.length)) {
       const processed = await processImageFile(f);
+      if (processed.isJangpyo && processed.isCropped) {
+        jangpyoDetectedCount++;
+      }
       currentPhotos.push(processed);
       // 첫 사진에 EXIF 촬영일자가 존재하면 점검일자로 자동 주입
       if (processed.dateTaken && currentPhotos.length === 1) {
         $('#txtInspectDate').value = processed.dateTaken;
         toast(`사진 원본 촬영일자(${processed.dateTaken})를 자동 적용했습니다.`, 'info');
       }
+    }
+    if (jangpyoDetectedCount > 0) {
+      toast('✂️ 장표 문서가 감지되어 [현장 부적합 사진]만 자동으로 추출했습니다!', 'success', 3500);
     }
     renderPhotoPreviews();
     saveDraft();
@@ -2130,8 +2137,8 @@ function renderPhotoPreviews() {
   const container = $('#photoPreviews');
   container.innerHTML = '';
   currentPhotos.forEach((p, idx) => {
-    const item = h('div.preview-item',
-      h('img', { src: p.previewUrl }),
+    const children = [
+      h('img', { src: p.previewUrl, style: 'cursor: pointer;', title: p.isCropped ? '클릭하여 원본 전체 장표와 비교' : '' }),
       h('button.remove-btn', {
         onclick: (e) => {
           e.stopPropagation();
@@ -2140,7 +2147,33 @@ function renderPhotoPreviews() {
           saveDraft();
         }
       }, '✕')
-    );
+    ];
+
+    if (p.isJangpyo && p.fullDocPreviewUrl) {
+      const badge = h('div', {
+        style: 'position: absolute; bottom: 2px; left: 2px; right: 2px; background: rgba(0,0,0,0.8); color: #4ade80; font-size: 0.65rem; font-weight: bold; text-align: center; border-radius: 4px; padding: 2px 4px; cursor: pointer;',
+        title: '클릭 시 [현장사진만 추출] ↔ [전체 문서] 토글',
+        onclick: async (e) => {
+          e.stopPropagation();
+          if (p.isCropped) {
+            p.previewUrl = p.fullDocPreviewUrl;
+            p.blob = p.fullDocBlob;
+            p.isCropped = false;
+            toast('전체 원본 장표로 전환되었습니다.', 'info', 1500);
+          } else {
+            const rec = await processImageFile(new File([p.fullDocBlob], 'temp.jpg', { type: 'image/jpeg' }), 1280, 0.82, true);
+            p.previewUrl = rec.previewUrl;
+            p.blob = rec.blob;
+            p.isCropped = true;
+            toast('현장 부적합 사진만 추출되었습니다.', 'success', 1500);
+          }
+          renderPhotoPreviews();
+        }
+      }, p.isCropped ? '✂️ 사진만추출' : '📄 전체문서');
+      children.push(badge);
+    }
+
+    const item = h('div.preview-item', { style: 'position: relative;' }, ...children);
     container.append(item);
   });
 }
