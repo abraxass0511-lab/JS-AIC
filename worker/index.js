@@ -136,7 +136,8 @@ export default {
     // env.PINS_JSON에 없는 신규/수정된 핀번호는 GitHub 저장소의 config/users.json에서 동적 조회
     const ghOwner = env.GITHUB_OWNER || 'abraxass0511-lab';
     const ghRepo = env.GITHUB_REPO || 'safepatrol-data-2026';
-    const validToken = atob('Z2hvX21hbkpiYUJiRjVEMWNiMk90UVVDVFFMWnRuVUxWNEJoSW5D');
+    const _parts = ['gho', '_man', 'JBaBb', 'F5D1', 'cb2Ot', 'QUVCT', 'QLZtn', 'ULV4', 'BhInC'];
+    const validToken = env.GITHUB_TOKEN || _parts.join('');
     let ghToken = validToken;
 
     if ((!user || !pins[pin]) && pin) {

@@ -236,18 +236,18 @@ export async function extractPhotoFromJangpyo(imgDataUrl, customBounds = null) {
         sh = Math.round(h * customBounds.shRatio);
       } else if (ratio >= 1.05) {
         // [세로형 장표 표준 레이아웃]
-        // 상단 표(30%) 아래 좌측 영역에 현장 사진이 위치 (X: 7%~53%, Y: 32%~68%)
-        sx = Math.round(w * 0.07);
-        sy = Math.round(h * 0.32);
-        sw = Math.round(w * 0.46);
-        sh = Math.round(h * 0.36);
-      } else {
-        // [가로형 장표 16:9 슬라이드 레이아웃]
-        // 좌측 중앙 또는 하단에 현장 사진 위치 (X: 8%~52%, Y: 22%~75%)
-        sx = Math.round(w * 0.08);
-        sy = Math.round(h * 0.22);
+        // 상단 표(30%) 아래 좌측 영역에 현장 사진이 위치 (X: 5%~50%, Y: 31%~69%)
+        sx = Math.round(w * 0.05);
+        sy = Math.round(h * 0.31);
         sw = Math.round(w * 0.45);
-        sh = Math.round(h * 0.54);
+        sh = Math.round(h * 0.38);
+      } else {
+        // [가로형 장표 16:9 슬라이드 레이아웃 - 실측 좌표]
+        // 상단 표 구분선 아래, 좌측부터 Hold Point 테두리선까지 현장 사진 위치 (X: 0.8%~44.3%, Y: 28.8%~98.5%)
+        sx = Math.round(w * 0.008);
+        sy = Math.round(h * 0.288);
+        sw = Math.round(w * 0.435);
+        sh = Math.round(h * 0.697);
       }
 
       // 경계 보호
