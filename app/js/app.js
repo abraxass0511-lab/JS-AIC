@@ -1,6 +1,6 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
 import { store } from './store.js?v=20261011_10';
-import { processImageFile, cropIfJangpyoBlob } from './image-processor.js?v=20261011_7';
+import { processImageFile } from './image-processor.js?v=20261011_8';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_7';
 
@@ -711,9 +711,8 @@ function bindEvents() {
         sites: store.sites,
         loadImage: async (path) => {
           const blob = await store.photoBlob(path);
-          // 엑셀 삽입 전: 만약 데이터에 장표 문서 전체가 저장되어 있다면 현장 부적합 사진만 자동 크롭
-          const cleanBlob = await cropIfJangpyoBlob(blob);
-          const buf = await cleanBlob.arrayBuffer();
+          if (!blob) return null;
+          const buf = await blob.arrayBuffer();
           const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
           return { base64, extension: 'jpeg' };
         }
@@ -1758,8 +1757,8 @@ function initEmailExportHandlers() {
         sites: store.sites,
         loadImage: async (path) => {
           const b = await store.photoBlob(path);
-          const cleanBlob = await cropIfJangpyoBlob(b);
-          const buf = await cleanBlob.arrayBuffer();
+          if (!b) return null;
+          const buf = await b.arrayBuffer();
           const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
           return { base64, extension: 'jpeg' };
         }
