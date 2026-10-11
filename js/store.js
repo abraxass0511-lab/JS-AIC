@@ -378,6 +378,30 @@ export const store = {
       console.warn('Backend readJSON error for bucket:', bucket, e);
     }
 
+    // 1-1) [인덱스 누락 원천 방지] 서버 records 폴더 목록과 인덱스 교차 검증 (Self-Healing)
+    if (this.mode === 'github') {
+      try {
+        const yStr = yearOf(bucket);
+        const mStr = mmOf(bucket);
+        const dirRes = await this.backend.readJSON(`data/${yStr}/records/${mStr}`);
+        if (dirRes && dirRes.data && Array.isArray(dirRes.data)) {
+          for (const item of dirRes.data) {
+            if (item.name && item.name.endsWith('.json')) {
+              const recId = item.name.replace('.json', '');
+              if (!map.has(recId)) {
+                try {
+                  const singleRes = await this.backend.readJSON(`data/${yStr}/records/${mStr}/${item.name}`);
+                  if (singleRes && singleRes.data && singleRes.data.id) {
+                    map.set(singleRes.data.id, singleRes.data);
+                  }
+                } catch (sErr) {}
+              }
+            }
+          }
+        }
+      } catch (dirErr) {}
+    }
+
     // 2) 로컬 IndexedDB에 저장된 신규 목록 병합
     if (this.localBackend) {
       try {
