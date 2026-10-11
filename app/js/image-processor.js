@@ -75,9 +75,9 @@ export function detectJangpyo(canvas, width, height) {
         layout: 'landscape',
         bounds: {
           sxRatio: 0.008,
-          syRatio: 0.288,
-          swRatio: 0.435,
-          shRatio: 0.697
+          syRatio: 0.548,
+          swRatio: 0.350,
+          shRatio: 0.435
         }
       };
     } else {
@@ -203,4 +203,43 @@ export async function processImageFile(file, maxDimension = 1280, quality = 0.82
     fullDocBlob,
     fullDocPreviewUrl
   };
+}
+
+/**
+ * 주어진 사진 Blob이 장표 문서 전체인 경우, 순수 부적합 현장 사진 영역만 자동 크롭하여 반환
+ * @param {Blob} blob
+ * @returns {Promise<Blob>}
+ */
+export async function cropIfJangpyoBlob(blob) {
+  if (!blob) return blob;
+  try {
+    const bmp = await createImageBitmap(blob);
+    const { width, height } = bmp;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bmp, 0, 0, width, height);
+
+    const check = detectJangpyo(canvas, width, height);
+    if (check.isJangpyo && check.bounds) {
+      const b = check.bounds;
+      const sx = Math.max(0, Math.round(width * b.sxRatio));
+      const sy = Math.max(0, Math.round(height * b.syRatio));
+      const sw = Math.min(width - sx, Math.round(width * b.swRatio));
+      const sh = Math.min(height - sy, Math.round(height * b.shRatio));
+
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = sw;
+      cropCanvas.height = sh;
+      const cCtx = cropCanvas.getContext('2d');
+      cCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      const croppedBlob = await new Promise(res => cropCanvas.toBlob(res, 'image/jpeg', 0.90));
+      return croppedBlob || blob;
+    }
+  } catch (e) {
+    console.warn('cropIfJangpyoBlob failed, using original:', e);
+  }
+  return blob;
 }

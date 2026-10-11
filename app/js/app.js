@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
 import { store } from './store.js?v=20261011_10';
-import { processImageFile } from './image-processor.js?v=20261011_6';
+import { processImageFile, cropIfJangpyoBlob } from './image-processor.js?v=20261011_7';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_6';
+import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_7';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -366,6 +366,40 @@ function bindEvents() {
     toast('불러온 장표 목록이 초기화되었습니다.', 'info');
   });
 
+  // 드래그 앤 드롭 및 붙여넣기(Ctrl+V) 지원 for PPT / 장표
+  const importSection = $('#sectionImportMode');
+  if (importSection) {
+    importSection.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    importSection.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        handlePptxImportChange({ target: { files: e.dataTransfer.files } });
+      }
+    });
+  }
+  window.addEventListener('paste', (e) => {
+    if ($('#sectionImportMode') && $('#sectionImportMode').style.display !== 'none') {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (items) {
+        const imageFiles = [];
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) imageFiles.push(file);
+          }
+        }
+        if (imageFiles.length) {
+          e.preventDefault();
+          handlePptxImportChange({ target: { files: imageFiles } });
+        }
+      }
+    }
+  });
+
   // Photo Selector
   $('#photoDropArea').addEventListener('click', (e) => {
     if (e.target !== $('#filePhotos')) {
@@ -377,21 +411,15 @@ function bindEvents() {
     if (!files.length) return;
     toast('사진 분석 및 최적화 중...', 'info', 1500);
 
-    let jangpyoDetectedCount = 0;
     for (const f of files.slice(0, 3 - currentPhotos.length)) {
-      const processed = await processImageFile(f);
-      if (processed.isJangpyo && processed.isCropped) {
-        jangpyoDetectedCount++;
-      }
+      // 💡 직접 수기 입력 모드: 사용자가 선택한 사진을 가공 없이 100% 원본 그대로 등록 (자동 크롭 비활성화)
+      const processed = await processImageFile(f, 1280, 0.85, false);
       currentPhotos.push(processed);
       // 첫 사진에 EXIF 촬영일자가 존재하면 점검일자로 자동 주입
       if (processed.dateTaken && currentPhotos.length === 1) {
         $('#txtInspectDate').value = processed.dateTaken;
         toast(`사진 원본 촬영일자(${processed.dateTaken})를 자동 적용했습니다.`, 'info');
       }
-    }
-    if (jangpyoDetectedCount > 0) {
-      toast('✂️ 장표 문서가 감지되어 [현장 부적합 사진]만 자동으로 추출했습니다!', 'success', 3500);
     }
     renderPhotoPreviews();
     saveDraft();
@@ -683,7 +711,9 @@ function bindEvents() {
         sites: store.sites,
         loadImage: async (path) => {
           const blob = await store.photoBlob(path);
-          const buf = await blob.arrayBuffer();
+          // 엑셀 삽입 전: 만약 데이터에 장표 문서 전체가 저장되어 있다면 현장 부적합 사진만 자동 크롭
+          const cleanBlob = await cropIfJangpyoBlob(blob);
+          const buf = await cleanBlob.arrayBuffer();
           const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
           return { base64, extension: 'jpeg' };
         }
@@ -1728,7 +1758,8 @@ function initEmailExportHandlers() {
         sites: store.sites,
         loadImage: async (path) => {
           const b = await store.photoBlob(path);
-          const buf = await b.arrayBuffer();
+          const cleanBlob = await cropIfJangpyoBlob(b);
+          const buf = await cleanBlob.arrayBuffer();
           const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
           return { base64, extension: 'jpeg' };
         }
@@ -2592,7 +2623,7 @@ async function handlePptxImportChange(e) {
         const records = await parsePPTX(f);
         records.forEach(r => { r._sourceFile = f.name; });
         importedRecords.push(...records);
-      } else if (f.type.startsWith('image/')) {
+      } else if (f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp)$/i.test(f.name)) {
         const record = await parseImage(f);
         record._sourceFile = f.name;
         importedRecords.push(record);
@@ -2699,13 +2730,25 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = causes.includes('불안전 행동');
   if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = causes.includes('불안전 상태');
 
-  // 사진 채우기
+  // 사진 채우기 (Data URL을 Blob으로 안전 변환)
   if (rec.photos && rec.photos.length) {
-    currentPhotos = rec.photos.map(url => ({
-      previewUrl: url,
-      dataUrl: url
-    }));
-    renderPhotoPreviews();
+    Promise.all(rec.photos.map(async url => {
+      let b = null;
+      try {
+        const r = await fetch(url);
+        b = await r.blob();
+      } catch (e) {}
+      return {
+        blob: b,
+        previewUrl: url,
+        dataUrl: url,
+        isJangpyo: false,
+        isCropped: true
+      };
+    })).then(loaded => {
+      currentPhotos = loaded;
+      renderPhotoPreviews();
+    });
   }
 
   toast('선택한 장표 내용이 직접 입력 폼에 채워졌습니다. 확인 후 저장하세요.', 'info');
