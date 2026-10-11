@@ -2679,8 +2679,9 @@ function renderImportedCards() {
       <div style="display: flex; gap: 10px;">
         ${thumbHtml}
         <div style="flex: 1; min-width: 0;">
-          <div style="font-weight: 600; color: var(--gray-900); margin-bottom: 2px; word-break: break-all;">
-            ${rec.content}
+          <div style="margin-bottom: 4px;">
+            <label style="font-size: 0.72rem; color: #4338ca; font-weight: 700; display: block; margin-bottom: 2px;">📋 추출된 부적합 내용 (직접 수정 가능):</label>
+            <textarea class="form-control txt-import-content" rows="2" style="font-size: 0.8rem; width: 100%; border: 1px solid #a5b4fc; border-radius: 4px; padding: 4px 6px; background: #f5f3ff; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
           </div>
           <div style="font-size: 0.75rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
             📜 ${rec.law}
@@ -2691,6 +2692,10 @@ function renderImportedCards() {
         </div>
       </div>
     `;
+
+    card.querySelector('.txt-import-content')?.addEventListener('input', (e) => {
+      rec.content = e.target.value;
+    });
 
     card.querySelector('.btn-load-to-form').addEventListener('click', () => {
       loadImportedRecordToManualForm(rec);
