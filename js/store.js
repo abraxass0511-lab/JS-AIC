@@ -444,9 +444,11 @@ export const store = {
           }
         } catch (e) {}
       }
-    } else {
+    }
+    // 로컬 IndexedDB에 있는 버킷들도 항상 통합 수집
+    if (this.localBackend) {
       try {
-        const db = await this.backend.dbp;
+        const db = await this.localBackend.dbp;
         const tx = db.transaction('files', 'readonly');
         const keys = await tx.objectStore('files').getAllKeys();
         keys.forEach(k => {
@@ -457,8 +459,116 @@ export const store = {
         });
       } catch (e) {}
     }
+    // localStorage의 sp_local_records_* 버킷들도 수집
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('sp_local_records_')) {
+          buckets.add(k.replace('sp_local_records_', ''));
+        }
+      }
+    } catch (e) {}
     return Array.from(buckets).sort().reverse();
   },
+
+  /**
+   * 로컬(IndexedDB/localStorage)에만 존재하고 서버에 없는 미동기화 데이터를 클라우드 서버에 자동 일괄 업로드
+   */
+  async syncLocalToServer(onProgress = () => {}) {
+    if (this.mode !== 'github' || !this.backend || this.backend === this.localBackend) {
+      return { synced: 0 };
+    }
+
+    let totalSynced = 0;
+    try {
+      const buckets = await this.listAllBuckets();
+
+      for (const bucket of buckets) {
+        let localRecords = [];
+        if (this.localBackend) {
+          try {
+            const lr = await this.localBackend.readJSON(indexPath(bucket));
+            if (lr && lr.data && Array.isArray(lr.data.records)) {
+              localRecords.push(...lr.data.records);
+            }
+          } catch (e) {}
+        }
+        try {
+          const raw = localStorage.getItem(`sp_local_records_${bucket}`);
+          if (raw) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) localRecords.push(...arr);
+          }
+        } catch (e) {}
+
+        const localMap = new Map();
+        localRecords.forEach(r => localMap.set(r.id, r));
+        if (localMap.size === 0) continue;
+
+        let serverRecords = [];
+        try {
+          const sr = await this.backend.readJSON(indexPath(bucket));
+          if (sr && sr.data && Array.isArray(sr.data.records)) {
+            serverRecords = sr.data.records;
+          }
+        } catch (e) {}
+
+        const serverIds = new Set(serverRecords.map(r => r.id));
+        const unsynced = Array.from(localMap.values()).filter(r => !serverIds.has(r.id));
+        if (unsynced.length === 0) continue;
+
+        console.log(`[SafePatrol Sync] 동기화 대상 ${unsynced.length}건 발견 (버킷: ${bucket})`);
+
+        for (const rec of unsynced) {
+          onProgress(`클라우드 동기화 중: ${rec.site || ''} ${rec.id}`);
+          const author = rec.inspector || (this.user && this.user.name) || '점검자';
+          const msg = `[SafePatrol 자동동기화] ${rec.id} (${author})`;
+
+          // 사진 업로드
+          const photoPaths = [...(rec.photos || []), rec.fix && rec.fix.photo].filter(Boolean);
+          for (const pPath of photoPaths) {
+            try {
+              if (this.localBackend) {
+                const b = await this.localBackend.readBlob(pPath).catch(() => null);
+                if (b) {
+                  await this.backend.writeBlob(pPath, b, msg).catch(() => {});
+                }
+              }
+            } catch (pe) {
+              console.warn('사진 동기화 오류 (스킵 가능):', pPath, pe);
+            }
+          }
+
+          // 레코드 JSON 저장
+          try {
+            await rmw(this.backend, recordPath(rec), () => rec, {}, msg);
+          } catch (re) {
+            console.warn('레코드 개별 저장 오류:', rec.id, re);
+          }
+
+          // 월별 인덱스 등록
+          try {
+            await rmw(this.backend, indexPath(bucket), cur => {
+              cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+              cur.records.push(rec);
+              return cur;
+            }, { records: [] }, msg);
+            totalSynced++;
+          } catch (ie) {
+            console.warn('인덱스 등록 오류:', bucket, ie);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('syncLocalToServer 전체 실패:', err);
+    }
+
+    if (totalSynced > 0) {
+      this._monthCache.clear();
+    }
+    return { synced: totalSynced };
+  },
+
   async listAll(force = false) {
     const buckets = await this.listAllBuckets();
     return this.listMonths(buckets, force);
