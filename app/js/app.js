@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261011_5';
+import { store } from './store.js?v=20261011_7';
 import { processImageFile } from './image-processor.js?v=20261011_6';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_6';
@@ -851,6 +851,27 @@ function bindEvents() {
   $('#btnQueryMonth')?.addEventListener('click', () => renderRecordList());
   $('#btnQueryRange')?.addEventListener('click', () => renderRecordList());
   $('#selListMonth')?.addEventListener('change', () => renderRecordList());
+
+  // ── 클라우드 수동 즉시 동기화 버튼 ──
+  $('#btnSyncCloud')?.addEventListener('click', async () => {
+    const btn = $('#btnSyncCloud');
+    btn.disabled = true;
+    btn.textContent = '동기화 중...';
+    try {
+      const res = await store.syncLocalToServer();
+      if (res.synced > 0) {
+        toast(`✅ 휴대폰 로컬 데이터 ${res.synced}건이 클라우드에 성공적으로 반영되었습니다!`, 'success', 3500);
+      } else {
+        toast('모든 데이터가 이미 클라우드와 완벽하게 일치합니다.', 'info', 2500);
+      }
+      await renderRecordList(false);
+    } catch (err) {
+      toast(`동기화 중 오류: ${err.message}`, 'danger');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔄 동기화';
+    }
+  });
 
   // ── 대장 목록 필터 (미조치만 보기 토글 & 전체 현장) ──
   $('#btnFilterUnfixed')?.addEventListener('click', () => {
@@ -2262,7 +2283,7 @@ function clearDraft() {
 }
 
 // ── Record List View ──
-async function renderRecordList() {
+async function renderRecordList(triggerSync = true) {
   const c = $('#recordListContainer');
   const tbody = $('#tblRecordsBody');
 
@@ -2273,6 +2294,16 @@ async function renderRecordList() {
     if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:36px; color:var(--gray-600); font-weight:600;">${msg}</td></tr>`;
     showPinModal();
     return;
+  }
+
+  // 로그인 상태에서 진입 시 로컬 미동기화 건을 백그라운드로 자동 업로드
+  if (triggerSync && store.mode === 'github') {
+    store.syncLocalToServer().then(res => {
+      if (res && res.synced > 0) {
+        toast(`🔄 휴대폰 로컬 보관 데이터 ${res.synced}건이 클라우드에 자동 동기화되었습니다!`, 'success', 3500);
+        renderRecordList(false);
+      }
+    }).catch(e => console.warn('Auto sync warning:', e));
   }
 
   if (c) c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
