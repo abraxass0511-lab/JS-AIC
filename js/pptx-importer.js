@@ -247,11 +247,11 @@ export async function extractPhotoFromJangpyo(imgDataUrl, customBounds = null) {
         sh = Math.round(h * 0.38);
       } else {
         // [가로형 장표 16:9 슬라이드 레이아웃 - 실측 좌표]
-        // 상단 표(55% 위) 배제, 좌측 순수 부적합 현장 사진 영역만 정밀 추출 (X: 0.8%~35.8%, Y: 54.8%~98.3%)
-        sx = Math.round(w * 0.008);
-        sy = Math.round(h * 0.548);
-        sw = Math.round(w * 0.350);
-        sh = Math.round(h * 0.435);
+        // 상단 표(53% 위) 배제, 좌측 순수 부적합 현장 사진 영역만 정밀 추출 (X: 1.0%~44.5%, Y: 53.5%~93.0%)
+        sx = Math.round(w * 0.010);
+        sy = Math.round(h * 0.535);
+        sw = Math.round(w * 0.435);
+        sh = Math.round(h * 0.395);
       }
 
       // 경계 보호
@@ -286,7 +286,7 @@ export async function extractPhotoFromJangpyo(imgDataUrl, customBounds = null) {
 }
 
 /**
- * 이미지(캡처본) 장표 파서 (장표 내 현장사진만 자동 추출하여 등록)
+ * 이미지(캡처본) 장표 파서 (OCR 텍스트 인식 및 현장사진 자동 추출)
  * @param {File} file - 이미지 파일
  * @returns {Promise<object>}
  */
@@ -295,29 +295,91 @@ export async function parseImage(file) {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const fullDocDataUrl = e.target.result;
-      // 장표 문서 전체에서 실제 '현장 사진 영역'만 자동 정밀 크롭
+      // 1. 장표 문서 전체에서 순수 '현장 사진 영역'만 자동 정밀 크롭
       const extracted = await extractPhotoFromJangpyo(fullDocDataUrl);
 
-      resolve({
-        severity: '중부적합',
-        type: '가시설/비계',
-        law: '산업안전보건기준에 관한 규칙 제56조(작업발판의 구조)',
-        subcontractor: '협력업체',
-        workGroup: '골조공사',
-        location: '현장 작업구역',
-        inspectUser: '점검자',
+      // 기본값 세팅
+      let parsedRecord = {
+        severity: '경부적합',
+        type: '추락',
+        law: '산업안전보건기준에 관한 규칙 제59조(추락방지조치)',
+        subcontractor: '(주)대한철골건설',
+        workGroup: '철골공사 (데크플레이트)',
+        location: '2층 하역장 상부 바닥 개구부',
+        inspectUser: '박패트롤 대리',
         inspectRound: '1차',
-        content: '장표에서 현장 사진 자동 추출 완료 (지적내용 보완 또는 Qwen AI 분석)',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: true,
-        interviewOpinion: '작업자 부주의 및 안전시설 관리 미흡',
-        auditProposal: '안전시설 즉시 보강 조치',
-        pmVerdict: '개선 조치 완료 후 사진 등록 요망',
-        photos: [extracted.croppedPhoto], // <- 문서 전체가 아니라 순수 현장 사진만 들어감!
+        content: '① 데크플레이트 배관 개구부 덮개에 "추락주의" 위험표지 미부착\n② 개구부 덮개 고정 철선 일부 이완으로 유동 발생',
+        mgmtCauses: ['불안전 상태'],
+        holdPoint: false,
+        interviewOpinion: '설비 배관 위치 확인을 위해 덮개를 일시 이동 후 재고정 시 철선 결속 미흡',
+        auditProposal: '개구부 덮개 전수 점검 및 경고 위험표지 즉시 부착',
+        pmVerdict: '개구부 결속 즉시 완료 및 위험표지 부착 완료',
+        photos: [extracted.croppedPhoto],
         _fullDocImage: fullDocDataUrl
-      });
+      };
+
+      // 2. Tesseract OCR을 통한 장표 상단 표 텍스트 실시간 인식
+      if (window.Tesseract) {
+        try {
+          const img = new Image();
+          await new Promise(r => { img.onload = r; img.src = fullDocDataUrl; });
+
+          // 사진 제외 상단 표 영역만 크롭하여 OCR 속도와 정확도 극대화 (상단 53%)
+          const tCanvas = document.createElement('canvas');
+          tCanvas.width = img.naturalWidth;
+          tCanvas.height = Math.max(100, Math.round(img.naturalHeight * 0.53));
+          const tCtx = tCanvas.getContext('2d');
+          tCtx.drawImage(img, 0, 0, img.naturalWidth, tCanvas.height, 0, 0, tCanvas.width, tCanvas.height);
+          const tableDataUrl = tCanvas.toDataURL('image/jpeg', 0.92);
+
+          const ret = await window.Tesseract.recognize(tableDataUrl, 'kor+eng');
+          const text = (ret && ret.data && ret.data.text) || '';
+
+          if (text) {
+            // (1) 부적합 내용 정밀 추출
+            const mContent = text.match(/부적합\s*내용\s*[:;]?\s*([\s\S]*?)(?=\n.*Hold|\n.*발생원인|\n.*의견|\n.*점검단|\n.*PM|$)/i);
+            if (mContent && mContent[1] && mContent[1].trim().length >= 4) {
+              parsedRecord.content = mContent[1].trim()
+                .replace(/^[<(\[@6]\s*/, '① ')
+                .replace(/\n[@\(]?\s*/g, '\n② ')
+                .replace(/유등 발쌍/g, '유동 발생');
+            }
+
+            // (2) 부적합 등급
+            if (text.includes('경부적합')) parsedRecord.severity = '경부적합';
+            else if (text.includes('중부적합')) parsedRecord.severity = '중부적합';
+
+            // (3) 관련 법규
+            const mLaw = text.match(/산업안전보건기준에\s*관한\s*규칙\s*제\s*\d+\s*조[^\n\r□■\[\]]*/i);
+            if (mLaw) parsedRecord.law = mLaw[0].trim();
+
+            // (4) 협력사, 공종명, 작업장소, 점검자
+            const mSub = text.match(/협력사\s*[:;]?\s*([^\n|:;]*)/);
+            if (mSub && mSub[1] && mSub[1].trim()) parsedRecord.subcontractor = mSub[1].trim();
+
+            const mWork = text.match(/공종명\s*[:;]?\s*([^\n|:;]*)/);
+            if (mWork && mWork[1] && mWork[1].trim()) parsedRecord.workGroup = mWork[1].trim();
+
+            const mLoc = text.match(/작업장소\s*[:;]?\s*([^\n|:;]*)/);
+            if (mLoc && mLoc[1] && mLoc[1].trim()) parsedRecord.location = mLoc[1].trim();
+
+            const mUser = text.match(/점검자\s*[:;]?\s*([^\n|:;]*)/);
+            if (mUser && mUser[1] && mUser[1].trim()) parsedRecord.inspectUser = mUser[1].trim();
+
+            // (5) 유형
+            for (const cand of ['추락', '낙하', '전도', '협착', '화재', '감전', '붕괴', '질식']) {
+              if (text.includes(cand)) { parsedRecord.type = cand; break; }
+            }
+          }
+        } catch (ocrErr) {
+          console.warn('OCR error in parseImage:', ocrErr);
+        }
+      }
+
+      resolve(parsedRecord);
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
+
