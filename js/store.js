@@ -171,7 +171,21 @@ const indexPath = bucket => `data/${yearOf(bucket)}/index/${bucket}.json`;
 const recordPath = r => `data/${yearOf(r.bucket)}/records/${mmOf(r.bucket)}/${r.id}.json`;
 const photoPath = (r, tag) => `data/${yearOf(r.bucket)}/photos/${mmOf(r.bucket)}/${r.id}_${tag}_${Date.now().toString(36)}.jpg`;
 
-/** read-modify-write를 충돌 시 재시도 */
+// 삭제된 레코드 ID 추적 (좀비 부활 방지)
+function getDeletedIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem('sp_deleted_ids') || '[]'));
+  } catch (e) {
+    return new Set();
+  }
+}
+function markAsDeleted(id) {
+  if (!id) return;
+  const set = getDeletedIds();
+  set.add(id);
+  localStorage.setItem('sp_deleted_ids', JSON.stringify(Array.from(set)));
+}
+
 async function rmw(backend, path, mutate, fallback, message) {
   for (let i = 0; i < 4; i++) {
     const cur = await backend.readJSON(path);
@@ -367,18 +381,35 @@ export const store = {
   async listMonth(bucket, force = false) {
     if (!force && this._monthCache.has(bucket)) return this._monthCache.get(bucket);
     const map = new Map();
+    const localDeleted = getDeletedIds();
+    let serverDeleted = new Set();
+    let serverSuccess = false;
 
     // 1) 서버/정적 파일에서 목록 로드
     try {
       const r = await this.backend.readJSON(indexPath(bucket));
       if (r && r.data && Array.isArray(r.data.records)) {
-        r.data.records.forEach(rec => map.set(rec.id, rec));
+        serverSuccess = true;
+        if (Array.isArray(r.data.deletedIds)) {
+          r.data.deletedIds.forEach(id => {
+            serverDeleted.add(id);
+            markAsDeleted(id);
+          });
+        }
+        r.data.records.forEach(rec => {
+          if (!serverDeleted.has(rec.id) && !localDeleted.has(rec.id)) {
+            map.set(rec.id, rec);
+          }
+        });
       }
     } catch (e) {
       console.warn('Backend readJSON error for bucket:', bucket, e);
     }
 
+    const allDeleted = getDeletedIds();
+
     // 1-1) [인덱스 누락 원천 방지] 서버 records 폴더 목록과 인덱스 교차 검증 (Self-Healing)
+    // 단, 삭제된 항목(allDeleted)은 원천 제외
     if (this.mode === 'github') {
       try {
         const yStr = yearOf(bucket);
@@ -388,7 +419,7 @@ export const store = {
           for (const item of dirRes.data) {
             if (item.name && item.name.endsWith('.json')) {
               const recId = item.name.replace('.json', '');
-              if (!map.has(recId)) {
+              if (!allDeleted.has(recId) && !map.has(recId)) {
                 try {
                   const singleRes = await this.backend.readJSON(`data/${yStr}/records/${mStr}/${item.name}`);
                   if (singleRes && singleRes.data && singleRes.data.id) {
@@ -402,23 +433,41 @@ export const store = {
       } catch (dirErr) {}
     }
 
-    // 2) 로컬 IndexedDB에 저장된 신규 목록 병합
+    // 2) 로컬 IndexedDB에 저장된 신규 목록 병합 (서버 연동 성공 시 로컬 캐시 정화)
     if (this.localBackend) {
       try {
         const lr = await this.localBackend.readJSON(indexPath(bucket)).catch(() => null);
         if (lr && lr.data && Array.isArray(lr.data.records)) {
-          lr.data.records.forEach(rec => map.set(rec.id, rec));
+          if (serverSuccess) {
+            // 서버 기준 정합성 동기화: 로컬 IDB에도 최신 목록으로 업데이트
+            await rmw(this.localBackend, indexPath(bucket), cur => {
+              cur.records = Array.from(map.values());
+              cur.deletedIds = Array.from(allDeleted);
+              return cur;
+            }, { records: [], deletedIds: [] }, 'sync down to local').catch(() => {});
+          } else {
+            lr.data.records.forEach(rec => {
+              if (!allDeleted.has(rec.id)) map.set(rec.id, rec);
+            });
+          }
         }
       } catch (le) {}
     }
 
     // 3) localStorage 백업 목록 병합
     try {
-      const raw = localStorage.getItem(`sp_local_records_${bucket}`);
+      const key = `sp_local_records_${bucket}`;
+      const raw = localStorage.getItem(key);
       if (raw) {
         const localList = JSON.parse(raw);
         if (Array.isArray(localList)) {
-          localList.forEach(rec => map.set(rec.id, rec));
+          if (serverSuccess) {
+            localStorage.setItem(key, JSON.stringify(Array.from(map.values())));
+          } else {
+            localList.forEach(rec => {
+              if (!allDeleted.has(rec.id)) map.set(rec.id, rec);
+            });
+          }
         }
       }
     } catch (lse) {}
@@ -535,15 +584,40 @@ export const store = {
         if (localMap.size === 0) continue;
 
         let serverRecords = [];
+        let serverDeletedIds = [];
         try {
           const sr = await this.backend.readJSON(indexPath(bucket));
-          if (sr && sr.data && Array.isArray(sr.data.records)) {
-            serverRecords = sr.data.records;
+          if (sr && sr.data) {
+            if (Array.isArray(sr.data.records)) serverRecords = sr.data.records;
+            if (Array.isArray(sr.data.deletedIds)) serverDeletedIds = sr.data.deletedIds;
           }
         } catch (e) {}
 
         const serverIds = new Set(serverRecords.map(r => r.id));
-        const unsynced = Array.from(localMap.values()).filter(r => !serverIds.has(r.id));
+        const deletedIds = getDeletedIds();
+        serverDeletedIds.forEach(id => {
+          deletedIds.add(id);
+          markAsDeleted(id);
+        });
+
+        // 로컬 맵에서 삭제된 레코드 제거 (부활 방지)
+        for (const delId of deletedIds) {
+          localMap.delete(delId);
+        }
+
+        // 로컬 스토리지에서도 삭제된 데이터 청소
+        try {
+          const key = `sp_local_records_${bucket}`;
+          const raw = localStorage.getItem(key);
+          if (raw) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+              localStorage.setItem(key, JSON.stringify(arr.filter(r => !deletedIds.has(r.id))));
+            }
+          }
+        } catch (e) {}
+
+        const unsynced = Array.from(localMap.values()).filter(r => !serverIds.has(r.id) && !deletedIds.has(r.id));
         if (unsynced.length === 0) continue;
 
         console.log(`[SafePatrol Sync] 동기화 대상 ${unsynced.length}건 발견 (버킷: ${bucket})`);
@@ -707,14 +781,52 @@ export const store = {
   },
 
   async deleteRecord(rec) {
+    if (!rec || !rec.id) return;
     const author = (this.user && this.user.name) || '관리자';
     const msg = `[SafePatrol] 삭제 ${rec.id} (${author})`;
-    const d = await rmw(this.backend, indexPath(rec.bucket), cur => {
-      cur.records = (cur.records || []).filter(r => r.id !== rec.id); return cur;
-    }, { records: [] }, msg);
-    this._monthCache.set(rec.bucket, d.records);
-    await this.backend.remove(recordPath(rec), msg).catch(() => {});
-    for (const p of [...(rec.photos || []), rec.fix && rec.fix.photo].filter(Boolean)) await this.backend.remove(p, msg).catch(() => {});
+
+    // 1) 로컬 tombstone 표식 등록
+    markAsDeleted(rec.id);
+
+    // 2) 로컬 스토리지 및 IDB에서 즉시 영구 삭제
+    try {
+      const key = `sp_local_records_${rec.bucket}`;
+      const curList = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = curList.filter(r => r.id !== rec.id);
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch (e) {}
+
+    if (this.localBackend) {
+      try {
+        await rmw(this.localBackend, indexPath(rec.bucket), cur => {
+          cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+          cur.deletedIds = [...new Set([...(cur.deletedIds || []), rec.id])];
+          return cur;
+        }, { records: [], deletedIds: [] }, msg).catch(() => {});
+        await this.localBackend.remove(recordPath(rec), msg).catch(() => {});
+      } catch (le) {}
+    }
+
+    // 3) 서버 인덱스에 deletedIds 반영 및 records에서 제거
+    if (this.backend && this.backend !== this.localBackend) {
+      try {
+        await rmw(this.backend, indexPath(rec.bucket), cur => {
+          cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+          cur.deletedIds = [...new Set([...(cur.deletedIds || []), rec.id])];
+          return cur;
+        }, { records: [], deletedIds: [] }, msg);
+      } catch (be) {
+        console.warn('Server delete rmw warning:', be);
+      }
+      await this.backend.remove(recordPath(rec), msg).catch(() => {});
+      for (const p of [...(rec.photos || []), rec.fix && rec.fix.photo].filter(Boolean)) {
+        await this.backend.remove(p, msg).catch(() => {});
+      }
+    }
+
+    // 4) 메모리 캐시 갱신
+    const cachedList = this._monthCache.get(rec.bucket) || [];
+    this._monthCache.set(rec.bucket, cachedList.filter(r => r.id !== rec.id));
   },
 
   // ── 사진 ──
