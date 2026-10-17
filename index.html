@@ -15,8 +15,8 @@
   <!-- Config -->
   <script src="js/config.js?v=20261004_2"></script>
   <!-- App logic & Modules -->
-  <script src="js/classifier.js?v=20261011_3"></script>
-  <script src="js/excel-builder.js?v=20261004_2"></script>
+  <script src="js/classifier.js?v=20261018_1"></script>
+  <script src="js/excel-builder.js?v=20261018_1"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
   <script src="js/ppt-generator.js?v=20261004_9"></script>
   <script src="js/lmstudio-client.js?v=20261010_3"></script>
@@ -329,6 +329,56 @@
             </div>
           </div>
 
+          <!-- 5-1. 🎯 건설안전 9×9 점검인자 & 근본원인 분석 -->
+          <div class="card" style="padding: 14px; background: #fffdf5; border: 1.5px solid #fde68a; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <span style="font-weight: 700; font-size: 0.9rem; color: #92400e; display: inline-flex; align-items: center; gap: 5px;">
+                <span>🎯</span> <span>건설안전 9×9단 & 근본원인 분석</span>
+              </span>
+              <span style="font-size: 0.72rem; color: #b45309; background: #fef3c7; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
+                스마트 AI 자동추론 & 엑셀 대장 연동
+              </span>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">9×9 점검영역 (9대 영역)</label>
+                <input type="text" id="txtMatrixArea" class="form-control" list="listMatrixAreas" placeholder="가시설, 작업발판 등">
+                <datalist id="listMatrixAreas"></datalist>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">9×9 점검대상 (81대 대상)</label>
+                <input type="text" id="txtMatrixTarget" class="form-control" list="listMatrixTargets" placeholder="비계, 거푸집, 사다리 등">
+                <datalist id="listMatrixTargets"></datalist>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 8px;">
+              <label class="form-label" style="font-size: 0.8rem; color: #78350f;">가시설 세부사양 (가시설/거푸집/동바리 등)</label>
+              <input type="text" id="txtMatrixSpec" class="form-control" list="listMatrixSpecs" placeholder="시스템비계, 강관비계, 갱폼, 알폼, 시스템동바리 등">
+              <datalist id="listMatrixSpecs"></datalist>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">근본원인 (법적 관리감독 결여)</label>
+                <input type="text" id="txtRootCauseMgmt" class="form-control" list="listRootCausesMgmt" placeholder="안전시설 미설치, 작업계획 미이행 등">
+                <datalist id="listRootCausesMgmt"></datalist>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">근본원인 (안전관리시스템 결여)</label>
+                <input type="text" id="txtRootCauseSystem" class="form-control" list="listRootCausesSystem" placeholder="실행: 안전시설 미설치, 일일점검 미실시 등">
+                <datalist id="listRootCausesSystem"></datalist>
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label" style="font-size: 0.8rem; color: #78350f;">관리/책임주체 (시공사·협력사 직무)</label>
+              <input type="text" id="txtStakeholder" class="form-control" list="listStakeholders" placeholder="시공담당, 공사팀장, 협력회사 소장 등">
+              <datalist id="listStakeholders"></datalist>
+            </div>
+          </div>
+
           <!-- 6. 관리적 원인 (장표 체크박스 대응) & Hold Point -->
           <div class="card" style="padding: 12px; background: #fffbeb; border: 1px solid #fde68a; margin-bottom: 16px;">
             <div style="font-weight: 700; font-size: 0.85rem; color: #92400e; margin-bottom: 8px;">
@@ -490,6 +540,7 @@
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 110px;">작업명</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 85px;">유형</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">기인물</th>
+                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 115px;">9×9 영역/대상</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 100px;">불안전상태</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">발생원인</th>
                 <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">조치상태</th>
@@ -907,6 +958,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261011_13"></script>
+  <script type="module" src="js/app.js?v=20261018_1"></script>
 </body>
 </html>
