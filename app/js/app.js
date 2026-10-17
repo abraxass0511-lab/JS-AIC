@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261011_10';
+import { store } from './store.js?v=20261018_1';
 import { processImageFile } from './image-processor.js?v=20261011_8';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_7';
@@ -127,10 +127,18 @@ function runSmartClassification(forceShow = false) {
     
     const tagsEl = $('#smartTags');
     if (tagsEl) {
+      const m9Badge = x.점검영역9x9
+        ? `<span class="badge" style="background:#fef08a; color:#854d0e; font-weight:700;">🎯 9×9: ${x.점검영역9x9} › ${x.점검대상9x9 || ''}${x.가시설세부사양 ? ' (' + x.가시설세부사양 + ')' : ''}</span>`
+        : '';
+      const shBadge = x.관리책임주체
+        ? `<span class="badge" style="background:#fed7aa; color:#9a3412; font-weight:600;">주체: ${x.관리책임주체}</span>`
+        : '';
       tagsEl.innerHTML = `
+        ${m9Badge}
         <span class="badge primary">기인물: ${(x.기인물 && x.기인물.join(', ')) || '-'}</span>
         <span class="badge">상태: ${x.상태 || '-'}</span>
         <span class="badge">행동: ${x.행동 || '-'}</span>
+        ${shBadge}
         <span class="badge">원인: ${(x.발생원인 && x.발생원인.join(', ')) || '-'}</span>
       `;
     }
@@ -219,6 +227,7 @@ function updatePinDisplay() {
 // ── Datalists & Taxonomy Rendering ──
 function populateDatalists() {
   const tax = store.taxonomy;
+  const tax9 = store.taxonomy9x9;
   const custom = store.custom.customValues || {};
   const addOpts = (id, list, customKey) => {
     const el = document.getElementById(id);
@@ -234,8 +243,62 @@ function populateDatalists() {
   addOpts('listWorkGroups', tax.workTypes.list.map(w => w.group), 'workGroup');
   addOpts('listWorkNames', tax.workTypes.list.flatMap(w => w.works), 'workName');
   addOpts('listTypes', tax.accidentTypes.list.map(t => t.name), 'type');
-  addOpts('listConditions', tax.unsafeConditions.list, 'condition');
-  addOpts('listActions', tax.unsafeActions.list, 'action');
+  addOpts('listConditions', (tax9 && tax9.unsafeConditionsList) || tax.unsafeConditions.list, 'condition');
+  addOpts('listActions', (tax9 && tax9.unsafeActionsList) || tax.unsafeActions.list, 'action');
+
+  // 9×9 점검인자 및 근본원인 datalist
+  const m9Areas = (tax9 && tax9.matrix9x9 && tax9.matrix9x9.areas.map(a => a.name)) || [
+    '가시설', '건설장비', '작업방법', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'
+  ];
+  const m9Targets = (tax9 && tax9.matrix9x9 && tax9.matrix9x9.areas.flatMap(a => a.items)) || [
+    '비계', '흙막이', '동바리', '거푸집', '특수거푸집', '데크', '철골', 'PC', '안전시설',
+    '양중장비', '탑승장비', '운반장비', '차량계건설기계', '생산장비', '굴착장비', '천공장비', '토공장비', '해상장비',
+    '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업',
+    '용접기', '화기', '절단기구', '회전기구', '압력기구', '타정기구', '운반기구', '양중기구', '수공구',
+    '틀비계', '말비계', '달비계', '달대비계', '각립비계', '이동식 사다리', '낮은 발판', '현장제작발판', '지붕발판',
+    '안전모', '보안경/면', '귀덮개/마개', '호흡기보호구', '안전대', '추락방지대', '안전장갑', '안전장화', '안전화',
+    '수전시설', '분전반', '냉난방기', '전선', '전등시설', '전열시설', '전기기구', '접지시설', '누전차단기',
+    '비상대피시설', '화재수신반', '화재감지시설', '스프링쿨러', '소화시설', '불티비산방지', '충전시설', '가설건물', '생활화재',
+    '비상통로', '작업구획', '통제구역', '가설통로', '자재야적장', '위험물보관소', '폐기물보관소', '조도확보', '청결상태'
+  ];
+  const m9Specs = (tax9 && tax9.temporaryStructuresDetail && Object.values(tax9.temporaryStructuresDetail).flat()) || [
+    '시스템비계', '강관비계', '이동식틀비계', '달비계', '달대비계', '말비계', '각립비계',
+    '수직재', '수평재', '모서리부', '토사부', '시스템동바리', '강관동바리', '잭서포트',
+    '갱폼', '알폼', '유로폼', 'ACS', 'RCS', '슬립폼', '데크플레이트', '철골', 'PC',
+    '추락방지시설(안전난간)', '추락방지시설(덮개)', '추락방지시설(수직방호망)', '추락방지시설(안전대걸이시설)',
+    '낙하방지시설(방호선반)', '낙하방지시설(낙하물방지망)'
+  ];
+  const rootMgmt = (tax9 && tax9.rootCausesLegalSupervision) || [
+    '작업계획 미수립', '작업계획 미이행/부족', '작업지시 부족', '작업시설 미설치', '작업시설 유지보수 미실시',
+    '안전시설 미설치', '안전시설 유지보수 미실시', '안전점검 미실시', '작업지휘 미실시', '작업지휘자 미배치',
+    '유도원 미배치', '신호수 미배치', '신호체계 미지정', '자격·면허·경험자 미배치', '작업범위 및 절차 미교육',
+    '관계자 외 출입금지 미조치', '통제시설 미설치', '방호장치 미설치', '보호구 미지급', '보호구 사용 감시 소홀',
+    '작업중지 기준 미설정', '운전속도 기준 미설정', '조립도 부실', '구조도/설계도 부실', '감시인(화기/밀폐) 미배치',
+    '작업중지/긴급조치 미실시', '계측관리 미실시', '작업환경 측정 미실시', '작업 전 강도 미확인', '조명시설 미설치',
+    '정리정돈 미실시', '폐기물 미처리', '청소 미실시', '차수/배수 미처리', '흡연장소 미지정',
+    '작업 전 가연물 미차단', '작업 전 전원 미차단', 'LOTO(잠금/표지) 미실시', 'PTW(안전작업허가제) 미실시'
+  ];
+  const rootSys = (tax9 && tax9.rootCausesSafetyManagementSystem) || [
+    '계획: 현장 안전계획 미수립', '계획: 안전계획 직원/협력사 교육 미실시',
+    '계획: 중점위험작업 안전대책 미수립/미승인', '계획: 시공계획서 안전대책 미수립/미승인',
+    '계획: 위험성평가표 미승인/협력사 미참여', '계획: 건설기계작업계획서 미승인/미이행',
+    '실행: 안전교육 미실시', '실행: 안전조회/TBM 미실시', '실행: 일일 작업계획 안전대책 미포함',
+    '실행: 안전시설 미설치', '실행: 작업환경 미조성', '실행: 안전보호구 미사용',
+    '확인: 일일점검 미실시', '확인: 일일점검 결과 Feedback 미흡',
+    '확인: PTW(작업허가) 미실시/Feedback 미흡', '확인: 시정조치 요구 및 이행확인 소홀',
+    '개선: 작업자 관리상태 개정관리 미흡', '개선: 위험성평가 피드백 미반영', '개선: 안전협의체 법적기준 미준수'
+  ];
+  const stakeholders = (tax9 && tax9.stakeholderRoles) || [
+    '현장소장', '공사팀장', '시공팀장', '시공담당', '안전팀장',
+    '안전관리자', '협력회사 소장', '협력회사 공사팀장', '협력회사 공사담당', '협력회사 안전관리자'
+  ];
+
+  addOpts('listMatrixAreas', m9Areas, 'matrixArea');
+  addOpts('listMatrixTargets', m9Targets, 'matrixTarget');
+  addOpts('listMatrixSpecs', m9Specs, 'matrixSpec');
+  addOpts('listRootCausesMgmt', rootMgmt, 'rootCauseMgmt');
+  addOpts('listRootCausesSystem', rootSys, 'rootCauseSystem');
+  addOpts('listStakeholders', stakeholders, 'stakeholder');
 }
 
 function renderSites() {
@@ -473,6 +536,14 @@ function bindEvents() {
     if (smartResult.상태) $('#txtCondition').value = smartResult.상태;
     if (smartResult.행동) $('#txtAction').value = smartResult.행동;
 
+    // ── 9×9 점검인자 및 근본원인 적용 ──
+    if ($('#txtMatrixArea')) $('#txtMatrixArea').value = smartResult.점검영역9x9 || '';
+    if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = smartResult.점검대상9x9 || '';
+    if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = smartResult.가시설세부사양 || '';
+    if ($('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = smartResult.근본원인_관리감독 || '';
+    if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = smartResult.근본원인_안전시스템 || '';
+    if ($('#txtStakeholder')) $('#txtStakeholder').value = smartResult.관리책임주체 || '';
+
     // 발생원인 칩 동기화
     selectedCauses.clear();
     (smartResult.발생원인 || []).forEach(c => selectedCauses.add(c));
@@ -549,6 +620,13 @@ function bindEvents() {
       $('#chkMgmtUnsafeCondition')?.checked ? '불안전 상태' : null,
     ].filter(Boolean);
 
+    const matrixArea = $('#txtMatrixArea')?.value.trim() || '';
+    const matrixTarget = $('#txtMatrixTarget')?.value.trim() || '';
+    const matrixSpec = $('#txtMatrixSpec')?.value.trim() || '';
+    const rootCauseMgmt = $('#txtRootCauseMgmt')?.value.trim() || '';
+    const rootCauseSystem = $('#txtRootCauseSystem')?.value.trim() || '';
+    const stakeholder = $('#txtStakeholder')?.value.trim() || '';
+
     const record = {
       site,
       productType: productTypeVal,
@@ -572,6 +650,12 @@ function bindEvents() {
       type: $('#txtType').value.trim(),
       condition: $('#txtCondition').value.trim(),
       action: $('#txtAction').value.trim(),
+      matrixArea,
+      matrixTarget,
+      matrixSpec,
+      rootCauseMgmt,
+      rootCauseSystem,
+      stakeholder,
       mgmtCauses,
       holdPoint: !!$('#chkHoldPoint')?.checked,
       interviewOpinion: $('#txtInterviewOpinion')?.value.trim() || '',
@@ -583,7 +667,13 @@ function bindEvents() {
         cp: '해당없음',
         st: '해당없음',
         guide: '',
-        law: $('#txtLaw').value.trim()
+        law: $('#txtLaw').value.trim(),
+        점검영역9x9: matrixArea,
+        점검대상9x9: matrixTarget,
+        가시설세부사양: matrixSpec,
+        근본원인_관리감독: rootCauseMgmt,
+        근본원인_안전시스템: rootCauseSystem,
+        관리책임주체: stakeholder
       },
       law: $('#txtLaw').value.trim(),
       causes: [...selectedCauses],
@@ -606,7 +696,13 @@ function bindEvents() {
         item: [record.item],
         agent: [record.agent],
         workName: [record.workName],
-        workGroup: [record.workGroup]
+        workGroup: [record.workGroup],
+        matrixArea: [record.matrixArea],
+        matrixTarget: [record.matrixTarget],
+        matrixSpec: [record.matrixSpec],
+        rootCauseMgmt: [record.rootCauseMgmt],
+        rootCauseSystem: [record.rootCauseSystem],
+        stakeholder: [record.stakeholder]
       });
 
       // ── 사용자 피드백 기반 강화학습(Online Bandit RL) 훈련 및 가중치 저장 ──
@@ -2271,6 +2367,12 @@ function clearForm() {
   $('#txtLaw').value = '';
   $('#txtCondition').value = '';
   $('#txtAction').value = '';
+  if ($('#txtMatrixArea')) $('#txtMatrixArea').value = '';
+  if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = '';
+  if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = '';
+  if ($('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = '';
+  if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = '';
+  if ($('#txtStakeholder')) $('#txtStakeholder').value = '';
   $('#smartClassifyBox').classList.remove('active');
 }
 
@@ -2289,6 +2391,12 @@ function saveDraft() {
     law: $('#txtLaw')?.value || '',
     condition: $('#txtCondition')?.value || '',
     action: $('#txtAction')?.value || '',
+    matrixArea: $('#txtMatrixArea')?.value || '',
+    matrixTarget: $('#txtMatrixTarget')?.value || '',
+    matrixSpec: $('#txtMatrixSpec')?.value || '',
+    rootCauseMgmt: $('#txtRootCauseMgmt')?.value || '',
+    rootCauseSystem: $('#txtRootCauseSystem')?.value || '',
+    stakeholder: $('#txtStakeholder')?.value || '',
     causes: [...selectedCauses],
     inspectedDate: $('#txtInspectDate')?.value || ''
   };
@@ -2321,6 +2429,12 @@ function loadDraft() {
     if (d.law) $('#txtLaw').value = d.law;
     if (d.condition) $('#txtCondition').value = d.condition;
     if (d.action) $('#txtAction').value = d.action;
+    if (d.matrixArea && $('#txtMatrixArea')) $('#txtMatrixArea').value = d.matrixArea;
+    if (d.matrixTarget && $('#txtMatrixTarget')) $('#txtMatrixTarget').value = d.matrixTarget;
+    if (d.matrixSpec && $('#txtMatrixSpec')) $('#txtMatrixSpec').value = d.matrixSpec;
+    if (d.rootCauseMgmt && $('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = d.rootCauseMgmt;
+    if (d.rootCauseSystem && $('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = d.rootCauseSystem;
+    if (d.stakeholder && $('#txtStakeholder')) $('#txtStakeholder').value = d.stakeholder;
     if (d.causes) {
       selectedCauses = new Set(d.causes);
       updateCauseChips();
@@ -2538,6 +2652,9 @@ async function applyListFiltersAndRender() {
         (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
           `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate || 0}% (${r.stage || '지상골조'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
         ) : '',
+        (r.matrixArea || (r.basis && r.basis.점검영역9x9)) ? h('div', { style: { fontSize: '0.76rem', color: '#854d0e', background: '#fef9c3', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
+          `🎯 9×9: [${r.matrixArea || r.basis.점검영역9x9}] › ${r.matrixTarget || r.basis.점검대상9x9 || '-'}${r.matrixSpec || (r.basis && r.basis.가시설세부사양) ? ' (' + (r.matrixSpec || r.basis.가시설세부사양) + ')' : ''} · 주체: ${r.stakeholder || (r.basis && r.basis.관리책임주체) || '시공담당'}`
+        ) : '',
         isFixed ? h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px', marginBottom: '6px' } }, `조치결과: ${r.fix.content}`) : '',
         btnGroup
       );
@@ -2554,6 +2671,8 @@ async function applyListFiltersAndRender() {
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e2e8f0';
       tr.style.background = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      const mArea = r.matrixArea || (r.basis && r.basis.점검영역9x9) || '-';
+      const mTarget = r.matrixTarget || (r.basis && r.basis.점검대상9x9) || '-';
       tr.innerHTML = `
         <td style="padding:6px 4px;"><input type="checkbox" class="chk-record-item" data-id="${r.id}"></td>
         <td style="padding:8px 4px; font-weight:600; color:var(--gray-700);">${idx + 1}</td>
@@ -2568,6 +2687,10 @@ async function applyListFiltersAndRender() {
         <td style="padding:8px; color:var(--gray-700);">${r.workName || '-'}</td>
         <td style="padding:8px;"><span class="badge" style="font-size:0.75rem;">${r.type || '-'}</span></td>
         <td style="padding:8px; color:var(--gray-700);">${r.agent || '-'}</td>
+        <td style="padding:8px; color:#854d0e; font-size:0.78rem;">
+          <div style="font-weight:700;">${mArea}</div>
+          <div style="color:#b45309;">${mTarget}</div>
+        </td>
         <td style="padding:8px; color:var(--gray-600);">${r.condition || '-'}</td>
         <td style="padding:8px; color:var(--gray-600);">${(r.causes || []).join(', ') || '-'}</td>
         <td style="padding:8px; white-space:nowrap;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
@@ -2734,6 +2857,15 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = causes.includes('불안전 행동');
   if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = causes.includes('불안전 상태');
 
+  // 9×9 점검인자 및 근본원인 (기존 데이터 또는 AI 즉시 추론)
+  const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
+  if ($('#txtMatrixArea')) $('#txtMatrixArea').value = rec.matrixArea || (m9 && m9.점검영역9x9) || '';
+  if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = rec.matrixTarget || (m9 && m9.점검대상9x9) || '';
+  if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = rec.matrixSpec || (m9 && m9.가시설세부사양) || '';
+  if ($('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '';
+  if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '';
+  if ($('#txtStakeholder')) $('#txtStakeholder').value = rec.stakeholder || (m9 && m9.관리책임주체) || '';
+
   // 사진 채우기 (Data URL을 Blob으로 안전 변환)
   if (rec.photos && rec.photos.length) {
     Promise.all(rec.photos.map(async url => {
@@ -2794,6 +2926,14 @@ async function handleSaveImportedRecords() {
     for (const rec of importedRecords) {
       btn.textContent = `저장 중 (${++savedCount}/${importedRecords.length})...`;
 
+      const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
+      const matrixArea = rec.matrixArea || (m9 && m9.점검영역9x9) || '';
+      const matrixTarget = rec.matrixTarget || (m9 && m9.점검대상9x9) || '';
+      const matrixSpec = rec.matrixSpec || (m9 && m9.가시설세부사양) || '';
+      const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '';
+      const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '';
+      const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '';
+
       const finalRecord = {
         site,
         productType,
@@ -2817,6 +2957,12 @@ async function handleSaveImportedRecords() {
         type: rec.type || '추락',
         condition: (rec.mgmtCauses && rec.mgmtCauses[0]) || '방호장치 결함',
         action: '해당없음',
+        matrixArea,
+        matrixTarget,
+        matrixSpec,
+        rootCauseMgmt,
+        rootCauseSystem,
+        stakeholder,
         mgmtCauses: rec.mgmtCauses || ['불안전 상태'],
         holdPoint: !!rec.holdPoint,
         interviewOpinion: rec.interviewOpinion || '',
@@ -2828,7 +2974,13 @@ async function handleSaveImportedRecords() {
           cp: '해당없음',
           st: '해당없음',
           guide: '',
-          law: rec.law || ''
+          law: rec.law || '',
+          점검영역9x9: matrixArea,
+          점검대상9x9: matrixTarget,
+          가시설세부사양: matrixSpec,
+          근본원인_관리감독: rootCauseMgmt,
+          근본원인_안전시스템: rootCauseSystem,
+          관리책임주체: stakeholder
         },
         law: rec.law || '',
         causes: ['물적', '관리적'],

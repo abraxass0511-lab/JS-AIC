@@ -214,16 +214,17 @@ export const store = {
     const cfg = window.SAFEPATROL_CONFIG || {};
     this.mode = cfg.workerUrl ? 'github' : 'demo';
     this.backend = this.mode === 'github' ? new WorkerBackend(cfg.workerUrl) : this.localBackend;
-    let tax = null, kw = null;
+    let tax = null, kw = null, tax9x9 = null;
     try {
-      [tax, kw] = await Promise.all([
+      [tax, kw, tax9x9] = await Promise.all([
         fetch('data/taxonomy.json').then(r => r.json()),
         fetch('data/keywords.json').then(r => r.json()),
+        fetch('data/taxonomy_9x9.json').then(r => r.json()).catch(() => null),
       ]);
     } catch (e) {
       console.warn('Failed to load taxonomy/keywords:', e);
     }
-    this.taxonomy = tax; this.keywords = kw;
+    this.taxonomy = tax; this.keywords = kw; this.taxonomy9x9 = tax9x9;
 
     let pin = localStorage.getItem('sp_pin');
 
