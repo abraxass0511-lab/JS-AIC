@@ -2646,6 +2646,7 @@ async function applyListFiltersAndRender() {
           src: photoThumbUrl,
           style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer', flexShrink: '0' },
           onclick: () => window.open(photoThumbUrl, '_blank'),
+          onerror: (e) => { e.target.style.display = 'none'; },
           title: '클릭하여 원본보기'
         }));
       }
@@ -2694,7 +2695,7 @@ async function applyListFiltersAndRender() {
     if (tbody) {
       let photoThumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
       if (photoThumbUrl) {
-        photoThumb = `<img src="${photoThumbUrl}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photoThumbUrl}', '_blank')" title="클릭하여 원본보기">`;
+        photoThumb = `<img src="${photoThumbUrl}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photoThumbUrl}', '_blank')" onerror="this.style.display='none'" title="클릭하여 원본보기">`;
       }
       const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
       const tr = document.createElement('tr');
@@ -2725,7 +2726,7 @@ async function applyListFiltersAndRender() {
         <td style="padding:8px; white-space:nowrap;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
         <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">
           <div style="display:flex; align-items:center; gap:6px;">
-            ${fixPhotoThumbUrl ? `<img src="${fixPhotoThumbUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer; flex-shrink:0;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" title="조치완료 사진">` : ''}
+            ${fixPhotoThumbUrl ? `<img src="${fixPhotoThumbUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer; flex-shrink:0;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" onerror="this.style.display='none'" title="조치완료 사진">` : ''}
             <span>${(r.fix && r.fix.content) || '(미조치)'}</span>
           </div>
         </td>
