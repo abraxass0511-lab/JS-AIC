@@ -236,10 +236,192 @@ function populateDatalists() {
     el.innerHTML = all.map(v => `<option value="${v}">`).join('');
   };
 
-  const allItems = tax.categories.list.flatMap(c => c.items);
-  addOpts('listKinds', tax.categories.list.map(c => c.kind), 'kind');
+  const allItems = (tax && tax.categories && tax.categories.list) ? tax.categories.list.flatMap(c => c.items) : [];
+  addOpts('listKinds', tax.categories ? tax.categories.list.map(c => c.kind) : [], 'kind');
   addOpts('listItems', allItems.map(i => i.name), 'item');
-  addOpts('listAgents', [...new Set(allItems.flatMap(i => i.agents))], 'agent');
+  addOpts('listAgents', [...new Set(allItems.flatMap(i => i.agents || []))], 'agent');
+
+  // 🎯 기인물 대/중/소 3단계 계층 Datalist 연동
+  const agentTree = (tax9 && tax9.agentTree) || {
+    '가시설': {
+      '비계': ['시스템비계', '강관비계', '이동식틀비계', '달비계', '달대비계', '말비계', '각립비계'],
+      '흙막이': ['수직재', '수평재', '모서리부', '토사부', '어스앵커', '스트럿'],
+      '동바리': ['시스템동바리', '강관동바리', '잭서포트', '파이프서포트'],
+      '거푸집': ['갱폼', '알폼', '유로폼', '합판거푸집', '기타'],
+      '특수거푸집': ['ACS', 'RCS', '슬립폼', '테이블폼', '클라이밍폼'],
+      '데크': ['데크플레이트', '트러스데크', '이지데크'],
+      '철골': ['철골기둥', '철골보', '가새', '데크단부'],
+      'PC': ['PC기둥', 'PC보', 'PC슬래브', 'PC접합부'],
+      '안전시설': ['추락방지시설(안전난간)', '추락방지시설(수직방호망)', '추락방지시설(덮개)', '추락방지시설(안전대걸이시설)', '낙하방지시설(방호선반)', '낙하방지시설(낙하물방지망)']
+    },
+    '건설장비': {
+      '양중장비': ['타워크레인', '이동식크레인', '카고크레인', '호이스트'],
+      '탑승장비': ['고소작업차', '고소작업대', '곤돌라', '건설용리프트'],
+      '운반장비': ['지게차', '덤프트럭', '트레일러', '레미콘트럭'],
+      '차량계건설기계': ['펌프카'],
+      '생산장비': ['펌프카', '배처플랜트'],
+      '굴착장비': ['굴착기'],
+      '천공장비': ['천공기', '항타기', '항발기'],
+      '토공장비': ['로더', '불도저'],
+      '해상장비': ['해상크레인', '바지선', '예인선']
+    },
+    '작업공도구': {
+      '용접기': ['아크용접기', 'CO2용접기', 'TIG용접기', '인버터용접기'],
+      '화기': ['가스토치', '산소절단기', '가스용기(LPG/산소/아세틸렌)', '열풍기'],
+      '절단기구': ['고속절단기', '휴대용절단기', '원형톱(핸드쏘)', '세이버쏘(컷소)', '밴드쏘', '플라즈마절단기'],
+      '회전기구': ['핸드그라인더', '휴대용전기드릴', '해머드릴', '코아드릴', '교반기(믹서기)', '임팩트렌치/소켓'],
+      '압력기구': ['에어콤프레셔', '압력용기', '고압세척기', '에어리스(도장분출기)'],
+      '타정기구': ['에어타카/가스타카', '화약총(타정총)', '리벳건'],
+      '운반기구': ['손수레(일륜차)', '핸드파렛트(핸드자키)', '소형대차(구루마/롤테이너)'],
+      '양중기구': ['체인블록', '레버블록(풀링)', '슬링벨트(섬유벨트)', '와이어로프/샤클', '양중함/달기로프'],
+      '수공구': ['망치/함마', '몽키스패너/파이프렌치', '첼라/바이스플라이어', '쇠지레(빠루)/볼트클리퍼']
+    },
+    '작업발판': {
+      '틀비계': ['틀비계발판', '가새재', '아웃트리거'],
+      '말비계': ['말비계발판', '지주부재', '보조부재'],
+      '달비계': ['작업대', '달기로프', '구명줄'],
+      '달대비계': ['달대체인', '달대파이프', '작업발판'],
+      '각립비계': ['디딤판', '힌지고정쇠', '미끄럼방지캡'],
+      '이동식 사다리': ['사다리발판', '전도방지대', '상부걸림턱'],
+      '낮은 발판': ['족장판', '우마발판'],
+      '현장제작발판': ['목재발판', '강재발판'],
+      '지붕발판': ['지붕작업발판', '채광창덮개']
+    },
+    'PPE': {
+      '안전모': ['턱끈', '충격흡수라이너', '모체'],
+      '보안경/면': ['보안경', '차광보안경', '용접면'],
+      '귀덮개/마개': ['귀마개', '귀덮개'],
+      '호흡기보호구': ['방진마스크', '방독마스크', '송기마스크'],
+      '안전대': ['상체식하네스', '전체식하네스', '죔줄', '이중고리'],
+      '추락방지대': ['로립/롤링클램프', '안전블록(와이어/웨빙)'],
+      '안전장갑': ['방진장갑', '가죽용접장갑', '절연장갑'],
+      '안전장화': ['절연안전장화', '내유안전장화'],
+      '안전화': ['가죽안전화', '정전기안전화', '절연안전화']
+    },
+    '전기시설': {
+      '수전시설': ['고압수전반', '변압기', '특고압인입선'],
+      '분전반': ['가설분전함', '외함잠금장치', '내부차단기'],
+      '냉난방기': ['전기온풍기', '에어컨', '열풍기'],
+      '전선': ['이동전선(캡타이어)', '가설배선', '가공전선'],
+      '전등시설': ['투광등', '작업등', 'LED바', '비상유도등'],
+      '전열시설': ['열선(양생용)', '전열기구'],
+      '전기기구': ['충전기', '콘센트/플러그', '작업릴선'],
+      '접지시설': ['제3종접지', '기계외함접지', '접지극'],
+      '누전차단기': ['고감도누전차단기(30mA)', '인입누전차단기']
+    },
+    '소방시설': {
+      '비상대피시설': ['비상대피유도선', '피난사다리', '비상구'],
+      '화재수신반': ['가설화재수신기', '발신기'],
+      '화재감지시설': ['단독경보형감지기', '열감지기', '연기감지기'],
+      '스프링쿨러': ['임시소방배관', '간이스프링클러'],
+      '소화시설': ['분말소화기(ABC)', '소화수통', '마른모래(방화사)'],
+      '불티비산방지': ['방염포', '불티비산방지포', '비산방지차폐막'],
+      '충전시설': ['배터리보관함', '화재안전충전함'],
+      '가설건물': ['가설사무실', '근로자휴게실', '자재창고'],
+      '생활화재': ['난로', '취사도구', '담배꽁초수거함']
+    },
+    '작업장': {
+      '비상통로': ['주출입통로', '계단실통로', '비상대피로'],
+      '작업구획': ['출입통제라인', '안전펜스', '칼라콘'],
+      '통제구역': ['양중반경하부', '타설구역', '밀폐공간출입구'],
+      '가설통로': ['경사로', '비계다리', '안전통로'],
+      '자재야적장': ['철근야적장', '파이프적치대', '거푸집야적장'],
+      '위험물보관소': ['페인트저장소', '유류저장고', '가스용기보관소'],
+      '폐기물보관소': ['건축폐기물적재함', '분리수거장'],
+      '조도확보': ['지하작업장조명', '어두운통로조명'],
+      '청결상태': ['바닥잔재물정리', '못뽑기', '물고임제거']
+    }
+  };
+
+  const agentMajorList = Object.keys(agentTree);
+  addOpts('listAgentMajor', agentMajorList, 'agentMajor');
+
+  const updateMidOpts = (maj) => {
+    let mids = [];
+    if (maj && agentTree[maj]) {
+      mids = Object.keys(agentTree[maj]);
+    } else {
+      mids = Object.values(agentTree).flatMap(m => Object.keys(m));
+    }
+    addOpts('listAgentMid', [...new Set(mids)], 'agentMid');
+  };
+
+  const updateMinorOpts = (maj, mid) => {
+    let minors = [];
+    if (maj && mid && agentTree[maj] && agentTree[maj][mid]) {
+      minors = agentTree[maj][mid];
+    } else if (mid) {
+      for (const m of Object.keys(agentTree)) {
+        if (agentTree[m][mid]) minors.push(...agentTree[m][mid]);
+      }
+    } else if (maj && agentTree[maj]) {
+      minors = Object.values(agentTree[maj]).flat();
+    } else {
+      minors = Object.values(agentTree).flatMap(m => Object.values(m).flat());
+    }
+    addOpts('listAgentMinor', [...new Set(minors)], 'agentMinor');
+  };
+
+  updateMidOpts($('#txtAgentMajor')?.value);
+  updateMinorOpts($('#txtAgentMajor')?.value, $('#txtAgentMid')?.value);
+
+  // 이벤트 핸들러 바인딩
+  if ($('#txtAgentMajor') && !$('#txtAgentMajor')._boundAgent) {
+    const txtMaj = $('#txtAgentMajor');
+    const txtMid = $('#txtAgentMid');
+    const txtMin = $('#txtAgentMinor');
+
+    txtMaj._boundAgent = true;
+    txtMaj.addEventListener('input', () => {
+      const majVal = txtMaj.value.trim();
+      if ($('#txtKind')) $('#txtKind').value = majVal;
+      updateMidOpts(majVal);
+      updateMinorOpts(majVal, txtMid ? txtMid.value.trim() : '');
+    });
+
+    if (txtMid) {
+      txtMid.addEventListener('input', () => {
+        const midVal = txtMid.value.trim();
+        if ($('#txtItem')) $('#txtItem').value = midVal;
+        const curMaj = txtMaj ? txtMaj.value.trim() : '';
+        if (!curMaj) {
+          for (const m of Object.keys(agentTree)) {
+            if (agentTree[m][midVal]) {
+              if (txtMaj) txtMaj.value = m;
+              if ($('#txtKind')) $('#txtKind').value = m;
+              updateMidOpts(m);
+              break;
+            }
+          }
+        }
+        updateMinorOpts(txtMaj ? txtMaj.value.trim() : '', midVal);
+      });
+    }
+
+    if (txtMin) {
+      txtMin.addEventListener('input', () => {
+        const minVal = txtMin.value.trim();
+        if ($('#txtAgent')) $('#txtAgent').value = minVal;
+        if (txtMid && !txtMid.value.trim()) {
+          for (const m of Object.keys(agentTree)) {
+            for (const mi of Object.keys(agentTree[m])) {
+              if (agentTree[m][mi].includes(minVal)) {
+                if (txtMaj && !txtMaj.value.trim()) {
+                  txtMaj.value = m;
+                  if ($('#txtKind')) $('#txtKind').value = m;
+                  updateMidOpts(m);
+                }
+                txtMid.value = mi;
+                if ($('#txtItem')) $('#txtItem').value = mi;
+                updateMinorOpts(txtMaj ? txtMaj.value.trim() : '', mi);
+                return;
+              }
+            }
+          }
+        }
+      });
+    }
+  }
   const locationsList = (window.SafeExcel && window.SafeExcel.ACCIDENT_LOCATIONS) || [
     '건축물', '본구조물', '가설물', '기계·기구', '설비·장치',
     '적재물', '옥상·지붕', '계단·복도', '엘리베이터홀', '천장 내부',
@@ -549,9 +731,15 @@ function bindEvents() {
     if (!smartResult) return;
     smartRecommendationApplied = true;
     appliedSmartResult = { ...smartResult };
-    $('#txtKind').value = smartResult.종류 || '';
-    $('#txtItem').value = smartResult.항목 || '';
-    $('#txtAgent').value = (smartResult.기인물 && smartResult.기인물[0]) || '';
+    const maj = smartResult.기인물대 || smartResult.점검영역9x9 || smartResult.종류 || '가시설';
+    const mid = smartResult.기인물중 || smartResult.점검대상9x9 || smartResult.항목 || '비계';
+    const min = smartResult.기인물소 || (smartResult.기인물 && smartResult.기인물[0]) || smartResult.가시설세부사양 || '';
+    if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
+    if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
+    if ($('#txtAgentMinor')) $('#txtAgentMinor').value = min;
+    if ($('#txtKind')) $('#txtKind').value = maj;
+    if ($('#txtItem')) $('#txtItem').value = mid;
+    if ($('#txtAgent')) $('#txtAgent').value = min;
     $('#txtType').value = smartResult.유형 || '';
     $('#txtLaw').value = smartResult.산업안전보건법 || '';
     if (smartResult.상태) $('#txtCondition').value = smartResult.상태;
@@ -666,9 +854,12 @@ function bindEvents() {
       workName,
       workMethod: workName,
       workGroup: workGroupVal,
-      kind: $('#txtKind').value.trim(),
-      item: $('#txtItem').value.trim(),
-      agent: $('#txtAgent').value.trim(),
+      agentMajor: $('#txtAgentMajor')?.value.trim() || $('#txtKind')?.value.trim() || '가시설',
+      agentMid: $('#txtAgentMid')?.value.trim() || $('#txtItem')?.value.trim() || '비계',
+      agentMinor: $('#txtAgentMinor')?.value.trim() || $('#txtAgent')?.value.trim() || '',
+      kind: $('#txtAgentMajor')?.value.trim() || $('#txtKind')?.value.trim() || '가시설',
+      item: $('#txtAgentMid')?.value.trim() || $('#txtItem')?.value.trim() || '비계',
+      agent: $('#txtAgentMinor')?.value.trim() || $('#txtAgent')?.value.trim() || '',
       type: $('#txtType').value.trim(),
       condition: $('#txtCondition').value.trim(),
       action: $('#txtAction').value.trim(),
@@ -826,7 +1017,7 @@ function bindEvents() {
 
       const wb = await window.SafeExcel.build(window.ExcelJS, {
         records,
-        taxonomy: store.taxonomy,
+        taxonomy: { ...store.taxonomy, _tax9: store.taxonomy9x9 },
         customValues: store.custom.customValues,
         sites: store.sites,
         loadImage: async (path) => {
@@ -1872,7 +2063,7 @@ function initEmailExportHandlers() {
       // 핸드폰에 다운로드하지 않고 메모리에서 워크북 생성
       const wb = await window.SafeExcel.build(window.ExcelJS, {
         records,
-        taxonomy: store.taxonomy,
+        taxonomy: { ...store.taxonomy, _tax9: store.taxonomy9x9 },
         customValues: store.custom.customValues,
         sites: store.sites,
         loadImage: async (path) => {
@@ -2382,10 +2573,12 @@ function clearForm() {
   updateCauseChips();
   $('#txtContent').value = '';
   $('#txtLocation').value = '';
-  $('#txtWorkName').value = '';
-  $('#txtKind').value = '';
-  $('#txtItem').value = '';
-  $('#txtAgent').value = '';
+  if ($('#txtAgentMajor')) $('#txtAgentMajor').value = '';
+  if ($('#txtAgentMid')) $('#txtAgentMid').value = '';
+  if ($('#txtAgentMinor')) $('#txtAgentMinor').value = '';
+  if ($('#txtKind')) $('#txtKind').value = '';
+  if ($('#txtItem')) $('#txtItem').value = '';
+  if ($('#txtAgent')) $('#txtAgent').value = '';
   $('#txtWorkGroup').value = '';
   $('#txtType').value = '';
   $('#txtLaw').value = '';
@@ -2406,10 +2599,12 @@ function saveDraft() {
     site: $('#txtSite')?.value || '',
     content: $('#txtContent')?.value || '',
     location: $('#txtLocation')?.value || '',
-    workName: $('#txtWorkName')?.value || '',
-    kind: $('#txtKind')?.value || '',
-    item: $('#txtItem')?.value || '',
-    agent: $('#txtAgent')?.value || '',
+    agentMajor: $('#txtAgentMajor')?.value || '',
+    agentMid: $('#txtAgentMid')?.value || '',
+    agentMinor: $('#txtAgentMinor')?.value || '',
+    kind: $('#txtAgentMajor')?.value || $('#txtKind')?.value || '',
+    item: $('#txtAgentMid')?.value || $('#txtItem')?.value || '',
+    agent: $('#txtAgentMinor')?.value || $('#txtAgent')?.value || '',
     workGroup: $('#txtWorkGroup')?.value || '',
     type: $('#txtType')?.value || '',
     law: $('#txtLaw')?.value || '',
@@ -2445,9 +2640,21 @@ function loadDraft() {
     }
     if (d.location) $('#txtLocation').value = d.location;
     if (d.workName) $('#txtWorkName').value = d.workName;
-    if (d.kind) $('#txtKind').value = d.kind;
-    if (d.item) $('#txtItem').value = d.item;
-    if (d.agent) $('#txtAgent').value = d.agent;
+    if (d.agentMajor && $('#txtAgentMajor')) $('#txtAgentMajor').value = d.agentMajor;
+    if (d.agentMid && $('#txtAgentMid')) $('#txtAgentMid').value = d.agentMid;
+    if (d.agentMinor && $('#txtAgentMinor')) $('#txtAgentMinor').value = d.agentMinor;
+    if (d.kind) {
+      if ($('#txtKind')) $('#txtKind').value = d.kind;
+      if ($('#txtAgentMajor') && !$('#txtAgentMajor').value) $('#txtAgentMajor').value = d.kind;
+    }
+    if (d.item) {
+      if ($('#txtItem')) $('#txtItem').value = d.item;
+      if ($('#txtAgentMid') && !$('#txtAgentMid').value) $('#txtAgentMid').value = d.item;
+    }
+    if (d.agent) {
+      if ($('#txtAgent')) $('#txtAgent').value = d.agent;
+      if ($('#txtAgentMinor') && !$('#txtAgentMinor').value) $('#txtAgentMinor').value = d.agent;
+    }
     if (d.workGroup) $('#txtWorkGroup').value = d.workGroup;
     if (d.type) $('#txtType').value = d.type;
     if (d.law) $('#txtLaw').value = d.law;
@@ -2677,7 +2884,7 @@ async function applyListFiltersAndRender() {
       cardBody.append(h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { style: { fontSize: '0.92rem', marginBottom: '4px', color: 'var(--gray-900)', fontWeight: '500' } }, r.content),
         h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)' } },
-          `${r.kind} › ${r.item} (${r.agent || '-'}) · ${r.inspectedDate} (${r.inspector})`
+          `[${r.agentMajor || r.kind || '가시설'}] ${r.agentMid || r.item || '비계'} › ${r.agentMinor || r.agent || '-'} · ${r.inspectedDate} (${r.inspector})`
         )
       ));
 
@@ -2740,7 +2947,10 @@ async function applyListFiltersAndRender() {
         <td style="padding:8px; color:var(--gray-700);">${r.location || '-'}</td>
         <td style="padding:8px; color:var(--gray-700);">${r.workName || '-'}</td>
         <td style="padding:8px;"><span class="badge" style="font-size:0.75rem;">${r.type || '-'}</span></td>
-        <td style="padding:8px; color:var(--gray-700);">${r.agent || '-'}</td>
+        <td style="padding:8px; color:var(--gray-700);">
+          <div style="font-weight:600;">${r.agentMinor || r.agent || '-'}</div>
+          <div style="font-size:0.75rem; color:var(--gray-500);">${r.agentMajor || r.kind || '가시설'} › ${r.agentMid || r.item || '비계'}</div>
+        </td>
         <td style="padding:8px; color:#854d0e; font-size:0.78rem;">
           <div style="font-weight:700;">${mArea}</div>
           <div style="color:#b45309;">${mTarget}</div>
@@ -2898,9 +3108,15 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
   if ($('#txtWorkName')) $('#txtWorkName').value = rec.workMethod || rec.workName || '';
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
-  if ($('#txtKind')) $('#txtKind').value = rec.kind || '';
-  if ($('#txtItem')) $('#txtItem').value = rec.item || '';
-  if ($('#txtAgent')) $('#txtAgent').value = rec.agent || '';
+  const maj = rec.agentMajor || rec.kind || '';
+  const mid = rec.agentMid || rec.item || '';
+  const min = rec.agentMinor || rec.agent || '';
+  if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
+  if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
+  if ($('#txtAgentMinor')) $('#txtAgentMinor').value = min;
+  if ($('#txtKind')) $('#txtKind').value = maj;
+  if ($('#txtItem')) $('#txtItem').value = mid;
+  if ($('#txtAgent')) $('#txtAgent').value = min;
   if ($('#txtInspectRound')) $('#txtInspectRound').value = rec.inspectRound || '1차';
   if ($('#txtType')) $('#txtType').value = rec.type || '';
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';

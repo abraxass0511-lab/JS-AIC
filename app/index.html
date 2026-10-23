@@ -290,46 +290,53 @@
             </div>
           </div>
 
-          <!-- 5. 부적합 분류 (종류, 항목, 기인물, 공종, 유형, 산안법) -->
+          <!-- 5. 부적합 분류 (유형, 기인물 대/중/소, 공종, 산안법) -->
           <div class="card" style="padding: 14px; background: var(--gray-50); border: 1px solid var(--gray-200); margin-bottom: 16px;">
-            <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 10px;">📋 표준 분류 및 법조항 (직접입력 가능)</div>
+            <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 10px;">📋 부적합 분류 및 법조항 (직접입력 가능)</div>
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <!-- 🎯 기인물 3단계 (대 > 중 > 소) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
               <div>
-                <label class="form-label" style="font-size: 0.8rem;">종류</label>
-                <input type="text" id="txtKind" class="form-control" list="listKinds" placeholder="가시설 등">
-                <datalist id="listKinds"></datalist>
+                <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(대분류)</label>
+                <input type="text" id="txtAgentMajor" class="form-control" list="listAgentMajor" placeholder="가시설, 건설장비 등">
+                <datalist id="listAgentMajor"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.8rem;">항목</label>
-                <input type="text" id="txtItem" class="form-control" list="listItems" placeholder="시스템비계 등">
-                <datalist id="listItems"></datalist>
+                <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(중분류)</label>
+                <input type="text" id="txtAgentMid" class="form-control" list="listAgentMid" placeholder="비계, 양중장비 등">
+                <datalist id="listAgentMid"></datalist>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(소분류)</label>
+                <input type="text" id="txtAgentMinor" class="form-control" list="listAgentMinor" placeholder="시스템비계, 타워크레인 등">
+                <datalist id="listAgentMinor"></datalist>
               </div>
             </div>
 
+            <!-- 하위 호환 hidden 필드 및 legacy datalists -->
+            <input type="hidden" id="txtKind">
+            <input type="hidden" id="txtItem">
+            <input type="hidden" id="txtAgent">
+            <datalist id="listKinds" style="display:none;"></datalist>
+            <datalist id="listItems" style="display:none;"></datalist>
+            <datalist id="listAgents" style="display:none;"></datalist>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-              <div>
-                <label class="form-label" style="font-size: 0.8rem;">기인물</label>
-                <input type="text" id="txtAgent" class="form-control" list="listAgents" placeholder="수평재 등">
-                <datalist id="listAgents"></datalist>
-              </div>
               <div>
                 <label class="form-label" style="font-size: 0.8rem;">공종</label>
                 <input type="text" id="txtWorkGroup" class="form-control" list="listWorkGroups" placeholder="가설공사 등">
                 <datalist id="listWorkGroups"></datalist>
               </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
               <div>
                 <label class="form-label" style="font-size: 0.8rem;">유형(발생형태)</label>
-                <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="떨어짐(추락) 등">
+                <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="떨어짐(추락, 사람) 등">
                 <datalist id="listTypes"></datalist>
               </div>
-              <div>
-                <label class="form-label" style="font-size: 0.8rem;">산업안전보건법 조문</label>
-                <input type="text" id="txtLaw" class="form-control" placeholder="예: 산안규칙 제56조(작업발판의 구조)">
-              </div>
+            </div>
+
+            <div>
+              <label class="form-label" style="font-size: 0.8rem;">산업안전보건법 조문</label>
+              <input type="text" id="txtLaw" class="form-control" placeholder="예: 산안규칙 제56조(작업발판의 구조)">
             </div>
           </div>
 
