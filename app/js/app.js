@@ -2519,12 +2519,25 @@ function updateSiteFilterChips(records) {
   const container = $('#boxDynamicSiteChips');
   if (!container) return;
   container.innerHTML = '';
+  const siteAliasMap = {
+    '송도1': 'S1 (송도1)',
+    'S1': 'S1 (송도1)',
+    '송도2': 'S2 (송도2)',
+    'S2': 'S2 (송도2)',
+    '송도3': 'S3 (송도3)',
+    'S3': 'S3 (송도3)',
+    '반포3': 'B3 (반포3)',
+    'B3': 'B3 (반포3)',
+    '방화6': 'B6 (방화6)',
+    'B6': 'B6 (방화6)'
+  };
   const sites = [...new Set(records.map(r => r.site).filter(Boolean))];
   if (sites.length <= 1) return;
   for (const s of sites) {
+    const chipText = siteAliasMap[s] || s;
     const btn = h('button.chip.filter-site-item', {
       type: 'button',
-      class: listSiteFilter === s ? 'selected' : '',
+      class: (listSiteFilter === s || (siteAliasMap[listSiteFilter] && siteAliasMap[listSiteFilter] === siteAliasMap[s])) ? 'selected' : '',
       style: { padding: '6px 14px', fontSize: '0.82rem', whiteSpace: 'nowrap', flexShrink: '0' },
       onclick: () => {
         listSiteFilter = s;
@@ -2533,7 +2546,7 @@ function updateSiteFilterChips(records) {
         btn.classList.add('selected');
         applyListFiltersAndRender();
       }
-    }, s);
+    }, chipText);
     container.append(btn);
   }
 }
@@ -2549,7 +2562,23 @@ async function applyListFiltersAndRender() {
     filtered = filtered.filter(r => r.status !== '조치완료');
   }
   if (listSiteFilter !== 'all') {
-    filtered = filtered.filter(r => r.site === listSiteFilter);
+    const siteEquivMap = {
+      '송도1': ['송도1', 'S1'],
+      'S1': ['송도1', 'S1'],
+      '송도2': ['송도2', 'S2'],
+      'S2': ['송도2', 'S2'],
+      '송도3': ['송도3', 'S3'],
+      'S3': ['송도3', 'S3'],
+      '반포3': ['반포3', 'B3'],
+      'B3': ['반포3', 'B3'],
+      '방화6': ['방화6', 'B6'],
+      'B6': ['방화6', 'B6']
+    };
+    filtered = filtered.filter(r => {
+      if (r.site === listSiteFilter) return true;
+      if (siteEquivMap[listSiteFilter] && siteEquivMap[listSiteFilter].includes(r.site)) return true;
+      return false;
+    });
   }
 
   if (!filtered.length) {
