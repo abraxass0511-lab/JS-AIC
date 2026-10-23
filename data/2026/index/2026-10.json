@@ -1,6 +1,6 @@
 {
   "bucket": "2026-10",
-  "updatedAt": "2026-10-23T22:35:03.764Z",
+  "updatedAt": "2026-10-23T23:08:52.772Z",
   "records": [
     {
       "site": "아파트1",
@@ -19,8 +19,8 @@
       "location": "계단·복도",
       "workName": "거푸집설치작업",
       "workGroup": "철근콘크리트공사",
-      "kind": "",
-      "item": "",
+      "kind": "가시설",
+      "item": "거푸집",
       "agent": "거푸집",
       "type": "넘어짐(전도: 사람)",
       "condition": "",
@@ -70,7 +70,10 @@
       },
       "status": "미조치",
       "locationDetail": "103동 지하1층 바닥 안전통로",
-      "workMethod": "설치조립작업"
+      "workMethod": "설치조립작업",
+      "agentMajor": "가시설",
+      "agentMid": "거푸집",
+      "agentMinor": "유로폼"
     },
     {
       "site": "방화6",
@@ -90,7 +93,7 @@
       "workName": "거푸집 양중작업",
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
-      "item": "거푸집동바리",
+      "item": "거푸집",
       "agent": "거푸집",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "",
@@ -132,7 +135,10 @@
       },
       "status": "미조치",
       "locationDetail": "108동",
-      "workMethod": "양중작업"
+      "workMethod": "양중작업",
+      "agentMajor": "가시설",
+      "agentMid": "거푸집",
+      "agentMinor": "유로폼"
     },
     {
       "site": "송도1",
@@ -151,8 +157,8 @@
       "location": "계단·복도",
       "workName": "가설전기 설치작업",
       "workGroup": "가설공사",
-      "kind": "가시설",
-      "item": "전기시설",
+      "kind": "전기시설",
+      "item": "전등시설",
       "agent": "전등",
       "type": "넘어짐(전도: 사람)",
       "condition": "",
@@ -192,7 +198,10 @@
       },
       "status": "미조치",
       "locationDetail": "106동, 지하1층 계단실",
-      "workMethod": "설치조립작업"
+      "workMethod": "설치조립작업",
+      "agentMajor": "전기시설",
+      "agentMid": "전등시설",
+      "agentMinor": "투광등"
     },
     {
       "site": "송도1",
@@ -212,7 +221,7 @@
       "workName": "자재 운반작업",
       "workGroup": "가설공사",
       "kind": "가시설",
-      "item": "시스템비계",
+      "item": "안전시설",
       "agent": "통로",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
@@ -253,7 +262,10 @@
       },
       "status": "미조치",
       "locationDetail": "106동 워킹타워",
-      "workMethod": "하역운반작업"
+      "workMethod": "하역운반작업",
+      "agentMajor": "가시설",
+      "agentMid": "안전시설",
+      "agentMinor": "낙하방지시설(방호선반)"
     },
     {
       "site": "OO물류센터 신축공사",
@@ -273,7 +285,7 @@
       "workName": "데크플레이트 설치작업",
       "workGroup": "철골공사",
       "kind": "가시설",
-      "item": "비계",
+      "item": "안전시설",
       "agent": "개구부",
       "type": "떨어짐(추락, 사람)",
       "condition": "불안전 상태",
@@ -314,7 +326,10 @@
       },
       "status": "미조치",
       "locationDetail": "2층 하역장 상부 바닥 개구부",
-      "workMethod": "고소작업"
+      "workMethod": "고소작업",
+      "agentMajor": "가시설",
+      "agentMid": "안전시설",
+      "agentMinor": "추락방지시설(덮개)"
     },
     {
       "site": "OO물류센터 신축공사",
@@ -333,7 +348,7 @@
       "location": "실내 작업장",
       "workName": "비계설치작업",
       "workGroup": "가설공사",
-      "kind": "보호구",
+      "kind": "PPE",
       "item": "안전대",
       "agent": "안전대",
       "type": "떨어짐(추락, 사람)",
@@ -375,7 +390,10 @@
       },
       "status": "미조치",
       "locationDetail": "터빈동",
-      "workMethod": "고소작업"
+      "workMethod": "고소작업",
+      "agentMajor": "PPE",
+      "agentMid": "안전대",
+      "agentMinor": "안전대"
     },
     {
       "site": "송도3",
@@ -388,8 +406,8 @@
       "location": "본구조물",
       "workName": "창호설치작업",
       "workGroup": "마감공사",
-      "kind": "작업방법",
-      "item": "고소단부작업",
+      "kind": "가시설",
+      "item": "안전시설",
       "agent": "단부",
       "type": "떨어짐(추락, 사람)",
       "condition": "",
@@ -426,7 +444,10 @@
         "계획 미수립",
         "불안전 행동",
         "불안전 상태"
-      ]
+      ],
+      "agentMajor": "가시설",
+      "agentMid": "안전시설",
+      "agentMinor": "추락방지시설(안전대걸이시설)"
     },
     {
       "site": "송도1",
@@ -440,7 +461,7 @@
       "workName": "소방자재 관리",
       "workGroup": "공통",
       "kind": "소방시설",
-      "item": "임시소방시설",
+      "item": "소화시설",
       "agent": "소화기",
       "type": "화재/폭발",
       "condition": "불량소화기 배치",
@@ -476,7 +497,10 @@
       "mgmtCauses": [
         "불안전 상태",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "소방시설",
+      "agentMid": "소화시설",
+      "agentMinor": "분말소화기"
     },
     {
       "site": "송도3",
@@ -489,8 +513,8 @@
       "location": "본구조물",
       "workName": "가설전기 배선작업",
       "workGroup": "설비·전기공사",
-      "kind": "가시설",
-      "item": "전기시설",
+      "kind": "전기시설",
+      "item": "누전차단기",
       "agent": "멀티작업선",
       "type": "감전",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
@@ -526,7 +550,10 @@
       "mgmtCauses": [
         "불안전 상태",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "전기시설",
+      "agentMid": "누전차단기",
+      "agentMinor": "가설전선/이동릴선"
     },
     {
       "site": "송도3",
@@ -539,8 +566,8 @@
       "location": "본구조물",
       "workName": "가설전기 설치작업",
       "workGroup": "설비·전기공사",
-      "kind": "가시설",
-      "item": "전기시설",
+      "kind": "전기시설",
+      "item": "누전차단기",
       "agent": "멀티작업선",
       "type": "감전",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
@@ -576,7 +603,10 @@
       "mgmtCauses": [
         "불안전 상태",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "전기시설",
+      "agentMid": "누전차단기",
+      "agentMinor": "가설전선/이동릴선"
     },
     {
       "site": "송도1",
@@ -589,8 +619,8 @@
       "location": "지하실",
       "workName": "PC설치작업",
       "workGroup": "철근콘크리트공사",
-      "kind": "작업방법",
-      "item": "양중작업",
+      "kind": "가시설",
+      "item": "안전시설",
       "agent": "안전대",
       "type": "떨어짐(추락, 사람)",
       "condition": "",
@@ -625,7 +655,10 @@
       "mgmtCauses": [
         "불안전 행동",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "가시설",
+      "agentMid": "안전시설",
+      "agentMinor": "추락방지시설(안전대걸이시설)"
     },
     {
       "site": "송도2",
@@ -639,7 +672,7 @@
       "workName": "갱폼인양작업",
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
-      "item": "갱폼",
+      "item": "거푸집",
       "agent": "낙하물",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "상부발판에 낙하물 방치된 상태",
@@ -675,7 +708,10 @@
       "mgmtCauses": [
         "불안전 상태",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "가시설",
+      "agentMid": "거푸집",
+      "agentMinor": "갱폼"
     },
     {
       "site": "송도2",
@@ -689,7 +725,7 @@
       "workName": "갱폼 해체작업",
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
-      "item": "갱폼",
+      "item": "거푸집",
       "agent": "연결핀(연결조인트)",
       "type": "무너짐(붕괴, 도괴)/깔림",
       "condition": "갱폼이 상호 연결되어 구조적으로 안전하지 않은 상태",
@@ -726,7 +762,10 @@
       "mgmtCauses": [
         "불안전 행동",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "가시설",
+      "agentMid": "거푸집",
+      "agentMinor": "갱폼"
     },
     {
       "site": "송도1",
@@ -740,7 +779,7 @@
       "workName": "거푸집동바리 설치작업",
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
-      "item": "거푸집동바리",
+      "item": "동바리",
       "agent": "동바리",
       "type": "무너짐(붕괴, 도괴)/깔림",
       "condition": "거푸집동바리 미설치",
@@ -776,7 +815,10 @@
       "mgmtCauses": [
         "불안전 상태",
         "계획 미이행"
-      ]
+      ],
+      "agentMajor": "가시설",
+      "agentMid": "동바리",
+      "agentMinor": "파이프서포트"
     },
     {
       "site": "송도1",
@@ -790,7 +832,7 @@
       "workName": "콘크리트 타설작업",
       "workGroup": "철근콘크리트공사",
       "kind": "건설장비",
-      "item": "타설기계장비",
+      "item": "생산장비",
       "agent": "펌프카",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "위험작업 구역설정 불량(통제시설 미설치)",
@@ -826,7 +868,10 @@
         "계획 미수립",
         "불안전 행동",
         "불안전 상태"
-      ]
+      ],
+      "agentMajor": "건설장비",
+      "agentMid": "생산장비",
+      "agentMinor": "펌프카"
     },
     {
       "site": "송도1",
@@ -873,7 +918,10 @@
       "mgmtCauses": [
         "불안전 상태",
         "불안전 행동"
-      ]
+      ],
+      "agentMajor": "작업발판",
+      "agentMid": "말비계",
+      "agentMinor": "말비계"
     },
     {
       "site": "송도1",
@@ -920,7 +968,10 @@
       "mgmtCauses": [
         "불안전 행동",
         "불안전 상태"
-      ]
+      ],
+      "agentMajor": "작업발판",
+      "agentMid": "말비계",
+      "agentMinor": "말비계"
     },
     {
       "site": "반포3",
@@ -934,7 +985,7 @@
       "workName": "비계설치작업",
       "workGroup": "가설공사",
       "kind": "가시설",
-      "item": "안전난간",
+      "item": "안전시설",
       "agent": "상부난간대",
       "type": "떨어짐(추락, 사람)",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
@@ -971,7 +1022,10 @@
       "mgmtCauses": [
         "계획 미수립",
         "불안전 상태"
-      ]
+      ],
+      "agentMajor": "가시설",
+      "agentMid": "안전시설",
+      "agentMinor": "추락방지시설(안전난간)"
     }
   ],
   "deletedIds": [
