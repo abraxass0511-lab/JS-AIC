@@ -240,9 +240,30 @@ function populateDatalists() {
   addOpts('listKinds', tax.categories.list.map(c => c.kind), 'kind');
   addOpts('listItems', allItems.map(i => i.name), 'item');
   addOpts('listAgents', [...new Set(allItems.flatMap(i => i.agents))], 'agent');
-  addOpts('listWorkGroups', tax.workTypes.list.map(w => w.group), 'workGroup');
-  addOpts('listWorkNames', tax.workTypes.list.flatMap(w => w.works), 'workName');
-  addOpts('listTypes', tax.accidentTypes.list.map(t => t.name), 'type');
+  const locationsList = (window.SafeExcel && window.SafeExcel.ACCIDENT_LOCATIONS) || [
+    '건축물', '본구조물', '가설물', '기계·기구', '설비·장치',
+    '적재물', '옥상·지붕', '계단·복도', '엘리베이터홀', '천장 내부',
+    '탱크 내부', '실내 작업장', '지하실', '실외 작업장', '외부',
+    '도로', '야적장', '수상', '수중', '공중'
+  ];
+  addOpts('listLocations', locationsList, 'location');
+
+  const typesList = (window.SafeExcel && window.SafeExcel.ACCIDENT_TYPES) || [
+    '떨어짐(추락, 사람)', '끼임(협착, 감김)', '무너짐(붕괴, 도괴)/깔림', '넘어짐(전도: 사람)',
+    '미끄러짐/접질림', '쓰러짐, 뒤집힘(전도, 전복: 자재/장비 등)', '부딪힘(충돌)/맞음',
+    '떨어짐(낙하/비래)/맞음', '감전', '화재/폭발', '질식/중독 등', '베임/찔림/절단',
+    '위험물질 노출/흡입/접촉 등', '개인질환/근골격계', '폭력행위', '기타', '분류불능'
+  ];
+  addOpts('listTypes', typesList, 'type');
+
+  const workMethods = (window.SafeExcel && window.SafeExcel.WORK_METHODS_9X9) || [
+    '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
+  ];
+  const workGroups = (window.SafeExcel && window.SafeExcel.WORK_GROUPS_9X9) || [
+    '가설공사', '토공사/기초공사', '철근콘크리트공사', '철골공사', '조적/미장/방수공사', '마감/수장공사', '기계설비공사', '전기/통신공사', '해체/철거공사'
+  ];
+  addOpts('listWorkGroups', [...new Set([...workGroups, ...tax.workTypes.list.map(w => w.group)])], 'workGroup');
+  addOpts('listWorkNames', [...new Set([...workMethods, ...tax.workTypes.list.flatMap(w => w.works)])], 'workName');
   addOpts('listConditions', (tax9 && tax9.unsafeConditionsList) || tax.unsafeConditions.list, 'condition');
   addOpts('listActions', (tax9 && tax9.unsafeActionsList) || tax.unsafeActions.list, 'action');
 
@@ -659,8 +680,10 @@ function bindEvents() {
       mgmtCauses,
       holdPoint: !!$('#chkHoldPoint')?.checked,
       interviewOpinion: $('#txtInterviewOpinion')?.value.trim() || '',
+      inspectorOpinionType: $('#selInspectorOpinionType')?.value || '시스템 개선',
       auditProposal: $('#txtAuditProposal')?.value.trim() || '',
       pmVerdict: $('#txtPmVerdict')?.value.trim() || '',
+      workMethod: workName,
       workPlan: '해당없음',
       basis: {
         ra: '반영',
@@ -2876,6 +2899,7 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtInspectRound')) $('#txtInspectRound').value = rec.inspectRound || '1차';
   if ($('#txtType')) $('#txtType').value = rec.type || '';
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
+  if ($('#selInspectorOpinionType')) $('#selInspectorOpinionType').value = rec.inspectorOpinionType || '시스템 개선';
   if ($('#txtAuditProposal')) $('#txtAuditProposal').value = rec.auditProposal || '';
   if ($('#txtPmVerdict')) $('#txtPmVerdict').value = rec.pmVerdict || '';
   if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!rec.holdPoint;

@@ -1,104 +1,203 @@
 /**
  * SafePatrol 부적합사항대장 엑셀 생성기 (브라우저 / Node 공용)
  *   SafeExcel.build(ExcelJS, { records, taxonomy, customValues, sites, loadImage }) → Workbook
- *   - 건설안전 9×9단, 가시설 심층 분류, 8대 공종, 근본원인 및 관리주체 완벽 반영
- *   - loadImage(path) → Promise<{ base64: string, extension: 'jpeg'|'png' } | null>
+ *   - 2026 개정 안전점검표 규격 반영 (사고장소 20종, 발생형태대분류 17종, 9×9 공종·작업방법, 4대 관리원인 통계, 관계자·점검자 의견 및 3대 분류, 2매 사진 지원)
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.SafeExcel = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : this), function () {
 
+  // ── 1. 첨부 사진 기반 표준 마스터 데이터 ──
+
+  // [첨부 1] 사고장소 (20개 항목)
+  const ACCIDENT_LOCATIONS = [
+    '건축물', '본구조물', '가설물', '기계·기구', '설비·장치',
+    '적재물', '옥상·지붕', '계단·복도', '엘리베이터홀', '천장 내부',
+    '탱크 내부', '실내 작업장', '지하실', '실외 작업장', '외부',
+    '도로', '야적장', '수상', '수중', '공중'
+  ];
+
+  // [첨부 2] 발생형태대분류 - 유형 (17개 항목)
+  const ACCIDENT_TYPES = [
+    '떨어짐(추락, 사람)',
+    '끼임(협착, 감김)',
+    '무너짐(붕괴, 도괴)/깔림',
+    '넘어짐(전도: 사람)',
+    '미끄러짐/접질림',
+    '쓰러짐, 뒤집힘(전도, 전복: 자재/장비 등)',
+    '부딪힘(충돌)/맞음',
+    '떨어짐(낙하/비래)/맞음',
+    '감전',
+    '화재/폭발',
+    '질식/중독 등',
+    '베임/찔림/절단',
+    '위험물질 노출/흡입/접촉 등',
+    '개인질환/근골격계',
+    '폭력행위',
+    '기타',
+    '분류불능'
+  ];
+
+  // 9×9 기반 공종 (9대 공종)
+  const WORK_GROUPS_9X9 = [
+    '가설공사', '토공사/기초공사', '철근콘크리트공사', '철골공사',
+    '조적/미장/방수공사', '마감/수장공사', '기계설비공사', '전기/통신공사', '해체/철거공사'
+  ];
+
+  // 9×9 기반 작업방법 (9대 핵심 작업)
+  const WORK_METHODS_9X9 = [
+    '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
+    '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
+  ];
+
+  // 점검자 의견 3대 분류
+  const INSPECTOR_OPINION_TYPES = ['페널티', '시스템 개선', '교육/코칭'];
+
+  // 유형 표준 매핑 함수 (과거 단문형 데이터 호환)
+  function mapAccidentType(raw) {
+    if (!raw) return '';
+    const s = String(raw).trim();
+    if (ACCIDENT_TYPES.includes(s)) return s;
+    if (s.includes('추락') || s.includes('떨어짐(사람)') || s === '떨어짐') return '떨어짐(추락, 사람)';
+    if (s.includes('낙하') || s.includes('비래') || s.includes('맞음')) return '떨어짐(낙하/비래)/맞음';
+    if (s.includes('협착') || s.includes('끼임') || s.includes('감김')) return '끼임(협착, 감김)';
+    if (s.includes('붕괴') || s.includes('도괴') || s.includes('무너짐') || s.includes('깔림')) return '무너짐(붕괴, 도괴)/깔림';
+    if (s.includes('전복') || s.includes('뒤집힘') || s.includes('쓰러짐')) return '쓰러짐, 뒤집힘(전도, 전복: 자재/장비 등)';
+    if (s.includes('전도') || s.includes('넘어짐')) return '넘어짐(전도: 사람)';
+    if (s.includes('미끄러짐') || s.includes('접질림')) return '미끄러짐/접질림';
+    if (s.includes('충돌') || s.includes('부딪힘')) return '부딪힘(충돌)/맞음';
+    if (s.includes('감전')) return '감전';
+    if (s.includes('화재') || s.includes('폭발')) return '화재/폭발';
+    if (s.includes('질식') || s.includes('중독') || s.includes('가스')) return '질식/중독 등';
+    if (s.includes('베임') || s.includes('찔림') || s.includes('절단')) return '베임/찔림/절단';
+    if (s.includes('위험물질') || s.includes('흡입') || s.includes('노출') || s.includes('접촉')) return '위험물질 노출/흡입/접촉 등';
+    if (s.includes('질환') || s.includes('근골격계')) return '개인질환/근골격계';
+    if (s.includes('폭력')) return '폭력행위';
+    return s || '기타';
+  }
+
+  // 관리적 4대 발생원인 판별 함수 (● 마크)
+  function markCause(r, causeName) {
+    const mgmt = r.mgmtCauses || [];
+    if (Array.isArray(mgmt)) {
+      if (mgmt.some(c => String(c).includes(causeName))) return '●';
+    } else if (typeof mgmt === 'string' && mgmt.includes(causeName)) {
+      return '●';
+    }
+    if (Array.isArray(r.causes)) {
+      if (causeName === '불안전 행동' && r.causes.includes('인적')) return '●';
+      if (causeName === '불안전 상태' && r.causes.includes('물적')) return '●';
+      if (r.causes.some(c => String(c).includes(causeName))) return '●';
+    }
+    if (causeName === '불안전 상태' && r.condition && r.condition !== '해당없음' && r.condition !== '-') return '●';
+    if (causeName === '불안전 행동' && r.action && r.action !== '해당없음' && r.action !== '-') return '●';
+    if (r.rootCauseMgmt && r.rootCauseMgmt.includes(causeName)) return '●';
+    if (r.rootCauseSystem && r.rootCauseSystem.includes(causeName)) return '●';
+    return '';
+  }
+
+  // 점검자 의견 분류 자동 판정
+  function getInspectorOpinionType(r) {
+    if (r.inspectorOpinionType && INSPECTOR_OPINION_TYPES.includes(r.inspectorOpinionType)) {
+      return r.inspectorOpinionType;
+    }
+    if (r.auditType && INSPECTOR_OPINION_TYPES.includes(r.auditType)) {
+      return r.auditType;
+    }
+    const text = (r.auditProposal || r.pmVerdict || '') + ' ' + (r.content || '');
+    if (text.includes('벌점') || text.includes('페널티') || text.includes('과태료') || text.includes('고발')) {
+      return '페널티';
+    }
+    if (text.includes('교육') || text.includes('코칭') || text.includes('TBM') || text.includes('지도')) {
+      return '교육/코칭';
+    }
+    return '시스템 개선';
+  }
+
+  // ── 2. 개정 대장 열 정의 (총 31개 열) ──
   // [그룹, 항목명, 너비, 드롭다운 목록키, 값 추출 함수]
   const COLS = [
     ['No', 'No', 5, null, (r, i) => i + 1],
-    ['부적합 사항', '사진', 18, null, () => ''],
-    ['부적합 분류', '부적합 등급', 14, 'severities', r => r.severity || '중부적합'],
-    ['부적합 사항', '내용', 26, null, r => r.content],
-    ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],
-    ['부적합 사항', '점검차수', 8, null, r => r.inspectRound || '1차'],
-    ['부적합 사항', '장소/위치', 12, null, r => r.location],
-    ['부적합 사항', '작업명', 14, 'works', r => r.workName],
-    ['부적합 분류', '공종', 14, 'workGroups', r => r.workGroup],
-    ['부적합 분류', '유형', 10, 'types', r => r.type],
-    ['부적합 분류', '기인물', 12, 'agents', r => r.agent],
     
-    // ── [신규 추가] 9×9 점검인자 ──
-    ['9×9 점검인자', '점검영역', 12, 'matrixAreas', r => r.matrixArea || (r.basis && r.basis.점검영역9x9) || ''],
-    ['9×9 점검인자', '점검대상', 14, 'matrixTargets', r => r.matrixTarget || (r.basis && r.basis.점검대상9x9) || ''],
-    ['9×9 점검인자', '가시설상세', 14, 'matrixSpecs', r => r.matrixSpec || (r.basis && r.basis.가시설세부사양) || ''],
+    // [부적합 사항] 사진 1 & 사진 2 신규 2열 구성
+    ['부적합 사항', '사진 1', 18, null, () => ''],
+    ['부적합 사항', '사진 2', 18, null, () => ''],
+    ['부적합 사항', '부적합 등급', 12, 'severities', r => r.severity || '중부적합'],
+    ['부적합 사항', '내용', 28, null, r => r.content || ''],
+    ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],
+    ['부적합 사항', '장소/위치', 14, 'locations', r => r.location || ''],
 
-    ['부적합 분류', '항목', 13, 'items', r => r.item],
-    ['부적합 분류', '종류', 11, 'kinds', r => r.kind],
-    ['관련근거', '산업안전보건법', 22, 'laws', r => r.law || (r.basis && r.basis.law) || ''],
-    ['불안전 상황', '상태', 18, 'conditions', r => r.condition],
-    ['불안전 상황', '행동', 18, 'actions', r => r.action],
-    ['관리적 원인', '원인구분', 16, null, r => Array.isArray(r.mgmtCauses) ? r.mgmtCauses.join(', ') : (r.mgmtCauses || '')],
-    ['관리적 원인', 'Hold Point', 10, null, r => r.holdPoint ? '위반' : '정상'],
+    // [공종·작업방법] 하나로 묶고 9×9 반영 ("작업명" -> "작업방법")
+    ['공종·작업방법', '공종', 15, 'workGroups', r => r.workGroup || '가설공사'],
+    ['공종·작업방법', '작업방법', 16, 'workMethods', r => r.workMethod || r.workName || '고소작업'],
 
-    // ── [신규 추가] 근본원인 분석 ──
+    // [부적합 분류] 유형과 기인물만 유지 (항목, 종류 열 삭제)
+    ['부적합 분류', '유형', 20, 'types', r => mapAccidentType(r.type)],
+    ['부적합 분류', '기인물', 14, 'agents', r => r.agent || ''],
+
+    // [관련근거]
+    ['관련근거', '산업안전보건법', 24, 'laws', r => r.law || (r.basis && r.basis.law) || ''],
+
+    // [불안전 상황]
+    ['불안전 상황', '상태', 18, 'conditions', r => r.condition || ''],
+    ['불안전 상황', '행동', 18, 'actions', r => r.action || ''],
+
+    // [근본원인 분석] (원인구분, Hold point, 관리/책임주체 열 삭제 완료)
     ['근본원인 분석', '법적 관리감독', 18, 'rootCausesMgmt', r => r.rootCauseMgmt || (r.basis && r.basis.근본원인_관리감독) || ''],
     ['근본원인 분석', '안전시스템', 20, 'rootCausesSystem', r => r.rootCauseSystem || (r.basis && r.basis.근본원인_안전시스템) || ''],
-    ['근본원인 분석', '관리/책임주체', 14, 'stakeholders', r => r.stakeholder || (r.basis && r.basis.관리책임주체) || ''],
 
-    ['발생원인 (인터뷰)', '시공자/근로자 의견', 20, null, r => r.interviewOpinion || ''],
-    ['발생원인 (인터뷰)', '점검단 제안', 18, null, r => r.auditProposal || ''],
-    ['개선대책 (협의)', 'PM 판정결과', 18, null, r => r.pmVerdict || ''],
-    ['발생원인(통계)', '인적', 5, 'mark', r => mark(r, '인적')],
-    ['발생원인(통계)', '물적', 5, 'mark', r => mark(r, '물적')],
-    ['발생원인(통계)', '기술적', 5, 'mark', r => mark(r, '기술적')],
-    ['발생원인(통계)', '시스템적', 6, 'mark', r => mark(r, '시스템적')],
-    ['현장/컨설팅', '현장명', 16, 'sites', r => r.site],
+    // [발생원인] 4대 요인 통계 마크 열 (계획 미수립, 계획 미이행, 불안전 행동, 불안전 상태)
+    ['발생원인', '계획 미수립', 8, 'mark', r => markCause(r, '계획 미수립')],
+    ['발생원인', '계획 미이행', 8, 'mark', r => markCause(r, '계획 미이행')],
+    ['발생원인', '불안전 행동', 8, 'mark', r => markCause(r, '불안전 행동')],
+    ['발생원인', '불안전 상태', 8, 'mark', r => markCause(r, '불안전 상태')],
+
+    // [관계자·점검자 의견] 시공자/관리자 의견 -> 관계자 의견, 점검단 제안 -> 점검자 의견, 3대 분류 추가
+    ['관계자·점검자 의견', '관계자 의견', 20, null, r => r.interviewOpinion || r.workerOpinion || ''],
+    ['관계자·점검자 의견', '점검자 의견 구분', 14, 'inspectorOpinionTypes', r => getInspectorOpinionType(r)],
+    ['관계자·점검자 의견', '점검자 의견', 24, null, r => r.auditProposal || r.inspectorOpinion || ''],
+
+    // [현장/컨설팅]
+    ['현장/컨설팅', '현장명', 16, 'sites', r => r.site || ''],
     ['현장/컨설팅', '상품유형', 12, 'productTypes', r => r.productType || '공동주택'],
     ['현장/컨설팅', '공정률(%)', 8, null, r => r.progressRate !== undefined && r.progressRate !== null ? (r.progressRate + '%') : (r.siteInfo && r.siteInfo.progress ? r.siteInfo.progress + '%' : '')],
-    ['현장/컨설팅', '표준공정단계', 15, 'stages', r => r.stage || '지상 골조 단계'],
+    ['현장/컨설팅', '표준공정단계', 16, 'stages', r => r.stage || '지상 골조 단계'],
+
+    // [조치사항]
     ['조치사항', '조치내용', 24, null, r => (r.fix && r.fix.content) || '(미조치)'],
     ['조치사항', '조치사진', 18, null, () => ''],
-    ['관리정보(자동)', '점검일자', 11, null, r => r.inspectedDate],
-    ['관리정보(자동)', '점검자', 8, null, r => r.inspector],
+
+    // [관리정보(자동)]
+    ['관리정보(자동)', '점검일자', 11, null, r => r.inspectedDate || ''],
+    ['관리정보(자동)', '점검자', 8, null, r => r.inspector || ''],
   ];
 
-  function mark(r, c) { return (r.causes || []).includes(c) ? '●' : ''; }
-
-  const PHOTO_COL = 2;
+  const PHOTO1_COL = COLS.findIndex(c => c[1] === '사진 1') + 1;
+  const PHOTO2_COL = COLS.findIndex(c => c[1] === '사진 2') + 1;
   const FIX_PHOTO_COL = COLS.findIndex(c => c[1] === '조치사진') + 1;
+
   const YELLOW = 'FFFFFF00';
   const GROUP_FILL = {
     '조치사항': 'FFC6EFCE',
     '관리정보(자동)': 'FFD9E1F2',
     '현장/컨설팅': 'FFE0E7FF',
-    '관리적 원인': 'FFFEF3C7',
-    '9×9 점검인자': 'FFFEF08A',
-    '근본원인 분석': 'FFFED7AA',
-    '발생원인 (인터뷰)': 'FFFDE047',
-    '개선대책 (협의)': 'FFBBF7D0'
+    '공종·작업방법': 'FFFEF08A',
+    '부적합 분류': 'FFFED7AA',
+    '근본원인 분석': 'FFFEE2E2',
+    '발생원인': 'FFFBCFE8',
+    '관계자·점검자 의견': 'FFDDD6FE',
+    '관련근거': 'FFE2E8F0',
+    '불안전 상황': 'FFFFF3C4'
   };
   const thin = { style: 'thin', color: { argb: 'FF7F7F7F' } };
   const border = { top: thin, left: thin, bottom: thin, right: thin };
-  const LEFT_COLS = ['내용', '조치내용', '시공자/근로자 의견', '점검단 제안', 'PM 판정결과', '산업안전보건법', '상태', '행동', '법적 관리감독', '안전시스템'];
+  const LEFT_COLS = ['내용', '조치내용', '관계자 의견', '점검자 의견', '산업안전보건법', '상태', '행동', '법적 관리감독', '안전시스템'];
 
   const uniq = a => [...new Set(a.filter(Boolean))];
 
   // 9×9 마스터 데이터 기본값
   const DEFAULT_9X9_AREAS = ['가시설', '건설장비', '작업방법', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
-  const DEFAULT_9X9_TARGETS = [
-    '비계', '흙막이', '동바리', '거푸집', '특수거푸집', '데크', '철골', 'PC', '안전시설',
-    '양중장비', '탑승장비', '운반장비', '차량계건설기계', '생산장비', '굴착장비', '천공장비', '토공장비', '해상장비',
-    '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업',
-    '용접기', '화기', '절단기구', '회전기구', '압력기구', '타정기구', '운반기구', '양중기구', '수공구',
-    '틀비계', '말비계', '달비계', '달대비계', '각립비계', '이동식 사다리', '낮은 발판', '현장제작발판', '지붕발판',
-    '안전모', '보안경/면', '귀덮개/마개', '호흡기보호구', '안전대', '추락방지대', '안전장갑', '안전장화', '안전화',
-    '수전시설', '분전반', '냉난방기', '전선', '전등시설', '전열시설', '전기기구', '접지시설', '누전차단기',
-    '비상대피시설', '화재수신반', '화재감지시설', '스프링쿨러', '소화시설', '불티비산방지', '충전시설', '가설건물', '생활화재',
-    '비상통로', '작업구획', '통제구역', '가설통로', '자재야적장', '위험물보관소', '폐기물보관소', '조도확보', '청결상태'
-  ];
-  const DEFAULT_9X9_SPECS = [
-    '시스템비계', '강관비계', '이동식틀비계', '달비계', '달대비계', '말비계', '각립비계',
-    '수직재', '수평재', '모서리부', '토사부', '시스템동바리', '강관동바리', '잭서포트',
-    '갱폼', '알폼', '유로폼', 'ACS', 'RCS', '슬립폼', '데크플레이트', '철골', 'PC',
-    '추락방지시설(안전난간)', '추락방지시설(덮개)', '추락방지시설(수직방호망)', '추락방지시설(안전대걸이시설)',
-    '낙하방지시설(방호선반)', '낙하방지시설(낙하물방지망)'
-  ];
   const DEFAULT_ROOT_MGMT = [
     '작업계획 미수립', '작업계획 미이행/부족', '작업지시 부족', '작업시설 미설치', '작업시설 유지보수 미실시',
     '안전시설 미설치', '안전시설 유지보수 미실시', '안전점검 미실시', '작업지휘 미실시', '작업지휘자 미배치',
@@ -119,38 +218,27 @@
     '확인: PTW(작업허가) 미실시/Feedback 미흡', '확인: 시정조치 요구 및 이행확인 소홀',
     '개선: 작업자 관리상태 개정관리 미흡', '개선: 위험성평가 피드백 미반영', '개선: 안전협의체 법적기준 미준수'
   ];
-  const DEFAULT_STAKEHOLDERS = [
-    '현장소장', '공사팀장', '시공팀장', '시공담당', '안전팀장',
-    '안전관리자', '협력회사 소장', '협력회사 공사팀장', '협력회사 공사담당', '협력회사 안전관리자'
-  ];
 
   function buildLists(tax, custom, sites) {
     custom = custom || {};
-    const allItems = tax.categories.list.flatMap(c => c.items.map(i => ({ ...i, kind: c.kind })));
+    const allItems = (tax && tax.categories && tax.categories.list) ? tax.categories.list.flatMap(c => c.items.map(i => ({ ...i, kind: c.kind }))) : [];
     const add = (key, base) => uniq([...base, ...(custom[key] || [])]);
     return {
       lists: {
         severities: ['중부적합', '경부적합'],
         productTypes: ['공동주택', '오피스/지식산업센터', '물류센터/공장', '플랜트/산업설비', '토목/인프라', '기타'],
         stages: ['착공 및 토공사 단계', '지하 골조 공사 단계', '지상 골조 및 외부 가설 단계', '마감 및 기계전기 설비 단계', '준공 및 부대토목 단계'],
-        types: add('type', tax.accidentTypes.list.map(t => t.name)),
-        conditions: add('condition', (tax.unsafeConditions && tax.unsafeConditions.list) || []),
-        actions: add('action', (tax.unsafeActions && tax.unsafeActions.list) || []),
-        workGroups: add('workGroup', (tax.workTypes && tax.workTypes.list.map(w => w.group)) || []),
-        works: add('workName', (tax.workTypes && tax.workTypes.list.flatMap(w => w.works)) || []),
-        kinds: add('kind', tax.categories.list.map(c => c.kind)),
-        items: add('item', allItems.map(i => i.name)),
-        agents: add('agent', allItems.flatMap(i => i.agents)),
+        locations: ACCIDENT_LOCATIONS,
+        types: ACCIDENT_TYPES,
+        conditions: add('condition', (tax && tax.unsafeConditions && tax.unsafeConditions.list) || []),
+        actions: add('action', (tax && tax.unsafeActions && tax.unsafeActions.list) || []),
+        workGroups: uniq([...WORK_GROUPS_9X9, ...(custom.workGroup || [])]),
+        workMethods: uniq([...WORK_METHODS_9X9, ...(custom.workMethod || []), ...(custom.workName || [])]),
+        agents: add('agent', allItems.flatMap(i => i.agents || [])),
         laws: add('law', allItems.map(i => i.law)),
-        matrixAreas: DEFAULT_9X9_AREAS,
-        matrixTargets: DEFAULT_9X9_TARGETS,
-        matrixSpecs: DEFAULT_9X9_SPECS,
         rootCausesMgmt: DEFAULT_ROOT_MGMT,
         rootCausesSystem: DEFAULT_ROOT_SYSTEM,
-        stakeholders: DEFAULT_STAKEHOLDERS,
-        workPlan: tax.workPlanOptions || ['수립', '미수립', '해당없음'],
-        basis3: ['반영', '미반영', '해당없음'],
-        structure: ['실시', '미실시', '해당없음'],
+        inspectorOpinionTypes: INSPECTOR_OPINION_TYPES,
         mark: ['●'],
         sites: uniq((sites || []).map(s => s.name)),
       },
@@ -159,12 +247,22 @@
   }
 
   const LIST_TITLES = {
-    severities: '부적합 등급', productTypes: '상품유형', stages: '표준공정단계',
-    types: '유형(발생형태)', conditions: '불안전한 상태', actions: '불안전한 행동', workGroups: '공종', works: '작업명',
-    kinds: '종류', items: '항목', agents: '기인물', laws: '관련 조문',
-    matrixAreas: '9×9 점검영역', matrixTargets: '9×9 점검대상', matrixSpecs: '가시설 세부사양',
-    rootCausesMgmt: '근본원인(관리감독)', rootCausesSystem: '근본원인(시스템)', stakeholders: '관리/책임주체',
-    workPlan: '작업계획', basis3: '반영여부', structure: '구조검토', mark: '발생원인 표시', sites: '현장명',
+    severities: '부적합 등급',
+    productTypes: '상품유형',
+    stages: '표준공정단계',
+    locations: '사고장소',
+    workGroups: '공종',
+    workMethods: '작업방법',
+    types: '유형(발생형태)',
+    conditions: '불안전한 상태',
+    actions: '불안전한 행동',
+    agents: '기인물',
+    laws: '관련 조문',
+    rootCausesMgmt: '근본원인(관리감독)',
+    rootCausesSystem: '근본원인(시스템)',
+    inspectorOpinionTypes: '점검자 의견 구분',
+    mark: '발생원인 표시',
+    sites: '현장명',
   };
 
   async function build(ExcelJS, opts) {
@@ -206,7 +304,7 @@
       if (!path || !loadImage) return false;
       try {
         const img = await loadImage(path);
-        if (!img) return false;
+        if (!img || !img.base64) return false;
         const id = wb.addImage({ base64: img.base64, extension: img.extension || 'jpeg' });
         ws.addImage(id, { tl: { col: col - 1 + 0.06, row: rowIdx - 1 + 0.06 }, ext: { width: IMG_W, height: IMG_H }, editAs: 'oneCell' });
         return true;
@@ -221,10 +319,17 @@
       const rec = records[n];
       if (rec) {
         COLS.forEach((c, i) => { const v = c[4](rec, n); row.getCell(i + 1).value = v == null ? '' : v; });
-        const p = (rec.photos || [])[0];
-        if (p && !(await placeImage(p, PHOTO_COL, rowIdx))) row.getCell(PHOTO_COL).value = '(사진)';
+        
+        // [사진 1 & 사진 2 2개 배치]
+        const p1 = (rec.photos || [])[0];
+        if (p1 && !(await placeImage(p1, PHOTO1_COL, rowIdx))) row.getCell(PHOTO1_COL).value = '(사진1)';
+        const p2 = (rec.photos || [])[1];
+        if (p2 && !(await placeImage(p2, PHOTO2_COL, rowIdx))) row.getCell(PHOTO2_COL).value = '(사진2)';
+
+        // [조치사진 배치]
         const fp = rec.fix && rec.fix.photo;
-        if (fp && !(await placeImage(fp, FIX_PHOTO_COL, rowIdx))) row.getCell(FIX_PHOTO_COL).value = '(사진)';
+        if (fp && !(await placeImage(fp, FIX_PHOTO_COL, rowIdx))) row.getCell(FIX_PHOTO_COL).value = '(조치사진)';
+
         if (opts.onProgress) opts.onProgress(n + 1, records.length);
       }
       for (let i = 1; i <= COLS.length; i++) {
@@ -235,7 +340,7 @@
         let isBold = false;
         if (v === '(미조치)' || v.includes('중부적합')) { fontColor = 'FFDC2626'; isBold = true; }
         else if (v.includes('경부적합')) { fontColor = 'FFD97706'; isBold = true; }
-        else if (v.startsWith('(사진')) { fontColor = 'FFA6A6A6'; }
+        else if (v.startsWith('(사진') || v.startsWith('(조치사진')) { fontColor = 'FFA6A6A6'; }
         cell.font = { name: '맑은 고딕', size: 9, bold: isBold, color: { argb: fontColor } };
         if (COLS[i - 1][1].includes('등급')) {
           if (v.includes('중부적합')) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
@@ -245,7 +350,7 @@
       }
     }
 
-    // ═════════ Sheet 2. [신규] 건설안전점검 9X9단 ═════════
+    // ═════════ Sheet 2. 건설안전점검 9X9단 ═════════
     const ws9 = wb.addWorksheet('건설안전 9×9단', {
       views: [{ state: 'frozen', ySplit: 2 }]
     });
@@ -259,7 +364,7 @@
     const title9 = ws9.getCell('A1');
     title9.value = '건설안전점검 9×9단 (81개 핵심 점검 매트릭스)';
     title9.font = { name: '맑은 고딕', size: 12, bold: true, color: { argb: 'FF1E293B' } };
-    title9.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE047' } }; // Light Yellow
+    title9.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE047' } };
     title9.alignment = { horizontal: 'center', vertical: 'middle' };
     ws9.getRow(1).height = 28;
 
@@ -269,7 +374,7 @@
       const c = r2_9.getCell(i + 1);
       c.value = a;
       c.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF000000' } };
-      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFACC15' } }; // Darker Yellow
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFACC15' } };
       c.alignment = { horizontal: 'center', vertical: 'middle' };
       c.border = border;
     });
@@ -304,7 +409,7 @@
     const subTitle = ws9.getCell(`A${startRow2}`);
     subTitle.value = '가시설 심층 세부 분류체계';
     subTitle.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF991B1B' } };
-    subTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECDD3' } }; // Light Pink
+    subTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECDD3' } };
     subTitle.alignment = { horizontal: 'center', vertical: 'middle' };
     ws9.getRow(startRow2).height = 26;
 
@@ -342,7 +447,7 @@
       const col = i + 1;
       const letter = wl.getColumn(col).letter;
       const vals = lists[k];
-      wl.getColumn(col).width = Math.max(12, Math.min(34, Math.max(4, ...vals.map(s => String(s).length)) * 1.6));
+      wl.getColumn(col).width = Math.max(12, Math.min(36, Math.max(4, ...vals.map(s => String(s).length)) * 1.6));
       const h = wl.getCell(1, col);
       h.value = LIST_TITLES[k] || k;
       h.font = { bold: true, size: 10 };
@@ -363,24 +468,26 @@
     });
 
     // ═════════ Sheet 4. 항목별 법령·수칙 ═════════
-    const wr = wb.addWorksheet('항목별 법령·수칙');
-    wr.columns = [
-      { header: '종류', key: 'kind', width: 13 }, { header: '항목', key: 'name', width: 18 },
-      { header: '대표 유형', key: 'type', width: 12 }, { header: '관련 조문', key: 'law', width: 30 },
-      { header: '주요 기인물', key: 'agents', width: 40 }, { header: '핵심 안전수칙', key: 'rules', width: 70 },
-    ];
-    allItems.forEach(it => wr.addRow({
-      kind: it.kind, name: it.name, type: it.defaultType, law: it.law,
-      agents: it.agents.join(', '), rules: (it.rules || []).map((r, i) => `${i + 1}. ${r}`).join('\n'),
-    }));
-    wr.eachRow((row, idx) => row.eachCell(cell => {
-      cell.border = border; cell.alignment = { vertical: 'middle', wrapText: true }; cell.font = { size: 9, bold: idx === 1 };
-      if (idx === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW } };
-    }));
-    wr.views = [{ state: 'frozen', ySplit: 1 }];
+    if (allItems && allItems.length > 0) {
+      const wr = wb.addWorksheet('항목별 법령·수칙');
+      wr.columns = [
+        { header: '종류', key: 'kind', width: 13 }, { header: '항목', key: 'name', width: 18 },
+        { header: '대표 유형', key: 'type', width: 18 }, { header: '관련 조문', key: 'law', width: 30 },
+        { header: '주요 기인물', key: 'agents', width: 40 }, { header: '핵심 안전수칙', key: 'rules', width: 70 },
+      ];
+      allItems.forEach(it => wr.addRow({
+        kind: it.kind, name: it.name, type: it.defaultType, law: it.law,
+        agents: (it.agents || []).join(', '), rules: (it.rules || []).map((r, i) => `${i + 1}. ${r}`).join('\n'),
+      }));
+      wr.eachRow((row, idx) => row.eachCell(cell => {
+        cell.border = border; cell.alignment = { vertical: 'middle', wrapText: true }; cell.font = { size: 9, bold: idx === 1 };
+        if (idx === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: YELLOW } };
+      }));
+      wr.views = [{ state: 'frozen', ySplit: 1 }];
+    }
 
     return wb;
   }
 
-  return { build, COLS };
+  return { build, COLS, ACCIDENT_LOCATIONS, ACCIDENT_TYPES, WORK_METHODS_9X9, WORK_GROUPS_9X9, INSPECTOR_OPINION_TYPES };
 });
