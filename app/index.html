@@ -276,14 +276,15 @@
             </div>
           </div>
 
-          <!-- 4. 장소 / 작업명 -->
+          <!-- 4. 장소 / 작업방법(공종) -->
           <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
             <div>
               <label class="form-label">장소/위치<span class="required">*</span></label>
-              <input type="text" id="txtLocation" class="form-control" placeholder="예: 106동 5층">
+              <input type="text" id="txtLocation" class="form-control" list="listLocations" placeholder="선택 또는 직접입력">
+              <datalist id="listLocations"></datalist>
             </div>
             <div>
-              <label class="form-label">작업명<span class="required">*</span></label>
+              <label class="form-label">작업방법(공종)<span class="required">*</span></label>
               <input type="text" id="txtWorkName" class="form-control" list="listWorkNames" placeholder="직접입력/선택">
               <datalist id="listWorkNames"></datalist>
             </div>
@@ -422,30 +423,36 @@
           <div class="form-group">
             <label class="form-label">발생원인 4대 요인 (복수 선택)</label>
             <div id="causeChips" class="chip-grid">
-              <button type="button" class="chip" data-cause="인적">인적</button>
-              <button type="button" class="chip" data-cause="물적">물적</button>
-              <button type="button" class="chip" data-cause="기술적">기술적</button>
-              <button type="button" class="chip" data-cause="시스템적">시스템적</button>
+              <button type="button" class="chip" data-cause="계획 미수립">계획 미수립</button>
+              <button type="button" class="chip" data-cause="계획 미이행">계획 미이행</button>
+              <button type="button" class="chip" data-cause="불안전 행동">불안전 행동</button>
+              <button type="button" class="chip" data-cause="불안전 상태">불안전 상태</button>
             </div>
           </div>
 
-          <!-- 8. 현장 인터뷰 및 PM 판정 (장표 전용 상세) -->
+          <!-- 8. 관계자 의견 및 점검자 의견 (3대 분류 포함) -->
           <details style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
             <summary style="font-weight: 700; font-size: 0.84rem; cursor: pointer; color: var(--gray-800);">
-              💬 인터뷰 결과 및 개선대책 (선택 입력)
+              💬 인터뷰 결과 및 관계자·점검자 의견 (선택 입력)
             </summary>
             <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
               <div>
-                <label class="form-label" style="font-size: 0.78rem;">시공관리자 및 근로자 의견</label>
+                <label class="form-label" style="font-size: 0.78rem;">관계자 의견 (시공관리자/근로자)</label>
                 <input type="text" id="txtInterviewOpinion" class="form-control" placeholder="예: 작업 편의를 위해 임의 해체하였음">
               </div>
-              <div>
-                <label class="form-label" style="font-size: 0.78rem;">점검단 제안</label>
-                <input type="text" id="txtAuditProposal" class="form-control" placeholder="예: 안전시설 임의 해체 금지 및 모니터링 강화">
-              </div>
-              <div>
-                <label class="form-label" style="font-size: 0.78rem;">PM 판정결과</label>
-                <input type="text" id="txtPmVerdict" class="form-control" placeholder="예: 시스템 개선 (모니터링 강화 및 즉시 시정)">
+              <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px;">
+                <div>
+                  <label class="form-label" style="font-size: 0.78rem;">점검자 의견 분류</label>
+                  <select id="selInspectorOpinionType" class="form-control" style="font-size: 0.82rem;">
+                    <option value="시스템 개선">시스템 개선</option>
+                    <option value="교육/코칭">교육/코칭</option>
+                    <option value="페널티">페널티</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="form-label" style="font-size: 0.78rem;">점검자 의견</label>
+                  <input type="text" id="txtAuditProposal" class="form-control" placeholder="예: 안전난간 즉시 복구 및 임의 해체 방지 교육">
+                </div>
               </div>
             </div>
           </details>

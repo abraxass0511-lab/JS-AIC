@@ -47,8 +47,10 @@ const records = [
     causes: ['물적', '관리적'],
     inspectedDate: '2026-10-18',
     inspector: '점검자1',
+    photos: ['samples/sample_before.jpg', 'samples/sample_after.jpg'],
     fix: {
       content: '안전난간대 상부/중간난간대 표준규격으로 즉시 재설치 및 점검 완료',
+      photo: 'samples/sample_after.jpg',
       date: '2026-10-18'
     }
   },
@@ -60,32 +62,25 @@ const records = [
     stage: '지하 골조 공사 단계',
     severity: '중부적합',
     subcontractor: '태양전기(주)',
-    inspectRound: '2차',
     content: '지하 분전반 외함 접지 미실시 및 전선 피복 손상 누전 위험',
-    location: '지하 2층 기계실 앞',
-    workName: '가설전기공사',
-    workGroup: '전기공사',
-    kind: '전기설비',
-    item: '분전반',
+    location: '지하실',
+    workName: '설치조립작업',
+    workGroup: '전기/통신공사',
     agent: '접지선',
     type: '감전',
     condition: '접지시설 미설치/불량',
     action: '해당없음',
-    matrixArea: '전기시설',
-    matrixTarget: '분전반',
-    matrixSpec: '',
     rootCauseMgmt: '작업 전 전원 미차단',
     rootCauseSystem: '확인: 일일점검 미실시',
-    stakeholder: '시공담당',
-    mgmtCauses: ['불안전 상태'],
-    holdPoint: false,
+    mgmtCauses: ['불안전 상태', '계획 미이행'],
     interviewOpinion: '임시 전원 배선 작업 중 미처 연결하지 못함',
+    inspectorOpinionType: '시스템 개선',
     auditProposal: '외함 접지 즉시 체결 및 누전차단기 정상동작 점검',
-    pmVerdict: '즉시 시정',
     law: '산업안전보건기준에 관한 규칙 제302조(전기 기계·기구의 접지)',
     causes: ['물적'],
     inspectedDate: '2026-10-18',
-    inspector: '점검자2'
+    inspector: '점검자2',
+    photos: ['samples/sample_before.jpg']
   }
 ];
 
@@ -96,7 +91,19 @@ async function run() {
     taxonomy,
     customValues: {},
     sites: [{ name: '반포 아파트 재건축' }, { name: '판교 오피스 신축공사' }],
-    emptyRows: 5
+    emptyRows: 5,
+    loadImage: async (p) => {
+      try {
+        const candidates = [p, path.join('app', p), path.join('samples/photos', path.basename(p))];
+        for (const c of candidates) {
+          if (fs.existsSync(c)) {
+            const buf = fs.readFileSync(c);
+            return { base64: buf.toString('base64'), extension: 'jpeg' };
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
   });
 
   const sheet1 = wb.getWorksheet('부적합사항대장');
