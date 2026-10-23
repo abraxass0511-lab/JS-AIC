@@ -2483,28 +2483,28 @@ async function renderRecordList(triggerSync = true) {
   let records = [];
   try {
     if (listPeriodMode === 'all') {
-      records = await store.listAll();
+      records = await store.listAll(true);
       if (!records || !records.length) {
-        records = await store.listMonth('2026-10');
+        records = await store.listMonth('2026-10', true);
       }
     } else if (listPeriodMode === 'month') {
       const m = $('#selListMonth')?.value || monthStr();
-      records = await store.listMonth(m);
+      records = await store.listMonth(m, true);
       if ((!records || !records.length) && m !== '2026-10') {
-        records = await store.listMonth('2026-10');
+        records = await store.listMonth('2026-10', true);
       }
     } else {
       const start = $('#txtListStartDate')?.value || `${monthStr()}-01`;
       const end = $('#txtListEndDate')?.value || todayStr();
-      records = await store.listPeriod(start, end);
+      records = await store.listPeriod(start, end, true);
       if (!records || !records.length) {
-        records = await store.listMonth('2026-10');
+        records = await store.listMonth('2026-10', true);
       }
     }
   } catch (e) {
     console.error('List query error, attempting fallback:', e);
     try {
-      records = await store.listMonth('2026-10');
+      records = await store.listMonth('2026-10', true);
     } catch (err2) {
       records = [];
     }

@@ -185,6 +185,14 @@ function markAsDeleted(id) {
   set.add(id);
   localStorage.setItem('sp_deleted_ids', JSON.stringify(Array.from(set)));
 }
+function unmarkAsDeleted(id) {
+  if (!id) return;
+  const set = getDeletedIds();
+  if (set.has(id)) {
+    set.delete(id);
+    localStorage.setItem('sp_deleted_ids', JSON.stringify(Array.from(set)));
+  }
+}
 
 async function rmw(backend, path, mutate, fallback, message) {
   for (let i = 0; i < 4; i++) {
@@ -391,14 +399,25 @@ export const store = {
       const r = await this.backend.readJSON(indexPath(bucket));
       if (r && r.data && Array.isArray(r.data.records)) {
         serverSuccess = true;
+        const activeIds = new Set(r.data.records.map(x => x.id));
+
+        // 서버 records에 존재하는 항목은 활성 레코드이므로 tombstone에서 즉시 해제
+        activeIds.forEach(id => {
+          localDeleted.delete(id);
+          unmarkAsDeleted(id);
+        });
+
         if (Array.isArray(r.data.deletedIds)) {
           r.data.deletedIds.forEach(id => {
-            serverDeleted.add(id);
-            markAsDeleted(id);
+            if (!activeIds.has(id)) {
+              serverDeleted.add(id);
+              markAsDeleted(id);
+            }
           });
         }
         r.data.records.forEach(rec => {
-          if (!serverDeleted.has(rec.id) && !localDeleted.has(rec.id)) {
+          // 활성 레코드는 삭제 목록에 오염되었더라도 원천 복원 및 표시
+          if (!serverDeleted.has(rec.id)) {
             map.set(rec.id, rec);
           }
         });
@@ -410,7 +429,6 @@ export const store = {
     const allDeleted = getDeletedIds();
 
     // 1-1) [인덱스 누락 원천 방지] 서버 records 폴더 목록과 인덱스 교차 검증 (Self-Healing)
-    // 단, 삭제된 항목(allDeleted)은 원천 제외
     if (this.mode === 'github') {
       try {
         const yStr = yearOf(bucket);
@@ -420,11 +438,12 @@ export const store = {
           for (const item of dirRes.data) {
             if (item.name && item.name.endsWith('.json')) {
               const recId = item.name.replace('.json', '');
-              if (!allDeleted.has(recId) && !map.has(recId)) {
+              if (!map.has(recId)) {
                 try {
                   const singleRes = await this.backend.readJSON(`data/${yStr}/records/${mStr}/${item.name}`);
                   if (singleRes && singleRes.data && singleRes.data.id) {
                     map.set(singleRes.data.id, singleRes.data);
+                    unmarkAsDeleted(singleRes.data.id);
                   }
                 } catch (sErr) {}
               }
@@ -443,7 +462,7 @@ export const store = {
             // 서버 기준 정합성 동기화: 로컬 IDB에도 최신 목록으로 업데이트
             await rmw(this.localBackend, indexPath(bucket), cur => {
               cur.records = Array.from(map.values());
-              cur.deletedIds = Array.from(allDeleted);
+              cur.deletedIds = Array.from(allDeleted).filter(id => !map.has(id));
               return cur;
             }, { records: [], deletedIds: [] }, 'sync down to local').catch(() => {});
           } else {
@@ -590,7 +609,10 @@ export const store = {
           const sr = await this.backend.readJSON(indexPath(bucket));
           if (sr && sr.data) {
             if (Array.isArray(sr.data.records)) serverRecords = sr.data.records;
-            if (Array.isArray(sr.data.deletedIds)) serverDeletedIds = sr.data.deletedIds;
+            const activeServerSet = new Set(serverRecords.map(r => r.id));
+            if (Array.isArray(sr.data.deletedIds)) {
+              serverDeletedIds = sr.data.deletedIds.filter(id => !activeServerSet.has(id));
+            }
           }
         } catch (e) {}
 
@@ -601,9 +623,11 @@ export const store = {
           markAsDeleted(id);
         });
 
-        // 로컬 맵에서 삭제된 레코드 제거 (부활 방지)
+        // 로컬 맵에서 삭제된 레코드 제거 (서버에 활성 등록되어 있는 건은 보존)
         for (const delId of deletedIds) {
-          localMap.delete(delId);
+          if (!serverIds.has(delId)) {
+            localMap.delete(delId);
+          }
         }
 
         // 로컬 스토리지에서도 삭제된 데이터 청소
@@ -613,7 +637,7 @@ export const store = {
           if (raw) {
             const arr = JSON.parse(raw);
             if (Array.isArray(arr)) {
-              localStorage.setItem(key, JSON.stringify(arr.filter(r => !deletedIds.has(r.id))));
+              localStorage.setItem(key, JSON.stringify(arr.filter(r => !deletedIds.has(r.id) || serverIds.has(r.id))));
             }
           }
         } catch (e) {}
@@ -655,9 +679,13 @@ export const store = {
             await rmw(this.backend, indexPath(bucket), cur => {
               cur.records = (cur.records || []).filter(r => r.id !== rec.id);
               cur.records.push(rec);
+              if (Array.isArray(cur.deletedIds)) {
+                cur.deletedIds = cur.deletedIds.filter(id => id !== rec.id);
+              }
               return cur;
             }, { records: [] }, msg);
             totalSynced++;
+            unmarkAsDeleted(rec.id);
           } catch (ie) {
             console.warn('인덱스 등록 오류:', bucket, ie);
           }
@@ -737,12 +765,16 @@ export const store = {
 
     // 2) 로컬 IndexedDB 및 localStorage에 영구 보존
     onStep('기록 저장 중');
+    unmarkAsDeleted(rec.id);
     if (this.localBackend) {
       try {
         await rmw(this.localBackend, recordPath(rec), () => rec, {}, msg);
         await rmw(this.localBackend, indexPath(rec.bucket), cur => {
           cur.records = (cur.records || []).filter(r => r.id !== rec.id);
           cur.records.push(rec);
+          if (Array.isArray(cur.deletedIds)) {
+            cur.deletedIds = cur.deletedIds.filter(id => id !== rec.id);
+          }
           return cur;
         }, { records: [] }, msg);
       } catch (le) {
@@ -765,6 +797,9 @@ export const store = {
         await rmw(this.backend, indexPath(rec.bucket), cur => {
           cur.records = (cur.records || []).filter(r => r.id !== rec.id);
           cur.records.push(rec);
+          if (Array.isArray(cur.deletedIds)) {
+            cur.deletedIds = cur.deletedIds.filter(id => id !== rec.id);
+          }
           return cur;
         }, { records: [] }, msg);
       } catch (be) {
