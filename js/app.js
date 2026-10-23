@@ -259,11 +259,11 @@ function populateDatalists() {
   const workMethods = (window.SafeExcel && window.SafeExcel.WORK_METHODS_9X9) || [
     '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
   ];
-  const workGroups = (window.SafeExcel && window.SafeExcel.WORK_GROUPS_9X9) || [
-    '가설공사', '토공사/기초공사', '철근콘크리트공사', '철골공사', '조적/미장/방수공사', '마감/수장공사', '기계설비공사', '전기/통신공사', '해체/철거공사'
+  const workGroups = (window.SafeExcel && window.SafeExcel.WORK_GROUPS) || [
+    '가설공사', '토공사', '기초공사', '철근콘크리트공사', '철골공사', '양중공사', '마감공사', '설비·전기공사', '해체공사', '토목·조경·포장', '공통'
   ];
   addOpts('listWorkGroups', [...new Set([...workGroups, ...tax.workTypes.list.map(w => w.group)])], 'workGroup');
-  addOpts('listWorkNames', [...new Set([...workMethods, ...tax.workTypes.list.flatMap(w => w.works)])], 'workName');
+  addOpts('listWorkNames', workMethods, 'workMethod');
   addOpts('listConditions', (tax9 && tax9.unsafeConditionsList) || tax.unsafeConditions.list, 'condition');
   addOpts('listActions', (tax9 && tax9.unsafeActionsList) || tax.unsafeActions.list, 'action');
 
@@ -664,6 +664,7 @@ function bindEvents() {
       content,
       location,
       workName,
+      workMethod: workName,
       workGroup: workGroupVal,
       kind: $('#txtKind').value.trim(),
       item: $('#txtItem').value.trim(),
@@ -2895,7 +2896,11 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtLaw')) $('#txtLaw').value = rec.law || '';
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
   if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
+  if ($('#txtWorkName')) $('#txtWorkName').value = rec.workMethod || rec.workName || '';
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
+  if ($('#txtKind')) $('#txtKind').value = rec.kind || '';
+  if ($('#txtItem')) $('#txtItem').value = rec.item || '';
+  if ($('#txtAgent')) $('#txtAgent').value = rec.agent || '';
   if ($('#txtInspectRound')) $('#txtInspectRound').value = rec.inspectRound || '1차';
   if ($('#txtType')) $('#txtType').value = rec.type || '';
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
