@@ -438,7 +438,8 @@ export const store = {
           for (const item of dirRes.data) {
             if (item.name && item.name.endsWith('.json')) {
               const recId = item.name.replace('.json', '');
-              if (!map.has(recId)) {
+              const currentDeleted = getDeletedIds();
+              if (!currentDeleted.has(recId) && !map.has(recId)) {
                 try {
                   const singleRes = await this.backend.readJSON(`data/${yStr}/records/${mStr}/${item.name}`);
                   if (singleRes && singleRes.data && singleRes.data.id) {
