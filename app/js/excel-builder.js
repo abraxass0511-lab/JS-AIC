@@ -39,13 +39,13 @@
     '분류불능'
   ];
 
-  // 9×9 기반 공종 (9대 공종)
-  const WORK_GROUPS_9X9 = [
-    '가설공사', '토공사/기초공사', '철근콘크리트공사', '철골공사',
-    '조적/미장/방수공사', '마감/수장공사', '기계설비공사', '전기/통신공사', '해체/철거공사'
+  // 이전 표준 공종 분류 (가설공사, 토공사, 기초공사, 철근콘크리트공사 등)
+  const WORK_GROUPS = [
+    '가설공사', '토공사', '기초공사', '철근콘크리트공사', '철골공사',
+    '양중공사', '마감공사', '설비·전기공사', '해체공사', '토목·조경·포장', '공통'
   ];
 
-  // 9×9 기반 작업방법 (9대 핵심 작업)
+  // 건설안전점검 9×9 기반 작업방법 (9대 핵심 작업)
   const WORK_METHODS_9X9 = [
     '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
     '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
@@ -232,7 +232,7 @@
         types: ACCIDENT_TYPES,
         conditions: add('condition', (tax && tax.unsafeConditions && tax.unsafeConditions.list) || []),
         actions: add('action', (tax && tax.unsafeActions && tax.unsafeActions.list) || []),
-        workGroups: uniq([...WORK_GROUPS_9X9, ...(custom.workGroup || [])]),
+        workGroups: uniq([...WORK_GROUPS, ...(custom.workGroup || [])]),
         workMethods: uniq([...WORK_METHODS_9X9, ...(custom.workMethod || []), ...(custom.workName || [])]),
         agents: add('agent', allItems.flatMap(i => i.agents || [])),
         laws: add('law', allItems.map(i => i.law)),
@@ -489,5 +489,5 @@
     return wb;
   }
 
-  return { build, COLS, ACCIDENT_LOCATIONS, ACCIDENT_TYPES, WORK_METHODS_9X9, WORK_GROUPS_9X9, INSPECTOR_OPINION_TYPES };
+  return { build, COLS, ACCIDENT_LOCATIONS, ACCIDENT_TYPES, WORK_METHODS_9X9, WORK_GROUPS, WORK_GROUPS_9X9: WORK_GROUPS, INSPECTOR_OPINION_TYPES };
 });
