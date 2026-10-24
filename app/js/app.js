@@ -2,7 +2,33 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261018_1';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_law_filter';
+import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_work_rigging_v3';
+
+const WORK_METHODS_9X9 = [
+  '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
+  '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
+];
+
+function resolveDisplayWorkMethod(r) {
+  if (!r) return '양중작업';
+  const wm = (r.workMethod || r.workName || '').trim();
+  if (WORK_METHODS_9X9.includes(wm)) return wm;
+  return inferWorkMethod(r.content || wm);
+}
+
+function resolveDisplayCondition(r) {
+  if (!r) return '해당없음';
+  const c = (r.condition || '').trim();
+  if (c && !['계획 미이행', '불안전 상태', '관리적', '물적', '인적'].includes(c)) return c;
+  return inferCondition(r.content, r.mgmtCauses || r.causes);
+}
+
+function resolveDisplayAction(r) {
+  if (!r) return '해당없음';
+  const a = (r.action || '').trim();
+  if (a && !['계획 미이행', '불안전 행동', '관리적', '물적', '인적'].includes(a)) return a;
+  return inferAction(r.content, r.mgmtCauses || r.causes);
+}
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -857,8 +883,8 @@ function bindEvents() {
       },
       content,
       location,
-      workName,
-      workMethod: workName,
+      workName: (workName === '안전점검' || !workName) ? inferWorkMethod(content) : (WORK_METHODS_9X9.includes(workName) ? workName : inferWorkMethod(content || workName)),
+      workMethod: (workName === '안전점검' || !workName) ? inferWorkMethod(content) : (WORK_METHODS_9X9.includes(workName) ? workName : inferWorkMethod(content || workName)),
       workGroup: workGroupVal,
       agentMajor: $('#txtAgentMajor')?.value.trim() || $('#txtKind')?.value.trim() || '가시설',
       agentMid: $('#txtAgentMid')?.value.trim() || $('#txtItem')?.value.trim() || '비계',
@@ -3185,7 +3211,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         ),
         cardBody,
         (r.workGroup || r.workMethod || r.workName) ? h('div', { style: { fontSize: '0.76rem', color: '#0f766e', background: '#f0fdfa', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
-          `🔨 공종·작업방법: ${r.workGroup || '가설공사'} › ${r.workMethod || r.workName || '고소작업'}`
+          `🔨 공종·작업방법: ${r.workGroup || '가설공사'} › ${resolveDisplayWorkMethod(r)}`
         ) : '',
         (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
           `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate !== undefined && r.progressRate !== null ? r.progressRate : 0}% (${r.stage || '지하 골조 단계'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
@@ -3228,14 +3254,14 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:8px 6px; color:var(--gray-700);">${r.subcontractor || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${r.location || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.workGroup || '가설공사'}</td>
-        <td style="padding:8px 6px; color:var(--gray-700);">${r.workMethod || r.workName || '고소작업'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${resolveDisplayWorkMethod(r)}</td>
         <td style="padding:8px 6px;"><span class="badge" style="font-size:0.74rem;">${accType}</span></td>
         <td style="padding:8px 6px; font-weight:600; color:var(--gray-800);">${agent.major}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${agent.mid}</td>
         <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${agent.minor}</td>
         <td style="padding:8px 6px; color:var(--gray-600); font-size:0.75rem; text-align:left;">${r.law || (r.basis && r.basis.law) || '-'}</td>
-        <td style="padding:8px 6px; color:var(--gray-700);">${r.condition || '-'}</td>
-        <td style="padding:8px 6px; color:var(--gray-700);">${r.action || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${resolveDisplayCondition(r)}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${resolveDisplayAction(r)}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.rootCauseMgmt || (r.basis && r.basis.근본원인_관리감독) || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.rootCauseSystem || (r.basis && r.basis.근본원인_안전시스템) || '-'}</td>
         <td style="padding:8px 4px; font-weight:700; color:${cause1 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause1}</td>
