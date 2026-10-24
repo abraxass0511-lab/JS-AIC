@@ -549,6 +549,7 @@
             <span style="font-size: 0.74rem; color: var(--gray-500); font-weight: normal;">(상·하단 스크롤바 또는 버튼으로 즉시 가로 이동)</span>
           </div>
           <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" id="btnTableBatchJangpyo" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.76rem; background: #1e40af; border-color: #1d4ed8;" title="선택 항목 점검장표 PPT 다운로드">📑 점검장표 PPT 생성</button>
             <button type="button" id="btnScrollTableLeft" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.76rem; background: #ffffff;" title="왼쪽으로 스크롤">◀ 좌로 이동</button>
             <button type="button" id="btnScrollTableRight" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.76rem; background: #ffffff;" title="오른쪽으로 스크롤">▶ 우로 이동</button>
           </div>
@@ -625,20 +626,23 @@
       </div>
     </section>
 
-    <!-- View 3: 1페이지 교육자료 생성기 -->
+    <!-- View 3: 현장 패트롤 점검장표 PPT 생성기 (1p 교육자료 대체) -->
     <section id="viewEdu" class="view-section">
       <div class="card">
-        <div class="card-title">
-          <span>🖼️ 1페이지 근로자 안전교육자료</span>
+        <div class="card-title" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <span>📑 현장 패트롤 점검장표 (PPT 자동 생성)</span>
+          <span style="font-size: 0.78rem; color: #1e40af; background: #eff6ff; border: 1px solid #bfdbfe; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
+            맑은 고딕(Malgun Gothic) 100% 적용
+          </span>
         </div>
         <p style="font-size: 0.88rem; color: var(--gray-600); margin-bottom: 14px; line-height: 1.5;">
-          지적된 부적합과 개선 조치 완료 사진(Before/After), 산안법 핵심 수칙을 합성하여 TBM이나 카톡 공지용 1장 이미지(PNG)로 자동 제작합니다.
+          부적합 항목을 선택하면 공유해주신 점검장표 서식에 맞추어 현장 패트롤 점검장표가 <strong>맑은 고딕 폰트</strong>로 자동 생성됩니다. 아래 미리보기에서 실시간 확인하고 고화질 파워포인트(.pptx) 파일로 바로 다운로드하세요.
         </p>
 
-        <!-- 1p 교육자료 대상 기간 선택기 -->
+        <!-- 점검장표 대상 기간 선택기 -->
         <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
-            <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.82rem;">📅 분석 및 교육 대상 기간</label>
+            <label class="form-label" style="font-weight: 700; margin-bottom: 0; font-size: 0.82rem;">📅 점검 대상 기간 필터</label>
             <div style="display: flex; gap: 4px;">
               <button type="button" id="btnEduModeAll" class="chip selected" style="padding: 3px 8px; font-size: 0.75rem;">전체</button>
               <button type="button" id="btnEduModeMonth" class="chip" style="padding: 3px 8px; font-size: 0.75rem;">월별</button>
@@ -646,7 +650,7 @@
             </div>
           </div>
           <div id="boxEduPeriodAll" style="display: block; font-size: 0.82rem; color: var(--gray-600); padding: 4px 0;">
-            전체 누적된 부적합 데이터 및 종합 통계를 기반으로 교육자료를 생성합니다.
+            등록된 전체 부적합 목록 중에서 점검장표 대상을 선택합니다.
           </div>
           <div id="boxEduPeriodMonth" style="display: none; gap: 8px; align-items: center;">
             <input type="month" id="selEduMonth" class="form-control" style="padding: 6px 10px; font-size: 0.85rem; flex: 1;">
@@ -658,28 +662,37 @@
           </div>
         </div>
         
-        <div class="form-group">
-          <label class="form-label">교육자료 대상 부적합 건 선택</label>
-          <select id="selEduRecord" class="form-control">
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label class="form-label" style="font-weight: 700; color: #1e3a8a;">📋 점검장표 생성 대상 부적합 항목 선택</label>
+          <select id="selEduRecord" class="form-control" style="border: 2px solid #3b82f6; font-size: 0.9rem; padding: 10px 12px; background: #f8fafc; font-weight: 500;">
             <option value="">-- 등록된 부적합 목록 불러오는 중 --</option>
           </select>
         </div>
 
-        <button type="button" id="btnPreviewEdu" class="btn btn-secondary btn-block" style="margin-bottom: 14px;">
-          미리보기 갱신
-        </button>
+        <div style="display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;">
+          <button type="button" id="btnDownloadJangpyoPpt" class="btn btn-primary" style="flex: 2; min-width: 200px; padding: 12px 16px; font-size: 0.9rem; background: #1e40af; border-color: #1d4ed8; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span>📥</span> <strong>선택 항목 점검장표(.pptx) 다운로드</strong>
+          </button>
+          <button type="button" id="btnDownloadAllJangpyoPpt" class="btn btn-outline" style="flex: 1.5; min-width: 180px; padding: 12px 14px; font-size: 0.85rem; color: #1e40af; border-color: #3b82f6; background: #eff6ff; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <span>📑</span> <span>전체 일괄 다운로드(PPT)</span>
+          </button>
+          <button type="button" id="btnPreviewEdu" class="btn btn-secondary" style="padding: 12px 14px; font-size: 0.85rem;">
+            🔄 새로고침
+          </button>
+        </div>
 
-        <!-- 1페이지 미리보기 컨테이너 -->
-        <div id="eduPreviewWrapper" style="overflow-x: auto; background: var(--gray-100); padding: 12px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: center;">
-          <div id="eduContainer"></div>
+        <!-- 16:9 점검장표 실시간 미리보기 컨테이너 -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 0.84rem; font-weight: 700; color: var(--gray-800);">🖥️ 점검장표 PPT 슬라이드 실시간 미리보기 (16:9 와이드)</span>
+          <span style="font-size: 0.74rem; color: #475569;">※ 맑은 고딕 서식 및 실제 다운로드되는 PPT와 동일</span>
+        </div>
+        <div id="eduPreviewWrapper" style="overflow-x: auto; background: #1e293b; padding: 14px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: center; box-shadow: inset 0 2px 6px rgba(0,0,0,0.3);">
+          <div id="eduContainer" style="width: 100%; max-width: 960px;"></div>
         </div>
 
         <div style="display: flex; gap: 8px;">
-          <button type="button" id="btnDownloadEduImg" class="btn btn-primary" style="flex: 2; padding: 14px;">
-            📸 1페이지 교육자료(PNG) 다운로드
-          </button>
-          <button type="button" id="btnEmailEduImg" class="btn btn-outline" style="flex: 1; padding: 14px; border-color: #3b82f6; color: #2563eb; font-weight: 600; white-space: nowrap;">
-            📧 메일 발송
+          <button type="button" id="btnDownloadJangpyoPptBottom" class="btn btn-primary btn-block" style="padding: 14px; font-size: 0.95rem; background: #1e40af; border-color: #1d4ed8;">
+            📥 위 점검장표 파워포인트 (.pptx) 다운로드 (맑은 고딕 폰트)
           </button>
         </div>
       </div>
@@ -783,8 +796,8 @@
       <span>대장 목록</span>
     </button>
     <button class="nav-item" data-view="viewEdu">
-      <span class="icon">🖼️</span>
-      <span>1p 교육자료</span>
+      <span class="icon">📑</span>
+      <span>점검장표 PPT</span>
     </button>
     <button class="nav-item" data-view="viewExport">
       <span class="icon">📑</span>
