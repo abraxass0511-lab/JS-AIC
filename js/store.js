@@ -216,6 +216,7 @@ export const store = {
   users: {},
   _monthCache: new Map(),
   _photoCache: new Map(),
+  _failedPhotos: new Set(),
 
   async init() {
     this.localBackend = new DemoBackend();
@@ -889,21 +890,30 @@ export const store = {
     if (!path) return '';
     if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
+    if (this._failedPhotos.has(path)) return '';
+
     try {
       let blob = null;
       if (this.localBackend) {
         try { blob = await this.localBackend.readBlob(path); } catch (e) {}
       }
-      if (!blob) {
-        blob = await this.backend.readBlob(path);
+      if (!blob && this.backend) {
+        // 네트워크 지연/실패 방지용 800ms 타임아웃
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('photoURL timeout')), 800));
+        try {
+          blob = await Promise.race([this.backend.readBlob(path), timeoutPromise]);
+        } catch (be) {}
       }
-      if (!blob) return path;
+      if (!blob) {
+        this._failedPhotos.add(path);
+        return '';
+      }
       const url = URL.createObjectURL(blob);
       this._photoCache.set(path, url);
       return url;
     } catch (e) {
-      console.warn('photoURL error for:', path, e);
-      return path; // 정적 파일 경로 fallback
+      this._failedPhotos.add(path);
+      return '';
     }
   },
 

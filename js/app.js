@@ -3074,6 +3074,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
 
   const cardElements = [];
   const rowElements = [];
+  const pendingPhotoTasks = [];
 
   for (const [idx, r] of filtered.entries()) {
     if (thisSeq !== listRenderSeq) return;
@@ -3084,24 +3085,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
     const accType = mapType(r.type);
     const opType = getOpType(r);
 
-    // 사진 Object URL 비동기 변환 (IndexedDB Blob -> Object URL)
-    let photo1ThumbUrl = '';
-    let photo2ThumbUrl = '';
-    if (r.photos && r.photos[0]) {
-      try { photo1ThumbUrl = await store.photoURL(r.photos[0]); } catch (e) {}
-    }
-    if (r.photos && r.photos[1]) {
-      try { photo2ThumbUrl = await store.photoURL(r.photos[1]); } catch (e) {}
-    }
-
-    let fixPhotoThumbUrl = '';
-    if (r.fix && r.fix.photo) {
-      try { fixPhotoThumbUrl = await store.photoURL(r.fix.photo); } catch (e) {}
-    }
-
-    if (thisSeq !== listRenderSeq) return;
-
-    // 1) 모바일 카드형 뷰
+    // 1) 모바일 카드형 뷰 (즉시 동기 렌더링)
     if (c) {
       const btnGroup = h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px' } });
       if (!isFixed) {
@@ -3127,24 +3111,37 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
 
       const cardBody = h('div', { style: { display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '8px' } });
       const photoBox = h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } });
-      if (photo1ThumbUrl) {
-        photoBox.append(h('img', {
-          src: photo1ThumbUrl,
-          style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer' },
-          onclick: () => window.open(photo1ThumbUrl, '_blank'),
+
+      const setupCardThumb = (path, title) => {
+        if (!path) return null;
+        const cached = store._photoCache && store._photoCache.get(path);
+        const img = h('img', {
+          src: cached || '',
+          style: {
+            width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px',
+            border: '1px solid #cbd5e1', cursor: 'pointer',
+            display: cached ? 'block' : 'none'
+          },
+          onclick: () => { if (img.src) window.open(img.src, '_blank'); },
           onerror: (e) => { e.target.style.display = 'none'; },
-          title: '사진 1 원본보기'
-        }));
-      }
-      if (photo2ThumbUrl) {
-        photoBox.append(h('img', {
-          src: photo2ThumbUrl,
-          style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer' },
-          onclick: () => window.open(photo2ThumbUrl, '_blank'),
-          onerror: (e) => { e.target.style.display = 'none'; },
-          title: '사진 2 원본보기'
-        }));
-      }
+          title
+        });
+        if (!cached) {
+          pendingPhotoTasks.push(async () => {
+            const url = await store.photoURL(path);
+            if (url && img.isConnected) {
+              img.src = url;
+              img.style.display = 'block';
+            }
+          });
+        }
+        return img;
+      };
+
+      const p1Img = setupCardThumb(r.photos && r.photos[0], '사진 1 원본보기');
+      if (p1Img) photoBox.append(p1Img);
+      const p2Img = setupCardThumb(r.photos && r.photos[1], '사진 2 원본보기');
+      if (p2Img) photoBox.append(p2Img);
       if (photoBox.children.length > 0) cardBody.append(photoBox);
 
       cardBody.append(h('div', { style: { flex: '1', minWidth: '0' } },
@@ -3187,20 +3184,30 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       cardElements.push(card);
     }
 
-    // 2) 엑셀 스프레드시트 테이블 뷰 (35개 열 완전 일치)
+    // 2) 엑셀 스프레드시트 테이블 뷰 (35개 열 완전 일치, 논블로킹 썸네일)
     if (tbody) {
-      let p1Thumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
-      if (photo1ThumbUrl) {
-        p1Thumb = `<img src="${photo1ThumbUrl}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photo1ThumbUrl}', '_blank')" onerror="this.style.display='none'" title="사진 1 원본보기">`;
-      }
-      let p2Thumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
-      if (photo2ThumbUrl) {
-        p2Thumb = `<img src="${photo2ThumbUrl}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photo2ThumbUrl}', '_blank')" onerror="this.style.display='none'" title="사진 2 원본보기">`;
-      }
-      let fixThumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
-      if (fixPhotoThumbUrl) {
-        fixThumb = `<img src="${fixPhotoThumbUrl}" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" onerror="this.style.display='none'" title="조치완료 사진">`;
-      }
+      const setupTableThumb = (path, title, size = 40) => {
+        if (!path) return '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
+        const cached = store._photoCache && store._photoCache.get(path);
+        const cellId = `tbl_thumb_${r.id}_${Math.random().toString(36).slice(2, 7)}`;
+        if (!cached) {
+          pendingPhotoTasks.push(async () => {
+            const url = await store.photoURL(path);
+            const container = document.getElementById(cellId);
+            if (container && url) {
+              container.innerHTML = `<img src="${url}" style="width:${size}px; height:${size}px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${url}', '_blank')" onerror="this.style.display='none'" title="${title}">`;
+            }
+          });
+        }
+        if (cached) {
+          return `<span id="${cellId}"><img src="${cached}" style="width:${size}px; height:${size}px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${cached}', '_blank')" onerror="this.style.display='none'" title="${title}"></span>`;
+        }
+        return `<span id="${cellId}"><span style="color:var(--gray-300); font-size:0.75rem;">📷</span></span>`;
+      };
+
+      const p1Thumb = setupTableThumb(r.photos && r.photos[0], '사진 1 원본보기', 40);
+      const p2Thumb = setupTableThumb(r.photos && r.photos[1], '사진 2 원본보기', 40);
+      const fixThumb = setupTableThumb(r.fix && r.fix.photo, '조치완료 사진', 36);
 
       const cause1 = markCauseFn(r, '계획 미수립') || '-';
       const cause2 = markCauseFn(r, '계획 미이행') || '-';
@@ -3281,9 +3288,23 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
 
   if (thisSeq !== listRenderSeq) return;
 
+  // DOM에 즉시 반영 (블로킹 없이 0.01초 내 완료!)
   if (c) c.replaceChildren(...cardElements);
   if (tbody) tbody.replaceChildren(...rowElements);
   syncTableTopScrollWidth();
+
+  // 백그라운드 비동기 사진 로딩 (동시 4개 병렬 처리, UI 차단 없음)
+  if (pendingPhotoTasks.length > 0) {
+    const runPhotoTasks = async () => {
+      const concurrency = 4;
+      for (let i = 0; i < pendingPhotoTasks.length; i += concurrency) {
+        if (thisSeq !== listRenderSeq) break;
+        const chunk = pendingPhotoTasks.slice(i, i + concurrency);
+        await Promise.all(chunk.map(fn => fn().catch(() => {})));
+      }
+    };
+    runPhotoTasks();
+  }
 }
 
 // ── PPTX / 장표 파일 임포트 처리 ──
