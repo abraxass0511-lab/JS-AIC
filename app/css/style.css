@@ -112,6 +112,13 @@ main {
   max-width: 680px;
   margin: 0 auto;
   padding: 16px;
+  transition: max-width 0.2s ease-in-out;
+}
+
+main:has(#viewEdu.active),
+main:has(#viewExport.active),
+main:has(#viewList.active) {
+  max-width: 1160px;
 }
 
 .view-section {

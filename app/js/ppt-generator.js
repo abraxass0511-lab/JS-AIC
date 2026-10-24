@@ -301,38 +301,33 @@
       margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
     });
 
-    // 5) 4대 발생요인 2x2 격자 (w = 3.00, x = 9.833 ~ 12.833, 중간 가로선/세로선 완벽 구현)
+    // 5) 4대 발생요인 (w = 3.00, x = 9.833 ~ 12.833, 가로선 분할, 원본과 동일하게 굵고 큰 13.5pt 볼드체 적용)
     // 외곽 사각형
     slide.addShape(pptx.ShapeType.rect, {
       x: 9.833, y: 0.40, w: 3.00, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
-    // 내부 가로 구분선 (y = 0.90)
+    // 내부 가로 구분선 (y = 0.90) - 원본 실물에 세로선은 없고 가로선만 존재함
     slide.addShape(pptx.ShapeType.line, {
       x: 9.833, y: 0.90, w: 3.00, h: 0,
-      line: { color: C_BORDER, width: 1 }
+      line: { color: C_BORDER, width: 1.2 }
     });
-    // 내부 세로 구분선 (x = 11.333)
-    slide.addShape(pptx.ShapeType.line, {
-      x: 11.333, y: 0.40, w: 0, h: 1.00,
-      line: { color: C_BORDER, width: 1 }
-    });
-    // 4개 분면 텍스트 (단독 배치로 절대 깨짐 없음)
+    // 4개 분면 텍스트: 원본 실물과 동일하게 13.5pt 굵은 볼드체 및 선명한 체크마크
     slide.addText(`${data.isUnplanned ? '☑' : '☐'} 계획 미수립`, {
       x: 9.833, y: 0.40, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
     slide.addText(`${data.isUnexecuted ? '☑' : '☐'} 계획 미이행`, {
       x: 11.333, y: 0.40, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
     slide.addText(`${data.isAction ? '☑' : '☐'} 불안전 행동`, {
       x: 9.833, y: 0.90, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
     slide.addText(`${data.isCondition ? '☑' : '☐'} 불안전 상태`, {
       x: 11.333, y: 0.90, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
 
     // ── 2. 부적합 개요 행 (y = 1.45, h = 0.85, x = 0.50 ~ 12.833) ──
@@ -342,19 +337,19 @@
     });
     slide.addText('부적합\n개  요', {
       x: 0.50, y: 1.45, w: 0.75, h: 0.85,
-      fontFace: FONT_MALGUN, fontSize: 13, bold: true, color: C_YELLOW_DARK,
+      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000',
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 부적합 개요 1행: 5개 독립 직사각형 (테두리 셀 - 절대 깨지거나 개행되지 않음)
+    // 부적합 개요 1행: 5개 독립 직사각형 (테두리 셀 - 공백 없이 꽉 찬 11pt 볼드 타이포)
     // 협력사 (x = 1.25 ~ 3.55, w = 2.30)
     slide.addShape(pptx.ShapeType.rect, {
       x: 1.25, y: 1.45, w: 2.30, h: 0.42,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '협력사 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
-      { text: data.subcontractor, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+      { text: '협력사 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.subcontractor, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 1.25, y: 1.45, w: 2.30, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
     // 공종명 (x = 3.55 ~ 6.00, w = 2.45)
@@ -363,8 +358,8 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '공종명 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
-      { text: data.workGroup, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+      { text: '공종명 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.workGroup, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 3.55, y: 1.45, w: 2.45, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
     // 작업장소 (x = 6.00 ~ 8.15, w = 2.15)
@@ -373,8 +368,8 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '작업장소 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
-      { text: data.location, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+      { text: '작업장소 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.location, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 6.00, y: 1.45, w: 2.15, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
     // 점검자 (x = 8.15 ~ 10.45, w = 2.30)
@@ -383,8 +378,8 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '점검자 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
-      { text: data.inspector, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+      { text: '점검자 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.inspector, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 8.15, y: 1.45, w: 2.30, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
     // 점검차수 (x = 10.45 ~ 12.833, w = 2.383)
@@ -393,20 +388,20 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '점검차수 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
-      { text: data.inspectRound, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+      { text: '점검차수 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.inspectRound, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 10.45, y: 1.45, w: 2.383, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
-    // 부적합 개요 2행: 부적합 내용 전체 너비 독립 사각형 (x = 1.25 ~ 12.833, w = 11.583, h = 0.43)
+    // 부적합 개요 2행: 부적합 내용 전체 너비 독립 사각형 (x = 1.25 ~ 12.833, w = 11.583, h = 0.43, 11.5pt 볼드)
     slide.addShape(pptx.ShapeType.rect, {
       x: 1.25, y: 1.87, w: 11.583, h: 0.43,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.2 } },
-      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 10.2 } },
-      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 10.2 } },
-      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.2 } }
+      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11.5 } },
+      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11.5 } },
+      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 11.5 } },
+      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11.5 } }
     ], {
       x: 1.25, y: 1.87, w: 11.583, h: 0.43,
       align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
@@ -426,156 +421,154 @@
       }
     }
 
-    // A. 사진 1 빨간 배너 (y = 2.38, h = 0.32: 원본과 같이 상단 라인에 밀착)
+    // A. 사진 1 빨간 배너 (y = 2.38, h = 0.38, 11.5pt 볼드)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 2.38, w: 2.95, h: 0.32,
+      x: 0.50, y: 2.38, w: 2.95, h: 0.38,
       fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
     });
     slide.addText(data.photo1Title, {
-      x: 0.50, y: 2.38, w: 2.95, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+      x: 0.50, y: 2.38, w: 2.95, h: 0.38,
+      fontFace: FONT_MALGUN, fontSize: 11.5, bold: true, color: 'FFFFFF',
       align: 'center', valign: 'middle'
     });
 
-    // 사진 1 이미지 (y = 2.70, h = 3.30, 하단 y = 6.00에 정확히 종료)
+    // 사진 1 이미지 (y = 2.76, h = 3.29, 하단 y = 6.05에 정확히 종료)
     if (photo1Base64) {
-      slide.addImage({ data: photo1Base64, x: 0.50, y: 2.70, w: 2.95, h: 3.30 });
+      slide.addImage({ data: photo1Base64, x: 0.50, y: 2.76, w: 2.95, h: 3.29 });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 0.50, y: 2.70, w: 2.95, h: 3.30,
+        x: 0.50, y: 2.76, w: 2.95, h: 3.29,
         fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
       });
       slide.addText('📸 사진 1', {
-        x: 0.50, y: 2.70, w: 2.95, h: 3.30,
+        x: 0.50, y: 2.76, w: 2.95, h: 3.29,
         fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
       });
     }
 
-    // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.32, 사진 1 배너 및 우측 발생원인 헤더와 동일 수평선)
+    // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.38, 11pt 볼드)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 3.55, y: 2.38, w: 2.95, h: 0.32,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+      x: 3.55, y: 2.38, w: 2.95, h: 0.38,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText(data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)', {
-      x: 3.55, y: 2.38, w: 2.95, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 9.5, color: C_GRAY_TEXT, align: 'center', valign: 'middle'
+      x: 3.55, y: 2.38, w: 2.95, h: 0.38,
+      fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: '333333', align: 'center', valign: 'middle'
     });
 
-    // 사진 2 빨간 배너 (y = 2.70, h = 0.32)
+    // 사진 2 빨간 배너 (y = 2.76, h = 0.38, 11.5pt 볼드)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 3.55, y: 2.70, w: 2.95, h: 0.32,
+      x: 3.55, y: 2.76, w: 2.95, h: 0.38,
       fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
     });
     slide.addText(data.photo2Title, {
-      x: 3.55, y: 2.70, w: 2.95, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+      x: 3.55, y: 2.76, w: 2.95, h: 0.38,
+      fontFace: FONT_MALGUN, fontSize: 11.5, bold: true, color: 'FFFFFF',
       align: 'center', valign: 'middle'
     });
 
-    // 사진 2 이미지 (y = 3.02, h = 2.98, 하단 y = 6.00에 정확히 종료하여 사진 1과 바닥선 일치!)
+    // 사진 2 이미지 (y = 3.14, h = 2.91, 하단 y = 6.05에 정확히 종료하여 사진 1과 바닥선 완벽 일치!)
     if (photo2Base64) {
-      slide.addImage({ data: photo2Base64, x: 3.55, y: 3.02, w: 2.95, h: 2.98 });
+      slide.addImage({ data: photo2Base64, x: 3.55, y: 3.14, w: 2.95, h: 2.91 });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 3.55, y: 3.02, w: 2.95, h: 2.98,
+        x: 3.55, y: 3.14, w: 2.95, h: 2.91,
         fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
       });
       slide.addText('📸 사진 2', {
-        x: 3.55, y: 3.02, w: 2.95, h: 2.98,
+        x: 3.55, y: 3.14, w: 2.95, h: 2.91,
         fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
       });
     }
 
-    // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (y = 2.38, h = 0.32)
+    // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (y = 2.38, h = 0.38, 16pt 굵은 볼드체 블랙 적용)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 2.38, w: 6.233, h: 0.32,
-      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
+      x: 6.60, y: 2.38, w: 6.233, h: 0.38,
+      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('발생원인 (인터뷰 결과)', {
-      x: 6.60, y: 2.38, w: 6.233, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
+      x: 6.60, y: 2.38, w: 6.233, h: 0.38,
+      fontFace: FONT_MALGUN, fontSize: 16, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 우측 구역 1: [의견 : 안전관리자 및 시공관리자] (y = 2.70, h = 1.05, 상단 정렬)
+    // 우측 구역 1: [의견 : 안전관리자 및 시공관리자] (y = 2.76, h = 1.05, 11.5pt 볼드 타이틀 + 10.5pt 본문)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 2.70, w: 6.233, h: 1.05,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+      x: 6.60, y: 2.76, w: 6.233, h: 1.05,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 9.8, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.interviewOpinion, options: { fontSize: 9.0, color: '222222', fontFace: FONT_MALGUN } }
+      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.interviewOpinion, options: { fontSize: 10.5, color: '222222', fontFace: FONT_MALGUN } }
     ], {
-      x: 6.60, y: 2.70, w: 6.233, h: 1.05,
-      margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
+      x: 6.60, y: 2.76, w: 6.233, h: 1.05,
+      margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.35
     });
 
-    // 우측 구역 2: [점검단 제안] (y = 3.75, h = 1.20)
+    // 우측 구역 2: [점검단 제안] (y = 3.81, h = 1.15, 단일 외곽선 + 단일 수직 분리선으로 점선 현상 방지)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 3.75, w: 1.65, h: 1.20,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+      x: 6.60, y: 3.81, w: 6.233, h: 1.15,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
+    });
+    slide.addShape(pptx.ShapeType.line, {
+      x: 8.25, y: 3.81, w: 0, h: 1.15,
+      line: { color: C_BORDER, width: 1.2 }
     });
     slide.addText([
-      { text: '[점검단 제안]\n', options: { fontSize: 9.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `${data.proposalType}\n`, options: { fontSize: 14, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.proposalSub, options: { fontSize: 8.5, color: '595959', fontFace: FONT_MALGUN } }
+      { text: '[점검단 제안]\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `${data.proposalType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
+      { text: data.proposalSub, options: { fontSize: 10, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 6.60, y: 3.75, w: 1.65, h: 1.20,
+      x: 6.60, y: 3.81, w: 1.65, h: 1.15,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
-    });
-
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 8.25, y: 3.75, w: 4.583, h: 1.20,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText(data.proposalContent, {
-      x: 8.25, y: 3.75, w: 4.583, h: 1.20,
-      fontFace: FONT_MALGUN, fontSize: 9.0, color: '000000', margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
+      x: 8.25, y: 3.81, w: 4.583, h: 1.15,
+      fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000', margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.35
     });
 
-    // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 4.95, h = 0.32)
+    // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 4.96, h = 0.38, 16pt 굵은 볼드체 블랙 적용)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 4.95, w: 6.233, h: 0.32,
-      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
+      x: 6.60, y: 4.96, w: 6.233, h: 0.38,
+      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('개선대책 (현장 협의 결과)', {
-      x: 6.60, y: 4.95, w: 6.233, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
+      x: 6.60, y: 4.96, w: 6.233, h: 0.38,
+      fontFace: FONT_MALGUN, fontSize: 16, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 우측 구역 4: 개선대책 본문 & PM 판정결과 (y = 5.27, h = 1.78)
+    // 우측 구역 4: 개선대책 본문 & PM 판정결과 (y = 5.34, h = 1.71, 단일 외곽선 + 깔끔한 1.2pt 수직 실선 분리)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 5.27, w: 4.583, h: 1.78,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+      x: 6.60, y: 5.34, w: 6.233, h: 1.71,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
+    });
+    slide.addShape(pptx.ShapeType.line, {
+      x: 11.183, y: 5.34, w: 0, h: 1.71,
+      line: { color: C_BORDER, width: 1.2 }
     });
     slide.addText(data.countermeasureContent, {
-      x: 6.60, y: 5.27, w: 4.583, h: 1.78,
-      fontFace: FONT_MALGUN, fontSize: 9.2, color: '000000', margin: [8, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.30
-    });
-
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 11.183, y: 5.27, w: 1.65, h: 1.78,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+      x: 6.60, y: 5.34, w: 4.583, h: 1.71,
+      fontFace: FONT_MALGUN, fontSize: 11.5, color: '000000', margin: [8, 12, 6, 12], valign: 'top', lineSpacingMultiple: 1.40
     });
     slide.addText([
-      { text: '[PM 판정결과]\n\n', options: { fontSize: 9.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `${data.pmVerdictType}\n`, options: { fontSize: 14, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.pmVerdictSub, options: { fontSize: 8.5, color: '595959', fontFace: FONT_MALGUN } }
+      { text: '[PM 판정결과]\n\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `${data.pmVerdictType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
+      { text: data.pmVerdictSub, options: { fontSize: 10, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 11.183, y: 5.27, w: 1.65, h: 1.78,
+      x: 11.183, y: 5.34, w: 1.65, h: 1.71,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // ── 좌측 하단 규정 수칙 박스 (줄걸이 작업자의 책임: y = 6.05, h = 1.00, 바닥선 y = 7.05로 우측과 동일!) ──
+    // ── 좌측 하단 규정 수칙 박스 (줄걸이 작업자의 책임: y = 6.05, h = 1.00, 바닥선 y = 7.05로 우측과 완벽 일치!) ──
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.50, y: 6.05, w: 6.00, h: 1.00,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: `${data.guidelineTitle}\n`, options: { fontSize: 10, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.guidelineBody, options: { fontSize: 9.0, color: '222222', fontFace: FONT_MALGUN } }
+      { text: `${data.guidelineTitle}\n`, options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.guidelineBody, options: { fontSize: 10.2, color: '222222', fontFace: FONT_MALGUN } }
     ], {
       x: 0.50, y: 6.05, w: 6.00, h: 1.00,
-      margin: [6, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.30
+      margin: [6, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.35
     });
   }
 
@@ -641,12 +634,12 @@
     const data = normalizeJangpyoData(record, rulesFromTaxonomy);
 
     const photo1Img = photo1Url 
-      ? `<img src="${photo1Url}" style="width: 100%; height: 265px; object-fit: cover; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: 265px; background: #f8fafc; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 1</div>`;
+      ? `<img src="${photo1Url}" style="width: 100%; height: 250px; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      : `<div style="width: 100%; height: 250px; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 1</div>`;
 
     const photo2Img = photo2Url
-      ? `<img src="${photo2Url}" style="width: 100%; height: 235px; object-fit: cover; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: 235px; background: #f8fafc; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 2</div>`;
+      ? `<img src="${photo2Url}" style="width: 100%; height: 222px; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      : `<div style="width: 100%; height: 222px; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 2</div>`;
 
     return `
       <div id="jangpyoSlidePreview" style="
@@ -680,25 +673,29 @@
           </div>
           <!-- 4) 관련기준 내용 (상단 정렬) -->
           <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 5px 10px; display: flex; flex-direction: column; justify-content: flex-start; word-break: keep-all;">
-            <div style="font-weight: 700; font-size: 0.84rem; color: #000000; margin-bottom: 2px;">${data.lawTitle}</div>
-            <div style="font-size: 0.76rem; color: #222222; line-height: 1.30;">${data.lawBody}</div>
+            <div style="font-weight: 800; font-size: 0.88rem; color: #000000; margin-bottom: 2px;">${data.lawTitle}</div>
+            <div style="font-size: 0.78rem; color: #222222; line-height: 1.30;">${data.lawBody}</div>
           </div>
-          <!-- 5) 4대 발생요인 2x2 격자 표 (가운데 가로줄/세로줄 구현) -->
-          <div style="width: 250px; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
-            <div style="flex: 1; display: flex; border-bottom: 1px solid #7ba0cd;">
-              <div style="flex: 1; border-right: 1px solid #7ba0cd; display: flex; align-items: center; padding: 0 8px; font-size: 0.80rem; font-weight: 600;">
-                ${data.isUnplanned ? '☑' : '☐'} 계획 미수립
+          <!-- 5) 4대 발생요인 2단 표 (세로선 없이 가로선만, 큰 폰트와 굵은 볼드체 원본 동일) -->
+          <div style="width: 275px; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
+            <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #7ba0cd; padding: 0 14px;">
+              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnplanned ? '✔' : ''}</span>
+                계획 미수립
               </div>
-              <div style="flex: 1; display: flex; align-items: center; padding: 0 8px; font-size: 0.80rem; font-weight: 600;">
-                ${data.isUnexecuted ? '☑' : '☐'} 계획 미이행
+              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnexecuted ? '✔' : ''}</span>
+                계획 미이행
               </div>
             </div>
-            <div style="flex: 1; display: flex;">
-              <div style="flex: 1; border-right: 1px solid #7ba0cd; display: flex; align-items: center; padding: 0 8px; font-size: 0.80rem; font-weight: 600;">
-                ${data.isAction ? '☑' : '☐'} 불안전 행동
+            <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 14px;">
+              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isAction ? '✔' : ''}</span>
+                불안전 행동
               </div>
-              <div style="flex: 1; display: flex; align-items: center; padding: 0 8px; font-size: 0.80rem; font-weight: 600;">
-                ${data.isCondition ? '☑' : '☐'} 불안전 상태
+              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isCondition ? '✔' : ''}</span>
+                불안전 상태
               </div>
             </div>
           </div>
@@ -707,35 +704,35 @@
         <!-- 2. 부적합 개요 행 (5개 독립 네모칸 격자 + 2행 부적합 내용) -->
         <div style="display: grid; grid-template-columns: 65px 1fr; border: 1.5px solid #7ba0cd; margin-bottom: 4px;">
           <!-- 좌측 노란 헤더 -->
-          <div style="background: #ffe699; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.92rem; color: #593e00; text-align: center; line-height: 1.2; padding: 4px;">
+          <div style="background: #ffe699; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.05rem; color: #000000; text-align: center; line-height: 1.2; padding: 4px;">
             부적합<br>개&nbsp;&nbsp;요
           </div>
           <!-- 우측 2행 표 구조 -->
           <div style="display: flex; flex-direction: column;">
             <!-- 1행: 5개 독립 네모칸 -->
-            <div style="display: flex; border-bottom: 1px solid #7ba0cd; background: #ffffff;">
-              <div style="flex: 1; border-right: 1px solid #7ba0cd; padding: 4px 6px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #002060;">협력사 :</strong> ${data.subcontractor}
+            <div style="display: flex; border-bottom: 1.5px solid #7ba0cd; background: #ffffff;">
+              <div style="flex: 1.05; border-right: 1px solid #7ba0cd; padding: 5px 8px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <strong style="color: #002060;">협력사 :</strong> <span style="font-weight: 700; color: #000000;">${data.subcontractor}</span>
               </div>
-              <div style="flex: 1.1; border-right: 1px solid #7ba0cd; padding: 4px 6px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #002060;">공종명 :</strong> ${data.workGroup}
+              <div style="flex: 1.15; border-right: 1px solid #7ba0cd; padding: 5px 8px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <strong style="color: #002060;">공종명 :</strong> <span style="font-weight: 700; color: #000000;">${data.workGroup}</span>
               </div>
-              <div style="flex: 0.9; border-right: 1px solid #7ba0cd; padding: 4px 6px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #002060;">작업장소 :</strong> ${data.location}
+              <div style="flex: 0.95; border-right: 1px solid #7ba0cd; padding: 5px 8px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <strong style="color: #002060;">작업장소 :</strong> <span style="font-weight: 700; color: #000000;">${data.location}</span>
               </div>
-              <div style="flex: 1; border-right: 1px solid #7ba0cd; padding: 4px 6px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #002060;">점검자 :</strong> ${data.inspector}
+              <div style="flex: 1.05; border-right: 1px solid #7ba0cd; padding: 5px 8px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <strong style="color: #002060;">점검자 :</strong> <span style="font-weight: 700; color: #000000;">${data.inspector}</span>
               </div>
-              <div style="flex: 1; padding: 4px 6px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #002060;">점검차수 :</strong> ${data.inspectRound}
+              <div style="flex: 1.05; padding: 5px 8px; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <strong style="color: #002060;">점검차수 :</strong> <span style="font-weight: 700; color: #000000;">${data.inspectRound}</span>
               </div>
             </div>
             <!-- 2행: 부적합 내용 전체 너비 -->
-            <div style="padding: 4px 8px; font-size: 0.84rem; background: #ffffff;">
+            <div style="padding: 5px 10px; font-size: 0.95rem; background: #ffffff; line-height: 1.4;">
               <strong style="color: #002060;">부적합 내용 :</strong>
-              <span style="font-weight: 700; color: #000000;"> ${data.mainContentParts.prefix}</span>
-              ${data.mainContentParts.highlight ? `<span style="font-weight: 800; color: #c00000;">${data.mainContentParts.highlight}</span>` : ''}
-              ${data.mainContentParts.suffix ? `<span style="font-weight: 700; color: #002060;">${data.mainContentParts.suffix}</span>` : ''}
+              <span style="font-weight: 800; color: #000000;"> ${data.mainContentParts.prefix}</span>
+              ${data.mainContentParts.highlight ? `<span style="font-weight: 900; color: #c00000;">${data.mainContentParts.highlight}</span>` : ''}
+              ${data.mainContentParts.suffix ? `<span style="font-weight: 800; color: #002060;">${data.mainContentParts.suffix}</span>` : ''}
             </div>
           </div>
         </div>
@@ -748,17 +745,17 @@
             <div style="display: flex; gap: 4px;">
               <!-- 사진 1 컬럼 (상단 배너 밀착 시작, 사진 2와 동일 바닥선 정렬) -->
               <div style="flex: 1; display: flex; flex-direction: column;">
-                <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.80rem; text-align: center; padding: 4px 6px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+                <div style="background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.86rem; text-align: center; padding: 4px 6px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
                   ${data.photo1Title}
                 </div>
                 ${photo1Img}
               </div>
               <!-- 사진 2 컬럼 (상단에 Hold Point 위반 박스가 위치!) -->
               <div style="flex: 1; display: flex; flex-direction: column;">
-                <div style="background: #ffffff; border: 1px solid #7ba0cd; border-radius: 2px 2px 0 0; text-align: center; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 0.78rem; color: #595959; font-weight: 600;">
+                <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px 2px 0 0; text-align: center; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #333333; font-weight: 700;">
                   ${data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)'}
                 </div>
-                <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.80rem; text-align: center; padding: 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+                <div style="background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.86rem; text-align: center; padding: 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
                   ${data.photo2Title}
                 </div>
                 ${photo2Img}
@@ -766,48 +763,48 @@
             </div>
 
             <!-- 사진 하단 규정 수칙 박스 (상단 정렬) -->
-            <div style="background: #ffffff; border: 1px solid #7ba0cd; border-radius: 2px; padding: 6px 10px; font-size: 0.78rem; word-break: keep-all; line-height: 1.35;">
-              <div style="color: #000000; font-weight: 800; font-size: 0.84rem; margin-bottom: 2px;">${data.guidelineTitle}</div>
-              <div style="color: #222222; white-space: pre-line;">${data.guidelineBody}</div>
+            <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px; padding: 8px 12px; font-size: 0.88rem; word-break: keep-all; line-height: 1.45;">
+              <div style="color: #000000; font-weight: 800; font-size: 0.95rem; margin-bottom: 4px;">${data.guidelineTitle}</div>
+              <div style="color: #222222; font-weight: 500; white-space: pre-line;">${data.guidelineBody}</div>
             </div>
           </div>
 
-          <!-- 우측 컬럼 (발생원인 및 개선대책) -->
+          <!-- 우측 컬럼 (발생원인 및 개선대책 - 원본과 동일하게 굵은 볼드체 및 공백 완전 제거) -->
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <!-- 발생원인 (인터뷰 결과) -->
-            <div style="border: 1px solid #7ba0cd; border-radius: 2px; overflow: hidden;">
-              <div style="background: #ffe699; color: #593e00; font-weight: 800; font-size: 0.90rem; text-align: center; padding: 4px 6px; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+            <div style="border: 1.5px solid #7ba0cd; border-radius: 2px; overflow: hidden;">
+              <div style="background: #ffe699; color: #000000; font-weight: 900; font-size: 1.15rem; text-align: center; padding: 4px 6px; height: 30px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px;">
                 발생원인 (인터뷰 결과)
               </div>
-              <div style="padding: 6px 8px; background: #ffffff; border-bottom: 1px solid #7ba0cd; word-break: keep-all; min-height: 80px;">
-                <div style="font-weight: 700; font-size: 0.82rem; color: #000000; margin-bottom: 2px;">[의견 : 안전관리자 및 시공관리자]</div>
-                <div style="font-size: 0.78rem; color: #222222; line-height: 1.30;">${data.interviewOpinion}</div>
+              <div style="padding: 8px 12px; background: #ffffff; border-bottom: 1.5px solid #7ba0cd; word-break: keep-all;">
+                <div style="font-weight: 800; font-size: 0.95rem; color: #000000; margin-bottom: 4px;">[의견 : 안전관리자 및 시공관리자]</div>
+                <div style="font-size: 0.88rem; font-weight: 500; color: #111111; line-height: 1.45;">${data.interviewOpinion}</div>
               </div>
-              <div style="display: grid; grid-template-columns: 105px 1fr; background: #ffffff; min-height: 80px;">
-                <div style="background: #ffffff; border-right: 1px solid #7ba0cd; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 4px; text-align: center;">
-                  <div style="font-size: 0.78rem; font-weight: 700; color: #000000;">[점검단 제안]</div>
-                  <div style="font-size: 1.10rem; font-weight: 800; color: #002060; margin: 2px 0 1px 0;">${data.proposalType}</div>
-                  <div style="font-size: 0.70rem; color: #595959;">${data.proposalSub}</div>
+              <div style="display: grid; grid-template-columns: 125px 1fr; background: #ffffff;">
+                <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 4px; text-align: center;">
+                  <div style="font-size: 0.90rem; font-weight: 800; color: #000000;">[점검단 제안]</div>
+                  <div style="font-size: 1.30rem; font-weight: 900; color: #002060; margin: 3px 0 2px 0;">${data.proposalType}</div>
+                  <div style="font-size: 0.78rem; font-weight: 600; color: #555555;">${data.proposalSub}</div>
                 </div>
-                <div style="padding: 6px 8px; font-size: 0.78rem; color: #000000; line-height: 1.30; display: flex; align-items: flex-start; word-break: keep-all;">
+                <div style="padding: 10px 14px; font-size: 0.90rem; font-weight: 500; color: #000000; line-height: 1.45; display: flex; align-items: center; word-break: keep-all;">
                   ${data.proposalContent}
                 </div>
               </div>
             </div>
 
             <!-- 개선대책 (현장 협의 결과) -->
-            <div style="border: 1px solid #7ba0cd; border-radius: 2px; overflow: hidden;">
-              <div style="background: #ffe699; color: #593e00; font-weight: 800; font-size: 0.90rem; text-align: center; padding: 4px 6px; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+            <div style="border: 1.5px solid #7ba0cd; border-radius: 2px; overflow: hidden;">
+              <div style="background: #ffe699; color: #000000; font-weight: 900; font-size: 1.15rem; text-align: center; padding: 4px 6px; height: 30px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px;">
                 개선대책 (현장 협의 결과)
               </div>
-              <div style="display: grid; grid-template-columns: 1fr 105px; background: #ffffff; min-height: 125px;">
-                <div style="padding: 8px 10px; font-size: 0.80rem; color: #000000; border-right: 1px solid #7ba0cd; word-break: keep-all; line-height: 1.35; display: flex; align-items: flex-start;">
+              <div style="display: grid; grid-template-columns: 1fr 125px; background: #ffffff;">
+                <div style="padding: 12px 14px; font-size: 0.92rem; font-weight: 600; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all; line-height: 1.50; display: flex; align-items: center;">
                   ${data.countermeasureContent}
                 </div>
-                <div style="background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 4px; text-align: center;">
-                  <div style="font-size: 0.78rem; font-weight: 700; color: #000000;">[PM 판정결과]</div>
-                  <div style="font-size: 1.10rem; font-weight: 800; color: #002060; margin: 2px 0 1px 0;">${data.pmVerdictType}</div>
-                  <div style="font-size: 0.70rem; color: #595959;">${data.pmVerdictSub}</div>
+                <div style="background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 4px; text-align: center;">
+                  <div style="font-size: 0.90rem; font-weight: 800; color: #000000;">[PM 판정결과]</div>
+                  <div style="font-size: 1.30rem; font-weight: 900; color: #002060; margin: 3px 0 2px 0;">${data.pmVerdictType}</div>
+                  <div style="font-size: 0.78rem; font-weight: 600; color: #555555;">${data.pmVerdictSub}</div>
                 </div>
               </div>
             </div>
