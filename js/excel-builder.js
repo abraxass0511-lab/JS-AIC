@@ -690,5 +690,18 @@
     return wb;
   }
 
-  return { build, COLS, ACCIDENT_LOCATIONS, ACCIDENT_TYPES, WORK_METHODS_9X9, WORK_GROUPS, WORK_GROUPS_9X9: WORK_GROUPS, INSPECTOR_OPINION_TYPES };
+  return {
+    build,
+    COLS,
+    ACCIDENT_LOCATIONS,
+    ACCIDENT_TYPES,
+    WORK_METHODS_9X9,
+    WORK_GROUPS,
+    WORK_GROUPS_9X9: WORK_GROUPS,
+    INSPECTOR_OPINION_TYPES,
+    resolveAgentHierarchy,
+    mapAccidentType,
+    markCause,
+    getInspectorOpinionType
+  };
 });

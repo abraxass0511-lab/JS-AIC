@@ -24,6 +24,8 @@ let currentEduRecords = [];
 let currentEduPeriodLabel = '';
 let currentManualSeverity = '중부적합';
 let importedRecords = []; // [{ severity, type, law, subcontractor, ... }]
+let listRenderSeq = 0;
+let isSyncingInProgress = false;
 
 // ── App Init ──
 window.addEventListener('DOMContentLoaded', async () => {
@@ -1330,22 +1332,53 @@ function bindEvents() {
     recordViewMode = 'card';
     $('#recordListContainer').style.display = 'flex';
     $('#recordTableContainer').style.display = 'none';
+    if ($('#recordTableScrollToolbar')) $('#recordTableScrollToolbar').style.display = 'none';
+    if ($('#recordTableTopScroll')) $('#recordTableTopScroll').style.display = 'none';
     $('#btnViewCard').classList.remove('btn-outline');
     $('#btnViewCard').classList.add('btn-primary');
     $('#btnViewTable').classList.remove('btn-primary');
     $('#btnViewTable').classList.add('btn-outline');
-    renderRecordList();
+    renderRecordList(false);
   });
 
   $('#btnViewTable')?.addEventListener('click', () => {
     recordViewMode = 'table';
     $('#recordListContainer').style.display = 'none';
     $('#recordTableContainer').style.display = 'block';
+    if ($('#recordTableScrollToolbar')) $('#recordTableScrollToolbar').style.display = 'flex';
+    if ($('#recordTableTopScroll')) $('#recordTableTopScroll').style.display = 'block';
+    syncTableTopScrollWidth();
     $('#btnViewTable').classList.remove('btn-outline');
     $('#btnViewTable').classList.add('btn-primary');
     $('#btnViewCard').classList.remove('btn-primary');
     $('#btnViewCard').classList.add('btn-outline');
-    renderRecordList();
+    renderRecordList(false);
+  });
+
+  // 상단 스크롤바 & 본체 스크롤바 양방향 동기화 및 즉시 좌우 이동 버튼
+  const topScroll = $('#recordTableTopScroll');
+  const tableContainer = $('#recordTableContainer');
+  if (topScroll && tableContainer) {
+    let isSyncingScroll = false;
+    topScroll.addEventListener('scroll', () => {
+      if (isSyncingScroll) return;
+      isSyncingScroll = true;
+      tableContainer.scrollLeft = topScroll.scrollLeft;
+      requestAnimationFrame(() => { isSyncingScroll = false; });
+    });
+    tableContainer.addEventListener('scroll', () => {
+      if (isSyncingScroll) return;
+      isSyncingScroll = true;
+      topScroll.scrollLeft = tableContainer.scrollLeft;
+      requestAnimationFrame(() => { isSyncingScroll = false; });
+    });
+  }
+
+  $('#btnScrollTableLeft')?.addEventListener('click', () => {
+    tableContainer?.scrollBy({ left: -360, behavior: 'smooth' });
+  });
+  $('#btnScrollTableRight')?.addEventListener('click', () => {
+    tableContainer?.scrollBy({ left: 360, behavior: 'smooth' });
   });
 
   const refreshBtn = $('#btnRefreshList');
@@ -2681,8 +2714,19 @@ function clearDraft() {
   $('#saveStatus').textContent = '';
 }
 
+// ── 가로 스크롤 동기화 도우미 ──
+function syncTableTopScrollWidth() {
+  const tbl = $('#tblRecords');
+  const dummy = $('#recordTableTopScrollDummy');
+  if (tbl && dummy) {
+    const w = Math.max(tbl.scrollWidth, tbl.offsetWidth, 2750);
+    dummy.style.width = w + 'px';
+  }
+}
+
 // ── Record List View ──
 async function renderRecordList(triggerSync = true) {
+  const thisSeq = ++listRenderSeq;
   const c = $('#recordListContainer');
   const tbody = $('#tblRecordsBody');
 
@@ -2690,23 +2734,41 @@ async function renderRecordList(triggerSync = true) {
   if (!store.user) {
     const msg = '🔒 부적합 대장은 PIN 번호 인증된 점검자만 열람할 수 있습니다.';
     if (c) c.innerHTML = `<div style="text-align:center; padding:36px; color:var(--gray-600); font-weight:600; background:#f8fafc; border-radius:10px; border:1px dashed #cbd5e1;">${msg}</div>`;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:36px; color:var(--gray-600); font-weight:600;">${msg}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="36" style="padding:36px; color:var(--gray-600); font-weight:600;">${msg}</td></tr>`;
     showPinModal();
     return;
   }
 
-  // 로그인 상태에서 진입 시 로컬 미동기화 건을 백그라운드로 자동 업로드
-  if (triggerSync && store.mode === 'github') {
+  // 뷰 모드 표시 상태 동기화 (카드 vs 엑셀 표)
+  if (recordViewMode === 'table') {
+    if (c) c.style.display = 'none';
+    if ($('#recordTableContainer')) $('#recordTableContainer').style.display = 'block';
+    if ($('#recordTableScrollToolbar')) $('#recordTableScrollToolbar').style.display = 'flex';
+    if ($('#recordTableTopScroll')) $('#recordTableTopScroll').style.display = 'block';
+  } else {
+    if (c) c.style.display = 'flex';
+    if ($('#recordTableContainer')) $('#recordTableContainer').style.display = 'none';
+    if ($('#recordTableScrollToolbar')) $('#recordTableScrollToolbar').style.display = 'none';
+    if ($('#recordTableTopScroll')) $('#recordTableTopScroll').style.display = 'none';
+  }
+
+  // 로그인 상태에서 진입 시 로컬 미동기화 건을 백그라운드로 자동 업로드 (중복 호출 방지 락)
+  if (triggerSync && store.mode === 'github' && !isSyncingInProgress) {
+    isSyncingInProgress = true;
     store.syncLocalToServer().then(res => {
+      isSyncingInProgress = false;
       if (res && res.synced > 0) {
         toast(`🔄 휴대폰 로컬 보관 데이터 ${res.synced}건이 클라우드에 자동 동기화되었습니다!`, 'success', 3500);
         renderRecordList(false);
       }
-    }).catch(e => console.warn('Auto sync warning:', e));
+    }).catch(e => {
+      isSyncingInProgress = false;
+      console.warn('Auto sync warning:', e);
+    });
   }
 
   if (c) c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
-  if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="36" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
   
   if ($('#chkAllRecords')) $('#chkAllRecords').checked = false;
   updateSelectedCount();
@@ -2741,9 +2803,20 @@ async function renderRecordList(triggerSync = true) {
     }
   }
 
-  currentLoadedRecords = records || [];
+  // 더 최근 렌더 호출이 이미 시작되었다면 중단
+  if (thisSeq !== listRenderSeq) return;
+
+  // ID 기준 엄격한 중복 제거 (Map)
+  const dedupMap = new Map();
+  (records || []).forEach(r => {
+    if (r && r.id && !dedupMap.has(r.id)) {
+      dedupMap.set(r.id, r);
+    }
+  });
+
+  currentLoadedRecords = Array.from(dedupMap.values());
   updateSiteFilterChips(currentLoadedRecords);
-  await applyListFiltersAndRender();
+  await applyListFiltersAndRender(thisSeq);
 }
 
 function updateSiteFilterChips(records) {
@@ -2782,7 +2855,9 @@ function updateSiteFilterChips(records) {
   }
 }
 
-async function applyListFiltersAndRender() {
+async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
+  if (thisSeq !== listRenderSeq) return;
+
   const c = $('#recordListContainer');
   const tbody = $('#tblRecordsBody');
   if ($('#chkAllRecords')) $('#chkAllRecords').checked = false;
@@ -2822,34 +2897,49 @@ async function applyListFiltersAndRender() {
       msg = '해당 월에 등록된 내역이 없습니다.';
     }
     if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-500); font-weight:500;">${msg}</div>`;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="16" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="36" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
     return;
   }
 
-  if (c) c.innerHTML = '';
-  if (tbody) tbody.innerHTML = '';
+  // SafeExcel 헬퍼 함수 참조
+  const se = window.SafeExcel || {};
+  const resolveAgent = se.resolveAgentHierarchy || (r => ({
+    major: r.agentMajor || r.kind || '가시설',
+    mid: r.agentMid || r.item || '비계',
+    minor: r.agentMinor || r.agent || '-'
+  }));
+  const mapType = se.mapAccidentType || (t => t || '기타');
+  const markCauseFn = se.markCause || ((r, k) => ((r.mgmtCauses || []).includes(k) || (r.causes || []).includes(k) ? '●' : ''));
+  const getOpType = se.getInspectorOpinionType || (r => r.inspectorOpinionType || '시스템 개선');
+
+  const cardElements = [];
+  const rowElements = [];
 
   for (const [idx, r] of filtered.entries()) {
+    if (thisSeq !== listRenderSeq) return;
+
     const isFixed = r.status === '조치완료';
+    const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
+    const agent = resolveAgent(r);
+    const accType = mapType(r.type);
+    const opType = getOpType(r);
 
     // 사진 Object URL 비동기 변환 (IndexedDB Blob -> Object URL)
-    let photoThumbUrl = '';
+    let photo1ThumbUrl = '';
+    let photo2ThumbUrl = '';
     if (r.photos && r.photos[0]) {
-      try {
-        photoThumbUrl = await store.photoURL(r.photos[0]);
-      } catch (e) {
-        console.warn('Failed to resolve photo URL:', r.photos[0], e);
-      }
+      try { photo1ThumbUrl = await store.photoURL(r.photos[0]); } catch (e) {}
+    }
+    if (r.photos && r.photos[1]) {
+      try { photo2ThumbUrl = await store.photoURL(r.photos[1]); } catch (e) {}
     }
 
     let fixPhotoThumbUrl = '';
     if (r.fix && r.fix.photo) {
-      try {
-        fixPhotoThumbUrl = await store.photoURL(r.fix.photo);
-      } catch (e) {
-        console.warn('Failed to resolve fix photo URL:', r.fix.photo, e);
-      }
+      try { fixPhotoThumbUrl = await store.photoURL(r.fix.photo); } catch (e) {}
     }
+
+    if (thisSeq !== listRenderSeq) return;
 
     // 1) 모바일 카드형 뷰
     if (c) {
@@ -2872,23 +2962,34 @@ async function applyListFiltersAndRender() {
       }, '🗑️ 삭제'));
 
       const cardBody = h('div', { style: { display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '8px' } });
-      if (photoThumbUrl) {
-        cardBody.append(h('img', {
-          src: photoThumbUrl,
-          style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer', flexShrink: '0' },
-          onclick: () => window.open(photoThumbUrl, '_blank'),
+      const photoBox = h('div', { style: { display: 'flex', gap: '4px', flexShrink: '0' } });
+      if (photo1ThumbUrl) {
+        photoBox.append(h('img', {
+          src: photo1ThumbUrl,
+          style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer' },
+          onclick: () => window.open(photo1ThumbUrl, '_blank'),
           onerror: (e) => { e.target.style.display = 'none'; },
-          title: '클릭하여 원본보기'
+          title: '사진 1 원본보기'
         }));
       }
+      if (photo2ThumbUrl) {
+        photoBox.append(h('img', {
+          src: photo2ThumbUrl,
+          style: { width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer' },
+          onclick: () => window.open(photo2ThumbUrl, '_blank'),
+          onerror: (e) => { e.target.style.display = 'none'; },
+          title: '사진 2 원본보기'
+        }));
+      }
+      if (photoBox.children.length > 0) cardBody.append(photoBox);
+
       cardBody.append(h('div', { style: { flex: '1', minWidth: '0' } },
         h('div', { style: { fontSize: '0.92rem', marginBottom: '4px', color: 'var(--gray-900)', fontWeight: '500' } }, r.content),
         h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)' } },
-          `[${r.agentMajor || r.kind || '가시설'}] ${r.agentMid || r.item || '비계'} › ${r.agentMinor || r.agent || '-'} · ${r.inspectedDate} (${r.inspector})`
+          `[${agent.major}] ${agent.mid} › ${agent.minor} · ${r.inspectedDate} (${r.inspector})`
         )
       ));
 
-      const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
       const sevBadge = h('span.badge', {
         style: {
           background: isMajor ? '#fef2f2' : '#fffbeb',
@@ -2910,62 +3011,78 @@ async function applyListFiltersAndRender() {
           h('span.badge', { class: isFixed ? 'success' : 'danger', style: { flexShrink: '0', whiteSpace: 'nowrap' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
         ),
         cardBody,
-        (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
-          `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate || 0}% (${r.stage || '지상골조'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
+        (r.workGroup || r.workMethod || r.workName) ? h('div', { style: { fontSize: '0.76rem', color: '#0f766e', background: '#f0fdfa', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
+          `🔨 공종·작업방법: ${r.workGroup || '가설공사'} › ${r.workMethod || r.workName || '고소작업'}`
         ) : '',
-        (r.matrixArea || (r.basis && r.basis.점검영역9x9)) ? h('div', { style: { fontSize: '0.76rem', color: '#854d0e', background: '#fef9c3', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
-          `🎯 9×9: [${r.matrixArea || r.basis.점검영역9x9}] › ${r.matrixTarget || r.basis.점검대상9x9 || '-'}${r.matrixSpec || (r.basis && r.basis.가시설세부사양) ? ' (' + (r.matrixSpec || r.basis.가시설세부사양) + ')' : ''} · 주체: ${r.stakeholder || (r.basis && r.basis.관리책임주체) || '시공담당'}`
+        (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
+          `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate !== undefined && r.progressRate !== null ? r.progressRate : 0}% (${r.stage || '지하 골조 단계'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
         ) : '',
         isFixed ? h('div', { style: { fontSize: '0.82rem', color: 'var(--gray-800)', background: 'var(--gray-50)', padding: '6px 10px', borderRadius: '6px', marginBottom: '6px' } }, `조치결과: ${r.fix.content}`) : '',
         btnGroup
       );
-      c.append(card);
+      cardElements.push(card);
     }
 
-    // 2) 엑셀 스프레드시트 테이블 뷰
+    // 2) 엑셀 스프레드시트 테이블 뷰 (35개 열 완전 일치)
     if (tbody) {
-      let photoThumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
-      if (photoThumbUrl) {
-        photoThumb = `<img src="${photoThumbUrl}" style="width:42px; height:42px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photoThumbUrl}', '_blank')" onerror="this.style.display='none'" title="클릭하여 원본보기">`;
+      let p1Thumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
+      if (photo1ThumbUrl) {
+        p1Thumb = `<img src="${photo1ThumbUrl}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photo1ThumbUrl}', '_blank')" onerror="this.style.display='none'" title="사진 1 원본보기">`;
       }
-      const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
+      let p2Thumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
+      if (photo2ThumbUrl) {
+        p2Thumb = `<img src="${photo2ThumbUrl}" style="width:40px; height:40px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${photo2ThumbUrl}', '_blank')" onerror="this.style.display='none'" title="사진 2 원본보기">`;
+      }
+      let fixThumb = '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
+      if (fixPhotoThumbUrl) {
+        fixThumb = `<img src="${fixPhotoThumbUrl}" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" onerror="this.style.display='none'" title="조치완료 사진">`;
+      }
+
+      const cause1 = markCauseFn(r, '계획 미수립') || '-';
+      const cause2 = markCauseFn(r, '계획 미이행') || '-';
+      const cause3 = markCauseFn(r, '불안전 행동') || '-';
+      const cause4 = markCauseFn(r, '불안전 상태') || '-';
+
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e2e8f0';
       tr.style.background = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-      const mArea = r.matrixArea || (r.basis && r.basis.점검영역9x9) || '-';
-      const mTarget = r.matrixTarget || (r.basis && r.basis.점검대상9x9) || '-';
       tr.innerHTML = `
         <td style="padding:6px 4px;"><input type="checkbox" class="chk-record-item" data-id="${r.id}"></td>
         <td style="padding:8px 4px; font-weight:600; color:var(--gray-700);">${idx + 1}</td>
-        <td style="padding:4px;">${photoThumb}</td>
-        <td style="padding:8px; font-weight:500;">
-          <div style="font-size:0.75rem; color:${isMajor ? '#dc2626' : '#d97706'}; font-weight:700;">${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}</div>
-          <div>${r.site || '-'}</div>
-        </td>
-        <td style="padding:8px; color:var(--gray-600);">${r.inspectedDate || '-'}</td>
-        <td style="padding:8px 10px; text-align:left; font-weight:500; color:var(--gray-900);">${r.content}</td>
-        <td style="padding:8px; color:var(--gray-700);">${r.location || '-'}</td>
-        <td style="padding:8px; color:var(--gray-700);">${r.workName || '-'}</td>
-        <td style="padding:8px;"><span class="badge" style="font-size:0.75rem;">${r.type || '-'}</span></td>
-        <td style="padding:8px; color:var(--gray-700);">
-          <div style="font-weight:600;">${r.agentMinor || r.agent || '-'}</div>
-          <div style="font-size:0.75rem; color:var(--gray-500);">${r.agentMajor || r.kind || '가시설'} › ${r.agentMid || r.item || '비계'}</div>
-        </td>
-        <td style="padding:8px; color:#854d0e; font-size:0.78rem;">
-          <div style="font-weight:700;">${mArea}</div>
-          <div style="color:#b45309;">${mTarget}</div>
-        </td>
-        <td style="padding:8px; color:var(--gray-600);">${r.condition || '-'}</td>
-        <td style="padding:8px; color:var(--gray-600);">${(r.causes || []).join(', ') || '-'}</td>
-        <td style="padding:8px; white-space:nowrap;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
-        <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'};">
-          <div style="display:flex; align-items:center; gap:6px;">
-            ${fixPhotoThumbUrl ? `<img src="${fixPhotoThumbUrl}" style="width:32px; height:32px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer; flex-shrink:0;" onclick="window.open('${fixPhotoThumbUrl}', '_blank')" onerror="this.style.display='none'" title="조치완료 사진">` : ''}
-            <span>${(r.fix && r.fix.content) || '(미조치)'}</span>
-          </div>
-        </td>
-        <td style="padding:8px; color:var(--gray-600);">${r.inspector || '-'}</td>
-        <td style="padding:6px 4px;">
+        <td style="padding:4px;">${p1Thumb}</td>
+        <td style="padding:4px;">${p2Thumb}</td>
+        <td style="padding:6px; font-weight:700; color:${isMajor ? '#dc2626' : '#d97706'}; font-size:0.75rem;">${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}</td>
+        <td style="padding:8px 10px; text-align:left; font-weight:500; color:var(--gray-900); min-width:220px;">${r.content || ''}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.subcontractor || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${r.location || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.workGroup || '가설공사'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.workMethod || r.workName || '고소작업'}</td>
+        <td style="padding:8px 6px;"><span class="badge" style="font-size:0.74rem;">${accType}</span></td>
+        <td style="padding:8px 6px; font-weight:600; color:var(--gray-800);">${agent.major}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${agent.mid}</td>
+        <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${agent.minor}</td>
+        <td style="padding:8px 6px; color:var(--gray-600); font-size:0.75rem; text-align:left;">${r.law || (r.basis && r.basis.law) || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.condition || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.action || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.rootCauseMgmt || (r.basis && r.basis.근본원인_관리감독) || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.rootCauseSystem || (r.basis && r.basis.근본원인_안전시스템) || '-'}</td>
+        <td style="padding:8px 4px; font-weight:700; color:${cause1 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause1}</td>
+        <td style="padding:8px 4px; font-weight:700; color:${cause2 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause2}</td>
+        <td style="padding:8px 4px; font-weight:700; color:${cause3 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause3}</td>
+        <td style="padding:8px 4px; font-weight:700; color:${cause4 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause4}</td>
+        <td style="padding:8px 6px; color:var(--gray-700); text-align:left;">${r.interviewOpinion || r.workerOpinion || '-'}</td>
+        <td style="padding:8px 6px;"><span class="badge" style="font-size:0.72rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">${opType}</span></td>
+        <td style="padding:8px 10px; color:var(--gray-700); text-align:left; min-width:150px;">${r.auditProposal || r.inspectorOpinion || '-'}</td>
+        <td style="padding:8px 6px; font-weight:600; color:var(--gray-800);">${r.site || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.productType || '공동주택'}</td>
+        <td style="padding:8px 4px; color:var(--gray-700);">${r.progressRate !== undefined && r.progressRate !== null ? (r.progressRate + '%') : '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${r.stage || '지하 골조 단계'}</td>
+        <td style="padding:8px 6px; white-space:nowrap;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
+        <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'}; min-width:150px;">${(r.fix && r.fix.content) || '(미조치)'}</td>
+        <td style="padding:4px;">${fixThumb}</td>
+        <td style="padding:8px 6px; color:var(--gray-600);">${r.inspectedDate || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-600);">${r.inspector || '-'}</td>
+        <td style="padding:6px 4px; white-space:nowrap;">
           <div style="display:flex; gap:3px; justify-content:center;">
             ${!isFixed ? `<button type="button" class="btn btn-outline btn-table-fix" style="padding:3px 6px; font-size:0.75rem;">조치</button>` : ''}
             <button type="button" class="btn btn-outline btn-table-del" style="padding:3px 6px; font-size:0.75rem; color:var(--danger); border-color:#fca5a5;" title="삭제">삭제</button>
@@ -2990,9 +3107,15 @@ async function applyListFiltersAndRender() {
       const delBtn = tr.querySelector('.btn-table-del');
       if (delBtn) delBtn.addEventListener('click', () => deleteOneRecord(r));
 
-      tbody.appendChild(tr);
+      rowElements.push(tr);
     }
   }
+
+  if (thisSeq !== listRenderSeq) return;
+
+  if (c) c.replaceChildren(...cardElements);
+  if (tbody) tbody.replaceChildren(...rowElements);
+  syncTableTopScrollWidth();
 }
 
 // ── PPTX / 장표 파일 임포트 처리 ──

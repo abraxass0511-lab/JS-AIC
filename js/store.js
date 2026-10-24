@@ -499,7 +499,11 @@ export const store = {
   },
   async listMonths(buckets, force = false) {
     const all = await Promise.all(buckets.map(b => this.listMonth(b, force)));
-    return all.flat().sort((a, b) => (b.inspectedDate + b.createdAt).localeCompare(a.inspectedDate + a.createdAt));
+    const map = new Map();
+    all.flat().forEach(r => {
+      if (r && r.id && !map.has(r.id)) map.set(r.id, r);
+    });
+    return Array.from(map.values()).sort((a, b) => ((b.inspectedDate || '') + (b.createdAt || '')).localeCompare((a.inspectedDate || '') + (a.createdAt || '')));
   },
   async listPeriod(startDate, endDate, force = false) {
     if (!startDate && !endDate) return this.listMonth(monthStr(), force);
