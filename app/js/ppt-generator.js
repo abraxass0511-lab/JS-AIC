@@ -6,7 +6,9 @@
  */
 (function (root, factory) {
   const exported = factory();
-  if (typeof module === 'object' && module && module.exports) module.exports = exported;
+  if (typeof exports === 'object' && typeof module !== 'undefined') {
+    module.exports = exported;
+  }
   if (root) root.SafePPT = exported;
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : this), function () {
 
@@ -29,15 +31,32 @@
   function normalizeJangpyoData(r, rulesFromTaxonomy = []) {
     const isMajor = r.severity === '중부적합';
     const severity = isMajor ? '중부적합' : '경부적합';
-    const type = r.type || '넘어짐(전도 : 사람)';
+    const type = r.type || '충돌/협착';
 
-    // 4대 요인 판정
-    const mgmt = r.mgmtCauses || [];
-    const causes = r.causes || [];
-    const isUnplanned = mgmt.includes('계획 미수립') || causes.includes('계획 미수립');
-    const isUnexecuted = mgmt.includes('계획 미이행') || causes.includes('계획 미이행') || (!isUnplanned && !mgmt.length && !causes.length);
-    const isAction = mgmt.includes('불안전 행동') || causes.includes('불안전 행동') || causes.includes('인적') || (r.action && r.action !== '-' && r.action !== '해당없음');
-    const isCondition = mgmt.includes('불안전 상태') || causes.includes('불안전 상태') || causes.includes('물적') || (r.condition && r.condition !== '-' && r.condition !== '해당없음') || true;
+    // 4대 요인 판정: 사용자가 지정한 관리적/직접 원인 목록을 최우선 존중
+    const mgmt = Array.isArray(r.mgmtCauses) ? r.mgmtCauses : [];
+    const causes = Array.isArray(r.causes) ? r.causes : [];
+
+    let isUnplanned = false;
+    let isUnexecuted = false;
+    let isAction = false;
+    let isCondition = false;
+
+    if (mgmt.length > 0) {
+      isUnplanned = mgmt.includes('계획 미수립');
+      isUnexecuted = mgmt.includes('계획 미이행');
+      isAction = mgmt.includes('불안전 행동');
+      isCondition = mgmt.includes('불안전 상태');
+    } else {
+      isUnplanned = causes.includes('계획 미수립');
+      isUnexecuted = causes.includes('계획 미이행') || causes.includes('관리적');
+      isAction = causes.includes('불안전 행동') || causes.includes('인적') || (r.action && r.action !== '-' && r.action !== '해당없음' && r.action !== '해당 없음');
+      isCondition = causes.includes('불안전 상태') || causes.includes('물적') || (r.condition && r.condition !== '-' && r.condition !== '해당없음' && r.condition !== '해당 없음');
+      if (!isUnplanned && !isUnexecuted && !isAction && !isCondition) {
+        isUnexecuted = true;
+      }
+    }
+
     const isHoldPoint = r.holdPoint || (typeof r.content === 'string' && r.content.includes('Hold'));
 
     // 관련 법령 및 수칙 내용
@@ -66,53 +85,55 @@
       lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
     }
 
-    // 근로자 이행 포인트 (3개)
-    let rules = Array.isArray(rulesFromTaxonomy) && rulesFromTaxonomy.length ? rulesFromTaxonomy : [];
-    if (!rules.length && r.basis && Array.isArray(r.basis.rules) && r.basis.rules.length) {
-      rules = r.basis.rules;
+    // 사진 하단 규정 수칙 및 작업자 책임 (임의의 '[근로자 이행 포인트]' 대신 원본 장표 수칙 적용)
+    let guidelineTitle = '';
+    let guidelineBody = '';
+
+    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프')) {
+      guidelineTitle = '줄걸이 작업자의 책임';
+      guidelineBody = '1) 양중 시작 전 양중물로부터 5m 이상 안전거리를 확보해야 하고 양중물 하부에서 대기를 금지하며 양중물이 지면으로부터 1.5m 이내에 위치하였을 경우, 접근해야 한다.';
+    } else if (text.includes('비계') || text.includes('난간') || text.includes('발판') || text.includes('추락')) {
+      guidelineTitle = '고소작업자의 안전 책임';
+      guidelineBody = '1) 고소작업 시 안전대 걸이시설 체결 및 안전모 턱끈을 철저히 결속해야 하며, 작업발판 임의 해체 또는 안전난간 훼손을 금지하고 이상 발견 시 즉시 작업을 중지해야 한다.';
+    } else if (text.includes('개구부') || text.includes('덮개')) {
+      guidelineTitle = '개구부 관리 책임';
+      guidelineBody = '1) 바닥 개구부 상부에는 규격 덮개를 견고히 고정하고 "추락주의" 위험표지를 부착해야 하며, 임의 개방을 금지하고 부득이한 개방 시 감시인을 배치해야 한다.';
+    } else {
+      guidelineTitle = '표준 안전작업 기준 준수 책임';
+      guidelineBody = '1) 작업 시작 전 TBM 위험요인을 숙지하고 보호구를 100% 착용해야 하며, 관리감독자의 지휘 하에 승인된 작업계획서 절차에 따라 안전하게 작업해야 한다.';
     }
-    if (!rules.length) {
-      if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프')) {
-        rules = [
-          '장비 및 양중화물 주변 반경 내 절대 접근 금지',
-          '화물 양중 시 2개소 이상 유도로프 체결 및 수평양중 준수',
-          '양중 작업 전 와이어로프/슬링벨트 손상 여부 및 샤클 결속 확인'
-        ];
-      } else if (text.includes('비계') || text.includes('난간') || text.includes('추락')) {
-        rules = [
-          '고소작업 시 안전대 부착설비 체결 및 안전모 턱끈 결속 철저',
-          '작업발판 임의 해체 및 난간대 훼손 절대 금지 (발견 즉시 보고)',
-          '작업 전 안전발판 고정 상태 및 틈새 발생 유무 확인'
-        ];
+
+    // 부적합 내용 (원본 양식에 맞게 지적요인 태그 없이 순수 내용만 추출)
+    let mainContent = rawContent;
+    if (mainContent.includes('↔')) {
+      mainContent = mainContent.split('↔')[0].trim();
+    }
+
+    // 사진 개별 상단 타이틀 (원본: 좌 '양중작업 시 화물을 직접 손으로 잡음' / 우 '양중작업 시 유도로프 미사용')
+    let photo1Title = r.photo1Title || '';
+    let photo2Title = r.photo2Title || '';
+    if (!photo1Title || !photo2Title) {
+      if (text.includes('양중') || text.includes('유도로프') || text.includes('손으로')) {
+        photo1Title = '양중작업 시 화물을 직접 손으로 잡음';
+        photo2Title = '양중작업 시 유도로프 미사용';
       } else {
-        rules = [
-          '작업 시작 전 안전보호구 100% 착용 및 TBM 위험요인 숙지',
-          '관리감독자 지휘 하에 승인된 표준 안전작업절차 준수',
-          '불안전 상태 또는 위험요인 발견 시 즉시 작업중지 및 관리자 보고'
-        ];
+        photo1Title = mainContent || '현장 부적합 작업 전경';
+        photo2Title = r.action || '위험요인 세부 현황';
       }
     }
+    const photoBannerTitle = mainContent || '부적합 현장 확인';
 
-    // 부적합 내용 및 빨간색 지적 요인 분리
-    let mainContent = rawContent;
-    let redHighlight = '';
-    if (mainContent.includes('↔')) {
-      const parts = mainContent.split('↔');
-      mainContent = parts[0].trim();
-      redHighlight = parts[1].replace(/지적\s*요인\s*[:：]?/, '').trim();
-    } else if (r.action && r.action !== '-' && r.action !== '해당없음' && !mainContent.includes(r.action)) {
-      redHighlight = r.action;
+    // 발생원인 의견 (인터뷰 결과)
+    let interviewOpinion = r.interviewOpinion || r.workerOpinion || '';
+    if (!interviewOpinion) {
+      if (text.includes('양중') || text.includes('유도로프')) {
+        interviewOpinion = '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.';
+      } else {
+        interviewOpinion = r.action 
+          ? `현장 시공 여건 상 ${r.action} 사유로 기준이 미준수되었으며, 관리감독자의 사전 작업지휘가 미흡한 상태에서 작업이 진행됨.`
+          : '현장 작업진행 과정에서 안전작업수칙에 대한 관리감독 및 작업자 간 소통이 미흡하여 규정 절차가 누락됨.';
+      }
     }
-
-    // 사진 상단 적색 배너 타이틀 (템플릿 1, 2에서는 부적합 내용 자체가 배너 타이틀로 큼직하게 들어감)
-    const photoBannerTitle = mainContent || r.action || '구획된 바닥 안전통로에 거푸집 자재를 방치함';
-
-    // 발생원인 의견
-    const interviewOpinion = r.interviewOpinion || r.workerOpinion || (
-      r.action 
-        ? `현장 시공 여건 상 ${r.action} 사유로 기준이 미준수되었으며, 관리감독자의 사전 작업지휘가 미흡한 상태에서 작업이 진행됨.`
-        : '현장 작업진행 과정에서 안전작업수칙에 대한 관리감독 및 작업자 간 소통이 미흡하여 규정 절차가 누락됨.'
-    );
 
     // 점검단 제안
     const proposalType = r.inspectorOpinionType || '시스템 개선';
@@ -120,30 +141,62 @@
     if (proposalType === '교육/코칭') proposalSub = '(협력사 교육)';
     else if (proposalType === '페널티') proposalSub = '(패널티 부과)';
 
-    const proposalContent = r.auditProposal || r.inspectorOpinion || (
-      '설치조립작업 시 발생 가능한 사고를 방지하기 위해 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.'
-    );
-
-    // 개선대책
-    let countermeasures = [];
-    if (r.countermeasures && Array.isArray(r.countermeasures) && r.countermeasures.length) {
-      countermeasures = r.countermeasures;
-    } else if (r.fix && r.fix.content) {
-      countermeasures.push(`근로자 및 관리감독자 대상으로 부적합 사항 공유 후 표준 안전작업 기준 준수토록 특별 교육 실시`);
-      countermeasures.push(`동일 지적사항 재발 시 안전 페널티 부과 및 공정 안전점검 승인 후 작업 재개 조치`);
-    } else {
-      countermeasures.push(`근로자 및 관리감독자 대상으로 부적합 사항 공유 후 표준 안전작업 기준 준수토록 특별 교육 실시`);
-      countermeasures.push(`동일 지적사항 재발 시 안전 페널티 부과 및 공정 안전점검 승인 후 작업 재개 조치`);
+    let proposalContent = r.auditProposal || r.inspectorOpinion || '';
+    if (!proposalContent) {
+      if (text.includes('양중') || text.includes('유도로프')) {
+        proposalContent = '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.';
+      } else {
+        proposalContent = '설치조립작업 시 발생 가능한 사고를 방지하기 위해 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.';
+      }
     }
 
-    // PM 판정결과
-    const pmVerdict = r.pmVerdict || proposalType || '시스템 개선';
+    // 개선대책 본문 (좌측 넓은 박스) & PM 판정결과 라벨 (우측 좁은 박스) 대칭 분리
+    let countermeasureContent = '';
+    let pmVerdictType = '시스템 개선';
     let pmVerdictSub = '(이행강화안 수립)';
-    if (pmVerdict === '교육/코칭') pmVerdictSub = '(협력사 교육)';
-    else if (pmVerdict === '페널티') pmVerdictSub = '(시정명령/벌점)';
 
-    // 점검차수 표기 (템플릿 1: 3차)
-    let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : '3차');
+    const SHORT_VERDICTS = ['시스템 개선', '시스템개선', '교육/코칭', '교육', '코칭', '페널티', '시정명령', '현장시정', '즉시시정', '조치완료'];
+
+    const rawPm = (r.pmVerdict || '').trim();
+    const rawFix = (r.fix && r.fix.content ? r.fix.content : '').trim();
+    const rawPlan = (r.actionPlan || r.countermeasure || '').trim();
+
+    if (rawPm && !SHORT_VERDICTS.includes(rawPm) && rawPm.length > 12) {
+      // rawPm이 긴 개선대책 본문 문장인 경우
+      countermeasureContent = rawPm;
+      pmVerdictType = r.inspectorOpinionType || r.pmVerdictType || '시스템 개선';
+    } else if (rawPlan) {
+      countermeasureContent = rawPlan;
+      if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
+    } else if (rawFix) {
+      countermeasureContent = rawFix;
+      if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
+    } else if (Array.isArray(r.countermeasures) && r.countermeasures.length) {
+      countermeasureContent = r.countermeasures.join('\n');
+      if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
+    } else {
+      if (text.includes('양중') || text.includes('유도로프')) {
+        countermeasureContent = '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립';
+      } else {
+        countermeasureContent = '부적합 사항에 대해 작업팀 교육 및 표준 안전작업절차를 보완하고 일일 점검을 강화하여 재발 방지 조치함.';
+      }
+    }
+
+    if (pmVerdictType.includes('시스템')) {
+      pmVerdictType = '시스템 개선';
+      pmVerdictSub = '(이행강화안 수립)';
+    } else if (pmVerdictType.includes('교육')) {
+      pmVerdictType = '교육/코칭';
+      pmVerdictSub = '(협력사 교육)';
+    } else if (pmVerdictType.includes('페널티') || pmVerdictType.includes('시정명령')) {
+      pmVerdictType = '페널티';
+      pmVerdictSub = '(시정명령/벌점)';
+    } else {
+      pmVerdictSub = '(이행강화안 수립)';
+    }
+
+    // 점검차수 표기 (템플릿: '26년 下3차 또는 3차)
+    let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
 
     return {
       severity,
@@ -156,21 +209,23 @@
       isHoldPoint,
       lawTitle,
       lawBody,
-      rules,
+      guidelineTitle,
+      guidelineBody,
       mainContent,
-      redHighlight,
+      photo1Title,
+      photo2Title,
+      photoBannerTitle,
       interviewOpinion,
       proposalType,
       proposalSub,
       proposalContent,
-      countermeasures,
-      pmVerdict,
+      countermeasureContent,
+      pmVerdictType,
       pmVerdictSub,
-      photoBannerTitle,
-      subcontractor: r.subcontractor || '(주)협력업체',
-      workGroup: r.workGroup || r.workMethod || r.workName || '철근콘크리트공사',
-      location: r.location || '계단·복도',
-      inspector: r.inspector || '신이삭',
+      subcontractor: r.subcontractor || '원영건업(주)',
+      workGroup: r.workGroup || r.workMethod || r.workName || '거푸집동바리공사',
+      location: r.location || '108동',
+      inspector: r.inspector || '신우석 프로',
       inspectRound,
       content: rawContent,
       action: r.action || '',
@@ -180,7 +235,7 @@
   }
 
   /**
-   * PptxGenJS 단일 슬라이드에 점검장표 레이아웃 추가 (맑은 고딕 서식, 템플릿 1·2 실물 100% 일치)
+   * PptxGenJS 단일 슬라이드에 점검장표 레이아웃 추가 (맑은 고딕 서식, 원본 템플릿 실물 100% 일치)
    */
   async function addInspectionSheetSlide(pptx, record, options = {}) {
     const { loadPhotoBase64, rulesFromTaxonomy = [] } = options;
@@ -207,8 +262,8 @@
       fill: { color: 'FFFFFF' }, line: { color: C_ORANGE, width: 2 }
     });
     slide.addText([
-      { text: `${data.type}\n`, options: { fontSize: 15.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `[${data.severity}]`, options: { fontSize: 13.5, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
+      { text: `${data.type}\n`, options: { fontSize: 15, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `[${data.severity}]`, options: { fontSize: 13, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
     ], {
       x: 2.1, y: 0.40, w: 1.4, h: 1.05,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.2
@@ -225,17 +280,17 @@
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.2
     });
 
-    // Box 4: 관련기준 내용 (법령 조문 및 안전수칙)
+    // Box 4: 관련기준 내용 (법령 조문 및 안전수칙 - 박스 안에 단정하게 들어오도록 글자크기 및 마진 최적화)
     slide.addShape(pptx.ShapeType.rect, {
       x: 4.25, y: 0.40, w: 5.283, h: 1.05,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: `${data.lawTitle}\n`, options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.lawBody, options: { fontSize: 9.8, color: '333333', fontFace: FONT_MALGUN } }
+      { text: `${data.lawTitle}\n`, options: { fontSize: 10.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.lawBody, options: { fontSize: 9.3, color: '222222', fontFace: FONT_MALGUN } }
     ], {
       x: 4.25, y: 0.40, w: 5.283, h: 1.05,
-      margin: [4, 8, 4, 8], valign: 'middle', lineSpacingMultiple: 1.35
+      margin: [4, 8, 4, 8], valign: 'middle', lineSpacingMultiple: 1.28
     });
 
     // Box 5: 4대 발생요인 체크박스 (2x2)
@@ -244,68 +299,50 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: `${data.isUnplanned ? '☑' : '☐'} 계획 미수립       ${data.isUnexecuted ? '☑' : '☐'} 계획 미이행\n`, options: { fontSize: 11, fontFace: FONT_MALGUN, color: '000000' } },
-      { text: `${data.isAction ? '☑' : '☐'} 불안전 행동       ${data.isCondition ? '☑' : '☐'} 불안전 상태`, options: { fontSize: 11, fontFace: FONT_MALGUN, color: '000000' } }
+      { text: `${data.isUnplanned ? '☑' : '☐'} 계획 미수립       ${data.isUnexecuted ? '☑' : '☐'} 계획 미이행\n`, options: { fontSize: 10.5, fontFace: FONT_MALGUN, color: '000000' } },
+      { text: `${data.isAction ? '☑' : '☐'} 불안전 행동       ${data.isCondition ? '☑' : '☐'} 불안전 상태`, options: { fontSize: 10.5, fontFace: FONT_MALGUN, color: '000000' } }
     ], {
       x: 9.533, y: 0.40, w: 3.3, h: 1.05,
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.4
+      align: 'center', valign: 'middle', lineSpacingMultiple: 1.35
     });
 
-    // ── 2. 부적합 개요 행 (y = 1.50, h = 0.90) ──
+    // ── 2. 부적합 개요 행 (y = 1.50, h = 0.85) ──
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0.5, y: 1.50, w: 0.75, h: 0.9,
+      x: 0.5, y: 1.50, w: 0.75, h: 0.85,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('부적합\n개  요', {
-      x: 0.5, y: 1.50, w: 0.75, h: 0.9,
+      x: 0.5, y: 1.50, w: 0.75, h: 0.85,
       fontFace: FONT_MALGUN, fontSize: 13, bold: true, color: C_YELLOW_DARK,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.2
     });
 
     slide.addShape(pptx.ShapeType.rect, {
-      x: 1.25, y: 1.50, w: 11.583, h: 0.9,
+      x: 1.25, y: 1.50, w: 11.583, h: 0.85,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
 
     const overviewTextItems = [
-      { text: '협력사 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: C_TITLE_BLUE } },
-      { text: `${data.subcontractor}   |   `, options: { fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000' } },
-      { text: '공종명 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: C_TITLE_BLUE } },
-      { text: `${data.workGroup}   |   `, options: { fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000' } },
-      { text: '작업장소 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: C_TITLE_BLUE } },
-      { text: `${data.location}   |   `, options: { fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000' } },
-      { text: '점검자 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: C_TITLE_BLUE } },
-      { text: `${data.inspector}   |   `, options: { fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000' } },
-      { text: '점검차수 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: C_TITLE_BLUE } },
-      { text: `${data.inspectRound}\n`, options: { fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000' } },
-      { text: '부적합 내용 : ', options: { fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: C_TITLE_BLUE } },
-      { text: data.mainContent, options: { fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: '000000' } }
+      { text: '협력사 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.2, bold: true, color: C_TITLE_BLUE } },
+      { text: `${data.subcontractor}  |  `, options: { fontFace: FONT_MALGUN, fontSize: 10.2, color: '000000' } },
+      { text: '공종명 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.2, bold: true, color: C_TITLE_BLUE } },
+      { text: `${data.workGroup}  |  `, options: { fontFace: FONT_MALGUN, fontSize: 10.2, color: '000000' } },
+      { text: '작업장소 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.2, bold: true, color: C_TITLE_BLUE } },
+      { text: `${data.location}  |  `, options: { fontFace: FONT_MALGUN, fontSize: 10.2, color: '000000' } },
+      { text: '점검자 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.2, bold: true, color: C_TITLE_BLUE } },
+      { text: `${data.inspector}  |  `, options: { fontFace: FONT_MALGUN, fontSize: 10.2, color: '000000' } },
+      { text: '점검차수 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.2, bold: true, color: C_TITLE_BLUE } },
+      { text: `${data.inspectRound}\n`, options: { fontFace: FONT_MALGUN, fontSize: 10.2, color: '000000' } },
+      { text: '부적합 내용 : ', options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: C_TITLE_BLUE } },
+      { text: data.mainContent, options: { fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: '000000' } }
     ];
-    if (data.redHighlight) {
-      overviewTextItems.push({
-        text: `  ↔ 지적 요인: ${data.redHighlight}`,
-        options: { fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: C_RED }
-      });
-    }
 
     slide.addText(overviewTextItems, {
-      x: 1.25, y: 1.50, w: 11.583, h: 0.9,
-      margin: [6, 10, 6, 10], valign: 'middle', lineSpacingMultiple: 1.35
+      x: 1.25, y: 1.50, w: 11.583, h: 0.85,
+      margin: [5, 10, 5, 10], valign: 'middle', lineSpacingMultiple: 1.32
     });
 
-    // ── 3. 좌측 사진 및 근로자 이행 포인트 (x = 0.5, w = 6.6) ──
-    // 적색 헤더 배너 (부적합 타이틀)
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0.5, y: 2.45, w: 6.6, h: 0.35,
-      fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
-    });
-    slide.addText(data.photoBannerTitle, {
-      x: 0.5, y: 2.45, w: 6.6, h: 0.35,
-      fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: 'FFFFFF',
-      align: 'center', valign: 'middle'
-    });
-
-    // 사진 로드 시도 (Base64)
+    // ── 3. 좌측 사진 및 규정 수칙 (x = 0.5, w = 6.6) ──
     let photo1Base64 = null;
     let photo2Base64 = null;
     if (loadPhotoBase64) {
@@ -319,35 +356,77 @@
       }
     }
 
-    const photoHeight = 3.30;
+    const photoHeight = 3.25;
+
     if (photo1Base64 && photo2Base64) {
+      // 2장 사진: 원본 실물처럼 사진 1, 사진 2 위에 각각 적색 띠 배너
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0.5, y: 2.45, w: 3.25, h: 0.35,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
+      });
+      slide.addText(data.photo1Title, {
+        x: 0.5, y: 2.45, w: 3.25, h: 0.35,
+        fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle'
+      });
+
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 3.85, y: 2.45, w: 3.25, h: 0.35,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
+      });
+      slide.addText(data.photo2Title, {
+        x: 3.85, y: 2.45, w: 3.25, h: 0.35,
+        fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle'
+      });
+
       slide.addImage({ data: photo1Base64, x: 0.5, y: 2.80, w: 3.25, h: photoHeight });
       slide.addImage({ data: photo2Base64, x: 3.85, y: 2.80, w: 3.25, h: photoHeight });
     } else if (photo1Base64) {
+      // 1장 사진: 전체 너비 적색 배너
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0.5, y: 2.45, w: 6.6, h: 0.35,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
+      });
+      slide.addText(data.photoBannerTitle, {
+        x: 0.5, y: 2.45, w: 6.6, h: 0.35,
+        fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle'
+      });
+
       slide.addImage({ data: photo1Base64, x: 0.5, y: 2.80, w: 6.6, h: photoHeight });
     } else {
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0.5, y: 2.45, w: 6.6, h: 0.35,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
+      });
+      slide.addText(data.photoBannerTitle, {
+        x: 0.5, y: 2.45, w: 6.6, h: 0.35,
+        fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle'
+      });
+
       slide.addShape(pptx.ShapeType.rect, {
         x: 0.5, y: 2.80, w: 6.6, h: photoHeight,
         fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
       });
       slide.addText('📸 현장 부적합 사진이 등록되지 않았습니다.', {
         x: 0.5, y: 2.80, w: 6.6, h: photoHeight,
-        fontFace: FONT_MALGUN, fontSize: 13, color: '64748B', align: 'center', valign: 'middle'
+        fontFace: FONT_MALGUN, fontSize: 12.5, color: '64748B', align: 'center', valign: 'middle'
       });
     }
 
-    // 근로자 이행 포인트 박스
+    // 사진 하단: 원본 양식의 '줄걸이 작업자의 책임' 규정 수칙 박스 (이상한 이행포인트 완전 제거)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0.5, y: 6.15, w: 6.6, h: 1.05,
-      fill: { color: 'FFFFFF' }, line: { color: 'E2E8F0', width: 1 }
+      x: 0.5, y: 6.10, w: 6.6, h: 1.05,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
-    const rulesText = data.rules.map((r, i) => `${['①', '②', '③', '④', '⑤'][i] || '•'} ${r}`).join('\n');
     slide.addText([
-      { text: '[근로자 이행 포인트]\n', options: { fontSize: 10.8, bold: true, color: C_ORANGE, fontFace: FONT_MALGUN } },
-      { text: rulesText, options: { fontSize: 9.8, color: '222222', fontFace: FONT_MALGUN } }
+      { text: `${data.guidelineTitle}\n`, options: { fontSize: 10.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.guidelineBody, options: { fontSize: 9.3, color: '222222', fontFace: FONT_MALGUN } }
     ], {
-      x: 0.5, y: 6.15, w: 6.6, h: 1.05,
-      margin: [4, 8, 4, 8], valign: 'middle', lineSpacingMultiple: 1.45
+      x: 0.5, y: 6.10, w: 6.6, h: 1.05,
+      margin: [6, 10, 6, 10], valign: 'middle', lineSpacingMultiple: 1.35
     });
 
     // ── 4. 우측 발생원인 및 개선대책 (x = 7.25, w = 5.583) ──
@@ -360,7 +439,7 @@
       fontFace: FONT_MALGUN, fontSize: 10.5, color: C_GRAY_TEXT, align: 'center', valign: 'middle'
     });
 
-    // 발생원인 (인터뷰 결과)
+    // 발생원인 (인터뷰 결과) 헤더
     slide.addShape(pptx.ShapeType.rect, {
       x: 7.25, y: 2.85, w: 5.583, h: 0.35,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
@@ -370,70 +449,74 @@
       fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
     });
 
+    // 발생원인 의견
     slide.addShape(pptx.ShapeType.rect, {
       x: 7.25, y: 3.20, w: 5.583, h: 0.85,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 10.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.interviewOpinion, options: { fontSize: 9.8, color: '222222', fontFace: FONT_MALGUN } }
+      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 10.2, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.interviewOpinion, options: { fontSize: 9.3, color: '222222', fontFace: FONT_MALGUN } }
     ], {
       x: 7.25, y: 3.20, w: 5.583, h: 0.85,
-      margin: [4, 8, 4, 8], valign: 'middle', lineSpacingMultiple: 1.4
+      margin: [4, 8, 4, 8], valign: 'middle', lineSpacingMultiple: 1.35
     });
 
+    // 점검단 제안: 좌측 좁은 박스(판정) + 우측 넓은 박스(제안 본문)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 7.25, y: 4.05, w: 1.55, h: 0.95,
+      x: 7.25, y: 4.05, w: 1.55, h: 0.90,
       fill: { color: 'F8FAFC' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '[점검단 제안]\n', options: { fontSize: 10, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `${data.proposalType}\n`, options: { fontSize: 15.5, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.proposalSub, options: { fontSize: 9, color: '595959', fontFace: FONT_MALGUN } }
+      { text: '[점검단 제안]\n', options: { fontSize: 9.8, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `${data.proposalType}\n`, options: { fontSize: 14.5, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
+      { text: data.proposalSub, options: { fontSize: 8.5, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 7.25, y: 4.05, w: 1.55, h: 0.95,
+      x: 7.25, y: 4.05, w: 1.55, h: 0.90,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.2
     });
 
     slide.addShape(pptx.ShapeType.rect, {
-      x: 8.80, y: 4.05, w: 4.033, h: 0.95,
+      x: 8.80, y: 4.05, w: 4.033, h: 0.90,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText(data.proposalContent, {
-      x: 8.80, y: 4.05, w: 4.033, h: 0.95,
-      fontFace: FONT_MALGUN, fontSize: 10, color: '000000', margin: [6, 10, 6, 10], valign: 'middle', lineSpacingMultiple: 1.35
+      x: 8.80, y: 4.05, w: 4.033, h: 0.90,
+      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', margin: [5, 8, 5, 8], valign: 'middle', lineSpacingMultiple: 1.32
     });
 
-    // 개선대책 (현장 협의 결과)
+    // 개선대책 (현장 협의 결과) 헤더
     slide.addShape(pptx.ShapeType.rect, {
-      x: 7.25, y: 5.05, w: 5.583, h: 0.35,
+      x: 7.25, y: 5.00, w: 5.583, h: 0.35,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText('개선대책 (현장 협의 결과)', {
-      x: 7.25, y: 5.05, w: 5.583, h: 0.35,
+      x: 7.25, y: 5.00, w: 5.583, h: 0.35,
       fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
     });
 
+    // 개선대책: 원본 실물 대칭 구조 완벽 적용
+    // 좌측 넓은 박스(w: 4.033): 실제 개선대책 내용 (박스 안에 줄간격 맞추어 쏙 들어감)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 7.25, y: 5.40, w: 4.033, h: 1.80,
+      x: 7.25, y: 5.35, w: 4.033, h: 1.80,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
-    const cmText = data.countermeasures.map(cm => `- ${cm}`).join('\n');
-    slide.addText(cmText, {
-      x: 7.25, y: 5.40, w: 4.033, h: 1.80,
-      fontFace: FONT_MALGUN, fontSize: 10.2, color: '000000', margin: [8, 10, 8, 10], valign: 'middle', lineSpacingMultiple: 1.55
+    slide.addText(data.countermeasureContent, {
+      x: 7.25, y: 5.35, w: 4.033, h: 1.80,
+      fontFace: FONT_MALGUN, fontSize: 9.8, color: '000000', margin: [8, 10, 8, 10], valign: 'middle', lineSpacingMultiple: 1.38
     });
 
+    // 우측 좁은 박스(w: 1.55): [PM 판정결과] 라벨 + 시스템 개선 (파란색 볼드) + 서브텍스트
     slide.addShape(pptx.ShapeType.rect, {
-      x: 11.283, y: 5.40, w: 1.55, h: 1.80,
+      x: 11.283, y: 5.35, w: 1.55, h: 1.80,
       fill: { color: 'F8FAFC' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '[PM 판정결과]\n\n', options: { fontSize: 10, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `${data.pmVerdict}\n`, options: { fontSize: 15.5, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.pmVerdictSub, options: { fontSize: 9, color: '595959', fontFace: FONT_MALGUN } }
+      { text: '[PM 판정결과]\n\n', options: { fontSize: 9.8, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `${data.pmVerdictType}\n`, options: { fontSize: 14.5, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
+      { text: data.pmVerdictSub, options: { fontSize: 8.5, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 11.283, y: 5.40, w: 1.55, h: 1.80,
+      x: 11.283, y: 5.35, w: 1.55, h: 1.80,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.2
     });
   }
@@ -493,41 +576,48 @@
   }
 
   /**
-   * 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (맑은 고딕 스타일, 템플릿 1·2 실물 100% 일치)
+   * 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (맑은 고딕 스타일, 원본 템플릿 실물 100% 일치)
    */
   function renderInspectionSheetHTML(record, options = {}) {
     const { photo1Url = '', photo2Url = '', rulesFromTaxonomy = [] } = options;
     const data = normalizeJangpyoData(record, rulesFromTaxonomy);
 
-    const rulesHtml = data.rules.map((r, i) => `
-      <div style="margin-bottom: 3px; line-height: 1.45;">
-        <span style="color: #ed7d31; font-weight: 700;">${['①', '②', '③', '④', '⑤'][i] || '•'}</span>
-        <span style="color: #111111;">${r}</span>
-      </div>
-    `).join('');
-
-    const countermeasuresHtml = data.countermeasures.map(cm => `
-      <div style="margin-bottom: 6px; line-height: 1.55; color: #000000;">- ${cm}</div>
-    `).join('');
-
     let photosHtml = '';
     if (photo1Url && photo2Url) {
       photosHtml = `
-        <div style="display: flex; gap: 6px; width: 100%; height: 275px;">
-          <img src="${photo1Url}" style="flex: 1; height: 100%; object-fit: cover; border-radius: 2px; border: 1px solid #7ba0cd;" onerror="this.style.display='none'">
-          <img src="${photo2Url}" style="flex: 1; height: 100%; object-fit: cover; border-radius: 2px; border: 1px solid #7ba0cd;" onerror="this.style.display='none'">
+        <div style="display: flex; gap: 6px; width: 100%;">
+          <div style="flex: 1; display: flex; flex-direction: column;">
+            <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.82rem; text-align: center; padding: 4px 6px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${data.photo1Title}
+            </div>
+            <img src="${photo1Url}" style="width: 100%; height: 260px; object-fit: cover; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column;">
+            <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.82rem; text-align: center; padding: 4px 6px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              ${data.photo2Title}
+            </div>
+            <img src="${photo2Url}" style="width: 100%; height: 260px; object-fit: cover; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">
+          </div>
         </div>
       `;
     } else if (photo1Url) {
       photosHtml = `
-        <div style="width: 100%; height: 275px; display: flex; justify-content: center;">
-          <img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 2px; border: 1px solid #7ba0cd;" onerror="this.style.display='none'">
+        <div style="width: 100%; display: flex; flex-direction: column;">
+          <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.88rem; text-align: center; padding: 5px 8px; border-radius: 2px 2px 0 0;">
+            ${data.photoBannerTitle}
+          </div>
+          <img src="${photo1Url}" style="width: 100%; height: 260px; object-fit: cover; border: 1px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">
         </div>
       `;
     } else {
       photosHtml = `
-        <div style="width: 100%; height: 275px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.95rem; font-weight: 600;">
-          📸 현장 부적합 사진이 등록되지 않았습니다.
+        <div style="width: 100%; display: flex; flex-direction: column;">
+          <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.88rem; text-align: center; padding: 5px 8px; border-radius: 2px 2px 0 0;">
+            ${data.photoBannerTitle}
+          </div>
+          <div style="width: 100%; height: 260px; background: #f8fafc; border: 1px dashed #cbd5e1; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.95rem; font-weight: 600;">
+            📸 현장 부적합 사진이 등록되지 않았습니다.
+          </div>
         </div>
       `;
     }
@@ -555,8 +645,8 @@
           </div>
           <!-- 2) 사고유형 & 등급 -->
           <div style="width: 135px; flex-shrink: 0; background: #ffffff; border-right: 1.5px solid #7ba0cd; border: 2px solid #ed7d31; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; box-sizing: border-box;">
-            <div style="font-weight: 800; font-size: 1.05rem; color: #000000; text-align: center;">${data.type}</div>
-            <div style="font-weight: 800; font-size: 0.92rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'};">[${data.severity}]</div>
+            <div style="font-weight: 800; font-size: 1.02rem; color: #000000; text-align: center;">${data.type}</div>
+            <div style="font-weight: 800; font-size: 0.90rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'};">[${data.severity}]</div>
           </div>
           <!-- 3) 관련기준 라벨 -->
           <div style="width: 65px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #002060; text-align: center; padding: 4px; line-height: 1.25;">
@@ -565,7 +655,7 @@
           <!-- 4) 관련기준 내용 (남는 공간 전체 100% 차지) -->
           <div style="flex: 1; min-width: 250px; background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 6px 12px; display: flex; flex-direction: column; justify-content: center; word-break: keep-all;">
             <div style="font-weight: 700; font-size: 0.86rem; color: #000000; margin-bottom: 3px;">${data.lawTitle}</div>
-            <div style="font-size: 0.78rem; color: #333333; line-height: 1.4;">${data.lawBody}</div>
+            <div style="font-size: 0.78rem; color: #222222; line-height: 1.35;">${data.lawBody}</div>
           </div>
           <!-- 5) 4대 발생요인 체크박스 -->
           <div style="width: 215px; flex-shrink: 0; background: #ffffff; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; font-size: 0.84rem; font-weight: 600; color: #000000; line-height: 1.55; white-space: nowrap;">
@@ -594,27 +684,21 @@
             <div>
               <strong style="color: #002060; font-size: 0.88rem;">부적합 내용 :</strong>
               <span style="font-weight: 700; color: #000000; font-size: 0.88rem;"> ${data.mainContent}</span>
-              ${data.redHighlight ? `<span style="color: #c00000; font-weight: 800; font-size: 0.88rem;"> &nbsp;↔ 지적 요인: ${data.redHighlight}</span>` : ''}
             </div>
           </div>
         </div>
 
-        <!-- 3. 본문 2단 분할 (좌측: 사진/안전수칙 vs 우측: 발생원인/개선대책) -->
-        <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 10px;">
+        <!-- 3. 본문 2단 분할 (좌측: 사진/규정수칙 vs 우측: 발생원인/개선대책) -->
+        <div style="display: grid; grid-template-columns: 1.18fr 1fr; gap: 10px;">
           <!-- 좌측 컬럼 -->
           <div style="display: flex; flex-direction: column; gap: 6px;">
-            <!-- 적색 배너 타이틀 -->
-            <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.95rem; text-align: center; padding: 6px 10px; border-radius: 2px; word-break: keep-all;">
-              ${data.photoBannerTitle}
-            </div>
-
-            <!-- 현장 사진 영역 (275px로 꽉 차게 밀착) -->
+            <!-- 현장 사진 영역 (단일 또는 2분할 캡션 포함) -->
             ${photosHtml}
 
-            <!-- 근로자 이행 포인트 박스 -->
-            <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 3px; padding: 8px 12px; font-size: 0.82rem; word-break: keep-all;">
-              <div style="color: #ed7d31; font-weight: 800; font-size: 0.88rem; margin-bottom: 5px;">[근로자 이행 포인트]</div>
-              ${rulesHtml}
+            <!-- 사진 하단 규정 수칙 박스 (원본 일치: '줄걸이 작업자의 책임' 등) -->
+            <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px; padding: 8px 12px; font-size: 0.80rem; word-break: keep-all; line-height: 1.45;">
+              <div style="color: #000000; font-weight: 800; font-size: 0.86rem; margin-bottom: 4px;">${data.guidelineTitle}</div>
+              <div style="color: #222222;">${data.guidelineBody}</div>
             </div>
           </div>
 
@@ -632,33 +716,33 @@
               </div>
               <div style="padding: 8px 10px; background: #ffffff; border-bottom: 1.5px solid #7ba0cd; word-break: keep-all;">
                 <div style="font-weight: 700; font-size: 0.86rem; color: #000000; margin-bottom: 4px;">[의견 : 안전관리자 및 시공관리자]</div>
-                <div style="font-size: 0.82rem; color: #222222; line-height: 1.45;">${data.interviewOpinion}</div>
+                <div style="font-size: 0.80rem; color: #222222; line-height: 1.40;">${data.interviewOpinion}</div>
               </div>
               <div style="display: grid; grid-template-columns: 110px 1fr; background: #ffffff;">
                 <div style="background: #f8fafc; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px; text-align: center;">
-                  <div style="font-size: 0.82rem; font-weight: 700; color: #000000;">[점검단 제안]</div>
-                  <div style="font-size: 1.20rem; font-weight: 800; color: #002060; margin: 3px 0 1px 0;">${data.proposalType}</div>
-                  <div style="font-size: 0.74rem; color: #595959;">${data.proposalSub}</div>
+                  <div style="font-size: 0.80rem; font-weight: 700; color: #000000;">[점검단 제안]</div>
+                  <div style="font-size: 1.15rem; font-weight: 800; color: #002060; margin: 3px 0 1px 0;">${data.proposalType}</div>
+                  <div style="font-size: 0.72rem; color: #595959;">${data.proposalSub}</div>
                 </div>
-                <div style="padding: 8px 10px; font-size: 0.82rem; color: #000000; line-height: 1.45; display: flex; align-items: center; word-break: keep-all;">
+                <div style="padding: 8px 10px; font-size: 0.80rem; color: #000000; line-height: 1.40; display: flex; align-items: center; word-break: keep-all;">
                   ${data.proposalContent}
                 </div>
               </div>
             </div>
 
-            <!-- 개선대책 (현장 협의 결과) -->
+            <!-- 개선대책 (현장 협의 결과) - 원본 대칭 레이아웃: 좌측 내용 + 우측 PM 판정결과 -->
             <div style="border: 1.5px solid #7ba0cd; border-radius: 2px; overflow: hidden;">
               <div style="background: #ffe699; color: #593e00; font-weight: 800; font-size: 0.95rem; text-align: center; padding: 5px;">
                 개선대책 (현장 협의 결과)
               </div>
-              <div style="display: grid; grid-template-columns: 1fr 110px; background: #ffffff;">
-                <div style="padding: 10px 12px; font-size: 0.84rem; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all;">
-                  ${countermeasuresHtml}
+              <div style="display: grid; grid-template-columns: 1fr 110px; background: #ffffff; min-height: 110px;">
+                <div style="padding: 10px 12px; font-size: 0.82rem; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all; line-height: 1.45; display: flex; align-items: center;">
+                  ${data.countermeasureContent}
                 </div>
                 <div style="background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px; text-align: center;">
-                  <div style="font-size: 0.82rem; font-weight: 700; color: #000000;">[PM 판정결과]</div>
-                  <div style="font-size: 1.20rem; font-weight: 800; color: #002060; margin: 3px 0 1px 0;">${data.pmVerdict}</div>
-                  <div style="font-size: 0.74rem; color: #595959;">${data.pmVerdictSub}</div>
+                  <div style="font-size: 0.80rem; font-weight: 700; color: #000000;">[PM 판정결과]</div>
+                  <div style="font-size: 1.15rem; font-weight: 800; color: #002060; margin: 3px 0 1px 0;">${data.pmVerdictType}</div>
+                  <div style="font-size: 0.72rem; color: #595959;">${data.pmVerdictSub}</div>
                 </div>
               </div>
             </div>
