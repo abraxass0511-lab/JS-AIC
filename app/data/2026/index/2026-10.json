@@ -1,6 +1,6 @@
 {
   "bucket": "2026-10",
-  "updatedAt": "2026-10-23T23:08:52.772Z",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
   "records": [
     {
       "site": "아파트1",
@@ -21,7 +21,7 @@
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
       "item": "거푸집",
-      "agent": "거푸집",
+      "agent": "유로폼",
       "type": "넘어짐(전도: 사람)",
       "condition": "",
       "action": "",
@@ -60,7 +60,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-19T05:31:26.787Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.763Z",
+      "updatedAt": "2026-10-24T07:38:46.319Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261019-143126-yrnw_p1_mvetgwqr.jpg"
@@ -94,7 +94,7 @@
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
       "item": "거푸집",
-      "agent": "거푸집",
+      "agent": "유로폼",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "",
       "action": "줄걸이 방법 미인지",
@@ -124,7 +124,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-17T04:14:10.222Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261017-131410-o404_p1_mvbvtttc.jpg",
@@ -159,7 +159,7 @@
       "workGroup": "가설공사",
       "kind": "전기시설",
       "item": "전등시설",
-      "agent": "전등",
+      "agent": "투광등",
       "type": "넘어짐(전도: 사람)",
       "condition": "",
       "action": "",
@@ -188,7 +188,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-13T01:57:53.286Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261013-105753-xx55_p1_mv6175s7.jpg"
@@ -222,7 +222,7 @@
       "workGroup": "가설공사",
       "kind": "가시설",
       "item": "안전시설",
-      "agent": "통로",
+      "agent": "낙하방지시설",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
       "action": "불안전한 상태 방치",
@@ -251,7 +251,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-12T20:29:22.044Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261013-052922-wct9_p1_mv5pgoho.jpg",
@@ -286,7 +286,7 @@
       "workGroup": "철골공사",
       "kind": "가시설",
       "item": "안전시설",
-      "agent": "개구부",
+      "agent": "덮개",
       "type": "떨어짐(추락, 사람)",
       "condition": "불안전 상태",
       "action": "해당없음",
@@ -316,7 +316,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-10T06:45:03.455Z",
       "inspector": "관리자",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "관리자",
       "photos": [
         "data/2026/photos/10/20261010-154503-eto9_p1_mv214wnz.jpg"
@@ -380,7 +380,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-10T06:44:07.138Z",
       "inspector": "관리자",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "관리자",
       "photos": [
         "data/2026/photos/10/20261010-154407-ippb_p1_mv213p7m.jpg"
@@ -393,7 +393,7 @@
       "workMethod": "고소작업",
       "agentMajor": "PPE",
       "agentMid": "안전대",
-      "agentMinor": "안전대"
+      "agentMinor": "안전대(그네식)"
     },
     {
       "site": "송도3",
@@ -408,7 +408,7 @@
       "workGroup": "마감공사",
       "kind": "가시설",
       "item": "안전시설",
-      "agent": "단부",
+      "agent": "안전대걸이시설",
       "type": "떨어짐(추락, 사람)",
       "condition": "",
       "action": "보호구 미착용·잘못 사용",
@@ -428,7 +428,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T06:49:28.275Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-154928-jirq_p1_muxqz103.jpg",
@@ -482,7 +482,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T01:31:33.829Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-103133-no2g_p1_muxfm72e.jpg",
@@ -515,7 +515,7 @@
       "workGroup": "설비·전기공사",
       "kind": "전기시설",
       "item": "누전차단기",
-      "agent": "멀티작업선",
+      "agent": "누전차단기",
       "type": "감전",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
       "action": "",
@@ -535,7 +535,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T01:24:34.418Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-102434-qbzv_p1_muxfd7g3.jpg",
@@ -568,7 +568,7 @@
       "workGroup": "설비·전기공사",
       "kind": "전기시설",
       "item": "누전차단기",
-      "agent": "멀티작업선",
+      "agent": "누전차단기",
       "type": "감전",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
       "action": "",
@@ -588,7 +588,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T01:13:27.254Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-101327-ayo4_p1_muxeywnq.jpg",
@@ -621,7 +621,7 @@
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
       "item": "안전시설",
-      "agent": "안전대",
+      "agent": "안전대걸이시설",
       "type": "떨어짐(추락, 사람)",
       "condition": "",
       "action": "보호구 미착용·잘못 사용",
@@ -641,7 +641,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T01:02:41.916Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-100241-omld_p1_muxel2po.jpg"
@@ -673,7 +673,7 @@
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
       "item": "거푸집",
-      "agent": "낙하물",
+      "agent": "갱폼",
       "type": "떨어짐(낙하/비래)/맞음",
       "condition": "상부발판에 낙하물 방치된 상태",
       "action": "",
@@ -693,7 +693,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T00:58:40.114Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-095840-cavm_p1_muxefw4y.jpg",
@@ -726,7 +726,7 @@
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
       "item": "거푸집",
-      "agent": "연결핀(연결조인트)",
+      "agent": "갱폼",
       "type": "무너짐(붕괴, 도괴)/깔림",
       "condition": "갱폼이 상호 연결되어 구조적으로 안전하지 않은 상태",
       "action": "연결핀 선해체",
@@ -747,7 +747,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T00:51:04.836Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-095104-dmw1_p1_muxe64uc.jpg",
@@ -780,7 +780,7 @@
       "workGroup": "철근콘크리트공사",
       "kind": "가시설",
       "item": "동바리",
-      "agent": "동바리",
+      "agent": "파이프서포트",
       "type": "무너짐(붕괴, 도괴)/깔림",
       "condition": "거푸집동바리 미설치",
       "action": "",
@@ -801,7 +801,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T00:33:58.976Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-093358-m1r0_p1_muxdk5a9.jpg"
@@ -851,7 +851,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T00:30:25.323Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-093025-feh7_p1_muxdfkff.jpg",
@@ -904,7 +904,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T00:17:55.515Z",
       "inspector": "신이삭",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "신이삭",
       "photos": [
         "data/2026/photos/10/20261007-091755-621o_p1_muxczhvf.jpg"
@@ -954,7 +954,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-07T00:09:07.168Z",
       "inspector": "점검자1",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "점검자1",
       "photos": [
         "data/2026/photos/10/20261007-090907-40b5_p1_muxco674.jpg"
@@ -986,7 +986,7 @@
       "workGroup": "가설공사",
       "kind": "가시설",
       "item": "안전시설",
-      "agent": "상부난간대",
+      "agent": "안전난간",
       "type": "떨어짐(추락, 사람)",
       "condition": "안전방호장치의 결함 (미설치·해체·불량)",
       "action": "불안전한 상태 방치",
@@ -1006,7 +1006,7 @@
       "bucket": "2026-10",
       "createdAt": "2026-10-03T07:25:35.790Z",
       "inspector": "점검자1",
-      "updatedAt": "2026-10-23T22:35:03.764Z",
+      "updatedAt": "2026-10-24T07:38:46.320Z",
       "updatedBy": "점검자1",
       "photos": [
         "data/2026/photos/10/20261003-162535-q2u3_p1_mus2i2su.jpg"

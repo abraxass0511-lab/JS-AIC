@@ -6,9 +6,9 @@
   "location": "106동 5층 외부비계",
   "workName": "외부비계설치",
   "workGroup": "가설공사",
-  "kind": "가설공사",
+  "kind": "가시설",
   "item": "비계",
-  "agent": "비계",
+  "agent": "시스템비계",
   "type": "떨어짐",
   "condition": "안전난간 미설치",
   "action": "보호구 미착용",
@@ -41,5 +41,8 @@
     "fixedDate": "2026-10-03"
   },
   "createdAt": "2026-10-03T07:44:05.659Z",
-  "updatedAt": "2026-10-03T07:44:05.660Z"
+  "updatedAt": "2026-10-03T07:44:05.660Z",
+  "agentMajor": "가시설",
+  "agentMid": "비계",
+  "agentMinor": "시스템비계"
 }

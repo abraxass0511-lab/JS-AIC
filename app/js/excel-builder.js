@@ -115,6 +115,98 @@
     return '시스템 개선';
   }
 
+  // 기인물 9×9 대-중-소 정규화 및 오류 방지 판정
+  function resolveAgentHierarchy(r) {
+    let major = r.agentMajor || '';
+    let mid = r.agentMid || '';
+    let minor = r.agentMinor || r.agent || '';
+
+    const validMajors = ['가시설', '건설장비', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
+    const areaNames = ['건설장비', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
+
+    // 비정상 조합 원천 차단:
+    // 1) 9×9 대분류 영역명이 중분류에 잘못 들어간 경우 (예: 가시설 > 전기시설 > 전등) -> 대분류로 승격
+    if (areaNames.includes(mid)) {
+      major = mid;
+      if (major === '전기시설') mid = (minor.includes('등') ? '전등시설' : (minor.includes('차단기') ? '누전차단기' : '전선'));
+      else if (major === '소방시설') mid = '소화시설';
+      else if (major === '건설장비') mid = '차량계건설기계';
+    }
+
+    // 2) 중분류가 '거푸집동바리'로 묶인 경우 -> 9×9 단독 중분류 '동바리' 또는 '거푸집'으로 정규화
+    if (mid === '거푸집동바리') {
+      mid = (minor.includes('동바리') || minor.includes('서포트')) ? '동바리' : '거푸집';
+    }
+
+    // 3) 비계 하위에 거푸집이 들어간 경우 (예: 비계 > 거푸집) -> '거푸집' 중분류로 교정
+    if (mid === '비계' && (minor.includes('거푸집') || minor.includes('폼'))) {
+      mid = '거푸집';
+    }
+
+    // 이미 유효한 대/중이 정해져 있다면 즉시 반환
+    if (major && mid && validMajors.includes(major)) {
+      return { major, mid, minor: minor || mid };
+    }
+
+    // 미지정 레거시 레코드인 경우 키워드로 자동 추론
+    const text = `${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.workName || ''}`;
+    if (text.includes('전등') || text.includes('투광등') || text.includes('조도') || text.includes('조명')) {
+      major = '전기시설';
+      mid = '전등시설';
+      minor = minor || '투광등';
+    } else if (text.includes('누전차단기') || text.includes('멀티작업선') || text.includes('접지')) {
+      major = '전기시설';
+      if (text.includes('누전차단기')) mid = '누전차단기';
+      else if (text.includes('접지')) mid = '접지시설';
+      else mid = '전선';
+      minor = minor || (text.includes('누전차단기') ? '누전차단기' : '가설전선/이동릴선');
+    } else if (text.includes('소화기') || text.includes('화재')) {
+      major = '소방시설';
+      mid = '소화시설';
+      minor = minor || '분말소화기';
+    } else if (text.includes('펌프카') || text.includes('크레인') || text.includes('지게차') || text.includes('굴착기')) {
+      major = '건설장비';
+      if (text.includes('펌프카')) { mid = '생산장비'; minor = '펌프카'; }
+      else if (text.includes('크레인')) { mid = '양중장비'; minor = minor || '타워크레인'; }
+      else if (text.includes('굴착기')) { mid = '굴착장비'; minor = '굴착기'; }
+      else if (text.includes('지게차')) { mid = '운반장비'; minor = '지게차'; }
+    } else if (text.includes('말비계') || text.includes('사다리') || text.includes('우마')) {
+      major = '작업발판';
+      mid = text.includes('사다리') ? '이동식 사다리' : '말비계';
+      minor = minor || mid;
+    } else if (text.includes('안전대') && (text.includes('미착용') || text.includes('보호구') || text.includes('체결'))) {
+      if (text.includes('부착설비') || text.includes('생명줄') || text.includes('걸이')) {
+        major = '가시설';
+        mid = '안전시설';
+        minor = '안전대걸이시설';
+      } else {
+        major = 'PPE';
+        mid = '안전대';
+        minor = minor || '안전대';
+      }
+    } else if (text.includes('동바리') || text.includes('서포트')) {
+      major = '가시설';
+      mid = '동바리';
+      minor = minor || '파이프서포트';
+    } else if (text.includes('거푸집') || text.includes('갱폼') || text.includes('알폼') || text.includes('유로폼')) {
+      major = '가시설';
+      mid = '거푸집';
+      minor = minor || (text.includes('갱폼') ? '갱폼' : '유로폼');
+    } else if (text.includes('난간') || text.includes('개구부') || text.includes('방호선반') || text.includes('방망') || text.includes('낙하물방지')) {
+      major = '가시설';
+      mid = '안전시설';
+      if (text.includes('난간')) minor = minor || '안전난간';
+      else if (text.includes('덮개') || text.includes('개구부')) minor = minor || '덮개';
+      else minor = minor || '낙하방지시설';
+    }
+
+    major = major || r.kind || '가시설';
+    mid = mid || r.item || '비계';
+    minor = minor || r.agent || '시스템비계';
+
+    return { major, mid, minor };
+  }
+
   // ── 2. 개정 대장 열 정의 (총 31개 열) ──
   // [그룹, 항목명, 너비, 드롭다운 목록키, 값 추출 함수]
   const COLS = [
@@ -134,9 +226,9 @@
 
     // [부적합 분류] 유형과 기인물(대, 중, 소)
     ['부적합 분류', '유형', 20, 'types', r => mapAccidentType(r.type)],
-    ['부적합 분류', '기인물(대)', 14, 'agentsMajor', r => r.agentMajor || r.kind || '가시설'],
-    ['부적합 분류', '기인물(중)', 14, 'agentsMid', r => r.agentMid || r.item || '비계'],
-    ['부적합 분류', '기인물(소)', 18, 'agentsMinor', r => r.agentMinor || r.agent || '시스템비계'],
+    ['부적합 분류', '기인물(대)', 14, 'agentsMajor', r => resolveAgentHierarchy(r).major],
+    ['부적합 분류', '기인물(중)', 14, 'agentsMid', r => resolveAgentHierarchy(r).mid],
+    ['부적합 분류', '기인물(소)', 18, 'agentsMinor', r => resolveAgentHierarchy(r).minor],
 
     // [관련근거]
     ['관련근거', '산업안전보건법', 24, 'laws', r => r.law || (r.basis && r.basis.law) || ''],

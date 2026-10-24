@@ -1,0 +1,64 @@
+{
+  "site": "OO물류센터 신축공사",
+  "productType": "공동주택",
+  "progressRate": 35,
+  "stage": "지하 골조 공사 단계",
+  "severity": "중부적합",
+  "subcontractor": "홍길동사",
+  "inspectRound": "1차",
+  "siteInfo": {
+    "progress": "35%",
+    "scale": "지상5층 연면적 6만㎡",
+    "amount": "620억"
+  },
+  "content": "안전대 미설치",
+  "location": "실내 작업장",
+  "workName": "비계설치작업",
+  "workGroup": "가설공사",
+  "kind": "PPE",
+  "item": "안전대",
+  "agent": "안전대",
+  "type": "떨어짐(추락, 사람)",
+  "condition": "안전방호장치의 결함 (미설치·해체·불량)",
+  "action": "불안전한 상태 방치",
+  "mgmtCauses": [
+    "계획 미수립",
+    "불안전 행동",
+    "불안전 상태"
+  ],
+  "holdPoint": true,
+  "interviewOpinion": "",
+  "auditProposal": "",
+  "pmVerdict": "",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제32조, 제44조"
+  },
+  "law": "안전보건규칙 제32조, 제44조",
+  "causes": [
+    "물적"
+  ],
+  "inspectedDate": "2026-10-10",
+  "id": "20261010-154407-ippb",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-10T06:44:07.138Z",
+  "inspector": "관리자",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
+  "updatedBy": "관리자",
+  "photos": [
+    "data/2026/photos/10/20261010-154407-ippb_p1_mv213p7m.jpg"
+  ],
+  "fix": {
+    "photo": null
+  },
+  "status": "미조치",
+  "locationDetail": "터빈동",
+  "workMethod": "고소작업",
+  "agentMajor": "PPE",
+  "agentMid": "안전대",
+  "agentMinor": "안전대(그네식)"
+}
