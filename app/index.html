@@ -542,28 +542,81 @@
           <!-- 목록 카드 동적 주입 -->
         </div>
 
-        <!-- 2. 엑셀 스프레드시트형 전체 표 뷰 (좌우 스크롤 지원) -->
-        <div id="recordTableContainer" style="display: none; overflow-x: auto; margin-top: 4px; border: 1px solid var(--gray-200); border-radius: 8px;">
-          <table id="tblRecords" style="width: 100%; min-width: 1240px; border-collapse: collapse; font-size: 0.82rem; text-align: center;">
-            <thead style="background: #fef08a; color: #713f12; font-weight: 600; border-bottom: 2px solid #ca8a04;">
-              <tr>
-                <th style="padding: 10px 4px; border: 1px solid #fde047; width: 36px;"><input type="checkbox" id="chkAllRecords" title="전체 선택"></th>
-                <th style="padding: 10px 6px; border: 1px solid #fde047; width: 42px;">No</th>
-                <th style="padding: 10px 6px; border: 1px solid #fde047; width: 65px;">사진</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 130px;">현장명</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">점검일자</th>
-                <th style="padding: 10px 10px; border: 1px solid #fde047; text-align: left; min-width: 200px;">부적합 내용</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 110px;">장소/위치</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 110px;">작업명</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 85px;">유형</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 95px;">기인물</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 115px;">9×9 영역/대상</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 100px;">불안전상태</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">발생원인</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 90px;">조치상태</th>
-                <th style="padding: 10px 10px; border: 1px solid #fde047; text-align: left; min-width: 170px;">조치내용</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 80px;">점검자</th>
-                <th style="padding: 10px 8px; border: 1px solid #fde047; width: 105px;">관리</th>
+        <!-- 2. 엑셀 스프레드시트형 전체 표 뷰 (상·하단 스크롤바 및 즉시 가로 이동 지원) -->
+        <div id="recordTableScrollToolbar" style="display: none; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid var(--gray-300); border-bottom: none; border-radius: 8px 8px 0 0; padding: 7px 12px; margin-top: 6px;">
+          <div style="font-size: 0.82rem; font-weight: 700; color: var(--gray-800); display: flex; align-items: center; gap: 8px;">
+            <span>📊 엑셀 대장 전체 표</span>
+            <span style="font-size: 0.74rem; color: var(--gray-500); font-weight: normal;">(상·하단 스크롤바 또는 버튼으로 즉시 가로 이동)</span>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" id="btnScrollTableLeft" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.76rem; background: #ffffff;" title="왼쪽으로 스크롤">◀ 좌로 이동</button>
+            <button type="button" id="btnScrollTableRight" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.76rem; background: #ffffff;" title="오른쪽으로 스크롤">▶ 우로 이동</button>
+          </div>
+        </div>
+
+        <!-- 상단 가로 스크롤바 (창 맨 아래로 내려가지 않고 상단에서 즉시 스크롤) -->
+        <div id="recordTableTopScroll" style="display: none; overflow-x: auto; overflow-y: hidden; height: 14px; background: #f1f5f9; border-left: 1px solid var(--gray-300); border-right: 1px solid var(--gray-300);">
+          <div id="recordTableTopScrollDummy" style="height: 1px; min-width: 2750px;"></div>
+        </div>
+
+        <!-- 메인 표 컨테이너 (max-height와 내부 스크롤로 브라우저 하단까지 갈 필요 없이 바로 조작) -->
+        <div id="recordTableContainer" style="display: none; overflow: auto; max-height: 70vh; border: 1px solid var(--gray-300); border-radius: 0 0 8px 8px; background: #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+          <table id="tblRecords" style="width: 100%; min-width: 2750px; border-collapse: separate; border-spacing: 0; font-size: 0.8rem; text-align: center;">
+            <thead style="position: sticky; top: 0; z-index: 10; background: #fef08a; color: #713f12; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+              <!-- 1행: 그룹 헤더 (엑셀 대장 상단 그룹과 100% 일치) -->
+              <tr style="background: #fde047; font-size: 0.78rem;">
+                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">선택/No</th>
+                <th colspan="6" style="padding: 6px 4px; border: 1px solid #eab308;">부적합 사항</th>
+                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">공종·작업방법</th>
+                <th colspan="4" style="padding: 6px 4px; border: 1px solid #eab308;">부적합 분류</th>
+                <th colspan="1" style="padding: 6px 4px; border: 1px solid #eab308;">관련근거</th>
+                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">불안전 상황</th>
+                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">근본원인 분석</th>
+                <th colspan="4" style="padding: 6px 4px; border: 1px solid #eab308;">발생원인 (4대요인)</th>
+                <th colspan="3" style="padding: 6px 4px; border: 1px solid #eab308;">관계자·점검자 의견</th>
+                <th colspan="4" style="padding: 6px 4px; border: 1px solid #eab308;">현장/컨설팅</th>
+                <th colspan="3" style="padding: 6px 4px; border: 1px solid #eab308;">조치사항</th>
+                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">관리정보</th>
+                <th colspan="1" style="padding: 6px 4px; border: 1px solid #eab308;">관리</th>
+              </tr>
+              <!-- 2행: 세부 항목 헤더 (총 35개 열) -->
+              <tr style="background: #fef08a;">
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 34px;"><input type="checkbox" id="chkAllRecords" title="전체 선택"></th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 40px;">No</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 60px;">사진 1</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 60px;">사진 2</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 85px;">부적합 등급</th>
+                <th style="padding: 8px 10px; border: 1px solid #fde047; text-align: left; min-width: 220px;">내용</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 100px;">협력사</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 100px;">장소/위치</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 105px;">공종</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 105px;">작업방법</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 95px;">유형</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 90px;">기인물(대)</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 95px;">기인물(중)</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 110px;">기인물(소)</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 130px;">산업안전보건법</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 110px;">상태</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 110px;">행동</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 110px;">법적 관리감독</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 120px;">안전시스템</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 65px;">계획 미수립</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 65px;">계획 미이행</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 65px;">불안전 행동</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 65px;">불안전 상태</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 120px;">관계자 의견</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 95px;">점검자 의견 구분</th>
+                <th style="padding: 8px 10px; border: 1px solid #fde047; min-width: 150px; text-align: left;">점검자 의견</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 110px;">현장명</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 85px;">상품유형</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 65px;">공정률(%)</th>
+                <th style="padding: 8px 8px; border: 1px solid #fde047; width: 120px;">표준공정단계</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 80px;">조치상태</th>
+                <th style="padding: 8px 10px; border: 1px solid #fde047; text-align: left; min-width: 150px;">조치내용</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 60px;">조치사진</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 85px;">점검일자</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 75px;">점검자</th>
+                <th style="padding: 8px 6px; border: 1px solid #fde047; width: 95px;">관리</th>
               </tr>
             </thead>
             <tbody id="tblRecordsBody"></tbody>
