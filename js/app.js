@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261018_1';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage } from './pptx-importer-v2.js?v=20261025_v2_fix';
+import { parsePPTX, parseImage } from './pptx-importer-v2.js?v=20261025_instant_photo_split';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -3340,9 +3340,25 @@ function renderImportedCards() {
       border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem;
     `;
 
-    const thumbHtml = rec.photos && rec.photos[0]
-      ? `<img src="${rec.photos[0]}" style="width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid #cbd5e1; flex-shrink: 0;">`
-      : `<div style="width: 64px; height: 64px; background: #f1f5f9; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.72rem; flex-shrink: 0;">사진없음</div>`;
+    const p1 = (rec.photos && rec.photos[0]) || rec.photo1;
+    const p2 = (rec.photos && rec.photos[1]) || rec.photo2;
+    const thumbHtml = `
+      <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
+        ${p1 ? `
+          <div style="position: relative; display: inline-block;">
+            <img src="${p1}" style="width: 68px; height: 68px; object-fit: cover; border-radius: 6px; border: 2px solid #3b82f6; display: block;" title="사진 1: 현장 부적합">
+            <span style="position: absolute; bottom: 2px; left: 2px; background: rgba(30,58,138,0.88); color: white; font-size: 0.60rem; font-weight: 700; padding: 1px 4px; border-radius: 3px;">사진1</span>
+          </div>
+        ` : ''}
+        ${p2 ? `
+          <div style="position: relative; display: inline-block;">
+            <img src="${p2}" style="width: 68px; height: 68px; object-fit: cover; border-radius: 6px; border: 2px solid #10b981; display: block;" title="사진 2: 세부 원인/위치">
+            <span style="position: absolute; bottom: 2px; left: 2px; background: rgba(6,78,59,0.88); color: white; font-size: 0.60rem; font-weight: 700; padding: 1px 4px; border-radius: 3px;">사진2</span>
+          </div>
+        ` : ''}
+        ${!p1 && !p2 ? `<div style="width: 68px; height: 68px; background: #f1f5f9; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.72rem;">사진없음</div>` : ''}
+      </div>
+    `;
 
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
