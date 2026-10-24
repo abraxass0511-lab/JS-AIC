@@ -547,23 +547,28 @@
         color: #000000;
         box-sizing: border-box;
       ">
-        <!-- 1. 최상단 헤더 행 (5개 블록) -->
-        <div style="display: grid; grid-template-columns: 140px 135px 70px minmax(280px, 1fr) 210px; gap: 0; border: 1.5px solid #7ba0cd; margin-bottom: 6px;">
-          <div style="background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.30rem; color: #002060; padding: 6px; letter-spacing: -0.5px;">
+        <!-- 1. 최상단 헤더 행 (5개 블록 - flex 레이아웃으로 견고하게 유지) -->
+        <div style="display: flex; align-items: stretch; border: 1.5px solid #7ba0cd; margin-bottom: 6px; min-height: 74px;">
+          <!-- 1) 시설물/법규 -->
+          <div style="width: 140px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.30rem; color: #002060; padding: 6px; letter-spacing: -0.5px;">
             시설물/법규
           </div>
-          <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; border: 2px solid #ed7d31; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px;">
+          <!-- 2) 사고유형 & 등급 -->
+          <div style="width: 135px; flex-shrink: 0; background: #ffffff; border-right: 1.5px solid #7ba0cd; border: 2px solid #ed7d31; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; box-sizing: border-box;">
             <div style="font-weight: 800; font-size: 1.05rem; color: #000000; text-align: center;">${data.type}</div>
             <div style="font-weight: 800; font-size: 0.92rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'};">[${data.severity}]</div>
           </div>
-          <div style="background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #002060; text-align: center; padding: 4px; line-height: 1.25;">
+          <!-- 3) 관련기준 라벨 -->
+          <div style="width: 65px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #002060; text-align: center; padding: 4px; line-height: 1.25;">
             관련<br>기준
           </div>
-          <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 6px 12px; display: flex; flex-direction: column; justify-content: center; word-break: keep-all;">
+          <!-- 4) 관련기준 내용 (남는 공간 전체 100% 차지) -->
+          <div style="flex: 1; min-width: 250px; background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 6px 12px; display: flex; flex-direction: column; justify-content: center; word-break: keep-all;">
             <div style="font-weight: 700; font-size: 0.86rem; color: #000000; margin-bottom: 3px;">${data.lawTitle}</div>
             <div style="font-size: 0.78rem; color: #333333; line-height: 1.4;">${data.lawBody}</div>
           </div>
-          <div style="background: #ffffff; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; font-size: 0.84rem; font-weight: 600; color: #000000; line-height: 1.55; white-space: nowrap;">
+          <!-- 5) 4대 발생요인 체크박스 -->
+          <div style="width: 215px; flex-shrink: 0; background: #ffffff; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; font-size: 0.84rem; font-weight: 600; color: #000000; line-height: 1.55; white-space: nowrap;">
             <div>${data.isUnplanned ? '☑' : '☐'} 계획 미수립 &nbsp;&nbsp; ${data.isUnexecuted ? '☑' : '☐'} 계획 미이행</div>
             <div>${data.isAction ? '☑' : '☐'} 불안전 행동 &nbsp;&nbsp; ${data.isCondition ? '☑' : '☐'} 불안전 상태</div>
           </div>
