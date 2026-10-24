@@ -28,7 +28,7 @@
   /**
    * 레코드로부터 점검장표용 세부 데이터 정규화 및 추론 (템플릿 1, 2 정밀 일치)
    */
-  function normalizeJangpyoData(r, rulesFromTaxonomy = []) {
+  function normalizeJangpyoData(r, rulesFromTaxonomy = [], options = {}) {
     const isMajor = r.severity === '중부적합';
     const severity = isMajor ? '중부적합' : '경부적합';
     const type = r.type || '충돌/협착';
@@ -85,48 +85,56 @@
       lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
     }
 
-    // 사진 하단 규정 수칙 및 작업자 책임 (원본 장표 2 실물: 줄걸이 작업자의 책임)
-    let guidelineTitle = '';
-    let guidelineBody = '';
-
-    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프')) {
-      guidelineTitle = '줄걸이 작업자의 책임';
-      guidelineBody = '1) 양중 시작 전 양중물로부터 5m 이상 안전거리를 확보해야 하고 양중물 하부에서 대기를 금지하며\n   양중물이 지면으로부터 1.5m 이내에 위치하였을 경우, 접근해야 한다.';
-    } else if (text.includes('비계') || text.includes('난간') || text.includes('발판') || text.includes('추락')) {
-      guidelineTitle = '고소작업자의 안전 책임';
-      guidelineBody = '1) 고소작업 시 안전대 걸이시설 체결 및 안전모 턱끈을 철저히 결속해야 하며,\n   작업발판 임의 해체 또는 안전난간 훼손을 금지하고 이상 발견 시 즉시 작업을 중지해야 한다.';
-    } else if (text.includes('개구부') || text.includes('덮개')) {
-      guidelineTitle = '개구부 관리 책임';
-      guidelineBody = '1) 바닥 개구부 상부에는 규격 덮개를 견고히 고정하고 "추락주의" 위험표지를 부착해야 하며,\n   임의 개방을 금지하고 부득이한 개방 시 감시인을 배치해야 한다.';
-    } else {
-      guidelineTitle = '표준 안전작업 기준 준수 책임';
-      guidelineBody = '1) 작업 시작 전 TBM 위험요인을 숙지하고 보호구를 100% 착용해야 하며,\n   관리감독자의 지휘 하에 승인된 작업계획서 절차에 따라 안전하게 작업해야 한다.';
+    // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
+    const hasGuideline = Boolean(r.hasGuideline || (options && options.showGuideline));
+    let guidelineTitle = r.guidelineTitle || '';
+    let guidelineBody = r.guidelineBody || '';
+    if (hasGuideline && !guidelineTitle) {
+      if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프')) {
+        guidelineTitle = '줄걸이 작업자의 책임';
+        guidelineBody = '1) 양중 시작 전 양중물로부터 5m 이상 안전거리를 확보해야 하고 양중물 하부에서 대기를 금지하며\n   양중물이 지면으로부터 1.5m 이내에 위치하였을 경우, 접근해야 한다.';
+      } else if (text.includes('비계') || text.includes('난간') || text.includes('발판') || text.includes('추락')) {
+        guidelineTitle = '고소작업자의 안전 책임';
+        guidelineBody = '1) 고소작업 시 안전대 걸이시설 체결 및 안전모 턱끈을 철저히 결속해야 하며,\n   작업발판 임의 해체 또는 안전난간 훼손을 금지하고 이상 발견 시 즉시 작업을 중지해야 한다.';
+      } else {
+        guidelineTitle = '표준 안전작업 기준 준수 책임';
+        guidelineBody = '1) 작업 시작 전 TBM 위험요인을 숙지하고 보호구를 100% 착용해야 하며,\n   관리감독자의 지휘 하에 승인된 작업계획서 절차에 따라 안전하게 작업해야 한다.';
+      }
     }
 
     // 부적합 내용 (원본 양식의 붉은색 강조 단어 분리)
     let mainContent = rawContent;
     let mainContentParts = { prefix: rawContent, highlight: '', suffix: '' };
-    if (mainContent.includes('유도로프 미사용')) {
+    if (mainContent.includes('↔')) {
+      const parts = mainContent.split('↔');
+      mainContentParts.prefix = parts[0].trim() + ' ↔ ';
+      mainContentParts.highlight = parts[1].trim();
+      mainContentParts.suffix = '';
+    } else if (mainContent.includes('유도로프 미사용')) {
       const idx = mainContent.indexOf('유도로프 미사용');
       mainContentParts.prefix = mainContent.slice(0, idx);
       mainContentParts.highlight = '유도로프 미사용';
       mainContentParts.suffix = mainContent.slice(idx + '유도로프 미사용'.length);
-    } else if (mainContent.includes('↔')) {
-      const parts = mainContent.split('↔');
-      mainContentParts.prefix = parts[0].trim();
-      mainContentParts.highlight = ' ↔ ' + parts[1].trim();
-      mainContentParts.suffix = '';
     }
 
-    // 사진 상단 타이틀 (원본 2: 좌 '양중작업 시 화물을 직접 손으로 잡음' / 우 '양중작업 시 유도로프 미사용')
+    // 사진 상단 타이틀 (실물 사진과 100% 동일한 부적합 타이틀)
     let photo1Title = r.photo1Title || '';
     let photo2Title = r.photo2Title || '';
-    if (!photo1Title || !photo2Title) {
-      if (text.includes('양중') || text.includes('유도로프') || text.includes('손으로')) {
+    if (!photo1Title) {
+      if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
+        photo1Title = '양중작업 시 화물의 수평양중 미 실시';
+      } else if (text.includes('손으로') || (text.includes('유도로프') && text.includes('미사용'))) {
         photo1Title = '양중작업 시 화물을 직접 손으로 잡음';
+      } else {
+        photo1Title = mainContentParts.prefix ? mainContentParts.prefix.replace('↔', '').trim() : (mainContent || '현장 부적합 작업 전경');
+      }
+    }
+    if (!photo2Title) {
+      if (text.includes('수평') || text.includes('로프간격')) {
+        photo2Title = '지상에서 보 거푸집 로프체결 간격 미준수';
+      } else if (text.includes('유도로프') || text.includes('손으로')) {
         photo2Title = '양중작업 시 유도로프 미사용';
       } else {
-        photo1Title = mainContent || '현장 부적합 작업 전경';
         photo2Title = r.action || '위험요인 세부 현황';
       }
     }
@@ -135,7 +143,9 @@
     // 발생원인 의견 (인터뷰 결과)
     let interviewOpinion = r.interviewOpinion || r.workerOpinion || '';
     if (!interviewOpinion) {
-      if (text.includes('양중') || text.includes('유도로프')) {
+      if (text.includes('수평') || text.includes('로프간격')) {
+        interviewOpinion = '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다. 양중로프를 걸 수 있는 위치가 어느 정도 적당하다고 생각되는 곳에 로프를 걸었다.';
+      } else if (text.includes('양중') || text.includes('유도로프')) {
         interviewOpinion = '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.';
       } else {
         interviewOpinion = r.action 
@@ -145,14 +155,16 @@
     }
 
     // 점검단 제안
-    const proposalType = r.inspectorOpinionType || '시스템 개선';
+    let proposalType = r.inspectorOpinionType || '시스템 개선';
     let proposalSub = '(이행강화안 수립)';
     if (proposalType === '교육/코칭') proposalSub = '(협력사 교육)';
     else if (proposalType === '페널티') proposalSub = '(패널티 부과)';
 
     let proposalContent = r.auditProposal || r.inspectorOpinion || '';
     if (!proposalContent) {
-      if (text.includes('양중') || text.includes('유도로프')) {
+      if (text.includes('수평') || text.includes('로프간격')) {
+        proposalContent = '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다. 지상에서 양중로프를 체결할 때 화물의 여장간격이 동일하도록 작업팀 교육 및 이행강화 노력이 필요함. 또한 원인이 되는 자재 적재방법 고려 필요.';
+      } else if (text.includes('양중') || text.includes('유도로프')) {
         proposalContent = '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.';
       } else {
         proposalContent = '설치조립작업 시 발생 가능한 사고를 방지하기 위해 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.';
@@ -183,7 +195,10 @@
       countermeasureContent = r.countermeasures.join('\n');
       if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
     } else {
-      if (text.includes('양중') || text.includes('유도로프')) {
+      if (text.includes('수평') || text.includes('로프간격')) {
+        countermeasureContent = '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈';
+        pmVerdictType = '교육/코칭';
+      } else if (text.includes('양중') || text.includes('유도로프')) {
         countermeasureContent = '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립';
       } else {
         countermeasureContent = '부적합 사항에 대해 작업팀 교육 및 표준 안전작업절차를 보완하고 일일 점검을 강화하여 재발 방지 조치함.';
@@ -216,6 +231,7 @@
       isHoldPoint,
       lawTitle,
       lawBody,
+      hasGuideline,
       guidelineTitle,
       guidelineBody,
       mainContent,
@@ -288,17 +304,17 @@
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 4) 관련기준 내용 (w = 5.483, x = 4.35 ~ 9.833, 상단 정렬)
+    // 4) 관련기준 내용 (w = 5.483, x = 4.35 ~ 9.833, 상단 정렬, PowerPoint 줄간격 최적화)
     slide.addShape(pptx.ShapeType.rect, {
       x: 4.35, y: 0.40, w: 5.483, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: `${data.lawTitle}\n`, options: { fontSize: 9.8, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.lawBody, options: { fontSize: 8.6, color: '222222', fontFace: FONT_MALGUN } }
+      { text: `${data.lawTitle}\n`, options: { fontSize: 9.2, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.lawBody, options: { fontSize: 8.2, color: '222222', fontFace: FONT_MALGUN } }
     ], {
       x: 4.35, y: 0.40, w: 5.483, h: 1.00,
-      margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
+      margin: [4, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.15
     });
 
     // 5) 4대 발생요인 (w = 3.00, x = 9.833 ~ 12.833, 가로선 분할, 원본과 동일하게 굵고 큰 13.5pt 볼드체 적용)
@@ -392,19 +408,19 @@
       { text: data.inspectRound, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 10.45, y: 1.45, w: 2.383, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
-    // 부적합 개요 2행: 부적합 내용 전체 너비 독립 사각형 (x = 1.25 ~ 12.833, w = 11.583, h = 0.43, 11.5pt 볼드)
+    // 부적합 개요 2행: 부적합 내용 전체 너비 독립 사각형 (x = 1.25 ~ 12.833, w = 11.583, h = 0.43, 줄바꿈 방지 최적화)
     slide.addShape(pptx.ShapeType.rect, {
       x: 1.25, y: 1.87, w: 11.583, h: 0.43,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11.5 } },
-      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11.5 } },
-      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 11.5 } },
-      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11.5 } }
+      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.8 } },
+      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 10.8 } },
+      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 10.8 } },
+      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.8 } }
     ], {
       x: 1.25, y: 1.87, w: 11.583, h: 0.43,
-      align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      align: 'left', valign: 'middle', margin: [0, 8, 0, 8], lineSpacingMultiple: 1.10
     });
 
     // ── 3. 본문 구역 (y = 2.38부터) ──
@@ -421,6 +437,11 @@
       }
     }
 
+    // 사용자 요청: 특별한 언급이 없으면 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣지 않고 사진 1, 2가 바닥(y=7.05)까지 꽉 차도록 확장
+    const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
+    const photo1ImgHeight = showGuidelineBox ? 3.29 : 4.29; // 수칙 박스 없을 때 y=2.76부터 7.05까지 꽉 채움!
+    const photo2ImgHeight = showGuidelineBox ? 2.91 : 3.91; // y=3.14부터 7.05까지 꽉 채움!
+
     // A. 사진 1 빨간 배너 (y = 2.38, h = 0.38, 11.5pt 볼드)
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.50, y: 2.38, w: 2.95, h: 0.38,
@@ -432,16 +453,16 @@
       align: 'center', valign: 'middle'
     });
 
-    // 사진 1 이미지 (y = 2.76, h = 3.29, 하단 y = 6.05에 정확히 종료)
+    // 사진 1 이미지 (기본: 바닥 y = 7.05에 정확히 종료하여 원본 사진 2처럼 거대하게 채움!)
     if (photo1Base64) {
-      slide.addImage({ data: photo1Base64, x: 0.50, y: 2.76, w: 2.95, h: 3.29 });
+      slide.addImage({ data: photo1Base64, x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 0.50, y: 2.76, w: 2.95, h: 3.29,
+        x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
         fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
       });
       slide.addText('📸 사진 1', {
-        x: 0.50, y: 2.76, w: 2.95, h: 3.29,
+        x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
         fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
       });
     }
@@ -467,44 +488,44 @@
       align: 'center', valign: 'middle'
     });
 
-    // 사진 2 이미지 (y = 3.14, h = 2.91, 하단 y = 6.05에 정확히 종료하여 사진 1과 바닥선 완벽 일치!)
+    // 사진 2 이미지 (기본: 바닥 y = 7.05에 정확히 종료하여 사진 1 및 우측 박스와 완벽 일치!)
     if (photo2Base64) {
-      slide.addImage({ data: photo2Base64, x: 3.55, y: 3.14, w: 2.95, h: 2.91 });
+      slide.addImage({ data: photo2Base64, x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
-        x: 3.55, y: 3.14, w: 2.95, h: 2.91,
+        x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
         fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
       });
       slide.addText('📸 사진 2', {
-        x: 3.55, y: 3.14, w: 2.95, h: 2.91,
+        x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
         fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
       });
     }
 
-    // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (y = 2.38, h = 0.38, 16pt 굵은 볼드체 블랙 적용)
+    // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (y = 2.38, h = 0.38, 16.5pt 굵은 볼드체 블랙)
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.60, y: 2.38, w: 6.233, h: 0.38,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('발생원인 (인터뷰 결과)', {
       x: 6.60, y: 2.38, w: 6.233, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 16, bold: true, color: '000000', align: 'center', valign: 'middle'
+      fontFace: FONT_MALGUN, fontSize: 16.5, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 우측 구역 1: [의견 : 안전관리자 및 시공관리자] (y = 2.76, h = 1.05, 11.5pt 볼드 타이틀 + 10.5pt 본문)
+    // 우측 구역 1: [의견 : 안전관리자 및 시공관리자] (y = 2.76, h = 1.05, 줄간격 1.20으로 박스 밀착)
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.60, y: 2.76, w: 6.233, h: 1.05,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.interviewOpinion, options: { fontSize: 10.5, color: '222222', fontFace: FONT_MALGUN } }
+      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.interviewOpinion, options: { fontSize: 10, color: '222222', fontFace: FONT_MALGUN } }
     ], {
       x: 6.60, y: 2.76, w: 6.233, h: 1.05,
-      margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.35
+      margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.20
     });
 
-    // 우측 구역 2: [점검단 제안] (y = 3.81, h = 1.15, 단일 외곽선 + 단일 수직 분리선으로 점선 현상 방지)
+    // 우측 구역 2: [점검단 제안] (y = 3.81, h = 1.15, 단일 외곽선 + 단일 수직 분리선, 줄간격 1.20)
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.60, y: 3.81, w: 6.233, h: 1.15,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
@@ -514,29 +535,29 @@
       line: { color: C_BORDER, width: 1.2 }
     });
     slide.addText([
-      { text: '[점검단 제안]\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: '[점검단 제안]\n', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: `${data.proposalType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.proposalSub, options: { fontSize: 10, color: '595959', fontFace: FONT_MALGUN } }
+      { text: data.proposalSub, options: { fontSize: 9.5, color: '595959', fontFace: FONT_MALGUN } }
     ], {
       x: 6.60, y: 3.81, w: 1.65, h: 1.15,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
     slide.addText(data.proposalContent, {
       x: 8.25, y: 3.81, w: 4.583, h: 1.15,
-      fontFace: FONT_MALGUN, fontSize: 10.5, color: '000000', margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.35
+      fontFace: FONT_MALGUN, fontSize: 10, color: '000000', margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.20
     });
 
-    // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 4.96, h = 0.38, 16pt 굵은 볼드체 블랙 적용)
+    // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 4.96, h = 0.38, 16.5pt 굵은 볼드체 블랙)
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.60, y: 4.96, w: 6.233, h: 0.38,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('개선대책 (현장 협의 결과)', {
       x: 6.60, y: 4.96, w: 6.233, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 16, bold: true, color: '000000', align: 'center', valign: 'middle'
+      fontFace: FONT_MALGUN, fontSize: 16.5, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 우측 구역 4: 개선대책 본문 & PM 판정결과 (y = 5.34, h = 1.71, 단일 외곽선 + 깔끔한 1.2pt 수직 실선 분리)
+    // 우측 구역 4: 개선대책 본문 & PM 판정결과 (y = 5.34, h = 1.71, 단일 외곽선 + 1.2pt 수직 실선 분리, 줄간격 1.25)
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.60, y: 5.34, w: 6.233, h: 1.71,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
@@ -547,29 +568,31 @@
     });
     slide.addText(data.countermeasureContent, {
       x: 6.60, y: 5.34, w: 4.583, h: 1.71,
-      fontFace: FONT_MALGUN, fontSize: 11.5, color: '000000', margin: [8, 12, 6, 12], valign: 'top', lineSpacingMultiple: 1.40
+      fontFace: FONT_MALGUN, fontSize: 11, color: '000000', margin: [8, 12, 6, 12], valign: 'top', lineSpacingMultiple: 1.25
     });
     slide.addText([
-      { text: '[PM 판정결과]\n\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: '[PM 판정결과]\n\n', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: `${data.pmVerdictType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.pmVerdictSub, options: { fontSize: 10, color: '595959', fontFace: FONT_MALGUN } }
+      { text: data.pmVerdictSub, options: { fontSize: 9.5, color: '595959', fontFace: FONT_MALGUN } }
     ], {
       x: 11.183, y: 5.34, w: 1.65, h: 1.71,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // ── 좌측 하단 규정 수칙 박스 (줄걸이 작업자의 책임: y = 6.05, h = 1.00, 바닥선 y = 7.05로 우측과 완벽 일치!) ──
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 6.05, w: 6.00, h: 1.00,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
-    });
-    slide.addText([
-      { text: `${data.guidelineTitle}\n`, options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.guidelineBody, options: { fontSize: 10.2, color: '222222', fontFace: FONT_MALGUN } }
-    ], {
-      x: 0.50, y: 6.05, w: 6.00, h: 1.00,
-      margin: [6, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.35
-    });
+    // D. 좌측 하단 규정 수칙 박스 (특별한 언급/지정이 있는 경우에만 표시, 기본값은 미표시)
+    if (showGuidelineBox) {
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0.50, y: 6.05, w: 6.00, h: 1.00,
+        fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
+      });
+      slide.addText([
+        { text: `${data.guidelineTitle}\n`, options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+        { text: data.guidelineBody, options: { fontSize: 9.5, color: '222222', fontFace: FONT_MALGUN } }
+      ], {
+        x: 0.50, y: 6.05, w: 6.00, h: 1.00,
+        margin: [4, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.15
+      });
+    }
   }
 
   /**
@@ -633,13 +656,18 @@
     const { photo1Url = '', photo2Url = '', rulesFromTaxonomy = [] } = options;
     const data = normalizeJangpyoData(record, rulesFromTaxonomy);
 
+    // 사용자 지시: 특별한 언급이 없으면 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣지 않고 사진 1, 2가 바닥까지 꽉 차도록 확장
+    const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
+    const photo1Height = showGuidelineBox ? '250px' : '346px';
+    const photo2Height = showGuidelineBox ? '222px' : '318px';
+
     const photo1Img = photo1Url 
-      ? `<img src="${photo1Url}" style="width: 100%; height: 250px; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: 250px; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 1</div>`;
+      ? `<img src="${photo1Url}" style="width: 100%; height: ${photo1Height}; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      : `<div style="width: 100%; height: ${photo1Height}; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 1</div>`;
 
     const photo2Img = photo2Url
-      ? `<img src="${photo2Url}" style="width: 100%; height: 222px; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: 222px; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 2</div>`;
+      ? `<img src="${photo2Url}" style="width: 100%; height: ${photo2Height}; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      : `<div style="width: 100%; height: ${photo2Height}; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 2</div>`;
 
     return `
       <div id="jangpyoSlidePreview" style="
@@ -762,11 +790,13 @@
               </div>
             </div>
 
-            <!-- 사진 하단 규정 수칙 박스 (상단 정렬) -->
-            <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px; padding: 8px 12px; font-size: 0.88rem; word-break: keep-all; line-height: 1.45;">
-              <div style="color: #000000; font-weight: 800; font-size: 0.95rem; margin-bottom: 4px;">${data.guidelineTitle}</div>
-              <div style="color: #222222; font-weight: 500; white-space: pre-line;">${data.guidelineBody}</div>
-            </div>
+            <!-- 사진 하단 규정 수칙 박스 (특별한 지정이 있는 경우에만 표시) -->
+            ${showGuidelineBox ? `
+              <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px; padding: 8px 12px; font-size: 0.88rem; word-break: keep-all; line-height: 1.45;">
+                <div style="color: #000000; font-weight: 800; font-size: 0.95rem; margin-bottom: 4px;">${data.guidelineTitle}</div>
+                <div style="color: #222222; font-weight: 500; white-space: pre-line;">${data.guidelineBody}</div>
+              </div>
+            ` : ''}
           </div>
 
           <!-- 우측 컬럼 (발생원인 및 개선대책 - 원본과 동일하게 굵은 볼드체 및 공백 완전 제거) -->
