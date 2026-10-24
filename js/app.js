@@ -824,19 +824,23 @@ function bindEvents() {
     const workGroupVal = $('#txtWorkGroup')?.value.trim() || '';
     const stageObj = determineStandardStage(progressVal, workGroupVal, productTypeVal);
 
-    const mgmtCauses = [
+    const mgmtCauses = selectedCauses.size > 0 ? [...selectedCauses] : [
       $('#chkMgmtPlanNotMade')?.checked ? '계획 미수립' : null,
       $('#chkMgmtPlanNotFollowed')?.checked ? '계획 미이행' : null,
       $('#chkMgmtUnsafeAction')?.checked ? '불안전 행동' : null,
       $('#chkMgmtUnsafeCondition')?.checked ? '불안전 상태' : null,
     ].filter(Boolean);
 
-    const matrixArea = $('#txtMatrixArea')?.value.trim() || '';
-    const matrixTarget = $('#txtMatrixTarget')?.value.trim() || '';
-    const matrixSpec = $('#txtMatrixSpec')?.value.trim() || '';
+    const agentMajor = $('#txtAgentMajor')?.value.trim() || $('#txtKind')?.value.trim() || '가시설';
+    const agentMid = $('#txtAgentMid')?.value.trim() || $('#txtItem')?.value.trim() || '비계';
+    const agentMinor = $('#txtAgentMinor')?.value.trim() || $('#txtAgent')?.value.trim() || '';
+
+    const matrixArea = $('#txtMatrixArea')?.value.trim() || agentMajor;
+    const matrixTarget = $('#txtMatrixTarget')?.value.trim() || agentMid;
+    const matrixSpec = $('#txtMatrixSpec')?.value.trim() || agentMinor;
     const rootCauseMgmt = $('#txtRootCauseMgmt')?.value.trim() || '';
     const rootCauseSystem = $('#txtRootCauseSystem')?.value.trim() || '';
-    const stakeholder = $('#txtStakeholder')?.value.trim() || '';
+    const stakeholder = $('#txtStakeholder')?.value?.trim() || '';
 
     const record = {
       site,
@@ -3430,26 +3434,30 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtKind')) $('#txtKind').value = maj;
   if ($('#txtItem')) $('#txtItem').value = mid;
   if ($('#txtAgent')) $('#txtAgent').value = min;
-  if ($('#txtInspectRound')) $('#txtInspectRound').value = rec.inspectRound || '1차';
   if ($('#txtType')) $('#txtType').value = rec.type || '';
+  if ($('#txtCondition')) $('#txtCondition').value = rec.condition || '';
+  if ($('#txtAction')) $('#txtAction').value = rec.action || '';
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
   if ($('#selInspectorOpinionType')) $('#selInspectorOpinionType').value = rec.inspectorOpinionType || '시스템 개선';
   if ($('#txtAuditProposal')) $('#txtAuditProposal').value = rec.auditProposal || '';
   if ($('#txtPmVerdict')) $('#txtPmVerdict').value = rec.pmVerdict || '';
   if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!rec.holdPoint;
 
-  // 관리적 원인 체크박스
+  // 관리적 4대 발생원인 칩 동기화
   const causes = rec.mgmtCauses || [];
   if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = causes.includes('계획 미수립');
   if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = causes.includes('계획 미이행');
   if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = causes.includes('불안전 행동');
   if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = causes.includes('불안전 상태');
+  selectedCauses.clear();
+  causes.forEach(c => selectedCauses.add(c));
+  updateCauseChips();
 
   // 9×9 점검인자 및 근본원인 (기존 데이터 또는 AI 즉시 추론)
   const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-  if ($('#txtMatrixArea')) $('#txtMatrixArea').value = rec.matrixArea || (m9 && m9.점검영역9x9) || '';
-  if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = rec.matrixTarget || (m9 && m9.점검대상9x9) || '';
-  if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = rec.matrixSpec || (m9 && m9.가시설세부사양) || '';
+  if ($('#txtMatrixArea')) $('#txtMatrixArea').value = rec.matrixArea || (m9 && m9.점검영역9x9) || maj;
+  if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = rec.matrixTarget || (m9 && m9.점검대상9x9) || mid;
+  if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = rec.matrixSpec || (m9 && m9.가시설세부사양) || min;
   if ($('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '';
   if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '';
   if ($('#txtStakeholder')) $('#txtStakeholder').value = rec.stakeholder || (m9 && m9.관리책임주체) || '';
