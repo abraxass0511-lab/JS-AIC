@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
 import { store } from './store.js?v=20261018_1';
-import { processImageFile } from './image-processor.js?v=20261011_8';
+import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage } from './pptx-importer.js?v=20261011_7';
+import { parsePPTX, parseImage } from './pptx-importer.js?v=20261025_jangpyo_fix';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]

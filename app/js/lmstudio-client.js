@@ -426,10 +426,70 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return null;
   }
 
+  /**
+   * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원
+   */
+  async function cleanOcrRecord(rawOcrText, fallbackRecord) {
+    if (!rawOcrText || rawOcrText.trim().length < 10) return fallbackRecord;
+
+    const systemPrompt = `너는 건설현장 패트롤 안전점검 장표 OCR 텍스트 정제 전문가 AI이다.
+주어진 OCR 원문 텍스트에서 안전점검 항목을 정확히 추출하여 오직 유효한 JSON 하나만 반환하라.
+반드시 아래 JSON 키를 포함해야 한다:
+{
+  "subcontractor": "협력사명 (예: 원영건업(주))",
+  "workGroup": "공종명 (예: 거푸집동바리공사)",
+  "location": "작업장소 (예: 108동)",
+  "inspectUser": "점검자 (예: 신우석 프로)",
+  "inspectRound": "점검차수 (예: '26년 下 3차)",
+  "content": "부적합 지적내용 전문",
+  "severity": "중부적합 또는 경부적합",
+  "type": "충돌/협착 또는 낙하 또는 추락 등",
+  "law": "관련 기준 또는 법규",
+  "mgmtCauses": ["계획 미이행", "불안전 행동" 등],
+  "interviewOpinion": "시공관리자/근로자 의견",
+  "auditProposal": "점검단 제안",
+  "pmVerdict": "PM 판정결과"
+}`;
+
+    // 1. LM Studio 로컬 서버 연결 시도
+    for (const ep of [currentEndpoint, ...DEFAULT_ENDPOINTS]) {
+      try {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 6000);
+        const res = await fetch(`${ep}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: currentModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `[OCR 텍스트 원문]:\n${rawOcrText}` }
+            ],
+            temperature: 0.1,
+            max_tokens: 800
+          }),
+          signal: ctrl.signal
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
+          const parsed = extractJSON(text);
+          if (parsed && (parsed.content || parsed.subcontractor)) {
+            return { ...fallbackRecord, ...parsed };
+          }
+        }
+      } catch (e) {}
+    }
+
+    return fallbackRecord;
+  }
+
   return {
     checkConnection,
     quickRuleAnalysis,
     streamAnalyzeSafetyText,
+    cleanOcrRecord,
     getEndpoint: () => currentEndpoint,
     setEndpoint: ep => { currentEndpoint = ep; localStorage.setItem('sp_lmstudio_endpoint', ep); },
     getModel: () => currentModel,
@@ -437,3 +497,4 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     isConnected: () => isConnected
   };
 });
+

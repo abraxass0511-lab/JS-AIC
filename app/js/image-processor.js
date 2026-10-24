@@ -74,10 +74,10 @@ export function detectJangpyo(canvas, width, height) {
         isJangpyo,
         layout: 'landscape',
         bounds: {
-          sxRatio: 0.010,
-          syRatio: 0.535,
-          swRatio: 0.435,
-          shRatio: 0.395
+          sxRatio: 0.045,
+          syRatio: 0.435,
+          swRatio: 0.455,
+          shRatio: 0.380
         }
       };
     } else {
