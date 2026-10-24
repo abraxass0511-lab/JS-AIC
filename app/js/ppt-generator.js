@@ -252,86 +252,90 @@
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
 
-    // ── 1. 최상단 행 (y = 0.40, h = 1.00) ──
-    // 1) 시설물/법규: 한 줄로 시원하게 배치 (줄바꿈 없이 18pt bold)
+    // ── 1. 최상단 행 (y = 0.40, h = 1.00, 전체 너비 12.333 in: x = 0.50 ~ 12.833) ──
+    // 1) 시설물/법규 (w = 1.70, x = 0.50 ~ 2.20)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 0.40, w: 1.80, h: 1.00,
+      x: 0.50, y: 0.40, w: 1.70, h: 1.00,
       fill: { color: C_HEADER_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('시설물/법규', {
-      x: 0.50, y: 0.40, w: 1.80, h: 1.00,
+      x: 0.50, y: 0.40, w: 1.70, h: 1.00,
       fontFace: FONT_MALGUN, fontSize: 18, bold: true, color: C_TITLE_BLUE,
       align: 'center', valign: 'middle', margin: 0
     });
 
-    // 2) 사고유형 & 부적합등급 (오렌지 테두리)
+    // 2) 사고유형 & 부적합등급 (w = 1.40, x = 2.20 ~ 3.60, 오렌지 테두리)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 2.30, y: 0.40, w: 1.40, h: 1.00,
+      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_ORANGE, width: 2 }
     });
     slide.addText([
       { text: `${data.type}\n`, options: { fontSize: 15, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: `[${data.severity}]`, options: { fontSize: 13, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
     ], {
-      x: 2.30, y: 0.40, w: 1.40, h: 1.00,
+      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 3) 관련기준 라벨
+    // 3) 관련기준 라벨 (w = 0.75, x = 3.60 ~ 4.35)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 3.70, y: 0.40, w: 0.75, h: 1.00,
+      x: 3.60, y: 0.40, w: 0.75, h: 1.00,
       fill: { color: C_HEADER_BG }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText('관련\n기준', {
-      x: 3.70, y: 0.40, w: 0.75, h: 1.00,
+      x: 3.60, y: 0.40, w: 0.75, h: 1.00,
       fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: C_TITLE_BLUE,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 4) 관련기준 내용 (상단 정렬 valign: top)
+    // 4) 관련기준 내용 (w = 5.483, x = 4.35 ~ 9.833, 상단 정렬)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 4.45, y: 0.40, w: 4.75, h: 1.00,
+      x: 4.35, y: 0.40, w: 5.483, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: `${data.lawTitle}\n`, options: { fontSize: 10, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.lawBody, options: { fontSize: 8.8, color: '222222', fontFace: FONT_MALGUN } }
+      { text: `${data.lawTitle}\n`, options: { fontSize: 9.8, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.lawBody, options: { fontSize: 8.6, color: '222222', fontFace: FONT_MALGUN } }
     ], {
-      x: 4.45, y: 0.40, w: 4.75, h: 1.00,
+      x: 4.35, y: 0.40, w: 5.483, h: 1.00,
       margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
     });
 
-    // 5) 4대 발생요인 2x2 격자 표 (가운데 가로선 및 세로선 완벽 구현)
-    const causeTableRows = [
-      [
-        {
-          text: `${data.isUnplanned ? '☑' : '☐'} 계획 미수립`,
-          options: { fontFace: FONT_MALGUN, fontSize: 9.8, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8] }
-        },
-        {
-          text: `${data.isUnexecuted ? '☑' : '☐'} 계획 미이행`,
-          options: { fontFace: FONT_MALGUN, fontSize: 9.8, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8] }
-        }
-      ],
-      [
-        {
-          text: `${data.isAction ? '☑' : '☐'} 불안전 행동`,
-          options: { fontFace: FONT_MALGUN, fontSize: 9.8, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8] }
-        },
-        {
-          text: `${data.isCondition ? '☑' : '☐'} 불안전 상태`,
-          options: { fontFace: FONT_MALGUN, fontSize: 9.8, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8] }
-        }
-      ]
-    ];
-    slide.addTable(causeTableRows, {
-      x: 9.20, y: 0.40, w: 3.633,
-      colW: [1.816, 1.817],
-      rowH: [0.50, 0.50],
-      border: { pt: 1, color: C_BORDER }
+    // 5) 4대 발생요인 2x2 격자 (w = 3.00, x = 9.833 ~ 12.833, 중간 가로선/세로선 완벽 구현)
+    // 외곽 사각형
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 9.833, y: 0.40, w: 3.00, h: 1.00,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
+    });
+    // 내부 가로 구분선 (y = 0.90)
+    slide.addShape(pptx.ShapeType.line, {
+      x: 9.833, y: 0.90, w: 3.00, h: 0,
+      line: { color: C_BORDER, width: 1 }
+    });
+    // 내부 세로 구분선 (x = 11.333)
+    slide.addShape(pptx.ShapeType.line, {
+      x: 11.333, y: 0.40, w: 0, h: 1.00,
+      line: { color: C_BORDER, width: 1 }
+    });
+    // 4개 분면 텍스트 (단독 배치로 절대 깨짐 없음)
+    slide.addText(`${data.isUnplanned ? '☑' : '☐'} 계획 미수립`, {
+      x: 9.833, y: 0.40, w: 1.50, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+    });
+    slide.addText(`${data.isUnexecuted ? '☑' : '☐'} 계획 미이행`, {
+      x: 11.333, y: 0.40, w: 1.50, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+    });
+    slide.addText(`${data.isAction ? '☑' : '☐'} 불안전 행동`, {
+      x: 9.833, y: 0.90, w: 1.50, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+    });
+    slide.addText(`${data.isCondition ? '☑' : '☐'} 불안전 상태`, {
+      x: 11.333, y: 0.90, w: 1.50, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
 
-    // ── 2. 부적합 개요 행 (y = 1.45, h = 0.85) ──
+    // ── 2. 부적합 개요 행 (y = 1.45, h = 0.85, x = 0.50 ~ 12.833) ──
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.50, y: 1.45, w: 0.75, h: 0.85,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
@@ -342,62 +346,70 @@
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 부적합 개요 5개 독립 네모칸 + 2행 부적합 내용 Table
-    const overviewTableRows = [
-      [
-        {
-          text: [
-            { text: '협력사 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10 } },
-            { text: data.subcontractor, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 10 } }
-          ],
-          options: { valign: 'middle', align: 'left', margin: [0, 6, 0, 6], border: { pt: 1, color: C_BORDER } }
-        },
-        {
-          text: [
-            { text: '공종명 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10 } },
-            { text: data.workGroup, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 10 } }
-          ],
-          options: { valign: 'middle', align: 'left', margin: [0, 6, 0, 6], border: { pt: 1, color: C_BORDER } }
-        },
-        {
-          text: [
-            { text: '작업장소 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10 } },
-            { text: data.location, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 10 } }
-          ],
-          options: { valign: 'middle', align: 'left', margin: [0, 6, 0, 6], border: { pt: 1, color: C_BORDER } }
-        },
-        {
-          text: [
-            { text: '점검자 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10 } },
-            { text: data.inspector, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 10 } }
-          ],
-          options: { valign: 'middle', align: 'left', margin: [0, 6, 0, 6], border: { pt: 1, color: C_BORDER } }
-        },
-        {
-          text: [
-            { text: '점검차수 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10 } },
-            { text: data.inspectRound, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 10 } }
-          ],
-          options: { valign: 'middle', align: 'left', margin: [0, 6, 0, 6], border: { pt: 1, color: C_BORDER } }
-        }
-      ],
-      [
-        {
-          text: [
-            { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.5 } },
-            { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 10.5 } },
-            { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 10.5 } },
-            { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.5 } }
-          ],
-          options: { colspan: 5, valign: 'middle', align: 'left', margin: [0, 8, 0, 8], border: { pt: 1, color: C_BORDER } }
-        }
-      ]
-    ];
-    slide.addTable(overviewTableRows, {
-      x: 1.25, y: 1.45, w: 11.583,
-      colW: [2.30, 2.50, 2.15, 2.30, 2.333],
-      rowH: [0.42, 0.43],
-      border: { pt: 1, color: C_BORDER }
+    // 부적합 개요 1행: 5개 독립 직사각형 (테두리 셀 - 절대 깨지거나 개행되지 않음)
+    // 협력사 (x = 1.25 ~ 3.55, w = 2.30)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 1.25, y: 1.45, w: 2.30, h: 0.42,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText([
+      { text: '협력사 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
+      { text: data.subcontractor, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+    ], { x: 1.25, y: 1.45, w: 2.30, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
+
+    // 공종명 (x = 3.55 ~ 6.00, w = 2.45)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 3.55, y: 1.45, w: 2.45, h: 0.42,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText([
+      { text: '공종명 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
+      { text: data.workGroup, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+    ], { x: 3.55, y: 1.45, w: 2.45, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
+
+    // 작업장소 (x = 6.00 ~ 8.15, w = 2.15)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 6.00, y: 1.45, w: 2.15, h: 0.42,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText([
+      { text: '작업장소 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
+      { text: data.location, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+    ], { x: 6.00, y: 1.45, w: 2.15, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
+
+    // 점검자 (x = 8.15 ~ 10.45, w = 2.30)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 8.15, y: 1.45, w: 2.30, h: 0.42,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText([
+      { text: '점검자 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
+      { text: data.inspector, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+    ], { x: 8.15, y: 1.45, w: 2.30, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
+
+    // 점검차수 (x = 10.45 ~ 12.833, w = 2.383)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 10.45, y: 1.45, w: 2.383, h: 0.42,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText([
+      { text: '점검차수 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 9.5 } },
+      { text: data.inspectRound, options: { color: '000000', fontFace: FONT_MALGUN, fontSize: 9.5 } }
+    ], { x: 10.45, y: 1.45, w: 2.383, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
+
+    // 부적합 개요 2행: 부적합 내용 전체 너비 독립 사각형 (x = 1.25 ~ 12.833, w = 11.583, h = 0.43)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 1.25, y: 1.87, w: 11.583, h: 0.43,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText([
+      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.2 } },
+      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 10.2 } },
+      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 10.2 } },
+      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.2 } }
+    ], {
+      x: 1.25, y: 1.87, w: 11.583, h: 0.43,
+      align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
 
     // ── 3. 본문 구역 (y = 2.38부터) ──
@@ -414,9 +426,32 @@
       }
     }
 
-    // ── 본문 1행 (y = 2.38, h = 0.32): 원본 일치 3분할 ──
-    // A. 사진 1 상단: 원본에서는 사진 1 상단에 여백(Hold Point 박스 높이만큼 공백)이 있고 배너는 사진 2와 동일한 y = 2.70에 위치
-    // B. 사진 2 상단: Hold Point 위반 (N/A) 박스 (원본 PPT(2).jpg의 정확한 위치!)
+    // A. 사진 1 빨간 배너 (y = 2.38, h = 0.32: 원본과 같이 상단 라인에 밀착)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0.50, y: 2.38, w: 2.95, h: 0.32,
+      fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
+    });
+    slide.addText(data.photo1Title, {
+      x: 0.50, y: 2.38, w: 2.95, h: 0.32,
+      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+      align: 'center', valign: 'middle'
+    });
+
+    // 사진 1 이미지 (y = 2.70, h = 3.30, 하단 y = 6.00에 정확히 종료)
+    if (photo1Base64) {
+      slide.addImage({ data: photo1Base64, x: 0.50, y: 2.70, w: 2.95, h: 3.30 });
+    } else {
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0.50, y: 2.70, w: 2.95, h: 3.30,
+        fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
+      });
+      slide.addText('📸 사진 1', {
+        x: 0.50, y: 2.70, w: 2.95, h: 3.30,
+        fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
+      });
+    }
+
+    // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.32, 사진 1 배너 및 우측 발생원인 헤더와 동일 수평선)
     slide.addShape(pptx.ShapeType.rect, {
       x: 3.55, y: 2.38, w: 2.95, h: 0.32,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
@@ -426,43 +461,7 @@
       fontFace: FONT_MALGUN, fontSize: 9.5, color: C_GRAY_TEXT, align: 'center', valign: 'middle'
     });
 
-    // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (Hold Point 박스와 동일한 y = 2.38에 위치)
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 2.38, w: 6.233, h: 0.32,
-      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
-    });
-    slide.addText('발생원인 (인터뷰 결과)', {
-      x: 6.60, y: 2.38, w: 6.233, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
-    });
-
-    // ── 본문 2행: 사진 1/2 빨간 배너 (동일 높이 y = 2.70) 및 발생원인 의견 ──
-    // 사진 1 빨간 배너
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 2.70, w: 2.95, h: 0.32,
-      fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
-    });
-    slide.addText(data.photo1Title, {
-      x: 0.50, y: 2.70, w: 2.95, h: 0.32,
-      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
-      align: 'center', valign: 'middle'
-    });
-
-    // 사진 1 이미지 (y = 3.02, h = 2.98: 사진 2와 완벽 대칭)
-    if (photo1Base64) {
-      slide.addImage({ data: photo1Base64, x: 0.50, y: 3.02, w: 2.95, h: 2.98 });
-    } else {
-      slide.addShape(pptx.ShapeType.rect, {
-        x: 0.50, y: 3.02, w: 2.95, h: 2.98,
-        fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
-      });
-      slide.addText('📸 사진 1', {
-        x: 0.50, y: 3.02, w: 2.95, h: 2.98,
-        fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
-      });
-    }
-
-    // 사진 2 빨간 배너 (Hold Point 박스 바로 아래 y = 2.70)
+    // 사진 2 빨간 배너 (y = 2.70, h = 0.32)
     slide.addShape(pptx.ShapeType.rect, {
       x: 3.55, y: 2.70, w: 2.95, h: 0.32,
       fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
@@ -473,7 +472,7 @@
       align: 'center', valign: 'middle'
     });
 
-    // 사진 2 이미지 (y = 3.02, h = 2.98)
+    // 사진 2 이미지 (y = 3.02, h = 2.98, 하단 y = 6.00에 정확히 종료하여 사진 1과 바닥선 일치!)
     if (photo2Base64) {
       slide.addImage({ data: photo2Base64, x: 3.55, y: 3.02, w: 2.95, h: 2.98 });
     } else {
@@ -487,7 +486,17 @@
       });
     }
 
-    // 우측 구역 1: [의견 : 안전관리자 및 시공관리자] (상단 정렬 valign: top)
+    // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (y = 2.38, h = 0.32)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 6.60, y: 2.38, w: 6.233, h: 0.32,
+      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
+    });
+    slide.addText('발생원인 (인터뷰 결과)', {
+      x: 6.60, y: 2.38, w: 6.233, h: 0.32,
+      fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
+    });
+
+    // 우측 구역 1: [의견 : 안전관리자 및 시공관리자] (y = 2.70, h = 1.05, 상단 정렬)
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.60, y: 2.70, w: 6.233, h: 1.05,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
@@ -500,9 +509,9 @@
       margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
     });
 
-    // 우측 구역 2: [점검단 제안] (y = 3.80, h = 1.15)
+    // 우측 구역 2: [점검단 제안] (y = 3.75, h = 1.20)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 3.80, w: 1.65, h: 1.15,
+      x: 6.60, y: 3.75, w: 1.65, h: 1.20,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
@@ -510,41 +519,41 @@
       { text: `${data.proposalType}\n`, options: { fontSize: 14, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
       { text: data.proposalSub, options: { fontSize: 8.5, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 6.60, y: 3.80, w: 1.65, h: 1.15,
+      x: 6.60, y: 3.75, w: 1.65, h: 1.20,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
     slide.addShape(pptx.ShapeType.rect, {
-      x: 8.25, y: 3.80, w: 4.583, h: 1.15,
+      x: 8.25, y: 3.75, w: 4.583, h: 1.20,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText(data.proposalContent, {
-      x: 8.25, y: 3.80, w: 4.583, h: 1.15,
-      fontFace: FONT_MALGUN, fontSize: 9.2, color: '000000', margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
+      x: 8.25, y: 3.75, w: 4.583, h: 1.20,
+      fontFace: FONT_MALGUN, fontSize: 9.0, color: '000000', margin: [6, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.25
     });
 
-    // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 5.00, h = 0.32)
+    // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 4.95, h = 0.32)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 5.00, w: 6.233, h: 0.32,
+      x: 6.60, y: 4.95, w: 6.233, h: 0.32,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText('개선대책 (현장 협의 결과)', {
-      x: 6.60, y: 5.00, w: 6.233, h: 0.32,
+      x: 6.60, y: 4.95, w: 6.233, h: 0.32,
       fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: C_YELLOW_DARK, align: 'center', valign: 'middle'
     });
 
-    // 우측 구역 4: 개선대책 본문 (상단 정렬 valign: top) & PM 판정결과 (y = 5.35, h = 1.75)
+    // 우측 구역 4: 개선대책 본문 & PM 판정결과 (y = 5.27, h = 1.78)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.60, y: 5.35, w: 4.583, h: 1.75,
+      x: 6.60, y: 5.27, w: 4.583, h: 1.78,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText(data.countermeasureContent, {
-      x: 6.60, y: 5.35, w: 4.583, h: 1.75,
-      fontFace: FONT_MALGUN, fontSize: 9.5, color: '000000', margin: [8, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.30
+      x: 6.60, y: 5.27, w: 4.583, h: 1.78,
+      fontFace: FONT_MALGUN, fontSize: 9.2, color: '000000', margin: [8, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.30
     });
 
     slide.addShape(pptx.ShapeType.rect, {
-      x: 11.183, y: 5.35, w: 1.65, h: 1.75,
+      x: 11.183, y: 5.27, w: 1.65, h: 1.78,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
@@ -552,20 +561,20 @@
       { text: `${data.pmVerdictType}\n`, options: { fontSize: 14, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
       { text: data.pmVerdictSub, options: { fontSize: 8.5, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 11.183, y: 5.35, w: 1.65, h: 1.75,
+      x: 11.183, y: 5.27, w: 1.65, h: 1.78,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // ── 좌측 하단 규정 수칙 박스 (줄걸이 작업자의 책임 - 상단 정렬 valign: top) ──
+    // ── 좌측 하단 규정 수칙 박스 (줄걸이 작업자의 책임: y = 6.05, h = 1.00, 바닥선 y = 7.05로 우측과 동일!) ──
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 6.05, w: 6.00, h: 1.05,
+      x: 0.50, y: 6.05, w: 6.00, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
       { text: `${data.guidelineTitle}\n`, options: { fontSize: 10, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: data.guidelineBody, options: { fontSize: 9.0, color: '222222', fontFace: FONT_MALGUN } }
     ], {
-      x: 0.50, y: 6.05, w: 6.00, h: 1.05,
+      x: 0.50, y: 6.05, w: 6.00, h: 1.00,
       margin: [6, 10, 6, 10], valign: 'top', lineSpacingMultiple: 1.30
     });
   }
@@ -737,9 +746,8 @@
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <!-- 상단 사진 영역: 사진 1 vs 사진 2 (Hold Point 박스가 사진 2 위에 얹힘) -->
             <div style="display: flex; gap: 4px;">
-              <!-- 사진 1 컬럼 (상단 26px 여백으로 사진 2의 Hold Point 박스 높이와 일치, 빨간 배너는 나란히 정렬) -->
+              <!-- 사진 1 컬럼 (상단 배너 밀착 시작, 사진 2와 동일 바닥선 정렬) -->
               <div style="flex: 1; display: flex; flex-direction: column;">
-                <div style="height: 26px;"></div>
                 <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.80rem; text-align: center; padding: 4px 6px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
                   ${data.photo1Title}
                 </div>
