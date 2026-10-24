@@ -136,19 +136,22 @@ class WorkerBackend {
   writeJSON(path, data, sha, message) { return this._put(path, utf8ToB64(JSON.stringify(data, null, 1)), sha, message || `update ${path}`); }
   async writeBlob(path, blob, message) { return this._put(path, await blobToB64(blob), null, message || `upload ${path}`); }
   async readBlob(path) {
-    let r = null;
-    try {
-      r = await this._fetch(this._u(path, '&raw=1'));
-    } catch (e) {
-      console.warn('Worker readBlob error, trying static fallback:', path, e);
-    }
-    if (r && r.ok) return r.blob();
-    // Worker 실패 시 정적 파일 직접 로드 시도
+    // 1. 앱 정적 파일(GitHub Pages / 로컬) 직접 로드 시도 (초고속 ~20ms)
     try {
       const staticRes = await fetch(path);
-      if (staticRes.ok) return staticRes.blob();
-    } catch (err) {
-      console.warn('Static blob fallback failed for:', path, err);
+      if (staticRes.ok) return await staticRes.blob();
+    } catch (err) {}
+
+    // 2. Worker 릴레이를 통한 원격 저장소 조회 (최대 8초 대기)
+    let r = null;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      r = await this._fetch(this._u(path, '&raw=1'), { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (r && r.ok) return await r.blob();
+    } catch (e) {
+      console.warn('Worker readBlob error:', path, e);
     }
     throw new Error(`사진 읽기 실패 (${r ? r.status : '네트워크 오류'})`);
   }
@@ -890,30 +893,40 @@ export const store = {
     if (!path) return '';
     if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
-    if (this._failedPhotos.has(path)) return '';
 
     try {
-      let blob = null;
+      // 1. IndexedDB에 있는 경우 (오프라인 / 신규 촬영 사진)
       if (this.localBackend) {
-        try { blob = await this.localBackend.readBlob(path); } catch (e) {}
-      }
-      if (!blob && this.backend) {
-        // 네트워크 지연/실패 방지용 800ms 타임아웃
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('photoURL timeout')), 800));
         try {
-          blob = await Promise.race([this.backend.readBlob(path), timeoutPromise]);
-        } catch (be) {}
+          const blob = await this.localBackend.readBlob(path);
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            this._photoCache.set(path, url);
+            return url;
+          }
+        } catch (e) {}
       }
-      if (!blob) {
-        this._failedPhotos.add(path);
-        return '';
+
+      // 2. 앱 정적 파일(GitHub Pages / 로컬) 존재 여부 초고속 확인 (~20ms)
+      try {
+        const staticRes = await fetch(path, { method: 'HEAD' });
+        if (staticRes.ok) {
+          this._photoCache.set(path, path);
+          return path;
+        }
+      } catch (err) {}
+
+      // 3. Worker 릴레이 원격 URL 직접 반환 (브라우저가 네이티브로 스트리밍 렌더링)
+      if (this.backend && this.backend.url) {
+        const workerUrl = `${this.backend.url}/file?path=${encodeURIComponent(path)}&raw=1`;
+        this._photoCache.set(path, workerUrl);
+        return workerUrl;
       }
-      const url = URL.createObjectURL(blob);
-      this._photoCache.set(path, url);
-      return url;
+
+      this._photoCache.set(path, path);
+      return path;
     } catch (e) {
-      this._failedPhotos.add(path);
-      return '';
+      return path;
     }
   },
 

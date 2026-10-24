@@ -3074,7 +3074,6 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
 
   const cardElements = [];
   const rowElements = [];
-  const pendingPhotoTasks = [];
 
   for (const [idx, r] of filtered.entries()) {
     if (thisSeq !== listRenderSeq) return;
@@ -3115,25 +3114,34 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       const setupCardThumb = (path, title) => {
         if (!path) return null;
         const cached = store._photoCache && store._photoCache.get(path);
+        const workerUrl = (store.backend && store.backend.url) ? `${store.backend.url}/file?path=${encodeURIComponent(path)}&raw=1` : '';
+        const initialSrc = cached || path;
         const img = h('img', {
-          src: cached || '',
+          src: initialSrc,
           style: {
             width: '56px', height: '56px', objectFit: 'cover', borderRadius: '6px',
             border: '1px solid #cbd5e1', cursor: 'pointer',
-            display: cached ? 'block' : 'none'
+            display: 'block'
           },
           onclick: () => { if (img.src) window.open(img.src, '_blank'); },
-          onerror: (e) => { e.target.style.display = 'none'; },
+          onerror: (e) => {
+            if (!img.dataset.triedWorker && workerUrl) {
+              img.dataset.triedWorker = '1';
+              img.src = workerUrl;
+            } else {
+              e.target.style.display = 'none';
+            }
+          },
           title
         });
-        if (!cached) {
-          pendingPhotoTasks.push(async () => {
-            const url = await store.photoURL(path);
-            if (url && img.isConnected) {
-              img.src = url;
-              img.style.display = 'block';
+        if (!cached && store.localBackend) {
+          store.localBackend.readBlob(path).then(b => {
+            if (b && img.isConnected) {
+              const u = URL.createObjectURL(b);
+              store._photoCache.set(path, u);
+              img.src = u;
             }
-          });
+          }).catch(() => {});
         }
         return img;
       };
@@ -3184,25 +3192,14 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       cardElements.push(card);
     }
 
-    // 2) 엑셀 스프레드시트 테이블 뷰 (35개 열 완전 일치, 논블로킹 썸네일)
+    // 2) 엑셀 스프레드시트 테이블 뷰 (35개 열 완전 일치, 초고속 썸네일)
     if (tbody) {
       const setupTableThumb = (path, title, size = 40) => {
         if (!path) return '<span style="color:var(--gray-400); font-size:0.75rem;">-</span>';
+        const workerUrl = (store.backend && store.backend.url) ? `${store.backend.url}/file?path=${encodeURIComponent(path)}&raw=1` : '';
         const cached = store._photoCache && store._photoCache.get(path);
-        const cellId = `tbl_thumb_${r.id}_${Math.random().toString(36).slice(2, 7)}`;
-        if (!cached) {
-          pendingPhotoTasks.push(async () => {
-            const url = await store.photoURL(path);
-            const container = document.getElementById(cellId);
-            if (container && url) {
-              container.innerHTML = `<img src="${url}" style="width:${size}px; height:${size}px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${url}', '_blank')" onerror="this.style.display='none'" title="${title}">`;
-            }
-          });
-        }
-        if (cached) {
-          return `<span id="${cellId}"><img src="${cached}" style="width:${size}px; height:${size}px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open('${cached}', '_blank')" onerror="this.style.display='none'" title="${title}"></span>`;
-        }
-        return `<span id="${cellId}"><span style="color:var(--gray-300); font-size:0.75rem;">📷</span></span>`;
+        const initialSrc = cached || path;
+        return `<span><img src="${initialSrc}" style="width:${size}px; height:${size}px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1; cursor:pointer;" onclick="window.open(this.src, '_blank')" onerror="if (!this.dataset.triedWorker && '${workerUrl}') { this.dataset.triedWorker='1'; this.src='${workerUrl}'; } else { this.parentElement.innerHTML='<span style=\\'color:var(--gray-300); font-size:0.75rem;\\'>📷</span>'; }" title="${title}"></span>`;
       };
 
       const p1Thumb = setupTableThumb(r.photos && r.photos[0], '사진 1 원본보기', 40);
@@ -3292,19 +3289,6 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
   if (c) c.replaceChildren(...cardElements);
   if (tbody) tbody.replaceChildren(...rowElements);
   syncTableTopScrollWidth();
-
-  // 백그라운드 비동기 사진 로딩 (동시 4개 병렬 처리, UI 차단 없음)
-  if (pendingPhotoTasks.length > 0) {
-    const runPhotoTasks = async () => {
-      const concurrency = 4;
-      for (let i = 0; i < pendingPhotoTasks.length; i += concurrency) {
-        if (thisSeq !== listRenderSeq) break;
-        const chunk = pendingPhotoTasks.slice(i, i + concurrency);
-        await Promise.all(chunk.map(fn => fn().catch(() => {})));
-      }
-    };
-    runPhotoTasks();
-  }
 }
 
 // ── PPTX / 장표 파일 임포트 처리 ──
