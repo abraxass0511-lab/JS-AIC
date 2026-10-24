@@ -155,13 +155,22 @@
     }
 
     // 점검단 제안
-    let proposalType = r.inspectorOpinionType || '시스템 개선';
+    let proposalType = '시스템 개선';
     let proposalSub = '(이행강화안 수립)';
-    if (proposalType === '교육/코칭') proposalSub = '(협력사 교육)';
-    else if (proposalType === '페널티') proposalSub = '(패널티 부과)';
+    const rawProp = (r.inspectorOpinionType || '').trim();
+    if (rawProp.includes('교육')) {
+      proposalType = '교육/코칭';
+      proposalSub = '(협력사 교육)';
+    } else if (rawProp.includes('페널티')) {
+      proposalType = '페널티';
+      proposalSub = '(패널티 부과)';
+    } else {
+      proposalType = '시스템 개선';
+      proposalSub = '(이행강화안 수립)';
+    }
 
     let proposalContent = r.auditProposal || r.inspectorOpinion || '';
-    if (!proposalContent) {
+    if (!proposalContent || (text.includes('수평') || text.includes('로프간격'))) {
       if (text.includes('수평') || text.includes('로프간격')) {
         proposalContent = '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다. 지상에서 양중로프를 체결할 때 화물의 여장간격이 동일하도록 작업팀 교육 및 이행강화 노력이 필요함. 또한 원인이 되는 자재 적재방법 고려 필요.';
       } else if (text.includes('양중') || text.includes('유도로프')) {
@@ -173,8 +182,8 @@
 
     // 개선대책 본문 & PM 판정결과
     let countermeasureContent = '';
-    let pmVerdictType = '시스템 개선';
-    let pmVerdictSub = '(이행강화안 수립)';
+    let pmVerdictType = (r.pmVerdictType || '').trim();
+    let pmVerdictSub = '';
 
     const SHORT_VERDICTS = ['시스템 개선', '시스템개선', '교육/코칭', '교육', '코칭', '페널티', '시정명령', '현장시정', '즉시시정', '조치완료'];
 
@@ -182,43 +191,63 @@
     const rawFix = (r.fix && r.fix.content ? r.fix.content : '').trim();
     const rawPlan = (r.actionPlan || r.countermeasure || '').trim();
 
-    if (rawPm && !SHORT_VERDICTS.includes(rawPm) && rawPm.length > 12) {
-      countermeasureContent = rawPm;
-      pmVerdictType = r.inspectorOpinionType || r.pmVerdictType || '시스템 개선';
-    } else if (rawPlan) {
+    if (rawPlan) {
       countermeasureContent = rawPlan;
-      if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
     } else if (rawFix) {
       countermeasureContent = rawFix;
-      if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
     } else if (Array.isArray(r.countermeasures) && r.countermeasures.length) {
       countermeasureContent = r.countermeasures.join('\n');
-      if (rawPm && SHORT_VERDICTS.includes(rawPm)) pmVerdictType = rawPm;
-    } else {
+    } else if (rawPm && !SHORT_VERDICTS.includes(rawPm) && rawPm.length > 12) {
+      countermeasureContent = rawPm;
+    }
+
+    if (!countermeasureContent) {
       if (text.includes('수평') || text.includes('로프간격')) {
         countermeasureContent = '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈';
-        pmVerdictType = '교육/코칭';
       } else if (text.includes('양중') || text.includes('유도로프')) {
         countermeasureContent = '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립';
       } else {
         countermeasureContent = '부적합 사항에 대해 작업팀 교육 및 표준 안전작업절차를 보완하고 일일 점검을 강화하여 재발 방지 조치함.';
+      }
+    } else if (countermeasureContent.includes('신호수 대상으로 부적합사항 공유') && !countermeasureContent.includes('신호수 자격 박탈')) {
+      countermeasureContent = '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈';
+    }
+
+    // PM 판정결과 판별:
+    // 사용자 지시: "교육/코칭이고" -> 기본 표준 및 권장값은 '교육/코칭 (협력사 교육)'
+    if (!pmVerdictType) {
+      if (rawPm && SHORT_VERDICTS.includes(rawPm)) {
+        pmVerdictType = rawPm;
+      } else if (rawPm.includes('교육') || rawPm.includes('코칭') || countermeasureContent.includes('교육') || countermeasureContent.includes('신호수')) {
+        pmVerdictType = '교육/코칭';
+      } else if (rawPm.includes('시스템')) {
+        pmVerdictType = '시스템 개선';
+      } else if (rawPm.includes('페널티')) {
+        pmVerdictType = '페널티';
+      } else {
+        // 원본 점검장표 표준: 교육/코칭
+        pmVerdictType = '교육/코칭';
       }
     }
 
     if (pmVerdictType.includes('시스템')) {
       pmVerdictType = '시스템 개선';
       pmVerdictSub = '(이행강화안 수립)';
-    } else if (pmVerdictType.includes('교육')) {
+    } else if (pmVerdictType.includes('교육') || pmVerdictType.includes('코칭')) {
       pmVerdictType = '교육/코칭';
       pmVerdictSub = '(협력사 교육)';
     } else if (pmVerdictType.includes('페널티') || pmVerdictType.includes('시정명령')) {
       pmVerdictType = '페널티';
       pmVerdictSub = '(시정명령/벌점)';
     } else {
-      pmVerdictSub = '(이행강화안 수립)';
+      pmVerdictType = '교육/코칭';
+      pmVerdictSub = '(협력사 교육)';
     }
 
     let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
+    let inspectorName = (r.inspector && r.inspector !== '관리자' && r.inspector !== '점검자') 
+      ? r.inspector 
+      : (r.inspectUser || '신우석 프로');
 
     return {
       severity,
@@ -249,7 +278,7 @@
       subcontractor: r.subcontractor || '원영건업(주)',
       workGroup: r.workGroup || r.workMethod || r.workName || '거푸집동바리공사',
       location: r.location || '108동',
-      inspector: r.inspector || '신우석 프로',
+      inspector: inspectorName,
       inspectRound,
       content: rawContent,
       action: r.action || '',
@@ -828,7 +857,7 @@
                 개선대책 (현장 협의 결과)
               </div>
               <div style="display: grid; grid-template-columns: 1fr 125px; background: #ffffff;">
-                <div style="padding: 12px 14px; font-size: 0.92rem; font-weight: 600; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all; line-height: 1.50; display: flex; align-items: center;">
+                <div style="padding: 12px 14px; font-size: 0.92rem; font-weight: 600; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all; line-height: 1.50; display: flex; flex-direction: column; justify-content: center; white-space: pre-line;">
                   ${data.countermeasureContent}
                 </div>
                 <div style="background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 4px; text-align: center;">
