@@ -77,21 +77,130 @@
     return s || '기타';
   }
 
+  // 9×9 핵심 작업방법(9종) 정규화 및 추론 함수
+  function resolveWorkMethod(r) {
+    const raw = (r.workMethod || r.workName || '').trim();
+    if (WORK_METHODS_9X9.includes(raw)) return raw;
+
+    const text = `${raw} ${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.agentMajor || ''} ${r.agentMid || ''}`;
+    if (text.includes('양중') || text.includes('크레인') || text.includes('슬링') || text.includes('샤클') || text.includes('인양') || text.includes('호이스트') || text.includes('유도로프')) {
+      return '양중작업';
+    }
+    if (text.includes('비계') || text.includes('발판') || text.includes('고소') || text.includes('난간') || text.includes('개구부') || text.includes('추락') || text.includes('사다리') || text.includes('단부') || text.includes('달비계')) {
+      return '고소작업';
+    }
+    if (text.includes('굴착') || text.includes('터파기') || text.includes('흙막이') || text.includes('사면')) {
+      return '굴착작업';
+    }
+    if (text.includes('설치') || text.includes('조립') || text.includes('체결') || text.includes('조립도') || text.includes('세우기') || text.includes('골조')) {
+      return '설치조립작업';
+    }
+    if (text.includes('해체') || text.includes('철거')) {
+      return '해체작업';
+    }
+    if (text.includes('하역') || text.includes('운반') || text.includes('상차') || text.includes('하차') || text.includes('지게차')) {
+      return '하역운반작업';
+    }
+    if (text.includes('중량물') || text.includes('인력운반')) {
+      return '중량물취급작업';
+    }
+    if (text.includes('밀폐') || text.includes('산소') || text.includes('질식') || text.includes('유해가스') || text.includes('맨홀') || text.includes('탱크')) {
+      return '밀폐공간작업';
+    }
+    if (text.includes('협소') || text.includes('피트') || text.includes('덕트')) {
+      return '협소공간작업';
+    }
+    return '고소작업';
+  }
+
+  // 표준 불안전한 상태 정규화 및 추론 함수
+  function resolveCondition(r) {
+    const raw = (r.condition || '').trim();
+    // 1) '계획 미이행', '불안전 상태' 등 발생원인 4대 요인이 잘못 들어간 경우 정제
+    const isCauseLabel = ['계획 미이행', '계획 미수립', '불안전 상태', '불안전 행동', '관리적', '물적', '인적'].includes(raw);
+    if (raw && !isCauseLabel && raw !== '-' && raw !== '해당없음') {
+      return raw;
+    }
+
+    // 2) 레코드의 발생원인에 '불안전 상태'가 명시되어 있지 않다면 상태 결함은 '해당없음'
+    const mgmt = r.mgmtCauses || r.causes || [];
+    const hasUnsafeCondition = Array.isArray(mgmt) && mgmt.some(c => String(c).includes('불안전 상태'));
+    if (!hasUnsafeCondition) {
+      return '해당없음';
+    }
+
+    // 3) 불안전 상태가 체크된 경우 내용 기반 표준 상태 목록 매핑
+    const text = `${r.content || ''} ${r.item || ''} ${r.agent || ''}`;
+    if (text.includes('미설치') || text.includes('탈락') || text.includes('파손') || text.includes('난간') || text.includes('덮개')) {
+      return '안전방호장치의 결함 (미설치·해체·불량)';
+    }
+    if (text.includes('균열') || text.includes('변형') || text.includes('부식') || text.includes('불량')) {
+      return '물(物) 자체의 결함 (자재·부재 손상)';
+    }
+    if (text.includes('조명') || text.includes('어두') || text.includes('조도') || text.includes('소음') || text.includes('환기')) {
+      return '작업환경의 결함 (조명·환기·소음 등)';
+    }
+    if (text.includes('정리정돈') || text.includes('적재') || text.includes('야적') || text.includes('방치')) {
+      return '물(物)의 배치 및 작업장소 불량';
+    }
+    return '작업방법·공정의 결함';
+  }
+
+  // 표준 불안전한 행동 정규화 및 추론 함수
+  function resolveAction(r) {
+    const raw = (r.action || '').trim();
+    const isCauseLabel = ['계획 미이행', '계획 미수립', '불안전 상태', '불안전 행동', '관리적', '물적', '인적'].includes(raw);
+    if (raw && !isCauseLabel && raw !== '-' && raw !== '해당없음') {
+      return raw;
+    }
+
+    // 레코드의 발생원인에 '불안전 행동'이 명시되어 있지 않다면 행동 결함은 '해당없음'
+    const mgmt = r.mgmtCauses || r.causes || [];
+    const hasUnsafeAction = Array.isArray(mgmt) && mgmt.some(c => String(c).includes('불안전 행동'));
+    if (!hasUnsafeAction) {
+      return '해당없음';
+    }
+
+    const text = `${r.content || ''} ${r.item || ''} ${r.agent || ''}`;
+    if (text.includes('유도로프') || text.includes('수평') || text.includes('로프간격') || text.includes('줄걸이') || text.includes('손으로') || text.includes('잡고') || text.includes('인양') || text.includes('양중화물')) {
+      return '불안전한 동작·자세';
+    }
+    if (text.includes('보호구') || text.includes('안전모') || text.includes('안전대') || (text.includes('미착용') && !text.includes('유도로프'))) {
+      return '보호구 미착용·잘못 사용';
+    }
+    if (text.includes('접근') || text.includes('출입') || text.includes('하부') || text.includes('반경')) {
+      return '위험장소 접근';
+    }
+    if (text.includes('신호') || text.includes('연락') || text.includes('신호수')) {
+      return '신호 미준수·연락 불충분';
+    }
+    if (text.includes('해체') || text.includes('임의') || text.includes('제거')) {
+      return '안전장치의 기능 제거';
+    }
+    return '불안전한 동작·자세';
+  }
+
   // 관리적 4대 발생원인 판별 함수 (● 마크)
   function markCause(r, causeName) {
     const mgmt = r.mgmtCauses || [];
-    if (Array.isArray(mgmt)) {
-      if (mgmt.some(c => String(c).includes(causeName))) return '●';
-    } else if (typeof mgmt === 'string' && mgmt.includes(causeName)) {
-      return '●';
+    const causes = r.causes || [];
+
+    // 1) mgmtCauses가 명시된 경우 (장표 체크박스 or 폼 선택을 절대 기준으로 판별)
+    if (Array.isArray(mgmt) && mgmt.length > 0) {
+      return mgmt.some(c => String(c).includes(causeName)) ? '●' : '';
+    } else if (typeof mgmt === 'string' && mgmt.length > 0) {
+      return mgmt.includes(causeName) ? '●' : '';
     }
-    if (Array.isArray(r.causes)) {
-      if (causeName === '불안전 행동' && r.causes.includes('인적')) return '●';
-      if (causeName === '불안전 상태' && r.causes.includes('물적')) return '●';
-      if (r.causes.some(c => String(c).includes(causeName))) return '●';
+
+    // 2) causes가 명시된 경우 (과거 데이터 호환)
+    if (Array.isArray(causes) && causes.length > 0) {
+      if (causes.some(c => String(c).includes(causeName))) return '●';
+      // '물적' 단독으로는 불안전 상태를 강제하지 않고, 실제 causeName과 일치할 때만 처리
     }
-    if (causeName === '불안전 상태' && r.condition && r.condition !== '해당없음' && r.condition !== '-') return '●';
-    if (causeName === '불안전 행동' && r.action && r.action !== '해당없음' && r.action !== '-') return '●';
+
+    // 3) 원인 데이터가 아예 없는 구형 레코드인 경우에 한해서만 필드 추론
+    if (causeName === '불안전 상태' && r.condition && !['해당없음', '-', '계획 미이행', '계획 미수립'].includes(r.condition)) return '●';
+    if (causeName === '불안전 행동' && r.action && !['해당없음', '-', '계획 미이행', '계획 미수립'].includes(r.action)) return '●';
     if (r.rootCauseMgmt && r.rootCauseMgmt.includes(causeName)) return '●';
     if (r.rootCauseSystem && r.rootCauseSystem.includes(causeName)) return '●';
     return '';
@@ -222,7 +331,7 @@
 
     // [공종·작업방법] 하나로 묶고 9×9 반영 ("작업명" -> "작업방법")
     ['공종·작업방법', '공종', 15, 'workGroups', r => r.workGroup || '가설공사'],
-    ['공종·작업방법', '작업방법', 16, 'workMethods', r => r.workMethod || r.workName || '고소작업'],
+    ['공종·작업방법', '작업방법', 16, 'workMethods', r => resolveWorkMethod(r)],
 
     // [부적합 분류] 유형과 기인물(대, 중, 소)
     ['부적합 분류', '유형', 20, 'types', r => mapAccidentType(r.type)],
@@ -234,8 +343,8 @@
     ['관련근거', '산업안전보건법', 24, 'laws', r => r.law || (r.basis && r.basis.law) || ''],
 
     // [불안전 상황]
-    ['불안전 상황', '상태', 18, 'conditions', r => r.condition || ''],
-    ['불안전 상황', '행동', 18, 'actions', r => r.action || ''],
+    ['불안전 상황', '상태', 18, 'conditions', r => resolveCondition(r)],
+    ['불안전 상황', '행동', 18, 'actions', r => resolveAction(r)],
 
     // [근본원인 분석] (원인구분, Hold point, 관리/책임주체 열 삭제 완료)
     ['근본원인 분석', '법적 관리감독', 18, 'rootCausesMgmt', r => r.rootCauseMgmt || (r.basis && r.basis.근본원인_관리감독) || ''],

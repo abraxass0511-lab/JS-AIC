@@ -3408,6 +3408,68 @@ function renderImportedCards() {
   });
 }
 
+// 9×9 핵심 작업방법(9종) 추론 함수 (절대 '안전점검' 등 비표준 값 배제)
+function inferWorkMethod(text) {
+  const t = String(text || '');
+  if (t.includes('양중') || t.includes('크레인') || t.includes('슬링') || t.includes('샤클') || t.includes('인양') || t.includes('호이스트') || t.includes('유도로프')) return '양중작업';
+  if (t.includes('비계') || t.includes('발판') || t.includes('고소') || t.includes('난간') || t.includes('개구부') || t.includes('추락') || t.includes('사다리') || t.includes('단부') || t.includes('달비계')) return '고소작업';
+  if (t.includes('굴착') || t.includes('터파기') || t.includes('흙막이') || t.includes('사면')) return '굴착작업';
+  if (t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
+  if (t.includes('해체') || t.includes('철거')) return '해체작업';
+  if (t.includes('하역') || t.includes('운반') || t.includes('상차') || t.includes('하차') || t.includes('지게차')) return '하역운반작업';
+  if (t.includes('중량물') || t.includes('인력운반')) return '중량물취급작업';
+  if (t.includes('밀폐') || t.includes('산소') || t.includes('질식') || t.includes('유해가스') || t.includes('맨홀') || t.includes('탱크')) return '밀폐공간작업';
+  if (t.includes('협소') || t.includes('피트') || t.includes('덕트')) return '협소공간작업';
+  return '양중작업';
+}
+
+// 표준 불안전한 상태 추론 함수 (계획미이행 등 발생원인 텍스트 원천 차단)
+function inferCondition(text, mgmtCauses) {
+  const causes = Array.isArray(mgmtCauses) ? mgmtCauses : [];
+  const hasCondition = causes.some(c => String(c).includes('불안전 상태'));
+  if (!hasCondition) return '해당없음';
+
+  const t = String(text || '');
+  if (t.includes('미설치') || t.includes('탈락') || t.includes('파손') || t.includes('난간') || t.includes('덮개')) {
+    return '안전방호장치의 결함 (미설치·해체·불량)';
+  }
+  if (t.includes('균열') || t.includes('변형') || t.includes('부식') || t.includes('불량')) {
+    return '물(物) 자체의 결함 (자재·부재 손상)';
+  }
+  if (t.includes('조명') || t.includes('어두') || t.includes('조도') || t.includes('소음') || t.includes('환기')) {
+    return '작업환경의 결함 (조명·환기·소음 등)';
+  }
+  if (t.includes('정리정돈') || t.includes('적재') || t.includes('야적') || t.includes('방치')) {
+    return '물(物)의 배치 및 작업장소 불량';
+  }
+  return '작업방법·공정의 결함';
+}
+
+// 표준 불안전한 행동 추론 함수
+function inferAction(text, mgmtCauses) {
+  const causes = Array.isArray(mgmtCauses) ? mgmtCauses : [];
+  const hasAction = causes.some(c => String(c).includes('불안전 행동'));
+  if (!hasAction) return '해당없음';
+
+  const t = String(text || '');
+  if (t.includes('유도로프') || t.includes('수평') || t.includes('로프간격') || t.includes('줄걸이') || t.includes('손으로') || t.includes('잡고') || t.includes('인양') || t.includes('양중화물')) {
+    return '불안전한 동작·자세';
+  }
+  if (t.includes('보호구') || t.includes('안전모') || t.includes('안전대') || (t.includes('미착용') && !t.includes('유도로프'))) {
+    return '보호구 미착용·잘못 사용';
+  }
+  if (t.includes('접근') || t.includes('출입') || t.includes('하부') || t.includes('반경')) {
+    return '위험장소 접근';
+  }
+  if (t.includes('신호') || t.includes('연락') || t.includes('신호수')) {
+    return '신호 미준수·연락 불충분';
+  }
+  if (t.includes('해체') || t.includes('임의') || t.includes('제거')) {
+    return '안전장치의 기능 제거';
+  }
+  return '불안전한 동작·자세';
+}
+
 function loadImportedRecordToManualForm(rec) {
   // 모드 전환
   $('#btnModeManual')?.click();
@@ -3419,14 +3481,22 @@ function loadImportedRecordToManualForm(rec) {
     $('#btnSeverityMajor')?.click();
   }
 
+  const determinedWorkMethod = rec.workMethod || rec.workName || inferWorkMethod(rec.content);
+  const determinedCondition = (rec.condition && !['계획 미이행', '불안전 상태'].includes(rec.condition))
+    ? rec.condition
+    : inferCondition(rec.content, rec.mgmtCauses);
+  const determinedAction = (rec.action && !['계획 미이행', '불안전 행동'].includes(rec.action))
+    ? rec.action
+    : inferAction(rec.content, rec.mgmtCauses);
+
   if ($('#txtContent')) $('#txtContent').value = rec.content || '';
   if ($('#txtLaw')) $('#txtLaw').value = filterOnlyOccupationalSafetyLaw(rec.law);
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
-  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
-  if ($('#txtWorkName')) $('#txtWorkName').value = rec.workMethod || rec.workName || '';
+  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '가설공사';
+  if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
-  const maj = rec.agentMajor || rec.kind || '';
-  const mid = rec.agentMid || rec.item || '';
+  const maj = rec.agentMajor || rec.kind || '가시설';
+  const mid = rec.agentMid || rec.item || '비계';
   const min = rec.agentMinor || rec.agent || '';
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
   if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
@@ -3435,8 +3505,8 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtItem')) $('#txtItem').value = mid;
   if ($('#txtAgent')) $('#txtAgent').value = min;
   if ($('#txtType')) $('#txtType').value = rec.type || '';
-  if ($('#txtCondition')) $('#txtCondition').value = rec.condition || '';
-  if ($('#txtAction')) $('#txtAction').value = rec.action || '';
+  if ($('#txtCondition')) $('#txtCondition').value = determinedCondition;
+  if ($('#txtAction')) $('#txtAction').value = determinedAction;
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
   if ($('#selInspectorOpinionType')) $('#selInspectorOpinionType').value = rec.inspectorOpinionType || '시스템 개선';
   if ($('#txtAuditProposal')) $('#txtAuditProposal').value = rec.auditProposal || '';
@@ -3444,7 +3514,7 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!rec.holdPoint;
 
   // 관리적 4대 발생원인 칩 동기화
-  const causes = rec.mgmtCauses || [];
+  const causes = rec.mgmtCauses || ['계획 미이행', '불안전 행동'];
   if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = causes.includes('계획 미수립');
   if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = causes.includes('계획 미이행');
   if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = causes.includes('불안전 행동');
@@ -3523,12 +3593,21 @@ async function handleSaveImportedRecords() {
       btn.textContent = `저장 중 (${++savedCount}/${importedRecords.length})...`;
 
       const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-      const matrixArea = rec.matrixArea || (m9 && m9.점검영역9x9) || '';
-      const matrixTarget = rec.matrixTarget || (m9 && m9.점검대상9x9) || '';
-      const matrixSpec = rec.matrixSpec || (m9 && m9.가시설세부사양) || '';
+      const matrixArea = rec.matrixArea || (m9 && m9.점검영역9x9) || rec.agentMajor || rec.kind || '가시설';
+      const matrixTarget = rec.matrixTarget || (m9 && m9.점검대상9x9) || rec.agentMid || rec.item || '거푸집';
+      const matrixSpec = rec.matrixSpec || (m9 && m9.가시설세부사양) || rec.agentMinor || rec.agent || '';
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '';
       const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '';
+
+      const workMethod = rec.workMethod || rec.workName || inferWorkMethod(rec.content);
+      const mgmtCauses = (rec.mgmtCauses && rec.mgmtCauses.length > 0) ? rec.mgmtCauses : ['계획 미이행', '불안전 행동'];
+      const condition = (rec.condition && !['계획 미이행', '불안전 상태'].includes(rec.condition))
+        ? rec.condition
+        : inferCondition(rec.content, mgmtCauses);
+      const action = (rec.action && !['계획 미이행', '불안전 행동'].includes(rec.action))
+        ? rec.action
+        : inferAction(rec.content, mgmtCauses);
 
       const finalRecord = {
         site,
@@ -3536,7 +3615,7 @@ async function handleSaveImportedRecords() {
         progressRate,
         stage,
         severity: rec.severity || '중부적합',
-        subcontractor: rec.subcontractor || '',
+        subcontractor: rec.subcontractor || '원영건업(주)',
         inspectRound: rec.inspectRound || '1차',
         siteInfo: {
           progress: progressRate + '%',
@@ -3544,22 +3623,26 @@ async function handleSaveImportedRecords() {
           amount: siteObj.amount || ''
         },
         content: rec.content || '부적합 사항 지적',
-        location: rec.location || '현장 작업구역',
-        workName: rec.workName || '안전점검',
-        workGroup: rec.workGroup || '가설공사',
-        kind: rec.kind || '가시설',
-        item: rec.item || '비계',
-        agent: rec.agent || '수평재',
-        type: rec.type || '추락',
-        condition: (rec.mgmtCauses && rec.mgmtCauses[0]) || '방호장치 결함',
-        action: '해당없음',
+        location: rec.location || '108동',
+        workName: workMethod,
+        workMethod: workMethod,
+        workGroup: rec.workGroup || '거푸집동바리공사',
+        kind: matrixArea,
+        item: matrixTarget,
+        agent: matrixSpec,
+        agentMajor: matrixArea,
+        agentMid: matrixTarget,
+        agentMinor: matrixSpec,
+        type: rec.type || '충돌/협착',
+        condition,
+        action,
         matrixArea,
         matrixTarget,
         matrixSpec,
         rootCauseMgmt,
         rootCauseSystem,
         stakeholder,
-        mgmtCauses: rec.mgmtCauses || ['불안전 상태'],
+        mgmtCauses,
         holdPoint: !!rec.holdPoint,
         interviewOpinion: rec.interviewOpinion || '',
         auditProposal: rec.auditProposal || '',
@@ -3579,7 +3662,7 @@ async function handleSaveImportedRecords() {
           관리책임주체: stakeholder
         },
         law: filterOnlyOccupationalSafetyLaw(rec.law),
-        causes: ['물적', '관리적'],
+        causes: [...mgmtCauses],
         inspectedDate
       };
 
