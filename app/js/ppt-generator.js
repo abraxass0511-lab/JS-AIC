@@ -534,7 +534,10 @@
 
     return `
       <div id="jangpyoSlidePreview" style="
+        min-width: 880px;
         width: 100%;
+        max-width: 1020px;
+        margin: 0 auto;
         background: #ffffff;
         border: 2px solid #5b9bd5;
         border-radius: 6px;
@@ -545,8 +548,8 @@
         box-sizing: border-box;
       ">
         <!-- 1. 최상단 헤더 행 (5개 블록) -->
-        <div style="display: grid; grid-template-columns: 160px 140px 75px 1fr 240px; gap: 0; border: 1.5px solid #7ba0cd; margin-bottom: 6px;">
-          <div style="background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.35rem; color: #002060; padding: 6px; letter-spacing: -0.5px;">
+        <div style="display: grid; grid-template-columns: 140px 135px 70px minmax(280px, 1fr) 210px; gap: 0; border: 1.5px solid #7ba0cd; margin-bottom: 6px;">
+          <div style="background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.30rem; color: #002060; padding: 6px; letter-spacing: -0.5px;">
             시설물/법규
           </div>
           <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; border: 2px solid #ed7d31; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px;">
@@ -556,23 +559,23 @@
           <div style="background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #002060; text-align: center; padding: 4px; line-height: 1.25;">
             관련<br>기준
           </div>
-          <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 6px 12px; display: flex; flex-direction: column; justify-content: center;">
+          <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 6px 12px; display: flex; flex-direction: column; justify-content: center; word-break: keep-all;">
             <div style="font-weight: 700; font-size: 0.86rem; color: #000000; margin-bottom: 3px;">${data.lawTitle}</div>
             <div style="font-size: 0.78rem; color: #333333; line-height: 1.4;">${data.lawBody}</div>
           </div>
-          <div style="background: #ffffff; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; font-size: 0.84rem; font-weight: 600; color: #000000; line-height: 1.55;">
-            <div>${data.isUnplanned ? '☑' : '☐'} 계획 미수립 &nbsp;&nbsp;&nbsp; ${data.isUnexecuted ? '☑' : '☐'} 계획 미이행</div>
-            <div>${data.isAction ? '☑' : '☐'} 불안전 행동 &nbsp;&nbsp;&nbsp; ${data.isCondition ? '☑' : '☐'} 불안전 상태</div>
+          <div style="background: #ffffff; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; font-size: 0.84rem; font-weight: 600; color: #000000; line-height: 1.55; white-space: nowrap;">
+            <div>${data.isUnplanned ? '☑' : '☐'} 계획 미수립 &nbsp;&nbsp; ${data.isUnexecuted ? '☑' : '☐'} 계획 미이행</div>
+            <div>${data.isAction ? '☑' : '☐'} 불안전 행동 &nbsp;&nbsp; ${data.isCondition ? '☑' : '☐'} 불안전 상태</div>
           </div>
         </div>
 
         <!-- 2. 부적합 개요 행 -->
-        <div style="display: grid; grid-template-columns: 75px 1fr; border: 1.5px solid #7ba0cd; margin-bottom: 8px;">
-          <div style="background: #ffe699; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.98rem; color: #593e00; text-align: center; line-height: 1.25; padding: 6px;">
+        <div style="display: grid; grid-template-columns: 70px 1fr; border: 1.5px solid #7ba0cd; margin-bottom: 8px;">
+          <div style="background: #ffe699; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #593e00; text-align: center; line-height: 1.25; padding: 6px;">
             부적합<br>개&nbsp;&nbsp;요
           </div>
-          <div style="background: #ffffff; padding: 6px 12px; font-size: 0.86rem; display: flex; flex-direction: column; justify-content: center; gap: 4px;">
-            <div style="display: flex; gap: 14px; flex-wrap: wrap; color: #000000;">
+          <div style="background: #ffffff; padding: 6px 12px; font-size: 0.86rem; display: flex; flex-direction: column; justify-content: center; gap: 4px; word-break: keep-all;">
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; color: #000000;">
               <span><strong style="color: #002060;">협력사 :</strong> ${data.subcontractor}</span>
               <span style="color: #7ba0cd;">|</span>
               <span><strong style="color: #002060;">공종명 :</strong> ${data.workGroup}</span>
@@ -592,11 +595,11 @@
         </div>
 
         <!-- 3. 본문 2단 분할 (좌측: 사진/안전수칙 vs 우측: 발생원인/개선대책) -->
-        <div style="display: grid; grid-template-columns: 1.18fr 1fr; gap: 10px;">
+        <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 10px;">
           <!-- 좌측 컬럼 -->
           <div style="display: flex; flex-direction: column; gap: 6px;">
             <!-- 적색 배너 타이틀 -->
-            <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.95rem; text-align: center; padding: 6px 10px; border-radius: 2px;">
+            <div style="background: #ea7676; color: #ffffff; font-weight: 700; font-size: 0.95rem; text-align: center; padding: 6px 10px; border-radius: 2px; word-break: keep-all;">
               ${data.photoBannerTitle}
             </div>
 
@@ -604,7 +607,7 @@
             ${photosHtml}
 
             <!-- 근로자 이행 포인트 박스 -->
-            <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 3px; padding: 8px 12px; font-size: 0.82rem;">
+            <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 3px; padding: 8px 12px; font-size: 0.82rem; word-break: keep-all;">
               <div style="color: #ed7d31; font-weight: 800; font-size: 0.88rem; margin-bottom: 5px;">[근로자 이행 포인트]</div>
               ${rulesHtml}
             </div>
@@ -622,17 +625,17 @@
               <div style="background: #ffe699; color: #593e00; font-weight: 800; font-size: 0.95rem; text-align: center; padding: 5px;">
                 발생원인 (인터뷰 결과)
               </div>
-              <div style="padding: 8px 10px; background: #ffffff; border-bottom: 1.5px solid #7ba0cd;">
+              <div style="padding: 8px 10px; background: #ffffff; border-bottom: 1.5px solid #7ba0cd; word-break: keep-all;">
                 <div style="font-weight: 700; font-size: 0.86rem; color: #000000; margin-bottom: 4px;">[의견 : 안전관리자 및 시공관리자]</div>
                 <div style="font-size: 0.82rem; color: #222222; line-height: 1.45;">${data.interviewOpinion}</div>
               </div>
-              <div style="display: grid; grid-template-columns: 120px 1fr; background: #ffffff;">
+              <div style="display: grid; grid-template-columns: 110px 1fr; background: #ffffff;">
                 <div style="background: #f8fafc; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px; text-align: center;">
                   <div style="font-size: 0.82rem; font-weight: 700; color: #000000;">[점검단 제안]</div>
                   <div style="font-size: 1.20rem; font-weight: 800; color: #002060; margin: 3px 0 1px 0;">${data.proposalType}</div>
                   <div style="font-size: 0.74rem; color: #595959;">${data.proposalSub}</div>
                 </div>
-                <div style="padding: 8px 10px; font-size: 0.82rem; color: #000000; line-height: 1.45; display: flex; align-items: center;">
+                <div style="padding: 8px 10px; font-size: 0.82rem; color: #000000; line-height: 1.45; display: flex; align-items: center; word-break: keep-all;">
                   ${data.proposalContent}
                 </div>
               </div>
@@ -643,8 +646,8 @@
               <div style="background: #ffe699; color: #593e00; font-weight: 800; font-size: 0.95rem; text-align: center; padding: 5px;">
                 개선대책 (현장 협의 결과)
               </div>
-              <div style="display: grid; grid-template-columns: 1fr 120px; background: #ffffff;">
-                <div style="padding: 10px 12px; font-size: 0.84rem; color: #000000; border-right: 1.5px solid #7ba0cd;">
+              <div style="display: grid; grid-template-columns: 1fr 110px; background: #ffffff;">
+                <div style="padding: 10px 12px; font-size: 0.84rem; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all;">
                   ${countermeasuresHtml}
                 </div>
                 <div style="background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px; text-align: center;">

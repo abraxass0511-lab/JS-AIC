@@ -18,7 +18,7 @@
   <script src="js/classifier.js?v=20261018_1"></script>
   <script src="js/excel-builder.js?v=20261024_2"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-generator.js?v=20261004_9"></script>
+  <script src="js/ppt-generator.js?v=20261024_3"></script>
   <script src="js/lmstudio-client.js?v=20261010_3"></script>
 </head>
 <body>
@@ -686,8 +686,8 @@
           <span style="font-size: 0.84rem; font-weight: 700; color: var(--gray-800);">🖥️ 점검장표 PPT 슬라이드 실시간 미리보기 (16:9 와이드)</span>
           <span style="font-size: 0.74rem; color: #475569;">※ 맑은 고딕 서식 및 실제 다운로드되는 PPT와 동일</span>
         </div>
-        <div id="eduPreviewWrapper" style="overflow-x: auto; background: #1e293b; padding: 14px; border-radius: 8px; margin-bottom: 14px; display: flex; justify-content: center; box-shadow: inset 0 2px 6px rgba(0,0,0,0.3);">
-          <div id="eduContainer" style="width: 100%; max-width: 960px;"></div>
+        <div id="eduPreviewWrapper" style="overflow-x: auto; background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 14px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.3); -webkit-overflow-scrolling: touch;">
+          <div id="eduContainer" style="min-width: 880px; width: 100%; max-width: 1020px; margin: 0 auto;"></div>
         </div>
 
         <div style="display: flex; gap: 8px;">
@@ -1041,6 +1041,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261024_2"></script>
+  <script type="module" src="js/app.js?v=20261024_3"></script>
 </body>
 </html>
