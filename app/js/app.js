@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261018_1';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage } from './pptx-importer-v2.js?v=20261025_instant_photo_split';
+import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_law_filter';
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
@@ -3381,9 +3381,10 @@ function renderImportedCards() {
             <label style="font-size: 0.72rem; color: #4338ca; font-weight: 700; display: block; margin-bottom: 2px;">📋 추출된 부적합 내용 (직접 수정 가능):</label>
             <textarea class="form-control txt-import-content" rows="2" style="font-size: 0.8rem; width: 100%; border: 1px solid #a5b4fc; border-radius: 4px; padding: 4px 6px; background: #f5f3ff; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
           </div>
+          ${rec.law && filterOnlyOccupationalSafetyLaw(rec.law) ? `
           <div style="font-size: 0.75rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
-            📜 ${rec.law}
-          </div>
+            📜 ${filterOnlyOccupationalSafetyLaw(rec.law)}
+          </div>` : ''}
           <div style="color: var(--gray-600); font-size: 0.75rem;">
             협력사: ${rec.subcontractor || '-'} | 공종: ${rec.workGroup || '-'} | 장소: ${rec.location || '-'}
           </div>
@@ -3415,7 +3416,7 @@ function loadImportedRecordToManualForm(rec) {
   }
 
   if ($('#txtContent')) $('#txtContent').value = rec.content || '';
-  if ($('#txtLaw')) $('#txtLaw').value = rec.law || '';
+  if ($('#txtLaw')) $('#txtLaw').value = filterOnlyOccupationalSafetyLaw(rec.law);
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
   if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
   if ($('#txtWorkName')) $('#txtWorkName').value = rec.workMethod || rec.workName || '';
@@ -3561,7 +3562,7 @@ async function handleSaveImportedRecords() {
           cp: '해당없음',
           st: '해당없음',
           guide: '',
-          law: rec.law || '',
+          law: filterOnlyOccupationalSafetyLaw(rec.law),
           점검영역9x9: matrixArea,
           점검대상9x9: matrixTarget,
           가시설세부사양: matrixSpec,
@@ -3569,7 +3570,7 @@ async function handleSaveImportedRecords() {
           근본원인_안전시스템: rootCauseSystem,
           관리책임주체: stakeholder
         },
-        law: rec.law || '',
+        law: filterOnlyOccupationalSafetyLaw(rec.law),
         causes: ['물적', '관리적'],
         inspectedDate
       };

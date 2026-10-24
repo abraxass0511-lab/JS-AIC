@@ -208,6 +208,25 @@ export async function parseImage(file) {
   // 3. 사진 1, 사진 2 정밀 분할 및 겹침 제거 크롭
   const extracted = extractPhotoFromCanvas(canvas, isSlide2);
 
+/**
+ * 산업안전보건법 관련 조문만 필터링 (사내 안전보건지침 등 비법령 문구는 공란 처리)
+ * @param {string} lawText
+ * @returns {string}
+ */
+export function filterOnlyOccupationalSafetyLaw(lawText) {
+  if (!lawText || typeof lawText !== 'string') return '';
+  const trimmed = lawText.trim();
+  // 전사/사내/회사 안전보건지침 등 내부 규정 문구 배제
+  if (/^(?:전사|사내|회사|시공|현장|자체)\s*(?:안전보건지침|안전지침|지침|규정|매뉴얼)/i.test(trimmed)) {
+    return '';
+  }
+  // 산업안전보건법, 안전보건규칙 등 실제 법령 관련 조문만 인정
+  if (/산업안전보건|안전보건규칙|산안법|산안규칙/.test(trimmed)) {
+    return trimmed;
+  }
+  return '';
+}
+
   // 4. 슬라이드 고유 데이터 1:1 완벽 매핑
   let record;
   if (isSlide2) {
@@ -215,7 +234,7 @@ export async function parseImage(file) {
     record = {
       severity: '중부적합',
       type: '충돌/협착',
-      law: '전사 안전보건지침[줄걸이작업] 7.1.1 일반사항',
+      law: '', // 산업안전보건법 조문이 아니면 공란 처리
       subcontractor: '원영건업(주)',
       workGroup: '거푸집동바리공사',
       location: '108동',
@@ -238,7 +257,7 @@ export async function parseImage(file) {
     record = {
       severity: '중부적합',
       type: '낙하',
-      law: '전사 안전보건지침[줄걸이작업] 7.1.1 일반사항',
+      law: '', // 산업안전보건법 조문이 아니면 공란 처리
       subcontractor: '원영건업(주)',
       workGroup: '거푸집동바리공사',
       location: '108동',
@@ -339,9 +358,9 @@ export async function parsePPTX(file) {
       }
     }
 
-    let law = '전사 안전보건지침[줄걸이작업] 7.1.1 일반사항';
-    const mLaw = fullText.match(/(?:전사\s*안전보건지침[^\n\r]+|산업안전보건[^\n\r]+)/);
-    if (mLaw) law = mLaw[0].replace(/[|\[\]ㅣ]/g, '').trim();
+    let law = '';
+    const mLaw = fullText.match(/(?:산업안전보건기준에\s*관한\s*규칙[^\n\r]+|산업안전보건법[^\n\r]+|산안법[^\n\r]+)/);
+    if (mLaw) law = filterOnlyOccupationalSafetyLaw(mLaw[0].replace(/[|\[\]ㅣ]/g, '').trim());
 
     let subcontractor = '원영건업(주)';
     const mSub = fullText.match(/(?:협력사|부적합\s*\.?\s*:)\s*([^\s\n|:;@]+(?:\([^)]*\)|주)?)/);
