@@ -1,0 +1,54 @@
+{
+  "site": "반포3",
+  "siteInfo": {
+    "progress": "",
+    "scale": "",
+    "amount": ""
+  },
+  "content": "안전난간대 미설치",
+  "location": "가설물",
+  "workName": "비계설치작업",
+  "workGroup": "가설공사",
+  "kind": "가시설",
+  "item": "안전시설",
+  "agent": "안전난간",
+  "type": "떨어짐(추락, 사람)",
+  "condition": "안전방호장치의 결함 (미설치·해체·불량)",
+  "action": "불안전한 상태 방치",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전보건규칙 제13조"
+  },
+  "causes": [
+    "물적"
+  ],
+  "inspectedDate": "2026-10-03",
+  "id": "20261003-162535-q2u3",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-03T07:25:35.790Z",
+  "inspector": "점검자1",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
+  "updatedBy": "점검자1",
+  "photos": [
+    "data/2026/photos/10/20261003-162535-q2u3_p1_mus2i2su.jpg"
+  ],
+  "fix": {
+    "content": "난간대 설치 완료",
+    "date": "2026-10-03",
+    "photo": "data/2026/photos/10/20261003-162535-q2u3_fix_mus3he9l.jpg"
+  },
+  "status": "조치완료",
+  "locationDetail": "106동 외부 비계",
+  "workMethod": "고소작업",
+  "mgmtCauses": [
+    "계획 미수립",
+    "불안전 상태"
+  ],
+  "agentMajor": "가시설",
+  "agentMid": "안전시설",
+  "agentMinor": "추락방지시설(안전난간)"
+}

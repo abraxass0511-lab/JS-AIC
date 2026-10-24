@@ -1,0 +1,64 @@
+{
+  "site": "OO물류센터 신축공사",
+  "productType": "플랜트/산업설비",
+  "progressRate": 35,
+  "stage": "지하 골조 공사 단계",
+  "severity": "경부적합",
+  "subcontractor": "(주)대한철골건설",
+  "inspectRound": "1차",
+  "siteInfo": {
+    "progress": "35%",
+    "scale": "지상5층 연면적 6만㎡",
+    "amount": "620억"
+  },
+  "content": "① 데크플레이트 배관 개구부 덮개에 \"추락주의\" 위험표지 미부착② 개구부 덮개 고정 철선 일부 이완으로 유동 발생",
+  "location": "본구조물",
+  "workName": "데크플레이트 설치작업",
+  "workGroup": "철골공사",
+  "kind": "가시설",
+  "item": "안전시설",
+  "agent": "덮개",
+  "type": "떨어짐(추락, 사람)",
+  "condition": "불안전 상태",
+  "action": "해당없음",
+  "mgmtCauses": [
+    "불안전 상태",
+    "계획 미이행"
+  ],
+  "holdPoint": false,
+  "interviewOpinion": "설비 배관 위치 확인을 위해 덮개를 일시 이동 후 재고정 시 철선 결속 미흡",
+  "auditProposal": "개구부 덮개 전수 점검 및 경고 위험표지 일괄 부착",
+  "pmVerdict": "개구부 결속 즉시 완료 및 위험표지 부착 완료 (경고)",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "산업안전보건기준에 관한 규칙 제59조(추락방지조치)"
+  },
+  "law": "산업안전보건기준에 관한 규칙 제59조(추락방지조치)",
+  "causes": [
+    "물적",
+    "관리적"
+  ],
+  "inspectedDate": "2026-10-10",
+  "id": "20261010-154503-eto9",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-10T06:45:03.455Z",
+  "inspector": "관리자",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
+  "updatedBy": "관리자",
+  "photos": [
+    "data/2026/photos/10/20261010-154503-eto9_p1_mv214wnz.jpg"
+  ],
+  "fix": {
+    "photo": null
+  },
+  "status": "미조치",
+  "locationDetail": "2층 하역장 상부 바닥 개구부",
+  "workMethod": "고소작업",
+  "agentMajor": "가시설",
+  "agentMid": "안전시설",
+  "agentMinor": "추락방지시설(덮개)"
+}
