@@ -1048,26 +1048,34 @@ function bindEvents() {
     }
   });
 
-  // ── 1페이지 교육자료 생성 핸들러 ──
-  $('#btnPreviewEdu').addEventListener('click', () => updateEduPreview());
-  $('#btnDownloadEduImg').addEventListener('click', async () => {
-    const el = document.getElementById('eduCardContainer');
-    if (!el) {
-      toast('먼저 교육자료 대상을 선택해주세요.', 'danger');
+  // ── 현장 패트롤 점검장표 PPT 자동 생성 및 다운로드 핸들러 ──
+  $('#btnPreviewEdu')?.addEventListener('click', () => updateEduPreview());
+  
+  $('#btnDownloadJangpyoPpt')?.addEventListener('click', function () {
+    downloadSingleJangpyoPPT(this);
+  });
+  $('#btnDownloadJangpyoPptBottom')?.addEventListener('click', function () {
+    downloadSingleJangpyoPPT(this);
+  });
+
+  $('#btnDownloadAllJangpyoPpt')?.addEventListener('click', function () {
+    downloadBatchJangpyoPPT(currentEduRecords, this, currentEduPeriodLabel || '전체');
+  });
+
+  $('#btnTableBatchJangpyo')?.addEventListener('click', function () {
+    const checkedBoxes = Array.from(document.querySelectorAll('.chk-record-item:checked'));
+    let records = [];
+    if (checkedBoxes.length > 0) {
+      const ids = new Set(checkedBoxes.map(cb => cb.dataset.id));
+      records = currentLoadedRecords.filter(r => ids.has(r.id));
+    } else {
+      records = currentLoadedRecords;
+    }
+    if (!records.length) {
+      toast('점검장표로 생성할 부적합 항목이 없습니다.', 'warning');
       return;
     }
-    const btn = $('#btnDownloadEduImg');
-    btn.disabled = true;
-    btn.textContent = '이미지 생성 중...';
-    try {
-      await window.SafeOnePage.downloadAsImage(el, `안전교육_1페이지_${todayStr()}.png`);
-      toast('1페이지 교육자료 이미지가 다운로드되었습니다.', 'success');
-    } catch (e) {
-      toast(`이미지 다운로드 실패: ${e.message}`, 'danger');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '📸 1페이지 교육자료 이미지(PNG) 다운로드';
-    }
+    downloadBatchJangpyoPPT(records, this, `${records.length}건`);
   });
 
   // ── 회의용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
@@ -2449,57 +2457,195 @@ async function deleteOneRecord(rec) {
 }
 
 // ── 1페이지 교육자료 미리보기 갱신 ──
+// ── 사진 Base64 변환 헬퍼 (PptxGenJS 임베딩용 대용량 청크 안전 처리) ──
+async function resolvePhotoBase64ForPPT(path) {
+  if (!path) return '';
+  if (path.startsWith('data:image')) return path;
+  try {
+    const blob = await store.photoBlob(path);
+    if (!blob) return '';
+    const buf = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i += 8192) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
+    }
+    const base64 = btoa(binary);
+    return `image/jpeg;base64,${base64}`;
+  } catch (e) {
+    console.warn('resolvePhotoBase64ForPPT error:', path, e);
+    return '';
+  }
+}
+
+// ── 단일 점검장표 PPT (.pptx) 다운로드 ──
+async function downloadSingleJangpyoPPT(btn) {
+  const sel = $('#selEduRecord');
+  const recordId = sel?.value;
+  if (!recordId) {
+    toast('점검장표를 다운로드할 부적합 항목을 먼저 선택해주세요.', 'warning');
+    return;
+  }
+  const rec = currentEduRecords.find(r => r.id === recordId) || currentLoadedRecords.find(r => r.id === recordId);
+  if (!rec) {
+    toast('선택하신 부적합 항목 데이터를 찾을 수 없습니다.', 'danger');
+    return;
+  }
+
+  const originalText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '점검장표 PPT 제작 중...';
+  }
+
+  try {
+    const safeLoc = (rec.location || '위치').replace(/[\/\\:*?"<>|]/g, '_');
+    const filename = `점검장표_${rec.site || '현장'}_${safeLoc}_${rec.inspectedDate || todayStr()}.pptx`;
+    await window.SafePPT.generateInspectionSheetPPT({
+      records: [rec],
+      loadPhotoBase64: resolvePhotoBase64ForPPT,
+      download: true,
+      filename
+    });
+    toast('점검장표 PPT(.pptx) 파일이 다운로드되었습니다. (맑은 고딕 서식)', 'success', 3500);
+  } catch (e) {
+    console.error('PPT generation error:', e);
+    toast(`점검장표 PPT 생성 실패: ${e.message}`, 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+}
+
+// ── 다중 점검장표 PPT 일괄 다운로드 (다중 슬라이드) ──
+async function downloadBatchJangpyoPPT(recordsToExport, btn, label = '') {
+  let list = recordsToExport;
+  if (!list || !list.length) {
+    toast('점검장표로 제작할 부적합 데이터가 없습니다.', 'warning');
+    return;
+  }
+
+  const originalText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `점검장표 ${list.length}장 제작 중...`;
+  }
+
+  try {
+    const filename = `점검장표_일괄_${label ? label + '_' : ''}${list.length}건_${todayStr()}.pptx`;
+    await window.SafePPT.generateInspectionSheetPPT({
+      records: list,
+      loadPhotoBase64: resolvePhotoBase64ForPPT,
+      download: true,
+      filename
+    });
+    toast(`총 ${list.length}건의 점검장표 PPT가 생성 및 다운로드되었습니다. (맑은 고딕 서식)`, 'success', 4000);
+  } catch (e) {
+    console.error('Batch PPT error:', e);
+    toast(`점검장표 일괄 PPT 생성 실패: ${e.message}`, 'danger');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+}
+
+// ── 특정 부적합 건 점검장표 PPT 화면으로 즉시 이동 ──
+async function openJangpyoForRecord(recordId) {
+  if (!store.user) {
+    toast('🔒 점검자 PIN 번호를 입력한 사용자만 열람할 수 있습니다.', 'warning', 3200);
+    showPinModal();
+    return;
+  }
+
+  // 1. 하단 탭 및 화면 전환
+  $$('.bottom-nav .nav-item').forEach(b => b.classList.remove('active'));
+  $$('.view-section').forEach(v => v.classList.remove('active'));
+  
+  const eduNavBtn = document.querySelector('.bottom-nav .nav-item[data-view="viewEdu"]');
+  if (eduNavBtn) eduNavBtn.classList.add('active');
+  const viewEdu = $('#viewEdu');
+  if (viewEdu) viewEdu.classList.add('active');
+
+  // 2. 전체 기간 모드로 옵션 채우기 (해당 ID가 목록에 반드시 포함되도록)
+  eduPeriodMode = 'all';
+  $('#btnEduModeAll')?.classList.add('selected');
+  $('#btnEduModeMonth')?.classList.remove('selected');
+  $('#btnEduModeRange')?.classList.remove('selected');
+  if ($('#boxEduPeriodAll')) $('#boxEduPeriodAll').style.display = 'block';
+  if ($('#boxEduPeriodMonth')) $('#boxEduPeriodMonth').style.display = 'none';
+  if ($('#boxEduPeriodRange')) $('#boxEduPeriodRange').style.display = 'none';
+
+  await populateEduOptions(recordId);
+
+  // 3. 스크롤 이동
+  const preview = $('#eduPreviewWrapper');
+  if (preview) {
+    preview.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  toast('선택하신 부적합 항목의 점검장표가 생성되었습니다.', 'success', 2500);
+}
+
+// ── 현장 패트롤 점검장표 PPT 실시간 미리보기 갱신 ──
 async function updateEduPreview() {
   const sel = $('#selEduRecord');
   const recordId = sel?.value;
-  if (!recordId) return;
+  if (!recordId) {
+    $('#eduContainer').innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 0.92rem;">
+        📋 상단에서 점검장표를 생성할 <strong>부적합 항목</strong>을 선택해주세요.
+      </div>
+    `;
+    return;
+  }
 
   const rec = currentEduRecords.find(r => r.id === recordId) || currentLoadedRecords.find(r => r.id === recordId);
-  if (!rec) return;
+  if (!rec) {
+    $('#eduContainer').innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: #ef4444; font-size: 0.92rem;">
+        선택된 부적합 항목 데이터를 찾을 수 없습니다. 목록을 새로고침 해주세요.
+      </div>
+    `;
+    return;
+  }
 
   // 관련 법령 핵심 수칙 찾기 (taxonomy.categories에서 item 검색)
   let rules = [];
-  const allItems = (store.taxonomy && store.taxonomy.categories) 
-    ? store.taxonomy.categories.list.flatMap(c => c.items)
+  const allItems = (store.taxonomy && store.taxonomy.categories && store.taxonomy.categories.list) 
+    ? store.taxonomy.categories.list.flatMap(c => c.items || [])
     : [];
   const foundItem = allItems.find(it => it.name === rec.item);
-  if (foundItem && foundItem.rules) {
+  if (foundItem && Array.isArray(foundItem.rules)) {
     rules = foundItem.rules;
   }
 
-  let beforeUrl = '';
-  let afterUrl = '';
+  let photo1Url = '';
+  let photo2Url = '';
   if (rec.photos && rec.photos[0]) {
-    beforeUrl = await store.photoURL(rec.photos[0]);
+    try { photo1Url = await store.photoURL(rec.photos[0]); } catch (e) {}
   }
-  if (rec.fix && rec.fix.photo) {
-    afterUrl = await store.photoURL(rec.fix.photo);
+  if (rec.photos && rec.photos[1]) {
+    try { photo2Url = await store.photoURL(rec.photos[1]); } catch (e) {}
+  } else if (rec.fix && rec.fix.photo) {
+    try { photo2Url = await store.photoURL(rec.fix.photo); } catch (e) {}
   }
 
-  // 선택된 기간 내의 해당 위험유형 통계 자동 계산
-  const totalCount = currentEduRecords.length || 1;
-  const sameTypeCount = currentEduRecords.filter(r => r.type === rec.type).length;
-  const typePct = Math.round((sameTypeCount / totalCount) * 100);
-  const statsText = `선택 기간(${currentEduPeriodLabel}) 총 ${totalCount}건 중 '${rec.type}' 위험요인이 ${sameTypeCount}건(${typePct}%)을 차지했습니다. 작업 전 철저한 예방 및 안전수칙 준수가 요구됩니다.`;
-
-  const html = window.SafeOnePage.renderTemplate({
-    title: `${rec.item} 안전수칙 및 개선 사례`,
-    site: rec.site,
-    date: rec.inspectedDate,
-    period: currentEduPeriodLabel,
-    beforePhoto: beforeUrl,
-    afterPhoto: afterUrl,
-    itemName: `${rec.item} (${rec.agent || '부속자재'}) ${rec.content}`,
-    law: (rec.basis && rec.basis.law) || (foundItem && foundItem.law) || '산업안전보건기준에 관한 규칙',
-    rules,
-    statsText,
-    inspector: rec.inspector
-  });
-
-  $('#eduContainer').innerHTML = html;
+  if (window.SafePPT && window.SafePPT.renderInspectionSheetHTML) {
+    const html = window.SafePPT.renderInspectionSheetHTML(rec, {
+      photo1Url,
+      photo2Url,
+      rulesFromTaxonomy: rules
+    });
+    $('#eduContainer').innerHTML = html;
+  }
 }
 
-async function populateEduOptions() {
+// ── 점검장표 대상 부적합 항목 셀렉트박스 목록 채우기 ──
+async function populateEduOptions(targetRecordId = null) {
   const sel = $('#selEduRecord');
   if (!sel) return;
 
@@ -2521,9 +2667,16 @@ async function populateEduOptions() {
       periodLabel = `${start} ~ ${end}`;
     }
   } catch (e) {
-    console.error('Edu list query error:', e);
+    console.error('Jangpyo list query error:', e);
     records = [];
   }
+
+  // ID 기준 엄격한 중복 제거
+  const dedupMap = new Map();
+  (records || []).forEach(r => {
+    if (r && r.id && !dedupMap.has(r.id)) dedupMap.set(r.id, r);
+  });
+  records = Array.from(dedupMap.values());
 
   currentEduRecords = records;
   currentEduPeriodLabel = periodLabel;
@@ -2531,7 +2684,7 @@ async function populateEduOptions() {
   if (!records.length) {
     sel.innerHTML = '<option value="">선택한 기간에 등록된 부적합 내역이 없습니다.</option>';
     $('#eduContainer').innerHTML = `
-      <div style="text-align: center; padding: 30px; color: var(--gray-500); font-size: 0.9rem;">
+      <div style="text-align: center; padding: 40px 20px; color: #94a3b8; font-size: 0.9rem;">
         선택한 기간(<strong>${periodLabel}</strong>)에 등록된 부적합 데이터가 없습니다.<br>
         다른 기간을 선택하시거나 부적합 사항을 등록해주세요.
       </div>
@@ -2539,9 +2692,16 @@ async function populateEduOptions() {
     return;
   }
 
-  sel.innerHTML = records.map(r => 
-    `<option value="${r.id}">[${r.site}] ${r.content} (${r.status})</option>`
-  ).join('');
+  sel.innerHTML = records.map(r => {
+    const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
+    const sev = isMajor ? '🚨중부적합' : '⚠️경부적합';
+    const title = `[${r.site || '현장'}] [${sev}] ${r.content || ''} (${r.location || '-'}, ${r.inspectedDate || ''})`;
+    return `<option value="${r.id}">${title}</option>`;
+  }).join('');
+
+  if (targetRecordId && records.some(r => r.id === targetRecordId)) {
+    sel.value = targetRecordId;
+  }
 
   updateEduPreview();
 }
@@ -2957,6 +3117,10 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         }, '🔧 조치등록'));
       }
       btnGroup.append(h('button.btn.btn-outline', {
+        style: { fontSize: '0.82rem', padding: '6px 12px', color: '#1e40af', borderColor: '#bfdbfe', background: '#eff6ff' },
+        onclick: () => openJangpyoForRecord(r.id)
+      }, '📑 점검장표 PPT'));
+      btnGroup.append(h('button.btn.btn-outline', {
         style: { fontSize: '0.82rem', padding: '6px 12px', color: 'var(--danger)', borderColor: '#fca5a5' },
         onclick: () => deleteOneRecord(r)
       }, '🗑️ 삭제'));
@@ -3084,6 +3248,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:8px 6px; color:var(--gray-600);">${r.inspector || '-'}</td>
         <td style="padding:6px 4px; white-space:nowrap;">
           <div style="display:flex; gap:3px; justify-content:center;">
+            <button type="button" class="btn btn-outline btn-table-jangpyo" style="padding:3px 6px; font-size:0.75rem; color:#1e40af; border-color:#bfdbfe; background:#eff6ff;" title="점검장표 PPT 열기">장표</button>
             ${!isFixed ? `<button type="button" class="btn btn-outline btn-table-fix" style="padding:3px 6px; font-size:0.75rem;">조치</button>` : ''}
             <button type="button" class="btn btn-outline btn-table-del" style="padding:3px 6px; font-size:0.75rem; color:var(--danger); border-color:#fca5a5;" title="삭제">삭제</button>
           </div>
@@ -3092,6 +3257,9 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
 
       const chkBox = tr.querySelector('.chk-record-item');
       if (chkBox) chkBox.addEventListener('change', updateSelectedCount);
+
+      const jangpyoBtn = tr.querySelector('.btn-table-jangpyo');
+      if (jangpyoBtn) jangpyoBtn.addEventListener('click', () => openJangpyoForRecord(r.id));
 
       const fixBtn = tr.querySelector('.btn-table-fix');
       if (fixBtn) {
