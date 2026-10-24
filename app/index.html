@@ -265,6 +265,7 @@
             </div>
           </div>
 
+          <!-- ── 1. [부적합 사항] 기본정보 (엑셀 2~7열) ── -->
           <!-- 협력사 / 점검차수 -->
           <div class="form-group" style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
             <div>
@@ -277,39 +278,54 @@
             </div>
           </div>
 
-          <!-- 4. 장소 / 작업방법(공종) -->
+          <!-- 장소/위치 -->
+          <div class="form-group">
+            <label class="form-label">장소/위치<span class="required">*</span></label>
+            <input type="text" id="txtLocation" class="form-control" list="listLocations" placeholder="선택 또는 직접입력">
+            <datalist id="listLocations"></datalist>
+          </div>
+
+          <!-- ── 2. [공종·작업방법] (엑셀 8~9열) ── -->
           <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
             <div>
-              <label class="form-label">장소/위치<span class="required">*</span></label>
-              <input type="text" id="txtLocation" class="form-control" list="listLocations" placeholder="선택 또는 직접입력">
-              <datalist id="listLocations"></datalist>
+              <label class="form-label">공종<span class="required">*</span></label>
+              <input type="text" id="txtWorkGroup" class="form-control" list="listWorkGroups" placeholder="가설공사, 철골공사 등">
+              <datalist id="listWorkGroups"></datalist>
             </div>
             <div>
-              <label class="form-label">작업방법 (건설안전 9×9 핵심작업)<span class="required">*</span></label>
-              <input type="text" id="txtWorkName" class="form-control" list="listWorkNames" placeholder="고소작업, 양중작업 등 선택">
+              <label class="form-label">작업방법 (9×9 핵심작업)<span class="required">*</span></label>
+              <input type="text" id="txtWorkName" class="form-control" list="listWorkNames" placeholder="고소작업, 양중작업 등">
               <datalist id="listWorkNames"></datalist>
             </div>
           </div>
 
-          <!-- 5. 부적합 분류 (유형, 기인물 대/중/소, 공종, 산안법) -->
-          <div class="card" style="padding: 14px; background: var(--gray-50); border: 1px solid var(--gray-200); margin-bottom: 16px;">
-            <div style="font-weight: 700; font-size: 0.9rem; margin-bottom: 10px;">📋 부적합 분류 및 법조항 (직접입력 가능)</div>
+          <!-- ── 3. [부적합 분류] 유형 & 기인물 대/중/소 (엑셀 10~13열) ── -->
+          <div class="card" style="padding: 14px; background: #fffdf8; border: 1.5px solid #fed7aa; margin-bottom: 16px;">
+            <div style="font-weight: 700; font-size: 0.9rem; color: #9a3412; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+              <span>📋</span> <span>부적합 분류 (유형 & 기인물 대·중·소)</span>
+            </div>
             
-            <!-- 🎯 기인물 3단계 (대 > 중 > 소) -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div style="margin-bottom: 10px;">
+              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #7c2d12;">유형 (발생형태 17종)</label>
+              <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="떨어짐(추락, 사람), 맞음, 넘어짐 등">
+              <datalist id="listTypes"></datalist>
+            </div>
+
+            <!-- 기인물 3단계 (대 > 중 > 소) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
               <div>
                 <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(대분류)</label>
-                <input type="text" id="txtAgentMajor" class="form-control" list="listAgentMajor" placeholder="가시설, 건설장비 등">
+                <input type="text" id="txtAgentMajor" class="form-control" list="listAgentMajor" placeholder="가시설, 작업발판 등">
                 <datalist id="listAgentMajor"></datalist>
               </div>
               <div>
                 <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(중분류)</label>
-                <input type="text" id="txtAgentMid" class="form-control" list="listAgentMid" placeholder="비계, 양중장비 등">
+                <input type="text" id="txtAgentMid" class="form-control" list="listAgentMid" placeholder="비계, 거푸집, 사다리 등">
                 <datalist id="listAgentMid"></datalist>
               </div>
               <div>
                 <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(소분류)</label>
-                <input type="text" id="txtAgentMinor" class="form-control" list="listAgentMinor" placeholder="시스템비계, 타워크레인 등">
+                <input type="text" id="txtAgentMinor" class="form-control" list="listAgentMinor" placeholder="시스템비계, 강관비계 등">
                 <datalist id="listAgentMinor"></datalist>
               </div>
             </div>
@@ -318,116 +334,65 @@
             <input type="hidden" id="txtKind">
             <input type="hidden" id="txtItem">
             <input type="hidden" id="txtAgent">
+            <input type="hidden" id="txtMatrixArea">
+            <input type="hidden" id="txtMatrixTarget">
+            <input type="hidden" id="txtMatrixSpec">
             <datalist id="listKinds" style="display:none;"></datalist>
             <datalist id="listItems" style="display:none;"></datalist>
             <datalist id="listAgents" style="display:none;"></datalist>
+            <datalist id="listMatrixAreas" style="display:none;"></datalist>
+            <datalist id="listMatrixTargets" style="display:none;"></datalist>
+            <datalist id="listMatrixSpecs" style="display:none;"></datalist>
+            <datalist id="listStakeholders" style="display:none;"></datalist>
+          </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+          <!-- ── 4. [관련근거] 산업안전보건법 (엑셀 14열) ── -->
+          <div class="form-group">
+            <label class="form-label">산업안전보건법 조문</label>
+            <input type="text" id="txtLaw" class="form-control" placeholder="예: 산안규칙 제56조(작업발판의 구조)">
+          </div>
+
+          <!-- ── 5. [불안전 상황] 상태 & 행동 (엑셀 15~16열) ── -->
+          <div class="form-group">
+            <label class="form-label">불안전 상황 세부 (상태 / 행동)</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
               <div>
-                <label class="form-label" style="font-size: 0.8rem;">공종</label>
-                <input type="text" id="txtWorkGroup" class="form-control" list="listWorkGroups" placeholder="가설공사 등">
-                <datalist id="listWorkGroups"></datalist>
+                <input type="text" id="txtCondition" class="form-control" list="listConditions" placeholder="상태: 방호장치 결함, 난간 미설치 등">
+                <datalist id="listConditions"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.8rem;">유형(발생형태)</label>
-                <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="떨어짐(추락, 사람) 등">
-                <datalist id="listTypes"></datalist>
+                <input type="text" id="txtAction" class="form-control" list="listActions" placeholder="행동: 보호구 미착용, 안전대 미체결 등">
+                <datalist id="listActions"></datalist>
               </div>
-            </div>
-
-            <div>
-              <label class="form-label" style="font-size: 0.8rem;">산업안전보건법 조문</label>
-              <input type="text" id="txtLaw" class="form-control" placeholder="예: 산안규칙 제56조(작업발판의 구조)">
             </div>
           </div>
 
-          <!-- 5-1. 🎯 건설안전 9×9 점검인자 & 근본원인 분석 -->
+          <!-- ── 6. [근본원인 분석] 법적 관리감독 & 안전시스템 (엑셀 17~18열) ── -->
           <div class="card" style="padding: 14px; background: #fffdf5; border: 1.5px solid #fde68a; margin-bottom: 16px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
               <span style="font-weight: 700; font-size: 0.9rem; color: #92400e; display: inline-flex; align-items: center; gap: 5px;">
-                <span>🎯</span> <span>건설안전 9×9단 & 근본원인 분석</span>
+                <span>🎯</span> <span>근본원인 분석 (법적 관리감독 & 안전시스템)</span>
               </span>
               <span style="font-size: 0.72rem; color: #b45309; background: #fef3c7; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
                 스마트 AI 자동추론 & 엑셀 대장 연동
               </span>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
               <div>
-                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">9×9 점검영역 (9대 영역)</label>
-                <input type="text" id="txtMatrixArea" class="form-control" list="listMatrixAreas" placeholder="가시설, 작업발판 등">
-                <datalist id="listMatrixAreas"></datalist>
-              </div>
-              <div>
-                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">9×9 점검대상 (81대 대상)</label>
-                <input type="text" id="txtMatrixTarget" class="form-control" list="listMatrixTargets" placeholder="비계, 거푸집, 사다리 등">
-                <datalist id="listMatrixTargets"></datalist>
-              </div>
-            </div>
-
-            <div style="margin-bottom: 8px;">
-              <label class="form-label" style="font-size: 0.8rem; color: #78350f;">가시설 세부사양 (가시설/거푸집/동바리 등)</label>
-              <input type="text" id="txtMatrixSpec" class="form-control" list="listMatrixSpecs" placeholder="시스템비계, 강관비계, 갱폼, 알폼, 시스템동바리 등">
-              <datalist id="listMatrixSpecs"></datalist>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
-              <div>
-                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">근본원인 (법적 관리감독 결여)</label>
+                <label class="form-label" style="font-size: 0.8rem; color: #78350f; font-weight: 700;">근본원인 (법적 관리감독 결여)</label>
                 <input type="text" id="txtRootCauseMgmt" class="form-control" list="listRootCausesMgmt" placeholder="안전시설 미설치, 작업계획 미이행 등">
                 <datalist id="listRootCausesMgmt"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.8rem; color: #78350f;">근본원인 (안전관리시스템 결여)</label>
+                <label class="form-label" style="font-size: 0.8rem; color: #78350f; font-weight: 700;">근본원인 (안전관리시스템 결여)</label>
                 <input type="text" id="txtRootCauseSystem" class="form-control" list="listRootCausesSystem" placeholder="실행: 안전시설 미설치, 일일점검 미실시 등">
                 <datalist id="listRootCausesSystem"></datalist>
               </div>
             </div>
-
-            <div>
-              <label class="form-label" style="font-size: 0.8rem; color: #78350f;">관리/책임주체 (시공사·협력사 직무)</label>
-              <input type="text" id="txtStakeholder" class="form-control" list="listStakeholders" placeholder="시공담당, 공사팀장, 협력회사 소장 등">
-              <datalist id="listStakeholders"></datalist>
-            </div>
           </div>
 
-          <!-- 6. 관리적 원인 (장표 체크박스 대응) & Hold Point -->
-          <div class="card" style="padding: 12px; background: #fffbeb; border: 1px solid #fde68a; margin-bottom: 16px;">
-            <div style="font-weight: 700; font-size: 0.85rem; color: #92400e; margin-bottom: 8px;">
-              🛡️ 관리적 원인 구분 및 Hold Point
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.82rem; margin-bottom: 8px;">
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="chkMgmtPlanNotMade" value="계획 미수립"> 계획 미수립
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="chkMgmtPlanNotFollowed" value="계획 미이행"> 계획 미이행
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="chkMgmtUnsafeAction" value="불안전 행동"> 불안전 행동
-              </label>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="chkMgmtUnsafeCondition" value="불안전 상태"> 불안전 상태
-              </label>
-            </div>
-            <div style="border-top: 1px dashed #fcd34d; padding-top: 6px; font-size: 0.82rem;">
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #b45309; font-weight: 600;">
-                <input type="checkbox" id="chkHoldPoint"> Hold Point 위반 (공정 중단 기준 위반)
-              </label>
-            </div>
-          </div>
-
-          <!-- 7. 불안전 상황 & 4대 발생원인 통계 -->
-          <div class="form-group">
-            <label class="form-label">불안전 상황 세부</label>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-              <input type="text" id="txtCondition" class="form-control" list="listConditions" placeholder="상태: 방호장치 결함 등">
-              <datalist id="listConditions"></datalist>
-              <input type="text" id="txtAction" class="form-control" list="listActions" placeholder="행동: 방치, 미착용 등">
-              <datalist id="listActions"></datalist>
-            </div>
-          </div>
-
+          <!-- ── 7. [발생원인] 4대 요인 통계 (엑셀 19~22열) ── -->
           <div class="form-group">
             <label class="form-label">발생원인 4대 요인 (복수 선택)</label>
             <div id="causeChips" class="chip-grid">
@@ -438,7 +403,7 @@
             </div>
           </div>
 
-          <!-- 8. 관계자 의견 및 점검자 의견 (3대 분류 포함) -->
+          <!-- ── 8. [관계자·점검자 의견] (엑셀 23~25열) ── -->
           <details style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
             <summary style="font-weight: 700; font-size: 0.84rem; cursor: pointer; color: var(--gray-800);">
               💬 인터뷰 결과 및 관계자·점검자 의견 (선택 입력)
@@ -450,7 +415,7 @@
               </div>
               <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px;">
                 <div>
-                  <label class="form-label" style="font-size: 0.78rem;">점검자 의견 분류</label>
+                  <label class="form-label" style="font-size: 0.78rem;">점검자 의견 구분</label>
                   <select id="selInspectorOpinionType" class="form-control" style="font-size: 0.82rem;">
                     <option value="시스템 개선">시스템 개선</option>
                     <option value="교육/코칭">교육/코칭</option>
@@ -1042,6 +1007,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261025_law_filter"></script>
+  <script type="module" src="js/app.js?v=20261025_align_excel_columns"></script>
 </body>
 </html>
