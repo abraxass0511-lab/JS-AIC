@@ -239,9 +239,8 @@
     }
 
     let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
-    let inspectorName = (r.inspector && r.inspector !== '관리자' && r.inspector !== '점검자') 
-      ? r.inspector 
-      : (r.inspectUser || '신우석 프로');
+    // 사용자 지침: 전반적인 내용과 점검자 등은 모두 엑셀 로그 기반으로 작성
+    let inspectorName = r.inspector || r.inspectUser || r.user || '관리자';
 
     return {
       severity,
@@ -327,60 +326,60 @@
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 4) 관련기준 내용 (w = 5.483, x = 4.35 ~ 9.833, 2단 분할: 윗칸 볼드 제목 + 가로선 + 아랫칸 큰 글씨 본문)
+    // 4) 관련기준 내용 (w = 5.283, x = 4.35 ~ 9.633, 2단 분할: 윗칸 볼드 제목 + 가로선 + 아랫칸 큰 글씨 본문)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 4.35, y: 0.40, w: 5.483, h: 1.00,
+      x: 4.35, y: 0.40, w: 5.283, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     // 윗칸 제목 (h = 0.36, 12pt 볼드체 블랙)
     slide.addText(data.lawTitle, {
-      x: 4.35, y: 0.40, w: 5.483, h: 0.36,
+      x: 4.35, y: 0.40, w: 5.283, h: 0.36,
       fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: '000000',
       align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
     });
     // 가로 구분선 (y = 0.76)
     slide.addShape(pptx.ShapeType.line, {
-      x: 4.35, y: 0.76, w: 5.483, h: 0,
+      x: 4.35, y: 0.76, w: 5.283, h: 0,
       line: { color: C_BORDER, width: 1.2 }
     });
     // 아랫칸 본문 (h = 0.64, 10.5pt, 공백 최소화)
     slide.addText(data.lawBody, {
-      x: 4.35, y: 0.76, w: 5.483, h: 0.64,
+      x: 4.35, y: 0.76, w: 5.283, h: 0.64,
       fontFace: FONT_MALGUN, fontSize: 10.5, color: '111111',
       align: 'left', valign: 'middle', margin: [2, 8, 2, 8], lineSpacingMultiple: 1.18
     });
 
-    // 5) 4대 발생요인 (w = 3.00, x = 9.833 ~ 12.833, 4개 분면 셀, 가운데 정렬, 14.5pt 큼직한 체크마크)
+    // 5) 4대 발생요인 (w = 3.20 in, x = 9.633 ~ 12.833, 4개 분면 셀, 가운데 정렬, 12.5pt 볼드체, wrap: false로 절대 줄바꿈 없음)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 9.833, y: 0.40, w: 3.00, h: 1.00,
+      x: 9.633, y: 0.40, w: 3.20, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     // 가로 구분선 (y = 0.90)
     slide.addShape(pptx.ShapeType.line, {
-      x: 9.833, y: 0.90, w: 3.00, h: 0,
+      x: 9.633, y: 0.90, w: 3.20, h: 0,
       line: { color: C_BORDER, width: 1.2 }
     });
-    // 세로 구분선 (x = 11.333)
+    // 세로 구분선 (x = 11.233)
     slide.addShape(pptx.ShapeType.line, {
-      x: 11.333, y: 0.40, w: 0, h: 1.00,
+      x: 11.233, y: 0.40, w: 0, h: 1.00,
       line: { color: C_BORDER, width: 1.2 }
     });
-    // 4개 셀 가운데 정렬 14.5pt 볼드
+    // 4개 셀 가운데 정렬 12.5pt 볼드, wrap: false, margin: 0
     slide.addText(`${data.isUnplanned ? '☑' : '☐'} 계획 미수립`, {
-      x: 9.833, y: 0.40, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
+      x: 9.633, y: 0.40, w: 1.60, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: '000000', align: 'center', valign: 'middle', wrap: false, margin: 0
     });
     slide.addText(`${data.isUnexecuted ? '☑' : '☐'} 계획 미이행`, {
-      x: 11.333, y: 0.40, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
+      x: 11.233, y: 0.40, w: 1.60, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: '000000', align: 'center', valign: 'middle', wrap: false, margin: 0
     });
     slide.addText(`${data.isAction ? '☑' : '☐'} 불안전 행동`, {
-      x: 9.833, y: 0.90, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
+      x: 9.633, y: 0.90, w: 1.60, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: '000000', align: 'center', valign: 'middle', wrap: false, margin: 0
     });
     slide.addText(`${data.isCondition ? '☑' : '☐'} 불안전 상태`, {
-      x: 11.333, y: 0.90, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
+      x: 11.233, y: 0.90, w: 1.60, h: 0.50,
+      fontFace: FONT_MALGUN, fontSize: 12.5, bold: true, color: '000000', align: 'center', valign: 'middle', wrap: false, margin: 0
     });
 
     // ── 2. 부적합 개요 행 (y = 1.45, h = 0.85, x = 0.50 ~ 12.833) ──
@@ -757,25 +756,25 @@
               ${data.lawBody}
             </div>
           </div>
-          <!-- 5) 4대 발생요인 4개 분면 셀 (가운데 정렬, 큼직한 폰트와 두꺼운 체크마크) -->
-          <div style="width: 290px; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
+          <!-- 5) 4대 발생요인 4개 분면 셀 (가운데 정렬, 큼직한 폰트와 두꺼운 체크마크, 줄바꿈 없음) -->
+          <div style="width: 305px; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
             <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1.2px solid #7ba0cd;">
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000; border-right: 1.2px solid #7ba0cd;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnplanned ? '✔' : ''}</span>
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.00rem; font-weight: 800; color: #000000; border-right: 1.2px solid #7ba0cd; white-space: nowrap; padding: 0 4px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 2px solid #000000; margin-right: 5px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnplanned ? '✔' : ''}</span>
                 계획 미수립
               </div>
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnexecuted ? '✔' : ''}</span>
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.00rem; font-weight: 800; color: #000000; white-space: nowrap; padding: 0 4px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 2px solid #000000; margin-right: 5px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnexecuted ? '✔' : ''}</span>
                 계획 미이행
               </div>
             </div>
             <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr;">
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000; border-right: 1.2px solid #7ba0cd;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isAction ? '✔' : ''}</span>
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.00rem; font-weight: 800; color: #000000; border-right: 1.2px solid #7ba0cd; white-space: nowrap; padding: 0 4px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 2px solid #000000; margin-right: 5px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isAction ? '✔' : ''}</span>
                 불안전 행동
               </div>
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isCondition ? '✔' : ''}</span>
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.00rem; font-weight: 800; color: #000000; white-space: nowrap; padding: 0 4px;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 2px solid #000000; margin-right: 5px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isCondition ? '✔' : ''}</span>
                 불안전 상태
               </div>
             </div>
