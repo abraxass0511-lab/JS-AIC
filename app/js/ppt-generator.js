@@ -230,18 +230,12 @@
       }
     }
 
-    if (pmVerdictType.includes('시스템')) {
-      pmVerdictType = '시스템 개선';
-      pmVerdictSub = '(이행강화안 수립)';
-    } else if (pmVerdictType.includes('교육') || pmVerdictType.includes('코칭')) {
-      pmVerdictType = '교육/코칭';
-      pmVerdictSub = '(협력사 교육)';
-    } else if (pmVerdictType.includes('페널티') || pmVerdictType.includes('시정명령')) {
-      pmVerdictType = '페널티';
-      pmVerdictSub = '(시정명령/벌점)';
-    } else {
-      pmVerdictType = '교육/코칭';
-      pmVerdictSub = '(협력사 교육)';
+    // 사용자 지시: 개선대책, PM 판정결과는 추후 기입되는 공간이므로 기본 점검장표에서는 공란으로 유지
+    const isPostActionFilled = Boolean(options && options.includePostActions);
+    if (!isPostActionFilled) {
+      countermeasureContent = '';
+      pmVerdictType = '';
+      pmVerdictSub = '';
     }
 
     let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
@@ -309,20 +303,7 @@
       align: 'center', valign: 'middle', margin: 0
     });
 
-    // 2) 사고유형 & 부적합등급 (w = 1.40, x = 2.20 ~ 3.60, 오렌지 테두리)
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
-      fill: { color: 'FFFFFF' }, line: { color: C_ORANGE, width: 2 }
-    });
-    slide.addText([
-      { text: `${data.type}\n`, options: { fontSize: 15, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `[${data.severity}]`, options: { fontSize: 13, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
-    ], {
-      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
-    });
-
-    // 3) 관련기준 라벨 (w = 0.75, x = 3.60 ~ 4.35)
+    // 3) 관련기준 라벨 (w = 0.75, x = 3.60 ~ 4.35) - 오렌지 테두리가 덮이도록 먼저 그림
     slide.addShape(pptx.ShapeType.rect, {
       x: 3.60, y: 0.40, w: 0.75, h: 1.00,
       fill: { color: C_HEADER_BG }, line: { color: C_BORDER, width: 1.5 }
@@ -333,69 +314,99 @@
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 4) 관련기준 내용 (w = 5.483, x = 4.35 ~ 9.833, 상단 정렬, PowerPoint 줄간격 최적화)
+    // 2) 사고유형 & 부적합등급 (w = 1.40, x = 2.20 ~ 3.60, 4면 오렌지 2.5pt 테두리 - 오른쪽 테두리 완벽 노출)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
+      fill: { color: 'FFFFFF' }, line: { color: C_ORANGE, width: 2.5 }
+    });
+    slide.addText([
+      { text: `${data.type}\n`, options: { fontSize: 15.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `[${data.severity}]`, options: { fontSize: 13.5, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
+    ], {
+      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
+      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
+    });
+
+    // 4) 관련기준 내용 (w = 5.483, x = 4.35 ~ 9.833, 2단 분할: 윗칸 볼드 제목 + 가로선 + 아랫칸 큰 글씨 본문)
     slide.addShape(pptx.ShapeType.rect, {
       x: 4.35, y: 0.40, w: 5.483, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
-    slide.addText([
-      { text: `${data.lawTitle}\n`, options: { fontSize: 9.2, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.lawBody, options: { fontSize: 8.2, color: '222222', fontFace: FONT_MALGUN } }
-    ], {
-      x: 4.35, y: 0.40, w: 5.483, h: 1.00,
-      margin: [4, 8, 4, 8], valign: 'top', lineSpacingMultiple: 1.15
+    // 윗칸 제목 (h = 0.36, 12pt 볼드체 블랙)
+    slide.addText(data.lawTitle, {
+      x: 4.35, y: 0.40, w: 5.483, h: 0.36,
+      fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: '000000',
+      align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+    });
+    // 가로 구분선 (y = 0.76)
+    slide.addShape(pptx.ShapeType.line, {
+      x: 4.35, y: 0.76, w: 5.483, h: 0,
+      line: { color: C_BORDER, width: 1.2 }
+    });
+    // 아랫칸 본문 (h = 0.64, 10.5pt, 공백 최소화)
+    slide.addText(data.lawBody, {
+      x: 4.35, y: 0.76, w: 5.483, h: 0.64,
+      fontFace: FONT_MALGUN, fontSize: 10.5, color: '111111',
+      align: 'left', valign: 'middle', margin: [2, 8, 2, 8], lineSpacingMultiple: 1.18
     });
 
-    // 5) 4대 발생요인 (w = 3.00, x = 9.833 ~ 12.833, 가로선 분할, 원본과 동일하게 굵고 큰 13.5pt 볼드체 적용)
-    // 외곽 사각형
+    // 5) 4대 발생요인 (w = 3.00, x = 9.833 ~ 12.833, 4개 분면 셀, 가운데 정렬, 14.5pt 큼직한 체크마크)
     slide.addShape(pptx.ShapeType.rect, {
       x: 9.833, y: 0.40, w: 3.00, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
-    // 내부 가로 구분선 (y = 0.90) - 원본 실물에 세로선은 없고 가로선만 존재함
+    // 가로 구분선 (y = 0.90)
     slide.addShape(pptx.ShapeType.line, {
       x: 9.833, y: 0.90, w: 3.00, h: 0,
       line: { color: C_BORDER, width: 1.2 }
     });
-    // 4개 분면 텍스트: 원본 실물과 동일하게 13.5pt 굵은 볼드체 및 선명한 체크마크
+    // 세로 구분선 (x = 11.333)
+    slide.addShape(pptx.ShapeType.line, {
+      x: 11.333, y: 0.40, w: 0, h: 1.00,
+      line: { color: C_BORDER, width: 1.2 }
+    });
+    // 4개 셀 가운데 정렬 14.5pt 볼드
     slide.addText(`${data.isUnplanned ? '☑' : '☐'} 계획 미수립`, {
       x: 9.833, y: 0.40, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
     slide.addText(`${data.isUnexecuted ? '☑' : '☐'} 계획 미이행`, {
       x: 11.333, y: 0.40, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
     slide.addText(`${data.isAction ? '☑' : '☐'} 불안전 행동`, {
       x: 9.833, y: 0.90, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
     slide.addText(`${data.isCondition ? '☑' : '☐'} 불안전 상태`, {
       x: 11.333, y: 0.90, w: 1.50, h: 0.50,
-      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: '000000', align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
     // ── 2. 부적합 개요 행 (y = 1.45, h = 0.85, x = 0.50 ~ 12.833) ──
+    // '부적합 개요' 라벨 (w = 0.80) -> 합이 절대 떨어지지 않는 2줄 정렬: '부 적 합' / '개    요'
     slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 1.45, w: 0.75, h: 0.85,
+      x: 0.50, y: 1.45, w: 0.80, h: 0.85,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 1.5 }
     });
-    slide.addText('부적합\n개  요', {
-      x: 0.50, y: 1.45, w: 0.75, h: 0.85,
-      fontFace: FONT_MALGUN, fontSize: 14.5, bold: true, color: '000000',
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
+    slide.addText([
+      { text: '부 적 합\n', options: { fontSize: 13.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: '개    요', options: { fontSize: 13.5, bold: true, color: '000000', fontFace: FONT_MALGUN } }
+    ], {
+      x: 0.50, y: 1.45, w: 0.80, h: 0.85,
+      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15, margin: [0, 2, 0, 2]
     });
 
-    // 부적합 개요 1행: 5개 독립 직사각형 (테두리 셀 - 공백 없이 꽉 찬 11pt 볼드 타이포)
-    // 협력사 (x = 1.25 ~ 3.55, w = 2.30)
+    // 부적합 개요 1행: 5개 독립 직사각형 (x = 1.30 ~ 12.833, 총 너비 11.533)
+    // 협력사 (x = 1.30 ~ 3.55, w = 2.25)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 1.25, y: 1.45, w: 2.30, h: 0.42,
+      x: 1.30, y: 1.45, w: 2.25, h: 0.42,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
       { text: '협력사 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
       { text: data.subcontractor, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
-    ], { x: 1.25, y: 1.45, w: 2.30, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
+    ], { x: 1.30, y: 1.45, w: 2.25, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
     // 공종명 (x = 3.55 ~ 6.00, w = 2.45)
     slide.addShape(pptx.ShapeType.rect, {
@@ -437,18 +448,18 @@
       { text: data.inspectRound, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } }
     ], { x: 10.45, y: 1.45, w: 2.383, h: 0.42, align: 'left', valign: 'middle', margin: [0, 6, 0, 6] });
 
-    // 부적합 개요 2행: 부적합 내용 전체 너비 독립 사각형 (x = 1.25 ~ 12.833, w = 11.583, h = 0.43, 줄바꿈 방지 최적화)
+    // 부적합 개요 2행: 부적합 내용 전체 너비 사각형 (x = 1.30 ~ 12.833, w = 11.533, h = 0.43)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 1.25, y: 1.87, w: 11.583, h: 0.43,
+      x: 1.30, y: 1.87, w: 11.533, h: 0.43,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1 }
     });
     slide.addText([
-      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.8 } },
-      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 10.8 } },
-      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 10.8 } },
-      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 10.8 } }
+      { text: '부적합 내용 : ', options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: 11 } },
+      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: 11 } }
     ], {
-      x: 1.25, y: 1.87, w: 11.583, h: 0.43,
+      x: 1.30, y: 1.87, w: 11.533, h: 0.43,
       align: 'left', valign: 'middle', margin: [0, 8, 0, 8], lineSpacingMultiple: 1.10
     });
 
@@ -547,8 +558,8 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText([
-      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: data.interviewOpinion, options: { fontSize: 10, color: '222222', fontFace: FONT_MALGUN } }
+      { text: '[의견 : 안전관리자 및 시공관리자]\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: data.interviewOpinion, options: { fontSize: 10.8, color: '111111', fontFace: FONT_MALGUN } }
     ], {
       x: 6.60, y: 2.76, w: 6.233, h: 1.05,
       margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.20
@@ -564,16 +575,16 @@
       line: { color: C_BORDER, width: 1.2 }
     });
     slide.addText([
-      { text: '[점검단 제안]\n', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `${data.proposalType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.proposalSub, options: { fontSize: 9.5, color: '595959', fontFace: FONT_MALGUN } }
+      { text: '[점검단 제안]\n', options: { fontSize: 11.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+      { text: `${data.proposalType}\n`, options: { fontSize: 16.5, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
+      { text: data.proposalSub, options: { fontSize: 10, color: '595959', fontFace: FONT_MALGUN } }
     ], {
       x: 6.60, y: 3.81, w: 1.65, h: 1.15,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
     slide.addText(data.proposalContent, {
       x: 8.25, y: 3.81, w: 4.583, h: 1.15,
-      fontFace: FONT_MALGUN, fontSize: 10, color: '000000', margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.20
+      fontFace: FONT_MALGUN, fontSize: 10.8, color: '111111', margin: [6, 10, 4, 10], valign: 'top', lineSpacingMultiple: 1.20
     });
 
     // 우측 구역 3: 개선대책 (현장 협의 결과) 헤더 (y = 4.96, h = 0.38, 16.5pt 굵은 볼드체 블랙)
@@ -595,17 +606,26 @@
       x: 11.183, y: 5.34, w: 0, h: 1.71,
       line: { color: C_BORDER, width: 1.2 }
     });
-    slide.addText(data.countermeasureContent, {
-      x: 6.60, y: 5.34, w: 4.583, h: 1.71,
-      fontFace: FONT_MALGUN, fontSize: 11, color: '000000', margin: [8, 12, 6, 12], valign: 'top', lineSpacingMultiple: 1.25
-    });
-    slide.addText([
-      { text: '[PM 판정결과]\n\n', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `${data.pmVerdictType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.pmVerdictSub, options: { fontSize: 9.5, color: '595959', fontFace: FONT_MALGUN } }
-    ], {
+    // 개선대책 본문 (추후 기입 공간이므로 기본 공란)
+    if (data.countermeasureContent) {
+      slide.addText(data.countermeasureContent, {
+        x: 6.60, y: 5.34, w: 4.583, h: 1.71,
+        fontFace: FONT_MALGUN, fontSize: 11, color: '000000', margin: [8, 12, 6, 12], valign: 'top', lineSpacingMultiple: 1.25
+      });
+    }
+    // PM 판정결과 (추후 기입 공간이므로 타이틀만 표시하고 기본 공란)
+    const pmRuns = [
+      { text: '[PM 판정결과]', options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } }
+    ];
+    if (data.pmVerdictType) {
+      pmRuns.push({ text: `\n\n${data.pmVerdictType}\n`, options: { fontSize: 16, bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN } });
+      if (data.pmVerdictSub) {
+        pmRuns.push({ text: data.pmVerdictSub, options: { fontSize: 9.5, color: '595959', fontFace: FONT_MALGUN } });
+      }
+    }
+    slide.addText(pmRuns, {
       x: 11.183, y: 5.34, w: 1.65, h: 1.71,
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
+      align: 'center', valign: data.pmVerdictType ? 'middle' : 'top', lineSpacingMultiple: 1.15, margin: [12, 4, 12, 4]
     });
 
     // D. 좌측 하단 규정 수칙 박스 (특별한 언급/지정이 있는 경우에만 표시, 기본값은 미표시)
@@ -716,53 +736,57 @@
         <!-- 1. 최상단 헤더 행 (5개 블록) -->
         <div style="display: flex; align-items: stretch; border: 1.5px solid #7ba0cd; margin-bottom: 4px; height: 72px;">
           <!-- 1) 시설물/법규 (한 줄로 표시) -->
-          <div style="width: 150px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: #002060; white-space: nowrap; padding: 0 4px;">
+          <div style="width: 145px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: #002060; white-space: nowrap; padding: 0 4px;">
             시설물/법규
           </div>
-          <!-- 2) 사고유형 & 등급 -->
-          <div style="width: 130px; flex-shrink: 0; background: #ffffff; border-right: 1.5px solid #7ba0cd; border: 2px solid #ed7d31; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">
-            <div style="font-weight: 800; font-size: 1.00rem; color: #000000; text-align: center;">${data.type}</div>
-            <div style="font-weight: 800; font-size: 0.88rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'};">[${data.severity}]</div>
+          <!-- 2) 사고유형 & 등급 (오렌지 테두리 4면 완전 노출: z-index 및 2.5px solid 적용) -->
+          <div style="width: 135px; flex-shrink: 0; background: #ffffff; border: 2.5px solid #ed7d31; z-index: 2; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">
+            <div style="font-weight: 800; font-size: 1.05rem; color: #000000; text-align: center;">${data.type}</div>
+            <div style="font-weight: 800; font-size: 0.90rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'};">[${data.severity}]</div>
           </div>
           <!-- 3) 관련기준 라벨 -->
-          <div style="width: 60px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.92rem; color: #002060; text-align: center; line-height: 1.2;">
+          <div style="width: 60px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; border-left: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.92rem; color: #002060; text-align: center; line-height: 1.2;">
             관련<br>기준
           </div>
-          <!-- 4) 관련기준 내용 (상단 정렬) -->
-          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.5px solid #7ba0cd; padding: 5px 10px; display: flex; flex-direction: column; justify-content: flex-start; word-break: keep-all;">
-            <div style="font-weight: 800; font-size: 0.88rem; color: #000000; margin-bottom: 2px;">${data.lawTitle}</div>
-            <div style="font-size: 0.78rem; color: #222222; line-height: 1.30;">${data.lawBody}</div>
+          <!-- 4) 관련기준 내용 (2단 분할: 윗칸 굵은 제목 + 가로선 + 아랫칸 큰 글씨 본문) -->
+          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; justify-content: stretch; box-sizing: border-box;">
+            <div style="border-bottom: 1.2px solid #7ba0cd; padding: 3px 10px; font-weight: 800; font-size: 0.95rem; color: #000000; display: flex; align-items: center; height: 28px; box-sizing: border-box; word-break: keep-all;">
+              ${data.lawTitle}
+            </div>
+            <div style="padding: 4px 10px; font-size: 0.86rem; color: #111111; line-height: 1.35; display: flex; align-items: center; flex: 1; box-sizing: border-box; word-break: keep-all;">
+              ${data.lawBody}
+            </div>
           </div>
-          <!-- 5) 4대 발생요인 2단 표 (세로선 없이 가로선만, 큰 폰트와 굵은 볼드체 원본 동일) -->
-          <div style="width: 275px; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
-            <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #7ba0cd; padding: 0 14px;">
-              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnplanned ? '✔' : ''}</span>
+          <!-- 5) 4대 발생요인 4개 분면 셀 (가운데 정렬, 큼직한 폰트와 두꺼운 체크마크) -->
+          <div style="width: 290px; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
+            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1.2px solid #7ba0cd;">
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000; border-right: 1.2px solid #7ba0cd;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnplanned ? '✔' : ''}</span>
                 계획 미수립
               </div>
-              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnexecuted ? '✔' : ''}</span>
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isUnexecuted ? '✔' : ''}</span>
                 계획 미이행
               </div>
             </div>
-            <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 14px;">
-              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isAction ? '✔' : ''}</span>
+            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr;">
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000; border-right: 1.2px solid #7ba0cd;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isAction ? '✔' : ''}</span>
                 불안전 행동
               </div>
-              <div style="display: flex; align-items: center; font-size: 1.02rem; font-weight: 800; color: #000000;">
-                <span style="display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.8px solid #222222; margin-right: 6px; font-size: 16px; font-weight: 900; color: #000000; background: #ffffff;">${data.isCondition ? '✔' : ''}</span>
+              <div style="display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; color: #000000;">
+                <span style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 2px solid #000000; margin-right: 6px; font-size: 17px; font-weight: 900; color: #000000; background: #ffffff;">${data.isCondition ? '✔' : ''}</span>
                 불안전 상태
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 2. 부적합 개요 행 (5개 독립 네모칸 격자 + 2행 부적합 내용) -->
-        <div style="display: grid; grid-template-columns: 65px 1fr; border: 1.5px solid #7ba0cd; margin-bottom: 4px;">
+        <!-- 2. 부적합 개요 행 (합이 내려가지 않는 단정하고 여유 있는 2줄: '부 적 합' / '개    요') -->
+        <div style="display: grid; grid-template-columns: 75px 1fr; border: 1.5px solid #7ba0cd; margin-bottom: 4px;">
           <!-- 좌측 노란 헤더 -->
-          <div style="background: #ffe699; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.05rem; color: #000000; text-align: center; line-height: 1.2; padding: 4px;">
-            부적합<br>개&nbsp;&nbsp;요
+          <div style="background: #ffe699; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.05rem; color: #000000; text-align: center; line-height: 1.25; padding: 4px;">
+            부 적 합<br>개&nbsp;&nbsp;&nbsp;&nbsp;요
           </div>
           <!-- 우측 2행 표 구조 -->
           <div style="display: flex; flex-direction: column;">
@@ -837,7 +861,7 @@
               </div>
               <div style="padding: 8px 12px; background: #ffffff; border-bottom: 1.5px solid #7ba0cd; word-break: keep-all;">
                 <div style="font-weight: 800; font-size: 0.95rem; color: #000000; margin-bottom: 4px;">[의견 : 안전관리자 및 시공관리자]</div>
-                <div style="font-size: 0.88rem; font-weight: 500; color: #111111; line-height: 1.45;">${data.interviewOpinion}</div>
+                <div style="font-size: 0.90rem; font-weight: 500; color: #111111; line-height: 1.45;">${data.interviewOpinion}</div>
               </div>
               <div style="display: grid; grid-template-columns: 125px 1fr; background: #ffffff;">
                 <div style="background: #ffffff; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 4px; text-align: center;">
@@ -856,14 +880,18 @@
               <div style="background: #ffe699; color: #000000; font-weight: 900; font-size: 1.15rem; text-align: center; padding: 4px 6px; height: 30px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px;">
                 개선대책 (현장 협의 결과)
               </div>
-              <div style="display: grid; grid-template-columns: 1fr 125px; background: #ffffff;">
+              <div style="display: grid; grid-template-columns: 1fr 125px; background: #ffffff; min-height: 85px;">
+                <!-- 개선대책 본문 (추후 기입 공간이므로 기본 공란) -->
                 <div style="padding: 12px 14px; font-size: 0.92rem; font-weight: 600; color: #000000; border-right: 1.5px solid #7ba0cd; word-break: keep-all; line-height: 1.50; display: flex; flex-direction: column; justify-content: center; white-space: pre-line;">
-                  ${data.countermeasureContent}
+                  ${data.countermeasureContent || ''}
                 </div>
-                <div style="background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 4px; text-align: center;">
+                <!-- PM 판정결과 (추후 기입 공간이므로 타이틀만 표시하고 기본 공란) -->
+                <div style="background: #ffffff; display: flex; flex-direction: column; align-items: center; justify-content: ${data.pmVerdictType ? 'center' : 'flex-start'}; padding: 10px 4px; text-align: center;">
                   <div style="font-size: 0.90rem; font-weight: 800; color: #000000;">[PM 판정결과]</div>
-                  <div style="font-size: 1.30rem; font-weight: 900; color: #002060; margin: 3px 0 2px 0;">${data.pmVerdictType}</div>
-                  <div style="font-size: 0.78rem; font-weight: 600; color: #555555;">${data.pmVerdictSub}</div>
+                  ${data.pmVerdictType ? `
+                    <div style="font-size: 1.30rem; font-weight: 900; color: #002060; margin: 3px 0 2px 0;">${data.pmVerdictType}</div>
+                    <div style="font-size: 0.78rem; font-weight: 600; color: #555555;">${data.pmVerdictSub}</div>
+                  ` : ''}
                 </div>
               </div>
             </div>
