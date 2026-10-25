@@ -254,11 +254,11 @@ export async function extractPhotoFromJangpyo(imgDataUrl, customBounds = null) {
         // [가로형 장표 16:9 슬라이드 레이아웃 - 실측 정밀 좌표]
         // 상단 헤더/표(43.5% 위)와 붉은 타이틀 배너를 완전히 배제하고,
         // 우측의 '발생원인' 표 이전까지 좌측 영역의 '순수 현장 사진'만 추출
-        // X: 4.5% ~ 50.0%, Y: 43.5% ~ 81.5%
+        // X: 4.5% ~ 50.0%, Y: 43.5% ~ 88.0% (하단 문자 잘림 방지)
         sx = Math.round(w * 0.045);
         sy = Math.round(h * 0.435);
         sw = Math.round(w * 0.455);
-        sh = Math.round(h * 0.380);
+        sh = Math.round(h * 0.445);
       }
 
       // 경계 보호
