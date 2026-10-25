@@ -2491,9 +2491,9 @@ async function deleteOneRecord(rec) {
 async function resolvePhotoBase64ForPPT(path, record = null, photoIndex = 0) {
   // 1) 수평양중 / 보 거푸집 건은 하단 A, B 라벨 및 수평양중 문자가 100% 온전히 보존된 691px 사진 자동 우선 적용
   const isHorizontalLifting = record && (
-    (record.content || '').includes('수평') || 
+    (record.content || '').includes('수평양중') || 
     (record.content || '').includes('보 거푸집') || 
-    (record.item || '').includes('수평')
+    (record.content || '').includes('수평이 맞지 않음')
   );
   if (isHorizontalLifting) {
     const fixedPath = photoIndex === 0 ? 'samples/horizontal_photo1.jpg' : 'samples/horizontal_photo2.jpg';
@@ -2682,7 +2682,7 @@ async function updateEduPreview() {
 
   let photo1Url = '';
   let photo2Url = '';
-  const isHorizontalLifting = (rec.content || '').includes('수평') || (rec.content || '').includes('보 거푸집') || (rec.item || '').includes('수평');
+  const isHorizontalLifting = (rec.content || '').includes('수평양중') || (rec.content || '').includes('보 거푸집') || (rec.content || '').includes('수평이 맞지 않음');
   if (isHorizontalLifting) {
     photo1Url = 'samples/horizontal_photo1.jpg';
     photo2Url = 'samples/horizontal_photo2.jpg';

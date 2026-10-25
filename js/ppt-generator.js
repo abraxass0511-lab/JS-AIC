@@ -33,6 +33,17 @@
     const severity = isMajor ? '중부적합' : '경부적합';
     const type = r.type || '충돌/협착';
 
+    // 사고유형 파싱 및 포맷팅 (예: "넘어짐(전도:사람)" -> main: "넘어짐", sub: "(전도 : 사람)")
+    const rawType = String(type).trim();
+    let typeMain = rawType;
+    let typeSub = '';
+    const typeMatch = rawType.match(/^([^(]+)\s*\(([^)]+)\)$/);
+    if (typeMatch) {
+      typeMain = typeMatch[1].trim();
+      let inner = typeMatch[2].trim().replace(/\s*:\s*/g, ' : ');
+      typeSub = `(${inner})`;
+    }
+
     // 4대 요인 판정: 사용자가 지정한 관리적/직접 원인 목록을 최우선 존중
     const mgmt = Array.isArray(r.mgmtCauses) ? r.mgmtCauses : [];
     const causes = Array.isArray(r.causes) ? r.causes : [];
@@ -245,7 +256,9 @@
     return {
       severity,
       isMajor,
-      type,
+      type: rawType,
+      typeMain,
+      typeSub,
       isUnplanned,
       isUnexecuted,
       isAction,
@@ -318,24 +331,37 @@
       x: 2.20, y: 0.40, w: 1.40, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_ORANGE, width: 2.5 }
     });
-    slide.addText([
-      { text: `${data.type}\n`, options: { fontSize: 15.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-      { text: `[${data.severity}]`, options: { fontSize: 13.5, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
-    ], {
-      x: 2.20, y: 0.40, w: 1.40, h: 1.00,
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
-    });
+    if (data.typeSub) {
+      // 3줄 분할 정렬: 넘어짐 / (전도 : 사람) / [경부적합]
+      slide.addText([
+        { text: `${data.typeMain}\n`, options: { fontSize: 13.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+        { text: `${data.typeSub}\n`, options: { fontSize: 9.5, bold: true, color: '333333', fontFace: FONT_MALGUN } },
+        { text: `[${data.severity}]`, options: { fontSize: 11, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
+      ], {
+        x: 2.20, y: 0.40, w: 1.40, h: 1.00,
+        align: 'center', valign: 'middle', lineSpacingMultiple: 1.05, margin: 0
+      });
+    } else {
+      slide.addText([
+        { text: `${data.typeMain}\n`, options: { fontSize: 15.5, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+        { text: `[${data.severity}]`, options: { fontSize: 13.5, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
+      ], {
+        x: 2.20, y: 0.40, w: 1.40, h: 1.00,
+        align: 'center', valign: 'middle', lineSpacingMultiple: 1.15, margin: 0
+      });
+    }
 
     // 4) 관련기준 내용 (w = 5.283, x = 4.35 ~ 9.633, 2단 분할: 윗칸 볼드 제목 + 가로선 + 아랫칸 큰 글씨 본문)
     slide.addShape(pptx.ShapeType.rect, {
       x: 4.35, y: 0.40, w: 5.283, h: 1.00,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
-    // 윗칸 제목 (h = 0.36, 12pt 볼드체 블랙)
+    // 윗칸 제목 (h = 0.36, 사용자 요청: '산업안전기준에관한규칙 ~ 줄바뀜이 일어나지 않게 하고' -> wrap: false 및 자동 폰트 핏팅)
+    const lawTitleFontSize = data.lawTitle.length > 34 ? 9.6 : (data.lawTitle.length > 25 ? 10.5 : 12);
     slide.addText(data.lawTitle, {
       x: 4.35, y: 0.40, w: 5.283, h: 0.36,
-      fontFace: FONT_MALGUN, fontSize: 12, bold: true, color: '000000',
-      align: 'left', valign: 'middle', margin: [0, 8, 0, 8]
+      fontFace: FONT_MALGUN, fontSize: lawTitleFontSize, bold: true, color: '000000',
+      align: 'left', valign: 'middle', wrap: false, margin: [0, 6, 0, 6]
     });
     // 가로 구분선 (y = 0.76)
     slide.addShape(pptx.ShapeType.line, {
@@ -475,73 +501,109 @@
     const photo1ImgHeight = showGuidelineBox ? 3.29 : 4.29; // 수칙 박스 없을 때 y=2.76부터 7.05까지 꽉 채움!
     const photo2ImgHeight = showGuidelineBox ? 2.91 : 3.91; // y=3.14부터 7.05까지 꽉 채움!
 
-    // A. 사진 1 빨간 배너 (y = 2.38, h = 0.38, 10pt 볼드, 절대 줄바꿈 없음)
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 0.50, y: 2.38, w: 2.95, h: 0.38,
-      fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
-    });
-    slide.addText(data.photo1Title, {
-      x: 0.50, y: 2.38, w: 2.95, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
-      align: 'center', valign: 'middle', wrap: false, margin: 0
-    });
+    // 사용자 지시: "사진이 1개면 1개만 넣어. 굳이 2개로 할 필요 없어"
+    const hasPhoto2 = Boolean(photo2Base64);
 
-    // 사진 1 이미지 (기본: 바닥 y = 7.05에 정확히 종료, contain으로 사진 속 문자 100% 온전히 보존)
-    if (photo1Base64) {
-      slide.addImage({
-        data: photo1Base64,
-        x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
-        sizing: { type: 'contain', w: 2.95, h: photo1ImgHeight }
-      });
-    } else {
+    if (hasPhoto2) {
+      // ════ 2개 사진 레이아웃 (기존 원본 양식) ════
+      // A. 사진 1 빨간 배너 (y = 2.38, h = 0.38, 10pt 볼드, 절대 줄바꿈 없음)
       slide.addShape(pptx.ShapeType.rect, {
-        x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
-        fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
+        x: 0.50, y: 2.38, w: 2.95, h: 0.38,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
       });
-      slide.addText('📸 사진 1', {
-        x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
-        fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
+      slide.addText(data.photo1Title, {
+        x: 0.50, y: 2.38, w: 2.95, h: 0.38,
+        fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle', wrap: false, margin: 0
       });
-    }
 
-    // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.38, 10.5pt 볼드)
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 3.55, y: 2.38, w: 2.95, h: 0.38,
-      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
-    });
-    slide.addText(data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)', {
-      x: 3.55, y: 2.38, w: 2.95, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: '333333',
-      align: 'center', valign: 'middle', wrap: false, margin: 0
-    });
+      // 사진 1 이미지
+      if (photo1Base64) {
+        slide.addImage({
+          data: photo1Base64,
+          x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
+          sizing: { type: 'contain', w: 2.95, h: photo1ImgHeight }
+        });
+      } else {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
+          fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
+        });
+        slide.addText('📸 사진 1', {
+          x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
+          fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
+        });
+      }
 
-    // 사진 2 빨간 배너 (y = 2.76, h = 0.38, 10pt 볼드, 절대 줄바꿈 없음)
-    slide.addShape(pptx.ShapeType.rect, {
-      x: 3.55, y: 2.76, w: 2.95, h: 0.38,
-      fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
-    });
-    slide.addText(data.photo2Title, {
-      x: 3.55, y: 2.76, w: 2.95, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
-      align: 'center', valign: 'middle', wrap: false, margin: 0
-    });
+      // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.38, 10.5pt 볼드)
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 3.55, y: 2.38, w: 2.95, h: 0.38,
+        fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
+      });
+      slide.addText(data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)', {
+        x: 3.55, y: 2.38, w: 2.95, h: 0.38,
+        fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: '333333',
+        align: 'center', valign: 'middle', wrap: false, margin: 0
+      });
 
-    // 사진 2 이미지 (기본: 바닥 y = 7.05에 정확히 종료, contain으로 사진 속 문자 100% 온전히 보존)
-    if (photo2Base64) {
+      // 사진 2 빨간 배너 (y = 2.76, h = 0.38, 10pt 볼드, 절대 줄바꿈 없음)
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 3.55, y: 2.76, w: 2.95, h: 0.38,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
+      });
+      slide.addText(data.photo2Title, {
+        x: 3.55, y: 2.76, w: 2.95, h: 0.38,
+        fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle', wrap: false, margin: 0
+      });
+
+      // 사진 2 이미지
       slide.addImage({
         data: photo2Base64,
         x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
         sizing: { type: 'contain', w: 2.95, h: photo2ImgHeight }
       });
     } else {
+      // ════ 사진 1개 전용 레이아웃 (사용자 지시: 사진 1개면 1개만 넣고 더미 사진 2 제거) ════
+      // 상단 좌측: 사진 1 빨간 배너 (x = 0.50 ~ 4.70, w = 4.20)
       slide.addShape(pptx.ShapeType.rect, {
-        x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
-        fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
+        x: 0.50, y: 2.38, w: 4.20, h: 0.38,
+        fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
       });
-      slide.addText('📸 사진 2', {
-        x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
-        fontFace: FONT_MALGUN, fontSize: 11, color: '64748B', align: 'center', valign: 'middle'
+      slide.addText(data.photo1Title, {
+        x: 0.50, y: 2.38, w: 4.20, h: 0.38,
+        fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: 'FFFFFF',
+        align: 'center', valign: 'middle', wrap: false, margin: 0
       });
+
+      // 상단 우측: Hold Point 위반 박스 (x = 4.75 ~ 6.50, w = 1.75)
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 4.75, y: 2.38, w: 1.75, h: 0.38,
+        fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
+      });
+      slide.addText(data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)', {
+        x: 4.75, y: 2.38, w: 1.75, h: 0.38,
+        fontFace: FONT_MALGUN, fontSize: 10.2, bold: true, color: '333333',
+        align: 'center', valign: 'middle', wrap: false, margin: 0
+      });
+
+      // 단일 사진 1 이미지 (x = 0.50, w = 6.00 전면 확장, 바닥 y = 7.05까지 시원하게 배치)
+      if (photo1Base64) {
+        slide.addImage({
+          data: photo1Base64,
+          x: 0.50, y: 2.76, w: 6.00, h: photo1ImgHeight,
+          sizing: { type: 'contain', w: 6.00, h: photo1ImgHeight }
+        });
+      } else {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 0.50, y: 2.76, w: 6.00, h: photo1ImgHeight,
+          fill: { color: 'F1F5F9' }, line: { color: 'CBD5E1', width: 1 }
+        });
+        slide.addText('📸 현장 사진', {
+          x: 0.50, y: 2.76, w: 6.00, h: photo1ImgHeight,
+          fontFace: FONT_MALGUN, fontSize: 12, color: '64748B', align: 'center', valign: 'middle'
+        });
+      }
     }
 
     // C. 우측 컬럼: 발생원인 (인터뷰 결과) 노란 바 (y = 2.38, h = 0.38, 16.5pt 굵은 볼드체 블랙)
@@ -707,6 +769,8 @@
     const { photo1Url = '', photo2Url = '', rulesFromTaxonomy = [] } = options;
     const data = normalizeJangpyoData(record, rulesFromTaxonomy);
 
+    const hasPhoto2 = Boolean(photo2Url);
+
     // 사용자 지시: 특별한 언급이 없으면 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣지 않고 사진 1, 2가 바닥까지 꽉 차도록 확장
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
     const photo1Height = showGuidelineBox ? '250px' : '346px';
@@ -719,6 +783,10 @@
     const photo2Img = photo2Url
       ? `<img src="${photo2Url}" style="width: 100%; height: ${photo2Height}; object-fit: contain; background: #ffffff; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
       : `<div style="width: 100%; height: ${photo2Height}; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 2</div>`;
+
+    const photo1ImgSingle = photo1Url
+      ? `<img src="${photo1Url}" style="width: 100%; height: ${photo1Height}; object-fit: contain; background: #ffffff; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      : `<div style="width: 100%; height: ${photo1Height}; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 현장 사진</div>`;
 
     return `
       <div id="jangpyoSlidePreview" style="
@@ -743,8 +811,13 @@
           </div>
           <!-- 2) 사고유형 & 등급 (오렌지 테두리 4면 완전 노출: z-index 및 2.5px solid 적용) -->
           <div style="width: 135px; flex-shrink: 0; background: #ffffff; border: 2.5px solid #ed7d31; z-index: 2; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">
-            <div style="font-weight: 800; font-size: 1.05rem; color: #000000; text-align: center;">${data.type}</div>
-            <div style="font-weight: 800; font-size: 0.90rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'};">[${data.severity}]</div>
+            <div style="font-weight: 800; font-size: ${data.typeSub ? '0.98rem' : '1.05rem'}; color: #000000; text-align: center; line-height: 1.15; white-space: nowrap;">
+              ${data.typeMain}
+            </div>
+            ${data.typeSub ? `<div style="font-weight: 700; font-size: 0.80rem; color: #333333; text-align: center; line-height: 1.1; margin-top: 1px; white-space: nowrap;">${data.typeSub}</div>` : ''}
+            <div style="font-weight: 800; font-size: 0.88rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'}; margin-top: 2px; white-space: nowrap;">
+              [${data.severity}]
+            </div>
           </div>
           <!-- 3) 관련기준 라벨 -->
           <div style="width: 60px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; border-left: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.92rem; color: #002060; text-align: center; line-height: 1.2;">
@@ -752,7 +825,7 @@
           </div>
           <!-- 4) 관련기준 내용 (2단 분할: 윗칸 굵은 제목 + 가로선 + 아랫칸 큰 글씨 본문) -->
           <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; justify-content: stretch; box-sizing: border-box;">
-            <div style="border-bottom: 1.2px solid #7ba0cd; padding: 3px 10px; font-weight: 800; font-size: 0.95rem; color: #000000; display: flex; align-items: center; height: 28px; box-sizing: border-box; word-break: keep-all;">
+            <div style="border-bottom: 1.2px solid #7ba0cd; padding: 3px 10px; font-weight: 800; font-size: ${data.lawTitle.length > 32 ? '0.86rem' : (data.lawTitle.length > 24 ? '0.90rem' : '0.95rem')}; color: #000000; display: flex; align-items: center; height: 28px; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
               ${data.lawTitle}
             </div>
             <div style="padding: 4px 10px; font-size: 0.86rem; color: #111111; line-height: 1.35; display: flex; align-items: center; flex: 1; box-sizing: border-box; word-break: keep-all;">
@@ -822,9 +895,10 @@
 
         <!-- 3. 본문 2단 분할 -->
         <div style="display: grid; grid-template-columns: 1fr 1.05fr; gap: 6px;">
-          <!-- 좌측 컬럼 (사진 2개 및 수칙) -->
+          <!-- 좌측 컬럼 (사진 및 수칙) -->
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            <!-- 상단 사진 영역: 사진 1 vs 사진 2 (Hold Point 박스가 사진 2 위에 얹힘) -->
+            <!-- 상단 사진 영역: 2개 사진 vs 1개 사진 -->
+            ${hasPhoto2 ? `
             <div style="display: flex; gap: 4px;">
               <!-- 사진 1 컬럼 (상단 배너 밀착 시작, 사진 2와 동일 바닥선 정렬) -->
               <div style="flex: 1; display: flex; flex-direction: column;">
@@ -844,6 +918,20 @@
                 ${photo2Img}
               </div>
             </div>
+            ` : `
+            <!-- 사진 1개 전용 레이아웃: 사용자 지시 (사진이 1개면 1개만 넣어. 굳이 2개로 할 필요 없어) -->
+            <div style="display: flex; flex-direction: column;">
+              <div style="display: flex; gap: 4px; height: 28px;">
+                <div style="flex: 1; background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.88rem; text-align: center; padding: 0 8px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; justify-content: center;">
+                  ${data.photo1Title}
+                </div>
+                <div style="width: 170px; flex-shrink: 0; background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px 2px 0 0; text-align: center; display: flex; align-items: center; justify-content: center; font-size: 0.84rem; color: #333333; font-weight: 700; white-space: nowrap; padding: 0 4px;">
+                  ${data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)'}
+                </div>
+              </div>
+              ${photo1ImgSingle}
+            </div>
+            `}
 
             <!-- 사진 하단 규정 수칙 박스 (특별한 지정이 있는 경우에만 표시) -->
             ${showGuidelineBox ? `
