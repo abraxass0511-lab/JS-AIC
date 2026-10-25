@@ -481,20 +481,24 @@
     const photo1ImgHeight = showGuidelineBox ? 3.29 : 4.29; // 수칙 박스 없을 때 y=2.76부터 7.05까지 꽉 채움!
     const photo2ImgHeight = showGuidelineBox ? 2.91 : 3.91; // y=3.14부터 7.05까지 꽉 채움!
 
-    // A. 사진 1 빨간 배너 (y = 2.38, h = 0.38, 11.5pt 볼드)
+    // A. 사진 1 빨간 배너 (y = 2.38, h = 0.38, 10pt 볼드, 절대 줄바꿈 없음)
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.50, y: 2.38, w: 2.95, h: 0.38,
       fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
     });
     slide.addText(data.photo1Title, {
       x: 0.50, y: 2.38, w: 2.95, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 11.5, bold: true, color: 'FFFFFF',
-      align: 'center', valign: 'middle'
+      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+      align: 'center', valign: 'middle', wrap: false, margin: 0
     });
 
-    // 사진 1 이미지 (기본: 바닥 y = 7.05에 정확히 종료하여 원본 사진 2처럼 거대하게 채움!)
+    // 사진 1 이미지 (기본: 바닥 y = 7.05에 정확히 종료, contain으로 사진 속 문자 100% 온전히 보존)
     if (photo1Base64) {
-      slide.addImage({ data: photo1Base64, x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight });
+      slide.addImage({
+        data: photo1Base64,
+        x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
+        sizing: { type: 'contain', w: 2.95, h: photo1ImgHeight }
+      });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
         x: 0.50, y: 2.76, w: 2.95, h: photo1ImgHeight,
@@ -506,30 +510,35 @@
       });
     }
 
-    // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.38, 11pt 볼드)
+    // B. 사진 2 상단 Hold Point 위반 박스 (y = 2.38, h = 0.38, 10.5pt 볼드)
     slide.addShape(pptx.ShapeType.rect, {
       x: 3.55, y: 2.38, w: 2.95, h: 0.38,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 1.5 }
     });
     slide.addText(data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)', {
       x: 3.55, y: 2.38, w: 2.95, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: '333333', align: 'center', valign: 'middle'
+      fontFace: FONT_MALGUN, fontSize: 10.5, bold: true, color: '333333',
+      align: 'center', valign: 'middle', wrap: false, margin: 0
     });
 
-    // 사진 2 빨간 배너 (y = 2.76, h = 0.38, 11.5pt 볼드)
+    // 사진 2 빨간 배너 (y = 2.76, h = 0.38, 10pt 볼드, 절대 줄바꿈 없음)
     slide.addShape(pptx.ShapeType.rect, {
       x: 3.55, y: 2.76, w: 2.95, h: 0.38,
       fill: { color: 'EA7676' }, line: { color: 'EA7676', width: 1 }
     });
     slide.addText(data.photo2Title, {
       x: 3.55, y: 2.76, w: 2.95, h: 0.38,
-      fontFace: FONT_MALGUN, fontSize: 11.5, bold: true, color: 'FFFFFF',
-      align: 'center', valign: 'middle'
+      fontFace: FONT_MALGUN, fontSize: 10, bold: true, color: 'FFFFFF',
+      align: 'center', valign: 'middle', wrap: false, margin: 0
     });
 
-    // 사진 2 이미지 (기본: 바닥 y = 7.05에 정확히 종료하여 사진 1 및 우측 박스와 완벽 일치!)
+    // 사진 2 이미지 (기본: 바닥 y = 7.05에 정확히 종료, contain으로 사진 속 문자 100% 온전히 보존)
     if (photo2Base64) {
-      slide.addImage({ data: photo2Base64, x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight });
+      slide.addImage({
+        data: photo2Base64,
+        x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
+        sizing: { type: 'contain', w: 2.95, h: photo2ImgHeight }
+      });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
         x: 3.55, y: 3.14, w: 2.95, h: photo2ImgHeight,
@@ -710,11 +719,11 @@
     const photo2Height = showGuidelineBox ? '222px' : '318px';
 
     const photo1Img = photo1Url 
-      ? `<img src="${photo1Url}" style="width: 100%; height: ${photo1Height}; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      ? `<img src="${photo1Url}" style="width: 100%; height: ${photo1Height}; object-fit: contain; background: #ffffff; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
       : `<div style="width: 100%; height: ${photo1Height}; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 1</div>`;
 
     const photo2Img = photo2Url
-      ? `<img src="${photo2Url}" style="width: 100%; height: ${photo2Height}; object-fit: cover; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
+      ? `<img src="${photo2Url}" style="width: 100%; height: ${photo2Height}; object-fit: contain; background: #ffffff; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px;" onerror="this.style.display='none'">`
       : `<div style="width: 100%; height: ${photo2Height}; background: #f8fafc; border: 1.5px solid #7ba0cd; border-top: none; border-radius: 0 0 2px 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.90rem;">📸 사진 2</div>`;
 
     return `
@@ -825,17 +834,17 @@
             <div style="display: flex; gap: 4px;">
               <!-- 사진 1 컬럼 (상단 배너 밀착 시작, 사진 2와 동일 바닥선 정렬) -->
               <div style="flex: 1; display: flex; flex-direction: column;">
-                <div style="background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.86rem; text-align: center; padding: 4px 6px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+                <div style="background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.82rem; text-align: center; padding: 0 4px; border-radius: 2px 2px 0 0; white-space: nowrap; overflow: hidden; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
                   ${data.photo1Title}
                 </div>
                 ${photo1Img}
               </div>
               <!-- 사진 2 컬럼 (상단에 Hold Point 위반 박스가 위치!) -->
               <div style="flex: 1; display: flex; flex-direction: column;">
-                <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px 2px 0 0; text-align: center; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; color: #333333; font-weight: 700;">
+                <div style="background: #ffffff; border: 1.5px solid #7ba0cd; border-radius: 2px 2px 0 0; text-align: center; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 0.84rem; color: #333333; font-weight: 700; white-space: nowrap; padding: 0 4px;">
                   ${data.isHoldPoint ? '☑ Hold Point 위반' : '☐ Hold Point 위반 (N/A)'}
                 </div>
-                <div style="background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.86rem; text-align: center; padding: 4px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
+                <div style="background: #ea7676; color: #ffffff; font-weight: 800; font-size: 0.82rem; text-align: center; padding: 0 4px; white-space: nowrap; overflow: hidden; height: 28px; box-sizing: border-box; display: flex; align-items: center; justify-content: center;">
                   ${data.photo2Title}
                 </div>
                 ${photo2Img}

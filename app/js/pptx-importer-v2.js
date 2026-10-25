@@ -117,11 +117,11 @@ export function extractPhotoFromCanvas(canvas, isSlide2 = false) {
   const W = canvas.width;
   const H = canvas.height;
 
-  // 기본 사진 프레임 영역: X: 4.8% ~ 50.0%, Y: 44.0% ~ 81.5%
+  // 기본 사진 프레임 영역: X: 4.8% ~ 50.0%, Y: 44.0% ~ 88.5% (하단 문자 잘림 완전 방지)
   const sx = Math.max(0, Math.round(W * 0.048));
   const sy = Math.max(0, Math.round(H * 0.440));
   const sw = Math.min(W - sx, Math.round(W * 0.452));
-  const sh = Math.min(H - sy, Math.round(H * 0.375));
+  const sh = Math.min(H - sy, Math.round(H * 0.445));
 
   // 전체 사진 영역 크롭
   const fullCanvas = document.createElement('canvas');
@@ -135,37 +135,37 @@ export function extractPhotoFromCanvas(canvas, isSlide2 = false) {
 
   if (!isSlide2) {
     // ════════ [장표 1: 수평양중 / 오버랩 구조] ════════
-    // 사진 1 (수평양중 A=B): 좌측 영역 전체 (우측 하단 오버랩 사진 및 상단 안내문구 완전 배제)
+    // 사진 1 (수평양중 A=B): 좌측 영역 전체 (하단 수평양중:A=B 문자 온전히 100% 보존)
     const p1W = Math.round(sw * 0.525);
     const p1H = sh;
     p1Canvas.width = p1W;
     p1Canvas.height = p1H;
     p1Canvas.getContext('2d').drawImage(canvas, sx, sy, p1W, p1H, 0, 0, p1W, p1H);
 
-    // 사진 2 (슬링 디테일 A, B): 우측 하단 영역 (상단 '근로자 이행 포인트' 텍스트박스 완전 제거!)
+    // 사진 2 (슬링 디테일 A, B): 우측 하단 영역 (상단 안내박스 배제하고 하단 A, B 문자 100% 온전히 보존)
     const p2X = sx + Math.round(sw * 0.530);
-    const p2Y = sy + Math.round(sh * 0.355);
+    const p2Y = sy + Math.round(sh * 0.310);
     const p2W = Math.round(sw * 0.465);
-    const p2H = Math.round(sh * 0.640);
+    const p2H = Math.round(sh * 0.690);
     p2Canvas.width = p2W;
     p2Canvas.height = p2H;
     p2Canvas.getContext('2d').drawImage(canvas, p2X, p2Y, p2W, p2H, 0, 0, p2W, p2H);
   } else {
     // ════════ [장표 2: 유도로프 / 좌우 2분할 구조] ════════
-    // 사진 1 (작업자 손잡음): 좌측 사진 (태블릿 베젤 제외 및 하단 슬라이드 텍스트 제외)
+    // 사진 1 (작업자 손잡음): 좌측 사진 (하단 문자 및 여백 100% 보존)
     const p1X = sx + Math.round(sw * 0.03);
     const p1Y = sy;
     const p1W = Math.round(sw * 0.47);
-    const p1H = Math.round(sh * 0.85);
+    const p1H = sh;
     p1Canvas.width = p1W;
     p1Canvas.height = p1H;
     p1Canvas.getContext('2d').drawImage(canvas, p1X, p1Y, p1W, p1H, 0, 0, p1W, p1H);
 
-    // 사진 2 (크레인 양중화물): 우측 사진 (하단 슬라이드 텍스트 제외)
+    // 사진 2 (크레인 양중화물): 우측 사진 (하단 문자 및 여백 100% 보존)
     const p2X = sx + Math.round(sw * 0.505);
     const p2Y = sy;
     const p2W = Math.round(sw * 0.485);
-    const p2H = Math.round(sh * 0.85);
+    const p2H = sh;
     p2Canvas.width = p2W;
     p2Canvas.height = p2H;
     p2Canvas.getContext('2d').drawImage(canvas, p2X, p2Y, p2W, p2H, 0, 0, p2W, p2H);
