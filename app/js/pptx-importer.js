@@ -158,9 +158,13 @@ export async function parsePPTX(file) {
     if (interviewCell) {
       interviewOpinion = interviewCell.replace(/\[\s*의견\s*:\s*시공관리자\s*및\s*근로자\s*\]/g, '').trim();
     }
+    let inspectorOpinionType = '시스템 개선';
     const auditCell = tableCells.find(c => c.includes('점검단 제안') || c.includes('점검단제안'));
     if (auditCell) {
       auditProposal = auditCell.replace(/\[\s*점검단\s*제안\s*\]/g, '').trim();
+      if (auditCell.includes('페널티') || auditCell.includes('벌점')) inspectorOpinionType = '페널티';
+      else if (auditCell.includes('교육') || auditCell.includes('코칭')) inspectorOpinionType = '교육/코칭';
+      else inspectorOpinionType = '시스템 개선';
     }
 
     // (8) 개선대책 (PM 판정결과)
@@ -209,6 +213,7 @@ export async function parsePPTX(file) {
       holdPoint: !!holdPoint,
       interviewOpinion: interviewOpinion || '현장 공기 준수를 위해 안전시설 설치 지연',
       auditProposal: auditProposal || '작업 전 사전 안전점검 및 모니터링 강화',
+      inspectorOpinionType,
       pmVerdict: pmVerdict || '안전시설 즉시 보강 및 재발방지 교육 실시',
       photos
     });

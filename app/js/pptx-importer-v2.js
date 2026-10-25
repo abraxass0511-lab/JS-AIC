@@ -253,7 +253,7 @@ export async function parseImage(file) {
       interviewOpinion: '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.',
       auditProposal: '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.',
       pmVerdict: '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립',
-      inspectorOpinionType: '시스템 개선 (이행강화안 수립)',
+      inspectorOpinionType: '시스템 개선',
       photos: extracted.photos,
       photo1: extracted.photos[0],
       photo2: extracted.photos[1],
