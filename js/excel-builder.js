@@ -206,21 +206,37 @@
     return '';
   }
 
-  // 점검자 의견 분류 자동 판정
+  // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티')
   function getInspectorOpinionType(r) {
-    if (r.inspectorOpinionType && INSPECTOR_OPINION_TYPES.includes(r.inspectorOpinionType)) {
-      return r.inspectorOpinionType;
+    // 1) 레코드에 이미 지정된 타입이 있는 경우 (완전일치 및 부분일치 정규화)
+    const rawType = String(r.inspectorOpinionType || r.auditType || '').trim();
+    if (rawType) {
+      if (rawType.includes('시스템')) return '시스템 개선';
+      if (rawType.includes('페널티') || rawType.includes('벌점') || rawType.includes('시정명령')) return '페널티';
+      if (rawType.includes('교육') || rawType.includes('코칭')) return '교육/코칭';
     }
-    if (r.auditType && INSPECTOR_OPINION_TYPES.includes(r.auditType)) {
-      return r.auditType;
-    }
-    const text = (r.auditProposal || r.pmVerdict || '') + ' ' + (r.content || '');
-    if (text.includes('벌점') || text.includes('페널티') || text.includes('과태료') || text.includes('고발')) {
+
+    // 2) 점검자의견 본문(auditProposal / inspectorOpinion) 기반 판정
+    // 주의: pmVerdict(PM 판정결과)는 점검자 의견 구분을 오염시키지 않도록 제외
+    const auditText = String(r.auditProposal || r.inspectorOpinion || '').trim();
+
+    // 페널티 키워드
+    if (/벌점|페널티|과태료|고발|퇴출|자격\s*박탈/.test(auditText)) {
       return '페널티';
     }
-    if (text.includes('교육') || text.includes('코칭') || text.includes('TBM') || text.includes('지도')) {
+
+    // 시스템 개선 키워드: 기준, 절차, 시스템, 규정, 설치, 개선, 보강, 수립, 계획, 여장, 간격 등
+    // 점검단 제안은 현장 안전 시스템/기준 보완을 의미하므로 최우선 매칭
+    if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
+      return '시스템 개선';
+    }
+
+    // 순수 교육/코칭 단독 제안인 경우
+    if (/교육|코칭|TBM|지도/.test(auditText)) {
       return '교육/코칭';
     }
+
+    // 기본값: 실물 점검장표 표준 점검단 제안은 '시스템 개선'
     return '시스템 개선';
   }
 
