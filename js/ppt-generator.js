@@ -803,10 +803,10 @@
         color: #000000;
         box-sizing: border-box;
       ">
-        <!-- 1. 최상단 헤더 행 (5개 블록) -->
-        <div style="display: flex; align-items: stretch; border: 1.5px solid #7ba0cd; margin-bottom: 4px; height: 72px;">
+        <!-- 1. 최상단 헤더 행 (5개 블록, 높이 80px로 PPT 슬라이드 1.00in 비율과 100% 일치) -->
+        <div style="display: flex; align-items: stretch; border: 1.5px solid #7ba0cd; margin-bottom: 4px; height: 80px;">
           <!-- 1) 시설물/법규 (한 줄로 표시) -->
-          <div style="width: 145px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: #002060; white-space: nowrap; padding: 0 4px;">
+          <div style="width: 140px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: #002060; white-space: nowrap; padding: 0 4px;">
             시설물/법규
           </div>
           <!-- 2) 사고유형 & 등급 (오렌지 테두리 4면 완전 노출: z-index 및 2.5px solid 적용) -->
@@ -820,15 +820,15 @@
             </div>
           </div>
           <!-- 3) 관련기준 라벨 -->
-          <div style="width: 60px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; border-left: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.92rem; color: #002060; text-align: center; line-height: 1.2;">
+          <div style="width: 60px; flex-shrink: 0; background: #dce6f1; border-right: 1.5px solid #7ba0cd; border-left: 1.5px solid #7ba0cd; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #002060; text-align: center; line-height: 1.2;">
             관련<br>기준
           </div>
-          <!-- 4) 관련기준 내용 (2단 분할: 윗칸 굵은 제목 + 가로선 + 아랫칸 큰 글씨 본문) -->
-          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; justify-content: stretch; box-sizing: border-box;">
-            <div style="border-bottom: 1.2px solid #7ba0cd; padding: 3px 10px; font-weight: 800; font-size: ${data.lawTitle.length > 32 ? '0.86rem' : (data.lawTitle.length > 24 ? '0.90rem' : '0.95rem')}; color: #000000; display: flex; align-items: center; height: 28px; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          <!-- 4) 관련기준 내용 (2단 분할: 윗칸 굵은 제목 + 가로선 + 아랫칸 큰 글씨 본문: flex-shrink 0 및 height 30px로 절대 잘림 방지) -->
+          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.5px solid #7ba0cd; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
+            <div style="border-bottom: 1.2px solid #7ba0cd; padding: 0 10px; font-weight: 800; font-size: ${data.lawTitle.length > 34 ? '0.84rem' : (data.lawTitle.length > 25 ? '0.88rem' : '0.94rem')}; color: #000000; display: flex; align-items: center; height: 30px; min-height: 30px; flex-shrink: 0; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
               ${data.lawTitle}
             </div>
-            <div style="padding: 4px 10px; font-size: 0.86rem; color: #111111; line-height: 1.35; display: flex; align-items: center; flex: 1; box-sizing: border-box; word-break: keep-all;">
+            <div style="padding: 4px 10px; font-size: 0.84rem; color: #111111; line-height: 1.34; display: flex; align-items: center; flex: 1; box-sizing: border-box; word-break: keep-all; overflow: hidden;">
               ${data.lawBody}
             </div>
           </div>
