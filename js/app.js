@@ -252,6 +252,282 @@ function updatePinDisplay() {
   $('#pinDots').textContent = dots;
 }
 
+// ══════════════════════════════════════════════════════════════
+// ⚡ 표준 분류 사용 빈도 추적 및 스마트 상위 추천 매니저
+// ══════════════════════════════════════════════════════════════
+const FieldFrequencyManager = {
+  STORAGE_KEY: 'sp_field_frequency_v1',
+  
+  // 최초 시드 기본 빈도수 (현장 실무 1~5위 핵심 항목 사전 상위 노출)
+  DEFAULT_SEEDS: {
+    workMethod: {
+      '양중작업': 25,
+      '고소작업': 22,
+      '설치조립작업': 20,
+      '하역운반작업': 14,
+      '해체작업': 10,
+      '굴착작업': 8,
+      '중량물취급작업': 6,
+      '밀폐공간작업': 4,
+      '협소공간작업': 2
+    },
+    workGroup: {
+      '가설공사': 25,
+      '철근콘크리트공사': 22,
+      '철골공사': 16,
+      '양중공사': 14,
+      '설비·전기공사': 12,
+      '마감공사': 10,
+      '토공사': 8,
+      '기초공사': 6,
+      '해체공사': 5,
+      '공통': 4
+    },
+    type: {
+      '떨어짐(추락, 사람)': 30,
+      '넘어짐(전도: 사람)': 24,
+      '부딪힘(충돌)/맞음': 20,
+      '떨어짐(낙하/비래)/맞음': 18,
+      '끼임(협착, 감김)': 16,
+      '무너짐(붕괴, 도괴)/깔림': 12,
+      '미끄러짐/접질림': 10,
+      '감전': 8,
+      '화재/폭발': 6
+    },
+    location: {
+      '계단·복도': 20,
+      '본구조물': 18,
+      '가설물': 16,
+      '옥상·지붕': 14,
+      '외부': 12,
+      '실내 작업장': 10,
+      '야적장': 8,
+      '도로': 6,
+      '건축물': 5
+    },
+    agentMajor: {
+      '가시설': 30,
+      '작업발판': 25,
+      '건설장비': 20,
+      '작업공도구': 16,
+      '작업장': 14,
+      'PPE': 12,
+      '전기시설': 10,
+      '소방시설': 8
+    },
+    agentMid: {
+      '비계': 28,
+      '거푸집': 22,
+      '사다리': 18,
+      '안전시설': 16,
+      '동바리': 14,
+      '양중장비': 12,
+      '비상통로': 10
+    },
+    agentMinor: {
+      '시스템비계': 25,
+      '강관비계': 20,
+      '유로폼': 18,
+      '이동식 사다리': 16,
+      '추락방지시설(안전난간)': 16,
+      '갱폼': 14,
+      '시스템동바리': 12,
+      '말비계': 10
+    }
+  },
+
+  USER_CUSTOM_KEY: 'sp_field_user_custom_v1',
+
+  getUserCustom() {
+    try {
+      const raw = localStorage.getItem(this.USER_CUSTOM_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return {};
+  },
+
+  saveUserCustom(data) {
+    try {
+      localStorage.setItem(this.USER_CUSTOM_KEY, JSON.stringify(data));
+    } catch (e) {}
+  },
+
+  getAll() {
+    try {
+      const raw = localStorage.getItem(this.STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return JSON.parse(JSON.stringify(this.DEFAULT_SEEDS));
+  },
+
+  saveAll(data) {
+    try {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {}
+  },
+
+  getFrequency(category, value) {
+    if (!category || !value) return 0;
+    const all = this.getAll();
+    const cat = all[category] || {};
+    return cat[value] || 0;
+  },
+
+  recordUsage(category, value) {
+    if (!category || !value || typeof value !== 'string') return;
+    const v = value.trim();
+    if (!v) return;
+
+    // 사용자 직접 선택/입력 가중치 저장
+    const custom = this.getUserCustom();
+    if (!custom[category]) custom[category] = {};
+    custom[category][v] = (custom[category][v] || 0) + 1;
+    this.saveUserCustom(custom);
+
+    // 전체 가중치 합산 캐시 갱신
+    const all = this.getAll();
+    if (!all[category]) all[category] = {};
+    all[category][v] = (all[category][v] || 0) + 15;
+    this.saveAll(all);
+  },
+
+  recordSavedRecord(rec) {
+    if (!rec) return;
+    const wm = rec.workMethod || rec.workName;
+    if (wm) this.recordUsage('workMethod', wm);
+    if (rec.workGroup) this.recordUsage('workGroup', rec.workGroup);
+    if (rec.type) this.recordUsage('type', rec.type);
+    if (rec.location) this.recordUsage('location', rec.location);
+    if (rec.agentMajor) this.recordUsage('agentMajor', rec.agentMajor);
+    if (rec.agentMid) this.recordUsage('agentMid', rec.agentMid);
+    if (rec.agentMinor) this.recordUsage('agentMinor', rec.agentMinor);
+    if (rec.condition) this.recordUsage('condition', rec.condition);
+    if (rec.action) this.recordUsage('action', rec.action);
+    if (rec.subcontractor) this.recordUsage('subcontractor', rec.subcontractor);
+  },
+
+  seedFromRecords(records) {
+    if (!Array.isArray(records) || !records.length) return;
+    const base = JSON.parse(JSON.stringify(this.DEFAULT_SEEDS));
+    const userCustom = this.getUserCustom();
+
+    // 불러온 실제 데이터로부터 빈도수 멱등적(Idempotent) 집계
+    const recordCounts = {};
+    records.forEach(rec => {
+      if (!rec) return;
+      const map = {
+        workMethod: rec.workMethod || rec.workName,
+        workGroup: rec.workGroup,
+        type: rec.type,
+        location: rec.location,
+        agentMajor: rec.agentMajor,
+        agentMid: rec.agentMid,
+        agentMinor: rec.agentMinor
+      };
+      for (const [k, v] of Object.entries(map)) {
+        if (!v || typeof v !== 'string') continue;
+        const trimmed = v.trim();
+        if (!trimmed) continue;
+        if (!recordCounts[k]) recordCounts[k] = {};
+        recordCounts[k][trimmed] = (recordCounts[k][trimmed] || 0) + 1;
+      }
+    });
+
+    const categories = ['workMethod', 'workGroup', 'type', 'location', 'agentMajor', 'agentMid', 'agentMinor'];
+    const merged = {};
+    categories.forEach(cat => {
+      merged[cat] = { ...(base[cat] || {}) };
+      // 1) 실제 DB 누적 기록 (1건당 +10점 가중치)
+      if (recordCounts[cat]) {
+        for (const [val, count] of Object.entries(recordCounts[cat])) {
+          merged[cat][val] = (merged[cat][val] || 0) + (count * 10);
+        }
+      }
+      // 2) 사용자 수동 선택/입력 이력 (1회당 +15점 가중치)
+      if (userCustom[cat]) {
+        for (const [val, count] of Object.entries(userCustom[cat])) {
+          merged[cat][val] = (merged[cat][val] || 0) + (count * 15);
+        }
+      }
+    });
+
+    this.saveAll(merged);
+  },
+
+  sortByFrequency(category, list) {
+    if (!Array.isArray(list) || !list.length) return [];
+    const unique = Array.from(new Set(list.filter(Boolean)));
+    const all = this.getAll();
+    const cat = all[category] || {};
+
+    return unique.sort((a, b) => {
+      const freqA = cat[a] || 0;
+      const freqB = cat[b] || 0;
+      if (freqB !== freqA) {
+        return freqB - freqA; // 사용 빈도 높은 순서대로 최상단 배치
+      }
+      return 0;
+    });
+  }
+};
+
+function renderQuickChipsForField(customKey, sortedList) {
+  const inputMap = {
+    workMethod: 'txtWorkName',
+    workGroup: 'txtWorkGroup',
+    type: 'txtType',
+    location: 'txtLocation',
+    agentMajor: 'txtAgentMajor',
+    agentMid: 'txtAgentMid',
+    agentMinor: 'txtAgentMinor'
+  };
+  const inputId = inputMap[customKey];
+  if (!inputId) return;
+  const inputEl = document.getElementById(inputId);
+  if (!inputEl) return;
+
+  const topItems = sortedList.slice(0, 4);
+  if (!topItems.length) return;
+
+  let container = document.getElementById(`chips_${customKey}`);
+  if (!container) {
+    container = document.createElement('div');
+    container.id = `chips_${customKey}`;
+    container.className = 'quick-chips-bar';
+    inputEl.parentNode.insertBefore(container, inputEl.nextSibling);
+
+    inputEl.addEventListener('input', () => {
+      const c = document.getElementById(`chips_${customKey}`);
+      if (!c) return;
+      c.querySelectorAll('.quick-chip-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-val') === inputEl.value.trim());
+      });
+    });
+  }
+
+  container.innerHTML = `
+    <span class="quick-chip-label">⚡자주사용:</span>
+    ${topItems.map(item => {
+      const isActive = inputEl.value.trim() === item;
+      return `<button type="button" class="quick-chip-btn ${isActive ? 'active' : ''}" data-val="${item}" title="클릭 시 '${item}' 자동 입력">${item}</button>`;
+    }).join('')}
+  `;
+
+  container.querySelectorAll('.quick-chip-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      const val = btn.getAttribute('data-val');
+      inputEl.value = val;
+      FieldFrequencyManager.recordUsage(customKey, val);
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+      
+      container.querySelectorAll('.quick-chip-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+}
+
 // ── Datalists & Taxonomy Rendering ──
 function populateDatalists() {
   const tax = store.taxonomy;
@@ -261,7 +537,13 @@ function populateDatalists() {
     const el = document.getElementById(id);
     if (!el) return;
     const all = [...new Set([...(list || []), ...(custom[customKey] || [])])];
-    el.innerHTML = all.map(v => `<option value="${v}">`).join('');
+    
+    // 자주 입력하는 항목이 상위에 뜨도록 빈도수 순 정렬!
+    const sorted = FieldFrequencyManager.sortByFrequency(customKey, all);
+    el.innerHTML = sorted.map(v => `<option value="${v}">`).join('');
+
+    // 입력창 바로 아래 자주 사용하는 추천 칩 바 렌더링
+    renderQuickChipsForField(customKey, sorted);
   };
 
   const allItems = (tax && tax.categories && tax.categories.list) ? tax.categories.list.flatMap(c => c.items) : [];
@@ -951,6 +1233,16 @@ function bindEvents() {
         rootCauseSystem: [record.rootCauseSystem],
         stakeholder: [record.stakeholder]
       });
+
+      // 자주 사용하는 표준 분류 빈도수 실시간 누적 및 상위 정렬 갱신
+      try {
+        if (typeof FieldFrequencyManager !== 'undefined') {
+          FieldFrequencyManager.recordSavedRecord(record);
+          populateDatalists();
+        }
+      } catch (freqErr) {
+        console.warn('FieldFrequency update error:', freqErr);
+      }
 
       // ── 사용자 피드백 기반 강화학습(Online Bandit RL) 훈련 및 가중치 저장 ──
       if (classifier && classifier.trainFeedback) {
@@ -2836,6 +3128,7 @@ function clearForm() {
   if ($('#txtItem')) $('#txtItem').value = '';
   if ($('#txtAgent')) $('#txtAgent').value = '';
   $('#txtWorkGroup').value = '';
+  if ($('#txtWorkName')) $('#txtWorkName').value = '';
   $('#txtType').value = '';
   $('#txtLaw').value = '';
   $('#txtCondition').value = '';
@@ -2847,6 +3140,7 @@ function clearForm() {
   if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = '';
   if ($('#txtStakeholder')) $('#txtStakeholder').value = '';
   $('#smartClassifyBox').classList.remove('active');
+  document.querySelectorAll('.quick-chip-btn').forEach(b => b.classList.remove('active'));
 }
 
 // ── Local Draft (창이 켜있는 동안만 유지되는 세션 임시저장) ──
@@ -3038,6 +3332,14 @@ async function renderRecordList(triggerSync = true) {
   });
 
   currentLoadedRecords = Array.from(dedupMap.values());
+  try {
+    if (typeof FieldFrequencyManager !== 'undefined' && currentLoadedRecords.length > 0) {
+      FieldFrequencyManager.seedFromRecords(currentLoadedRecords);
+      populateDatalists();
+    }
+  } catch (seedErr) {
+    console.warn('FieldFrequency seeding error:', seedErr);
+  }
   updateSiteFilterChips(currentLoadedRecords);
   await applyListFiltersAndRender(thisSeq);
 }
