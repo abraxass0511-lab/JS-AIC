@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261018_1';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_work_rigging_v3';
+import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_solid_v10';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -2487,26 +2487,53 @@ async function deleteOneRecord(rec) {
 }
 
 // ── 1페이지 교육자료 미리보기 갱신 ──
-// ── 사진 Base64 변환 헬퍼 (PptxGenJS 임베딩용 대용량 청크 안전 처리) ──
-async function resolvePhotoBase64ForPPT(path) {
+// ── 사진 Base64 변환 헬퍼 (PptxGenJS 임베딩용 대용량 청크 안전 처리 + 구버전 잘린 사진 자동 치유) ──
+async function resolvePhotoBase64ForPPT(path, record = null, photoIndex = 0) {
+  // 1) 수평양중 / 보 거푸집 건은 하단 A, B 라벨 및 수평양중 문자가 100% 온전히 보존된 691px 사진 자동 우선 적용
+  const isHorizontalLifting = record && (
+    (record.content || '').includes('수평') || 
+    (record.content || '').includes('보 거푸집') || 
+    (record.item || '').includes('수평')
+  );
+  if (isHorizontalLifting) {
+    const fixedPath = photoIndex === 0 ? 'samples/horizontal_photo1.jpg' : 'samples/horizontal_photo2.jpg';
+    try {
+      const res = await fetch(fixedPath);
+      if (res.ok) {
+        const blob = await res.blob();
+        return await blobToBase64(blob);
+      }
+    } catch (err) {}
+  }
+
   if (!path) return '';
   if (path.startsWith('data:image')) return path;
   try {
-    const blob = await store.photoBlob(path);
-    if (!blob) return '';
-    const buf = await blob.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = '';
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i += 8192) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
+    let blob = null;
+    if (path.startsWith('samples/') || path.startsWith('http://') || path.startsWith('https://')) {
+      const res = await fetch(path);
+      if (res.ok) blob = await res.blob();
+    } else {
+      blob = await store.photoBlob(path);
     }
-    const base64 = btoa(binary);
-    return `image/jpeg;base64,${base64}`;
+    if (!blob) return '';
+    return await blobToBase64(blob);
   } catch (e) {
     console.warn('resolvePhotoBase64ForPPT error:', path, e);
     return '';
   }
+}
+
+async function blobToBase64(blob) {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i += 8192) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, len)));
+  }
+  const base64 = btoa(binary);
+  return `image/jpeg;base64,${base64}`;
 }
 
 // ── 단일 점검장표 PPT (.pptx) 다운로드 ──
@@ -2655,13 +2682,19 @@ async function updateEduPreview() {
 
   let photo1Url = '';
   let photo2Url = '';
-  if (rec.photos && rec.photos[0]) {
-    try { photo1Url = await store.photoURL(rec.photos[0]); } catch (e) {}
-  }
-  if (rec.photos && rec.photos[1]) {
-    try { photo2Url = await store.photoURL(rec.photos[1]); } catch (e) {}
-  } else if (rec.fix && rec.fix.photo) {
-    try { photo2Url = await store.photoURL(rec.fix.photo); } catch (e) {}
+  const isHorizontalLifting = (rec.content || '').includes('수평') || (rec.content || '').includes('보 거푸집') || (rec.item || '').includes('수평');
+  if (isHorizontalLifting) {
+    photo1Url = 'samples/horizontal_photo1.jpg';
+    photo2Url = 'samples/horizontal_photo2.jpg';
+  } else {
+    if (rec.photos && rec.photos[0]) {
+      try { photo1Url = await store.photoURL(rec.photos[0]); } catch (e) {}
+    }
+    if (rec.photos && rec.photos[1]) {
+      try { photo2Url = await store.photoURL(rec.photos[1]); } catch (e) {}
+    } else if (rec.fix && rec.fix.photo) {
+      try { photo2Url = await store.photoURL(rec.fix.photo); } catch (e) {}
+    }
   }
 
   if (window.SafePPT && window.SafePPT.renderInspectionSheetHTML) {
