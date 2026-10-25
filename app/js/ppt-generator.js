@@ -466,14 +466,8 @@
     let photo1Base64 = null;
     let photo2Base64 = null;
     if (loadPhotoBase64) {
-      if (record.photos && record.photos[0]) {
-        try { photo1Base64 = await loadPhotoBase64(record.photos[0]); } catch (e) {}
-      }
-      if (record.photos && record.photos[1]) {
-        try { photo2Base64 = await loadPhotoBase64(record.photos[1]); } catch (e) {}
-      } else if (record.fix && record.fix.photo) {
-        try { photo2Base64 = await loadPhotoBase64(record.fix.photo); } catch (e) {}
-      }
+      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) {}
+      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) {}
     }
 
     // 사용자 요청: 특별한 언급이 없으면 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣지 않고 사진 1, 2가 바닥(y=7.05)까지 꽉 차도록 확장
