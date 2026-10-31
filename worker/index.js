@@ -29,18 +29,54 @@ function analyzeRuleFallback(content) {
   let pmVerdict = '즉시 시정 조치 및 이행 확인';
 
   let photoBanner = '안전수칙 미준수';
+  let photo2Banner = '';
 
-  // 0. 양중작업 / 크레인 / 유도로프
-  if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중')) {
+  // 0. 양중작업 / 크레인 / 유도로프 (이미지 4, 5번 실물 점검장표 100% 동일 일치)
+  if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중') || text.includes('손으로')) {
+    const isHand = text.includes('손으로') || text.includes('직접 잡');
+    const isHorizontal = text.includes('수평') || text.includes('로프간격') || text.includes('수평양중');
     item = '양중장비';
     law = '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)';
     hazardType = text.includes('낙하') ? '낙하' : '추락';
     severity = '중부적합';
     mgmtCauses = ['계획 미이행', '불안전 행동'];
     holdPoint = true;
-    photoBanner = text.includes('유도로프') ? '양중작업 시 유도로프 미사용' : (text.includes('수평양중') ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 화물을 직접 손으로 잡음');
-    analysis = '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 위험';
+    photoBanner = isHand ? '양중작업 시 화물을 직접 손으로 잡음' : (isHorizontal ? '양중작업 시 화물의 수평양중 미 실시' : '양중작업 시 유도로프 미사용');
+    photo2Banner = isHand ? '양중작업 시 유도로프 미사용' : (isHorizontal ? '지상에서 보 거푸집 로프체결 간격 미준수' : '');
+    analysis = '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 및 협착 위험';
     pmVerdict = '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업';
+  } else if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) && 
+             (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
+    item = '가설전선';
+    law = '안전보건규칙 제304조(가설전선 등) 및 제22조(통로의 설치)';
+    hazardType = '전도';
+    severity = '경부적합';
+    mgmtCauses = ['불안전 상태', '계획 미이행'];
+    holdPoint = false;
+    photoBanner = '통로 바닥 가설전선 거치 및 정리 미실시';
+    analysis = '통로 바닥에 가설전선이 거치되지 않고 방치되어 통행 근로자의 걸림 및 전도 재해 위험';
+    pmVerdict = '즉시 전선 거치대를 설치하여 바닥으로부터 띄우고 보행 안전통로 구획 정리';
+  } else if (text.includes('보 상부') || text.includes('다이빙') || (text.includes('보') && text.includes('승인') && (text.includes('자세') || text.includes('작업')))) {
+    item = '보 거푸집';
+    law = '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등), 제44조';
+    hazardType = '추락';
+    severity = '중부적합';
+    mgmtCauses = ['불안전 행동', '계획 미이행'];
+    holdPoint = true;
+    photoBanner = '보 상부 승인 미실시 및 불안전 자세 작업';
+    photo2Banner = '보 상부작업 시 다이빙 자세 취함';
+    analysis = '사전 승인 없는 보 상부 작업 및 다이빙 자세 등 불안전 행동으로 추락 위험 극심';
+    pmVerdict = '보 상부 작업 즉시 중지 및 사전 승인 절차 이행, 안전대 체결 설비 보강 후 재개';
+  } else if ((text.includes('통로') || text.includes('통행')) && (text.includes('자재') || text.includes('거푸집') || text.includes('방치') || text.includes('적치'))) {
+    item = '가설통로';
+    law = '안전보건규칙 제22조(통로의 설치)';
+    hazardType = '전도';
+    severity = '경부적합';
+    mgmtCauses = ['불안전 상태', '계획 미이행'];
+    holdPoint = false;
+    photoBanner = '구획된 바닥 안전통로 내 거푸집 자재 방치';
+    analysis = '구획된 바닥 안전통로에 거푸집 등 자재를 무단 방치하여 통행 방해 및 전도 위험';
+    pmVerdict = '안전통로 내 적치 자재 즉시 반출 및 지정 야적 구역으로 이동 조치';
   } else if (text.includes('밀폐') || text.includes('농도') || text.includes('산소') || text.includes('유해가스') || text.includes('질식') || text.includes('환기팬') || text.includes('송기마스크')) {
     item = '밀폐공간';
     law = '산안규칙 제619조의2(산소 및 유해가스 농도의 측정)';
@@ -140,7 +176,7 @@ function analyzeRuleFallback(content) {
     pmVerdict = 'A형 사다리 작업 즉시 중지 및 이동식 비계(우마비계)로 교체 투입';
   }
 
-  return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner };
+  return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner };
 }
 
 export default {
@@ -218,15 +254,22 @@ export default {
         if (env.AI) {
           try {
             const systemPrompt = `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
-주어진 부적합 지적내용을 엄밀히 분석하여 오직 유효한 JSON 문자열 하나만 출력하라.
+주어진 부적합 지적내용과 사진 상황을 엄밀히 분석하여, 사진 상단 배너(photoBanner, photo2Banner)와 법령 위반을 JSON으로만 출력하라.
+
+[작성 원칙 - 사진 상단 배너 photoBanner/photo2Banner]
+- 무엇을 안 했는지 / 어떤 위험 행동을 했는지 구체적으로 직시하라 (15~20자 내외).
+  (예: '양중작업 시 화물을 직접 손으로 잡음', '양중작업 시 유도로프 미사용', '양중작업 시 화물의 수평양중 미 실시', '말비계 모서리 구간 단부 추락방지 미조치', '통로 바닥 가설전선 거치 및 정리 미실시', '보 상부 승인 미실시 및 불안전 자세 작업', '구획된 바닥 안전통로 내 거푸집 자재 방치')
+- 모호한 '표준 안전작업절차 미준수'나 통계 분류 '작업방법 불량(동작/자세 불량)' 등은 절대 넣지 말 것!
+- 2가지 독립 지적사항이 있거나 2장 사진일 경우 photo2Banner에 2번 사진용 문구를 넣을 것 (없으면 '').
 
 JSON 형식:
 {
-  "severity": "🚨 중부적합" 또는 "⚠️ 경부적합",
+  "severity": "중부적합" 또는 "경부적합",
   "law": "산안규칙 제OO조(조항명)",
-  "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전",
-  "item": "비계" 또는 "말비계" 또는 "안전대" 또는 "개구부" 또는 "안전난간" 또는 "가설전기" 또는 "건설기계",
-  "photoBanner": "사진 상단 배너용 15자 내외 문구 (지적내용과 사진 상황의 기인물과 행위를 직접 반영하여 무엇을 안 했는지 기입. 예: '말비계 모서리 구간 단부 추락방지 미조치', '양중작업 시 화물의 수평양중 미실시', '비계 단부 안전난간 미설치', '바닥 개구부 덮개 미설치')",
+  "hazardType": "추락" 또는 "낙하" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전",
+  "item": "기인물/작업 명칭",
+  "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 미준수 문구",
+  "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 미준수 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
