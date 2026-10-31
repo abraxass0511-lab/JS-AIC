@@ -574,12 +574,13 @@
       fontFace: FONT_MALGUN, fontSize: 14, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 2) 발생원인 본문 (y = 2.343, h = 3.317, 바닥 y = 5.660)
+    // 2) 발생원인 본문 & 점검단 제안 (y = 2.380, h = 3.187, 바닥 y = 5.567)
+    // 원본 템플릿(표 22): y = 2.650, h = 2.917 (바닥 y = 5.567)
     slide.addShape(pptx.ShapeType.rect, {
-      x: 8.395, y: 2.343, w: 4.711, h: 3.317,
+      x: 8.395, y: 2.380, w: 4.711, h: 3.187,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
-    // 윗칸: [ 의견 : 시공관리자 및 근로자 ] (h = 2.217, y = 2.343 ~ 4.560)
+    // 윗칸: [ 의견 : 시공관리자 및 근로자 ] (h = 2.087, y = 2.380 ~ 4.467)
     let intSz = 12.5;
     let intLineSpacing = 1.18;
     let intMargin = [6, 10, 4, 10];
@@ -595,45 +596,43 @@
       { text: '[ 의견 : 시공관리자 및 근로자 ]\n', options: { fontSize: 14, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: data.interviewOpinion, options: { fontSize: intSz, color: '111111', fontFace: FONT_MALGUN } }
     ], {
-      x: 8.395, y: 2.343, w: 4.711, h: 2.217,
+      x: 8.395, y: 2.380, w: 4.711, h: 2.087,
       margin: intMargin, valign: 'top', lineSpacingMultiple: intLineSpacing
     });
-    // 가로 분리선: [의견]과 [점검단 제안] 사이 (y = 4.560)
+    // 가로 분리선: [의견]과 [점검단 제안] 사이 (y = 4.467)
     slide.addShape(pptx.ShapeType.line, {
-      x: 8.395, y: 4.560, w: 4.711, h: 0,
+      x: 8.395, y: 4.467, w: 4.711, h: 0,
       line: { color: C_BORDER, width: 0.75 }
     });
 
-    // 사용자 지시: "7. 점검단 제안도 별도의 칸으로 되어 있어. 원본 확인해"
-    // 원본 템플릿(표 22): [점검단 제안](상단 독립 셀)과 [시스템 개선](하단 독립 셀)이 별도 칸으로 가로선으로 분할되어 있음!
-    // 아랫칸: 점검단 제안 세로 분리선 (x = 9.829, h = 1.100, y = 4.560 ~ 5.660)
+    // 점검단 제안 세로 분리선 (x = 9.829, h = 1.100, y = 4.467 ~ 5.567)
     slide.addShape(pptx.ShapeType.line, {
-      x: 9.829, y: 4.560, w: 0, h: 1.100,
+      x: 9.829, y: 4.467, w: 0, h: 1.100,
       line: { color: C_BORDER, width: 0.75 }
     });
-    // 좌측 상하 셀 구분 가로 분리선 (y = 4.977, w = 1.434)
+    // 좌측 상하 셀 구분 가로 분리선 (y = 4.884, w = 1.434)
     slide.addShape(pptx.ShapeType.line, {
-      x: 8.395, y: 4.977, w: 1.434, h: 0,
+      x: 8.395, y: 4.884, w: 1.434, h: 0,
       line: { color: C_BORDER, width: 0.75 }
     });
 
-    // 1) 좌측 상단 독립 셀: [점검단 제안] (h = 0.417)
+    // 1) 좌측 상단 독립 셀: [점검단 제안] (h = 0.417, y = 4.467 ~ 4.884)
     slide.addText('[점검단 제안]', {
-      x: 8.395, y: 4.560, w: 1.434, h: 0.417,
+      x: 8.395, y: 4.467, w: 1.434, h: 0.417,
       fontFace: FONT_MALGUN, fontSize: 14, bold: true, color: '000000',
       align: 'center', valign: 'middle'
     });
 
-    // 2) 좌측 하단 독립 셀: 시스템 개선 / (이행강화안 수립) (h = 0.683)
+    // 2) 좌측 하단 독립 셀: 시스템 개선 / (이행강화안 수립) (h = 0.683, y = 4.884 ~ 5.567)
     slide.addText([
       { text: `${data.proposalType}\n`, options: { fontSize: 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN } },
       { text: data.proposalSub, options: { fontSize: 11, color: '595959', fontFace: FONT_MALGUN } }
     ], {
-      x: 8.395, y: 4.977, w: 1.434, h: 0.683,
+      x: 8.395, y: 4.884, w: 1.434, h: 0.683,
       align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
     });
 
-    // 3) 우측 점검단 제안 본문 셀 (w = 3.277, h = 1.100)
+    // 3) 우측 점검단 제안 본문 셀 (w = 3.277, h = 1.100, y = 4.467 ~ 5.567)
     let propSz = 12.5;
     let propLineSpacing = 1.18;
     let propMargin = [6, 10, 4, 10];
@@ -647,32 +646,40 @@
       propMargin = [4, 8, 3, 8];
     }
     slide.addText(data.proposalContent, {
-      x: 9.829, y: 4.560, w: 3.277, h: 1.100,
+      x: 9.829, y: 4.467, w: 3.277, h: 1.100,
       fontFace: FONT_MALGUN, fontSize: propSz, color: '111111',
       margin: propMargin, valign: 'top', lineSpacingMultiple: propLineSpacing
     });
 
-    // 3) 개선대책 (현장 협의 결과) 헤더 (y = 5.660, h = 0.406)
+    // ── [GAP 1]: 발생원인 바닥(y = 5.567)과 개선대책 상단(y = 5.660) 사이 0.093인치 순수 흰색 간격 (원본 템플릿 100% 동일) ──
+
+    // 3) 개선대책 (현장 협의 결과) 헤더 (y = 5.660, h = 0.406, 바닥 y = 6.066)
+    // 원본 템플릿(표 25): y = 5.660, h = 0.406, 독립된 4면 테두리를 가진 별도 표!
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 8.395, y: 5.660, w: 4.711, h: 0.406,
+      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 0.75 }
+    });
     slide.addText('개선대책 (현장 협의 결과)', {
       x: 8.395, y: 5.660, w: 4.711, h: 0.406,
-      fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 0.75 },
       fontFace: FONT_MALGUN, fontSize: 14, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 4) 개선대책 본문 & PM 판정결과 (y = 6.066, h = 1.227, 바닥 y = 7.293)
-    // 사용자 지시: "5. pm 판정결과 내용은 안들어가지만 구분은 되어 있어. 원본 템플릿 확인해"
+    // ── [GAP 2]: 개선대책 바닥(y = 6.066)과 개선대책 본문 상단(y = 6.102) 사이 0.037인치 순수 흰색 간격 (원본 템플릿 100% 동일) ──
+
+    // 4) 개선대책 본문 & PM 판정결과 (y = 6.102, h = 1.134, 바닥 y = 7.236)
+    // 원본 템플릿(표 23): y = 6.102, h = 1.134, 독립된 4면 테두리를 가진 별도 표!
     slide.addShape(pptx.ShapeType.rect, {
-      x: 8.395, y: 6.066, w: 4.711, h: 1.227,
+      x: 8.395, y: 6.102, w: 4.711, h: 1.134,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
     // 세로 구분선: 좌측 개선대책(w = 3.204)과 우측 PM 판정결과(w = 1.507)를 영구 분할
     slide.addShape(pptx.ShapeType.line, {
-      x: 11.599, y: 6.066, w: 0, h: 1.227,
+      x: 11.599, y: 6.102, w: 0, h: 1.134,
       line: { color: C_BORDER, width: 0.75 }
     });
-    // 우측 [PM 판정결과] 헤더와 내용 서브박스 분할 가로선 (y = 6.443)
+    // 우측 [PM 판정결과] 헤더와 내용 서브박스 분할 가로선 (y = 6.479)
     slide.addShape(pptx.ShapeType.line, {
-      x: 11.599, y: 6.443, w: 1.507, h: 0,
+      x: 11.599, y: 6.479, w: 1.507, h: 0,
       line: { color: C_BORDER, width: 0.75 }
     });
 
@@ -691,20 +698,20 @@
         counterMargin = [4, 8, 3, 8];
       }
       slide.addText(data.countermeasureContent, {
-        x: 8.395, y: 6.066, w: 3.204, h: 1.227,
+        x: 8.395, y: 6.102, w: 3.204, h: 1.134,
         fontFace: FONT_MALGUN, fontSize: counterSz, bold: true, color: '000000',
         margin: counterMargin, valign: 'top', lineSpacingMultiple: counterLineSpacing
       });
     }
 
-    // [PM 판정결과] 상단 헤더 셀 (h = 0.377)
+    // [PM 판정결과] 상단 헤더 셀 (h = 0.377, y = 6.102 ~ 6.479)
     slide.addText('[PM 판정결과]', {
-      x: 11.599, y: 6.066, w: 1.507, h: 0.377,
+      x: 11.599, y: 6.102, w: 1.507, h: 0.377,
       fontFace: FONT_MALGUN, fontSize: 13, bold: true, color: '000000',
       align: 'center', valign: 'middle'
     });
 
-    // [PM 판정결과] 하단 서브박스 내용 (입력된 경우에만 텍스트 표시, 공란일 경우에도 구획선 유지)
+    // [PM 판정결과] 하단 서브박스 내용 (입력된 경우에만 텍스트 표시, 공란일 경우에도 구획선 유지, y = 6.479 ~ 7.236)
     if (data.pmVerdictType) {
       const pmSubRuns = [
         { text: `${data.pmVerdictType}\n`, options: { fontSize: 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN } }
@@ -713,7 +720,7 @@
         pmSubRuns.push({ text: data.pmVerdictSub, options: { fontSize: 11, color: '595959', fontFace: FONT_MALGUN } });
       }
       slide.addText(pmSubRuns, {
-        x: 11.599, y: 6.443, w: 1.507, h: 0.850,
+        x: 11.599, y: 6.479, w: 1.507, h: 0.756,
         align: 'center', valign: 'middle', lineSpacingMultiple: 1.15, margin: [4, 4, 4, 4]
       });
     }
@@ -940,43 +947,45 @@
             ` : ''}
           </div>
 
-          <!-- 우측 컬럼: 발생원인 & 개선대책 & PM 판정결과 -->
-          <div style="display: flex; flex-direction: column;">
-            <!-- 1) 발생원인 (인터뷰 결과) 헤더 (부적합 내용 바닥선과 직접 연결되어 위 칸 군더더기 없음) -->
-            <div style="background: #ffd966; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-bottom: 1.0px solid #000000;">
+          <!-- 우측 컬럼: 발생원인 & 개선대책 & PM 판정결과 (사용자 지시: 개선대책 위/아래가 원본처럼 살짝 띄어져 있음) -->
+          <div style="display: flex; flex-direction: column; padding: 4px; box-sizing: border-box;">
+            <!-- 1) 발생원인 (인터뷰 결과) 헤더 -->
+            <div style="background: #ffd966; border: 1.0px solid #000000; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; margin-bottom: 2px;">
               발생원인 (인터뷰 결과)
             </div>
-            <!-- 발생원인 본문 -->
-            <div style="padding: 8px 12px; background: #ffffff; border-bottom: 1.0px solid #000000; word-break: keep-all;">
-              <div style="font-weight: 800; font-size: 0.95rem; color: #000000; margin-bottom: 4px;">[ 의견 : 시공관리자 및 근로자 ]</div>
-              <div style="font-size: 0.90rem; font-weight: 500; color: #111111; line-height: 1.45;">${data.interviewOpinion}</div>
-            </div>
-            <!-- 사용자 지시: "7. 점검단 제안도 별도의 칸으로 되어 있어. 원본 확인해" -->
-            <!-- 점검단 제안: 좌측 2행(상하 별도 독립 칸) + 우측 본문 통합 셀 -->
-            <div style="display: grid; grid-template-columns: 120px 1fr; background: #ffffff; border-bottom: 1.0px solid #000000;">
-              <div style="display: flex; flex-direction: column; border-right: 1.0px solid #000000;">
-                <!-- 좌측 상단: [점검단 제안] 별도 독립 칸 -->
-                <div style="border-bottom: 1.0px solid #000000; font-size: 0.92rem; font-weight: 800; color: #000000; padding: 6px 4px; text-align: center; height: 32px; display: flex; align-items: center; justify-content: center;">
-                  [점검단 제안]
-                </div>
-                <!-- 좌측 하단: 시스템 개선 별도 독립 칸 -->
-                <div style="flex: 1; padding: 6px 4px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                  <div style="font-size: 1.02rem; font-weight: 900; color: #4472c4; margin-bottom: 2px;">${data.proposalType}</div>
-                  <div style="font-size: 0.76rem; font-weight: 600; color: #555555;">${data.proposalSub}</div>
-                </div>
+            <!-- 2) 발생원인 본문 & 점검단 제안 (하단 margin: 8px로 개선대책 위에 0.093인치 간격 띄움) -->
+            <div style="border: 1.0px solid #000000; background: #ffffff; margin-bottom: 8px;">
+              <!-- 발생원인 본문 -->
+              <div style="padding: 8px 12px; border-bottom: 1.0px solid #000000; word-break: keep-all;">
+                <div style="font-weight: 800; font-size: 0.95rem; color: #000000; margin-bottom: 4px;">[ 의견 : 시공관리자 및 근로자 ]</div>
+                <div style="font-size: 0.90rem; font-weight: 500; color: #111111; line-height: 1.45;">${data.interviewOpinion}</div>
               </div>
-              <!-- 우측 본문 셀 (전체 높이 확장) -->
-              <div style="padding: 8px 12px; font-size: ${data.proposalContent.length > 70 ? '0.78rem' : '0.88rem'}; font-weight: 500; color: #000000; line-height: 1.36; display: flex; align-items: flex-start; word-break: keep-all;">
-                ${data.proposalContent}
+              <!-- 점검단 제안: 좌측 2행(상하 별도 독립 칸) + 우측 본문 통합 셀 -->
+              <div style="display: grid; grid-template-columns: 120px 1fr; background: #ffffff;">
+                <div style="display: flex; flex-direction: column; border-right: 1.0px solid #000000;">
+                  <!-- 좌측 상단: [점검단 제안] 별도 독립 칸 -->
+                  <div style="border-bottom: 1.0px solid #000000; font-size: 0.92rem; font-weight: 800; color: #000000; padding: 6px 4px; text-align: center; height: 32px; display: flex; align-items: center; justify-content: center;">
+                    [점검단 제안]
+                  </div>
+                  <!-- 좌측 하단: 시스템 개선 별도 독립 칸 -->
+                  <div style="flex: 1; padding: 6px 4px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div style="font-size: 1.02rem; font-weight: 900; color: #4472c4; margin-bottom: 2px;">${data.proposalType}</div>
+                    <div style="font-size: 0.76rem; font-weight: 600; color: #555555;">${data.proposalSub}</div>
+                  </div>
+                </div>
+                <!-- 우측 본문 셀 (전체 높이 확장) -->
+                <div style="padding: 8px 12px; font-size: ${data.proposalContent.length > 70 ? '0.78rem' : '0.88rem'}; font-weight: 500; color: #000000; line-height: 1.36; display: flex; align-items: flex-start; word-break: keep-all;">
+                  ${data.proposalContent}
+                </div>
               </div>
             </div>
 
-            <!-- 2) 개선대책 (현장 협의 결과) 헤더 -->
-            <div style="background: #ffd966; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; padding: 4px 6px; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-bottom: 1.0px solid #000000;">
+            <!-- 3) 개선대책 (현장 협의 결과) 헤더 (사용자 지시: 위는 8px, 아래는 4px 띄어져 독립된 별도 표임) -->
+            <div style="background: #ffd966; border: 1.0px solid #000000; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; padding: 4px 6px; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;">
               개선대책 (현장 협의 결과)
             </div>
-            <!-- 개선대책 본문 & PM 판정결과 -->
-            <div style="display: grid; grid-template-columns: 1fr 110px; background: #ffffff; flex: 1; min-height: 95px;">
+            <!-- 4) 개선대책 본문 & PM 판정결과 (상단 margin 4px로 개선대책 아래 0.037인치 간격 띄움) -->
+            <div style="border: 1.0px solid #000000; display: grid; grid-template-columns: 1fr 110px; background: #ffffff; flex: 1; min-height: 95px;">
               <!-- 개선대책 본문 좌측 칸 -->
               <div style="padding: 10px 12px; font-size: 0.90rem; font-weight: 700; color: #000000; border-right: 1.0px solid #000000; word-break: keep-all; line-height: 1.45; display: flex; flex-direction: column; justify-content: center; white-space: pre-line;">
                 ${data.countermeasureContent || ''}
