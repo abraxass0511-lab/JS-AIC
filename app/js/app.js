@@ -741,10 +741,9 @@ function populateDatalists() {
   addOpts('listLocations', locationsList, 'location');
 
   const typesList = (window.SafeExcel && window.SafeExcel.ACCIDENT_TYPES) || [
-    '떨어짐(추락, 사람)', '끼임(협착, 감김)', '무너짐(붕괴, 도괴)/깔림', '넘어짐(전도: 사람)',
-    '미끄러짐/접질림', '쓰러짐, 뒤집힘(전도, 전복: 자재/장비 등)', '부딪힘(충돌)/맞음',
-    '떨어짐(낙하/비래)/맞음', '감전', '화재/폭발', '질식/중독 등', '베임/찔림/절단',
-    '위험물질 노출/흡입/접촉 등', '개인질환/근골격계', '폭력행위', '기타', '분류불능'
+    '추락', '낙하', '비래', '붕괴', '도괴', '전복', '전도', '협착',
+    '충돌', '추돌', '충격', '접촉', '익사', '질식', '중독', '흡인',
+    '화재', '폭발', '화상', '감전', '감염', '질병'
   ];
   addOpts('listTypes', typesList, 'type');
 
@@ -1185,6 +1184,7 @@ function bindEvents() {
       stakeholder,
       mgmtCauses,
       holdPoint: !!$('#chkHoldPoint')?.checked,
+      photoBanner: $('#txtPhotoBanner')?.value.trim() || '',
       interviewOpinion: $('#txtInterviewOpinion')?.value.trim() || '',
       inspectorOpinionType: $('#selInspectorOpinionType')?.value || '시스템 개선',
       auditProposal: $('#txtAuditProposal')?.value.trim() || '',
@@ -2695,6 +2695,7 @@ function initLmStudio() {
       if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = instant.mgmtCauses.includes('불안전 상태');
       if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!instant.holdPoint;
       if (instant.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = instant.pmVerdict;
+      if (instant.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = instant.photoBanner;
 
       // 1차 즉시 요약 카드 렌더링
       if (resultCard && resultBody) {
@@ -2702,6 +2703,7 @@ function initLmStudio() {
           <div style="margin-bottom: 4px; font-weight:700; color:#1e40af;">
             ⚡ 1차 즉시 판정 완료 (${instant.law})
           </div>
+          ${instant.photoBanner ? `<div style="margin-bottom: 4px; font-weight:700; color:#c00000; font-size:0.8rem;">🚩 사진 요약: ${instant.photoBanner}</div>` : ''}
           <div style="font-size:0.78rem; color:#64748b; margin-bottom:4px;">
             Qwen AI가 산안법 세부 기준을 실시간 검증하고 있습니다...
           </div>
@@ -2734,6 +2736,7 @@ function initLmStudio() {
       if (res.item && $('#txtItem')) $('#txtItem').value = res.item;
       if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!res.holdPoint;
       if (res.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = res.pmVerdict;
+      if (res.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = res.photoBanner;
 
       if (resultCard && resultBody) {
         resultBody.innerHTML = `
@@ -2741,6 +2744,11 @@ function initLmStudio() {
             <strong>등급 판정:</strong> <span style="font-weight: 700; color: ${res.severity === '중부적합' ? '#dc2626' : '#d97706'};">${res.severity === '중부적합' ? '🚨 중부적합 (즉시 작업중지 요건)' : '⚠️ 경부적합 (시정조치 권고)'}</span>
             ${res.holdPoint ? ' <span style="background:#fee2e2; color:#dc2626; padding:1px 5px; border-radius:3px; font-size:0.75rem; font-weight:700;">🚨 Hold Point 위반</span>' : ''}
           </div>
+          ${res.photoBanner ? `
+            <div style="margin-bottom: 5px;">
+              <strong>사진 요약(배너):</strong> <span style="color:#c00000; font-weight:700; background:#fef2f2; padding:2px 6px; border-radius:4px; border:1px solid #fecaca;">🚩 ${res.photoBanner}</span>
+            </div>
+          ` : ''}
           <div style="margin-bottom: 5px;">
             <strong>위반 법령:</strong> <span style="color:#1e40af; font-weight:700;">${res.law}</span>
           </div>
@@ -3120,6 +3128,7 @@ function clearForm() {
   renderPhotoPreviews();
   updateCauseChips();
   $('#txtContent').value = '';
+  if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = '';
   $('#txtLocation').value = '';
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = '';
   if ($('#txtAgentMid')) $('#txtAgentMid').value = '';
@@ -3851,6 +3860,7 @@ function loadImportedRecordToManualForm(rec) {
     : inferAction(rec.content, rec.mgmtCauses);
 
   if ($('#txtContent')) $('#txtContent').value = rec.content || '';
+  if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = rec.photoBanner || '';
   if ($('#txtLaw')) $('#txtLaw').value = filterOnlyOccupationalSafetyLaw(rec.law);
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
   if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '가설공사';

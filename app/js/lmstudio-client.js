@@ -73,6 +73,21 @@
     if (!content) return null;
     const text = content.toLowerCase();
 
+    // 0. 양중작업 / 크레인 / 유도로프 (사용자 요구사항 4 정밀 매칭)
+    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중') || text.includes('호이스트')) {
+      return {
+        severity: '중부적합',
+        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
+        item: '양중장비',
+        hazardType: text.includes('낙하') ? '낙하' : '추락',
+        mgmtCauses: ['계획 미이행', '불안전 행동'],
+        holdPoint: true,
+        photoBanner: text.includes('유도로프') ? '양중작업 시 유도로프 미사용' : (text.includes('수평양중') ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 화물을 직접 손으로 잡음'),
+        analysis: '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 및 협착 위험',
+        pmVerdict: '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업'
+      };
+    }
+
     // 1. 밀폐공간 및 질식/유해가스 (산안규칙 제619조~)
     if (text.includes('밀폐') || text.includes('농도') || text.includes('산소') || text.includes('유해가스') || text.includes('질식') || text.includes('환기팬') || text.includes('송기마스크')) {
       return {
@@ -82,6 +97,7 @@
         hazardType: '질식',
         mgmtCauses: ['계획 미이행', '불안전 행동'],
         holdPoint: true,
+        photoBanner: '밀폐공간 유해가스 농도 미측정 진입',
         analysis: '밀폐공간 작업 전 산소 및 유해가스 농도 미측정 또는 환기 미실시로 질식 사망 위험',
         pmVerdict: '즉시 작업 중지, 적정 공기 측정(산소 18~23.5%) 및 송풍기 가동 확인 후 재개'
       };
@@ -95,6 +111,7 @@
         severity: '중부적합',
         mgmtCauses: ['불안전 상태', '계획 미이행'],
         holdPoint: true,
+        photoBanner: '비계 작업발판 미설치 및 틈새 과다',
         analysis: '비계 작업발판 틈새 3cm 초과 또는 발판 폭 기준 미달로 추락 위험',
         pmVerdict: '즉시 해당 구간 작업중지 및 발판 틈새 3cm 이하 보강 후 재검측'
       };
@@ -108,6 +125,7 @@
         severity: '중부적합',
         mgmtCauses: ['불안전 상태', '계획 미이행'],
         holdPoint: true,
+        photoBanner: '바닥 개구부 덮개 미설치',
         analysis: '바닥 개구부 고정 덮개 미설치 또는 임의 개방으로 추락 위험 극심',
         pmVerdict: '즉시 위험구역 출입통제 및 규격 덮개(고정/추락주의 표지) 설치'
       };
@@ -121,6 +139,7 @@
         severity: '중부적합',
         mgmtCauses: ['불안전 상태', '불안전 행동'],
         holdPoint: true,
+        photoBanner: '슬래브 단부 안전난간 미설치',
         analysis: '높이 2m 이상 슬래브 단부 안전난간 미설치로 추락 사망 위험',
         pmVerdict: '즉시 단부 접근 금지 및 상부·중간난간대 완벽 설치 후 검측'
       };
@@ -134,6 +153,7 @@
         severity: '중부적합',
         mgmtCauses: ['불안전 행동', '계획 미이행'],
         holdPoint: true,
+        photoBanner: '고소작업 시 안전대 미체결',
         analysis: '고소작업자 안전대 미체결 또는 수직/수평 구명줄 미설치',
         pmVerdict: '즉시 안전대 이중고리 체결 지도 및 구명줄 보강 설치'
       };
@@ -147,6 +167,7 @@
         severity: '중부적합',
         mgmtCauses: ['불안전 상태', '계획 미이행'],
         holdPoint: true,
+        photoBanner: '용접 시 불티 비산방지포 미설치',
         analysis: '용접 불티 비산방지포 미설치 또는 소화기 미비치로 화재 위험',
         pmVerdict: '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개'
       };
@@ -160,6 +181,7 @@
         severity: '중부적합',
         mgmtCauses: ['불안전 상태'],
         holdPoint: false,
+        photoBanner: '전기기구 누전차단기 미접속',
         analysis: '임시 분전함 외함 접지 미시행 또는 누전차단기 불량',
         pmVerdict: '해당 차단기 전원 즉시 차단 및 외함 접지선 체결 완료 후 통전'
       };
@@ -173,6 +195,7 @@
         severity: '중부적합',
         mgmtCauses: ['계획 미이행', '불안전 상태'],
         holdPoint: true,
+        photoBanner: '동바리 수평연결재 미체결',
         analysis: '파이프서포트 수평연결재 미체결 또는 2본 이상 연결 사용',
         pmVerdict: '타설작업 중지, 구조검토서 기준 수평연결재 2방향 보강 완료 후 타설 승인'
       };
@@ -186,6 +209,7 @@
         severity: '경부적합',
         mgmtCauses: ['불안전 상태'],
         holdPoint: false,
+        photoBanner: '가설통로 통행방해물 방치',
         analysis: '가설통로 조도 75럭스 미달 또는 통로 상 자재 방치로 보행 장애',
         pmVerdict: '당일 작업 종료 전 통로 자재 구획 정리 및 고효율 LED 조명 추가 설치'
       };
@@ -237,6 +261,7 @@
             holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : (instantResult ? instantResult.holdPoint : false),
             analysis: data.analysis || (instantResult ? instantResult.analysis : '산업안전보건기준에 관한 규칙 위반 사항'),
             pmVerdict: data.pmVerdict || (instantResult ? instantResult.pmVerdict : '즉시 시정 조치 및 현장 점검 완료 후 작업'),
+            photoBanner: data.photoBanner || (instantResult ? instantResult.photoBanner : ''),
             source: 'cloudflare_cloud_qwen'
           };
         }
@@ -255,6 +280,7 @@
   "law": "산안규칙 제OO조(조항명 전문)",
   "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식" 또는 "온열질환" 또는 "직업병",
   "item": "해당 작업 또는 기인물 명칭(예: 밀폐공간, 비계, 안전난간, 거푸집, 가설전기, 크레인, 굴착기 등)",
+  "photoBanner": "사진 상단 붉은색 배너용 15자 내외 문구. 부적합 내용을 장황하게 적지 말고 무엇을 직접 안 했는지 간단명료하게 기입(예: '양중작업 시 화물을 직접 손으로 잡음', '양중작업 시 유도로프 미사용', '비계 단부 안전난간 미설치', '바닥 개구부 덮개 미설치', '고소작업 시 안전대 미체결')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
@@ -352,6 +378,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           holdPoint: parsed.holdPoint !== undefined ? !!parsed.holdPoint : instantResult.holdPoint,
           analysis: parsed.analysis || instantResult.analysis,
           pmVerdict: parsed.pmVerdict || instantResult.pmVerdict,
+          photoBanner: parsed.photoBanner || instantResult.photoBanner || '',
           source: 'local_qwen'
         };
       }

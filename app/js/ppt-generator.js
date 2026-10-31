@@ -32,6 +32,119 @@
   const C_DARK_TEXT = '000000';       // 본문 진한 검정 (#000000)
   const C_ACCENT_BLUE = '4472C4';     // 템플릿 표준 강조 블루 (#4472C4)
 
+  // 22대 재해발생 형태 표준 목록 (사용자 지정 이미지 2 일치)
+  const STANDARD_22_ACCIDENT_TYPES = [
+    '추락', '낙하', '비래', '붕괴', '도괴', '전복', '전도',
+    '협착', '충돌', '추돌', '충격', '접촉', '익사', '질식',
+    '중독', '흡인', '화재', '폭발', '화상', '감전', '감염', '질병'
+  ];
+
+  function mapTo22AccidentType(raw) {
+    if (!raw) return '추락';
+    const s = String(raw).trim();
+    for (const t of STANDARD_22_ACCIDENT_TYPES) {
+      if (s === t) return t;
+    }
+    for (const t of STANDARD_22_ACCIDENT_TYPES) {
+      if (s.includes(t)) return t;
+    }
+    if (s.includes('떨어짐')) return '추락';
+    if (s.includes('넘어짐')) return '전도';
+    if (s.includes('끼임')) return '협착';
+    if (s.includes('맞음')) return s.includes('비래') ? '비래' : '낙하';
+    if (s.includes('부딪힘')) return '충돌';
+    if (s.includes('깔림')) return '붕괴';
+    if (s.includes('무너짐')) return '붕괴';
+    if (s.includes('뒤집힘')) return '전복';
+    return '추락';
+  }
+
+  /**
+   * 관련 기준을 "안전보건규칙 제//조"로 간단하게 변환 (사용자 지시 3)
+   */
+  function simplifyLawTitle(law, text = '') {
+    const s = String(law || '').trim();
+    const articles = [...s.matchAll(/제\s*(\d+)\s*조/g)].map(m => `제${m[1]}조`);
+    if (articles.length > 0) {
+      const unique = [...new Set(articles)];
+      return `안전보건규칙 ${unique.join(', ')}`;
+    }
+    if (s.startsWith('안전보건규칙')) return s;
+
+    // 키워드 기반 기본 매핑
+    const comb = `${s} ${text}`;
+    if (comb.includes('양중') || comb.includes('줄걸이') || comb.includes('크레인') || comb.includes('호이스트') || comb.includes('수평양중')) {
+      return '안전보건규칙 제38조, 제171조';
+    }
+    if (comb.includes('비계') || comb.includes('난간') || comb.includes('작업발판') || comb.includes('안전난간') || comb.includes('단부')) {
+      return '안전보건규칙 제56조, 제13조';
+    }
+    if (comb.includes('개구부') || comb.includes('덮개')) {
+      return '안전보건규칙 제59조';
+    }
+    if (comb.includes('전기') || comb.includes('누전') || comb.includes('차단기') || comb.includes('투광등')) {
+      return '안전보건규칙 제304조';
+    }
+    if (comb.includes('사다리') || comb.includes('말비계') || comb.includes('우마')) {
+      return '안전보건규칙 제24조';
+    }
+    return '안전보건규칙 제38조';
+  }
+
+  /**
+   * 사진 상단 직접 행동 적색 음영 배너 문구 자동 도출 (사용자 지시 4: "직접적으로 무엇을 안했는지 간단하게 기입")
+   */
+  function extractDirectAction(r) {
+    if (r.photoBanner && String(r.photoBanner).trim()) {
+      return String(r.photoBanner).trim();
+    }
+    const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
+    
+    if (text.includes('손으로') || (text.includes('유도로프') && text.includes('미사용'))) {
+      return '양중작업 시 화물을 직접 손으로 잡음';
+    }
+    if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
+      return '양중작업 시 화물의 수평양중 미실시';
+    }
+    if (text.includes('유도로프')) {
+      return '양중작업 시 유도로프 미사용';
+    }
+    if (text.includes('안전대') && (text.includes('미체결') || text.includes('미착용') || text.includes('체결'))) {
+      return '고소작업 시 안전대 미체결';
+    }
+    if (text.includes('안전모')) {
+      return '작업구간 내 안전모 턱끈 미체결';
+    }
+    if (text.includes('안전난간') || text.includes('난간')) {
+      return '작업발판 단부 안전난간 미설치';
+    }
+    if (text.includes('개구부') || text.includes('덮개')) {
+      return '바닥 개구부 덮개 미설치 및 고정 미흡';
+    }
+    if (text.includes('작업발판') || text.includes('발판')) {
+      return '작업발판 전면 미설치 및 틈새 방치';
+    }
+    if (text.includes('사다리') || text.includes('말비계')) {
+      return '이동식 사다리 최상부 발판 작업';
+    }
+    if (text.includes('누전') || text.includes('차단기')) {
+      return '임시 분전함 누전차단기 미설치';
+    }
+    if (text.includes('신호수')) {
+      return '양중 및 중장비 작업 전담 신호수 미배치';
+    }
+    if (text.includes('작업계획서') || text.includes('계획 미수립')) {
+      return '위험기계 작업 전 작업계획서 미수립';
+    }
+    if (r.action && r.action !== '-' && r.action !== '해당없음' && r.action.length <= 25) {
+      return r.action;
+    }
+    if (r.content && r.content.length <= 25) {
+      return r.content;
+    }
+    return '표준 안전작업절차 및 안전수칙 미준수';
+  }
+
   /**
    * 단일 행 텍스트의 넘침/줄바꿈 방지 동적 글자크기 계산기
    * - 사용자 지시: "칸은 그대로 두고 길어져서 줄이 바뀌거나 잘리면 글자크기를 작게하든지 조정해"
@@ -60,16 +173,10 @@
     const severity = isMajor ? '중부적합' : '경부적합';
     const type = r.type || '충돌/협착';
 
-    // 사고유형 파싱 및 포맷팅 (예: "넘어짐(전도:사람)" -> main: "넘어짐", sub: "(전도 : 사람)")
+    // 사고유형 파싱 및 포맷팅 (사용자 지시 2: 22대 재해발생 형태 표준 목록 매핑)
     const rawType = String(type).trim();
-    let typeMain = rawType;
-    let typeSub = '';
-    const typeMatch = rawType.match(/^([^(]+)\s*\(([^)]+)\)$/);
-    if (typeMatch) {
-      typeMain = typeMatch[1].trim();
-      let inner = typeMatch[2].trim().replace(/\s*:\s*/g, ' : ');
-      typeSub = `(${inner})`;
-    }
+    const typeMain = mapTo22AccidentType(rawType);
+    const typeSub = '';
 
     // 4대 요인 판정: 사용자가 지정한 관리적/직접 원인 목록을 최우선 존중
     const mgmt = Array.isArray(r.mgmtCauses) ? r.mgmtCauses : [];
@@ -97,31 +204,32 @@
 
     const isHoldPoint = r.holdPoint || (typeof r.content === 'string' && r.content.includes('Hold'));
 
-    // 관련 법령 및 수칙 내용
-    let lawTitle = r.law || (r.basis && r.basis.law) || '';
+    // 관련 법령 및 수칙 내용 (사용자 지시 3: "관련 기준을 '안전보건규칙 제//조'로 간단하게 변경")
+    let rawLawTitle = r.law || (r.basis && r.basis.law) || '';
     let lawBody = '';
 
     const rawContent = r.content || '';
     const text = `${rawContent} ${r.item || ''} ${r.agent || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
-      lawTitle = lawTitle || '전사 안전보건지침[줄걸이작업] 7.1.1 일반사항';
+      rawLawTitle = rawLawTitle || '안전보건규칙 제38조, 제171조';
       lawBody = '화물은 유도로프를 통해 유도하고 손으로 밀거나 당기는 행위를 금지하며 화물의 양중높이에 따라 적정한 길이를 가진 유도로프를 사용해야 한다.';
     } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
-      lawTitle = lawTitle || '산업안전보건기준에 관한 규칙 제56조(작업발판의 구조), 제13조(안전난간의 구조 및 요건)';
+      rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
       lawBody = '작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
     } else if (text.includes('개구부') || text.includes('덮개')) {
-      lawTitle = lawTitle || '산업안전보건기준에 관한 규칙 제59조(추락방지조치)';
+      rawLawTitle = rawLawTitle || '안전보건규칙 제59조';
       lawBody = '바닥 개구부에는 충분한 강도를 가진 덮개를 뒤집히거나 벗겨지지 않도록 고정 설치하고 "추락주의" 위험표지를 부착해야 한다.';
     } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
-      lawTitle = lawTitle || '산업안전보건기준에 관한 규칙 제304조(누전차단기 등의 설치)';
+      rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
       lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
     } else if (text.includes('사다리') || text.includes('말비계') || text.includes('우마')) {
-      lawTitle = lawTitle || '산업안전보건기준에 관한 규칙 제24조(사다리식 통로 등의 구조)';
+      rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
       lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
     } else {
-      lawTitle = lawTitle || '산업안전보건기준에 관한 규칙 제38조(사전조사 및 작업계획서의 작성 등)';
+      rawLawTitle = rawLawTitle || '안전보건규칙 제38조';
       lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
     }
+    const lawTitle = simplifyLawTitle(rawLawTitle, text);
 
     // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
     const hasGuideline = Boolean(r.hasGuideline || (options && options.showGuideline));
@@ -280,6 +388,9 @@
     // 사용자 지침: 전반적인 내용과 점검자 등은 모두 엑셀 로그 기반으로 작성
     let inspectorName = r.inspector || r.inspectUser || r.user || '관리자';
 
+    // 사진 상단 직접 행동 문구 (사용자 지시 4: "세번째 이미지처럼 사진위에 빨간색 음영처리된 박스를 추가하고 직접적으로 무엇을 안했는지 간단하게 기입")
+    const photoBanner = extractDirectAction(r);
+
     return {
       severity,
       isMajor,
@@ -301,6 +412,7 @@
       photo1Title,
       photo2Title,
       photoBannerTitle,
+      photoBanner,
       interviewOpinion,
       proposalType,
       proposalSub,
@@ -399,17 +511,15 @@
       align: 'left', valign: 'middle', inset: 0.06, lineSpacingMultiple: 1.15
     });
 
-    // 5) 4대 발생요인 (x = 10.165, y = 0.163, w = 2.975, h = 0.914, 4분면 셀, 0.75pt 검은색 테두리)
+    // 5) 4대 발생요인 (x = 10.165, y = 0.163, w = 2.975, h = 0.914, 0.75pt 검은색 테두리)
+    // 사용자 지시: "1. 가운데 세로줄은 없어. 원본 확인해"
+    // 원본 템플릿(표 5): 1개 열, 2개 행으로 구성되어 가운데 세로 구분선 없음!
     slide.addShape(pptx.ShapeType.rect, {
       x: 10.165, y: 0.163, w: 2.975, h: 0.914,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
     slide.addShape(pptx.ShapeType.line, {
       x: 10.165, y: 0.620, w: 2.975, h: 0,
-      line: { color: C_BORDER, width: 0.5 }
-    });
-    slide.addShape(pptx.ShapeType.line, {
-      x: 11.652, y: 0.163, w: 0, h: 0.914,
       line: { color: C_BORDER, width: 0.5 }
     });
     slide.addText([
@@ -497,9 +607,30 @@
       line: { color: C_BORDER, width: 0.75 }
     });
 
-    // ── 좌측 사진 영역: Hold Point 위반 박스 (x = 5.975, y = 1.982, w = 2.363, h = 0.406) ──
-    // 사용자 지시: "3. hold, 발생원인 위에 너무 많이 띄었어. 원본참고해서 조금만 띄어"
-    // y = 1.982 (부적합 내용 바닥 y = 1.937과 약 0.045인치/~4px 살짝만 띄운 여백)
+    // 사진 로드 및 배치 준비
+    let photo1Base64 = null;
+    let photo2Base64 = null;
+    if (loadPhotoBase64) {
+      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) {}
+      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) {}
+    }
+    const hasPhoto2 = Boolean(photo2Base64);
+
+    // ── 좌측 사진 상단 행 (y = 1.982, h = 0.406) ──
+    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 4: "세번째 이미지처럼 사진위에 빨간색 음영처리된 박스를 추가하고 직접적으로 무엇을 안했는지 간단하게 기입")
+    const bannerWidth = hasPhoto2 ? 4.080 : 5.715;
+    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5);
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0.130, y: 1.982, w: bannerWidth, h: 0.406,
+      fill: { color: C_RED }, line: { color: C_RED, width: 0 }
+    });
+    slide.addText(data.photoBanner, {
+      x: 0.130, y: 1.982, w: bannerWidth, h: 0.406,
+      fontFace: FONT_MALGUN, fontSize: bannerFontSize, bold: true, color: 'FFFFFF',
+      align: 'center', valign: 'middle', wrap: false, inset: 0.04
+    });
+
+    // 2) Hold Point 위반 박스 (x = 5.975, y = 1.982, w = 2.363, h = 0.406)
     slide.addText([
       { text: data.isHoldPoint ? '☑ ' : '☐ ', options: { fontSize: 18, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: 'Hold Point 위반 (N/A)', options: { fontSize: 12, bold: true, color: '000000', fontFace: FONT_MALGUN } }
@@ -509,21 +640,13 @@
       align: 'center', valign: 'middle', wrap: false, inset: 0.04
     });
 
-    // 사진 로드 및 삽입: 글씨/배너 없이 순수 사진만 삽입 (y = 2.425에서 시작)
-    let photo1Base64 = null;
-    let photo2Base64 = null;
-    if (loadPhotoBase64) {
-      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) {}
-      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) {}
-    }
-    const hasPhoto2 = Boolean(photo2Base64);
-
+    // ── 현장 사진 삽입 (사용자 지시 5: 사진 1과 사진 2의 시작 y = 2.425 및 높이, 크기가 완벽히 동일하게 일치) ──
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
     const photoBodyHeight = showGuidelineBox ? 3.730 : 4.810;
     const photoStartY = 2.425;
 
     if (hasPhoto2) {
-      // 2개 사진 배치
+      // 2개 사진 배치: 동일 크기 (w = 4.080, h = photoBodyHeight, 시작 y = 2.425)
       if (photo1Base64) {
         slide.addImage({
           data: photo1Base64,
@@ -863,11 +986,13 @@
       counterLineSpacing = 1.22;
     }
 
-    // 7) 사진 영역 좌표 및 크기 (PPT와 동일)
+    // 7) 사진 영역 좌표 및 크기 (PPT와 100% 동일 일치)
     const hasPhoto2 = Boolean(photo2Url);
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
     const photoBodyHeight = showGuidelineBox ? 3.730 : 4.810;
     const photoStartY = 2.425;
+    const bannerWidth = hasPhoto2 ? 4.080 : 5.715;
+    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5);
 
     return `
       <div id="jangpyoSlidePreview" style="
@@ -890,7 +1015,7 @@
           시설물/법규
         </div>
 
-        <!-- 2. 사고유형 & 등급 (사용자 지시: 음영 없음/순수 흰색 + 3px 황색 #ffc000 테두리, 상하 균형 중앙 정렬) -->
+        <!-- 2. 사고유형 & 등급 (사용자 지시 2: 22대 재해유형 표준 적용, 음영 없음/순수 흰색 + 3px 황색 #ffc000 테두리) -->
         <div style="position: absolute; left: ${pctX(1.967)}; top: ${pctY(0.163)}; width: ${pctW(1.568)}; height: ${pctH(0.914)}; background: #ffffff; border: 3px solid #ffc000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding-top: 0.15cqw;">
           <div style="font-size: ${pt(18)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center;">${data.typeMain}</div>
           ${data.typeSub ? `<div style="font-size: ${pt(11)}; font-weight: 700; color: #333333; line-height: 1.1; text-align: center; margin-top: 0.05cqw;">${data.typeSub}</div>` : ''}
@@ -905,7 +1030,7 @@
         <!-- 4. 관련기준 내용 외곽 사각형 -->
         <div style="position: absolute; left: ${pctX(4.276)}; top: ${pctY(0.163)}; width: ${pctW(5.832)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 4-1. 관련기준 제목 (사용자 지시: 제목 글씨가 아래 파란색 음영과 좌측 시작선 x = 4.380 일치) -->
+        <!-- 4-1. 관련기준 제목 (사용자 지시 3: '안전보건규칙 제//조' 간단 포맷, 좌측 시작선 x = 4.380 일치) -->
         <div style="position: absolute; left: ${pctX(4.380)}; top: ${pctY(0.175)}; width: ${pctW(5.624)}; height: ${pctH(0.300)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
           ${data.lawTitle}
         </div>
@@ -917,19 +1042,15 @@
           </div>
         </div>
 
-        <!-- 5. 4대 발생요인 4개 분면 셀 -->
-        <div style="position: absolute; left: ${pctX(10.165)}; top: ${pctY(0.163)}; width: ${pctW(2.975)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;">
-          <div style="border-right: 0.5px solid #000000; border-bottom: 0.5px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
-            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isUnplanned ? '☑' : '☐'}</span> 계획 미수립
+        <!-- 5. 4대 발생요인 (사용자 지시 1: 가운데 세로줄 없이 가로선만 있는 2행 셀) -->
+        <div style="position: absolute; left: ${pctX(10.165)}; top: ${pctY(0.163)}; width: ${pctW(2.975)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box; display: flex; flex-direction: column;">
+          <div style="height: 50%; border-bottom: 0.5px solid #000000; display: flex; align-items: center; justify-content: space-around; font-size: ${pt(14)}; font-weight: 800;">
+            <div><span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isUnplanned ? '☑' : '☐'}</span> 계획 미수립</div>
+            <div><span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isUnexecuted ? '☑' : '☐'}</span> 계획 미이행</div>
           </div>
-          <div style="border-bottom: 0.5px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
-            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isUnexecuted ? '☑' : '☐'}</span> 계획 미이행
-          </div>
-          <div style="border-right: 0.5px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
-            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isAction ? '☑' : '☐'}</span> 불안전 행동
-          </div>
-          <div style="display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
-            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isCondition ? '☑' : '☐'}</span> 불안전 상태
+          <div style="height: 50%; display: flex; align-items: center; justify-content: space-around; font-size: ${pt(14)}; font-weight: 800;">
+            <div><span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isAction ? '☑' : '☐'}</span> 불안전 행동</div>
+            <div><span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isCondition ? '☑' : '☐'}</span> 불안전 상태</div>
           </div>
         </div>
 
@@ -966,23 +1087,28 @@
         <!-- 6-5. 세로 분할선 (좌측 사진 vs 우측 원인/대책, x = 8.395, y = 1.982 ~ 7.293) -->
         <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(1.982)}; width: 0; height: ${pctH(5.311)}; border-left: 1px solid #000000;"></div>
 
-        <!-- 6-6. Hold Point 위반 박스 (사용자 지시: 상단 0.045인치 미세 여백, y = 1.982) -->
+        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 4) -->
+        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.406)}; background: #c00000; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
+          <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #ffffff;">${data.photoBanner}</span>
+        </div>
+
+        <!-- 6-6b. Hold Point 위반 박스 (사용자 지시: 상단 0.045인치 미세 여백, y = 1.982) -->
         <div style="position: absolute; left: ${pctX(5.975)}; top: ${pctY(1.982)}; width: ${pctW(2.363)}; height: ${pctH(0.406)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap;">
           <span style="font-size: ${pt(18)}; font-weight: 800; margin-right: 0.3cqw;">${data.isHoldPoint ? '☑' : '☐'}</span>
           <span style="font-size: ${pt(12)}; font-weight: 800;">Hold Point 위반 (N/A)</span>
         </div>
 
-        <!-- 6-7. 사진 영역 (사용자 지시: 글씨 없이 사진만 표시, 바닥까지 꽉 채움 y = 2.425 ~ 7.235) -->
+        <!-- 6-7. 사진 영역 (사용자 지시 5: 사진 1과 사진 2가 동일한 위치/크기/높이로 일치 y = 2.425 ~ 7.235) -->
         ${hasPhoto2 ? `
-          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box;">
-            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
+          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
           </div>
-          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box;">
-            ${photo2Url ? `<img src="${photo2Url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
+          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff;">
+            ${photo2Url ? `<img src="${photo2Url}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box;">
-            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 

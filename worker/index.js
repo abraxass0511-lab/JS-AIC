@@ -28,14 +28,27 @@ function analyzeRuleFallback(content) {
   let analysis = '현장 안전기준 위반 사항이 감지되었습니다.';
   let pmVerdict = '즉시 시정 조치 및 이행 확인';
 
-  // 1. 밀폐공간 및 질식/유해가스
-  if (text.includes('밀폐') || text.includes('농도') || text.includes('산소') || text.includes('유해가스') || text.includes('질식') || text.includes('환기팬') || text.includes('송기마스크')) {
+  let photoBanner = '안전수칙 미준수';
+
+  // 0. 양중작업 / 크레인 / 유도로프
+  if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중')) {
+    item = '양중장비';
+    law = '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)';
+    hazardType = text.includes('낙하') ? '낙하' : '추락';
+    severity = '중부적합';
+    mgmtCauses = ['계획 미이행', '불안전 행동'];
+    holdPoint = true;
+    photoBanner = text.includes('유도로프') ? '양중작업 시 유도로프 미사용' : (text.includes('수평양중') ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 화물을 직접 손으로 잡음');
+    analysis = '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 위험';
+    pmVerdict = '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업';
+  } else if (text.includes('밀폐') || text.includes('농도') || text.includes('산소') || text.includes('유해가스') || text.includes('질식') || text.includes('환기팬') || text.includes('송기마스크')) {
     item = '밀폐공간';
     law = '산안규칙 제619조의2(산소 및 유해가스 농도의 측정)';
     hazardType = '질식';
     severity = '중부적합';
     mgmtCauses = ['계획 미이행', '불안전 행동'];
     holdPoint = true;
+    photoBanner = '밀폐공간 유해가스 농도 미측정 진입';
     analysis = '밀폐공간 작업 전 산소 및 유해가스 농도 미측정 또는 환기 미실시로 질식 사망 위험';
     pmVerdict = '즉시 작업 중지, 적정 공기 측정(산소 18~23.5%) 및 송풍기 가동 확인 후 재개';
   } else if (text.includes('비계') || text.includes('발판') || text.includes('틈새') || text.includes('수평재')) {
@@ -45,6 +58,7 @@ function analyzeRuleFallback(content) {
     severity = '중부적합';
     mgmtCauses = ['불안전 상태', '계획 미이행'];
     holdPoint = true;
+    photoBanner = '비계 작업발판 미설치 및 틈새 과다';
     analysis = '비계 작업발판 틈새 3cm 초과 또는 발판 폭 기준 미달로 추락 위험';
     pmVerdict = '즉시 해당 구간 작업중지 및 발판 틈새 3cm 이하 보강 후 재검측';
   } else if (text.includes('개구부') || text.includes('피트') || text.includes('덮개')) {
@@ -54,6 +68,7 @@ function analyzeRuleFallback(content) {
     severity = '중부적합';
     mgmtCauses = ['불안전 상태', '계획 미이행'];
     holdPoint = true;
+    photoBanner = '바닥 개구부 덮개 미설치';
     analysis = '바닥 개구부 고정 덮개 미설치 또는 임의 개방으로 추락 위험 극심';
     pmVerdict = '즉시 위험구역 출입통제 및 규격 덮개(고정/추락주의 표지) 설치';
   } else if (text.includes('난간') || text.includes('단부') || text.includes('슬래브')) {
@@ -63,6 +78,7 @@ function analyzeRuleFallback(content) {
     severity = '중부적합';
     mgmtCauses = ['불안전 상태', '불안전 행동'];
     holdPoint = true;
+    photoBanner = '슬래브 단부 안전난간 미설치';
     analysis = '높이 2m 이상 슬래브 단부 안전난간 미설치로 추락 사망 위험';
     pmVerdict = '즉시 단부 접근 금지 및 상부·중간난간대 완벽 설치 후 검측';
   } else if (text.includes('안전대') || text.includes('구명줄')) {
@@ -72,6 +88,7 @@ function analyzeRuleFallback(content) {
     severity = '중부적합';
     mgmtCauses = ['불안전 행동', '계획 미이행'];
     holdPoint = true;
+    photoBanner = '고소작업 시 안전대 미체결';
     analysis = '고소작업자 안전대 미체결 또는 수직/수평 구명줄 미설치';
     pmVerdict = '즉시 안전대 이중고리 체결 지도 및 구명줄 보강 설치';
   } else if (text.includes('용접') || text.includes('불티') || text.includes('화재')) {
@@ -112,7 +129,7 @@ function analyzeRuleFallback(content) {
     pmVerdict = 'A형 사다리 작업 즉시 중지 및 이동식 비계(우마비계)로 교체 투입';
   }
 
-  return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict };
+  return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner };
 }
 
 export default {
@@ -198,6 +215,7 @@ JSON 형식:
   "law": "산안규칙 제OO조(조항명)",
   "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전",
   "item": "비계" 또는 "안전대" 또는 "개구부" 또는 "안전난간" 또는 "가설전기" 또는 "건설기계",
+  "photoBanner": "사진 상단 붉은색 배너용 15자 내외 문구 (무엇을 직접 안 했는지 간단명료하게 기입, 예: '양중작업 시 화물을 직접 손으로 잡음')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
