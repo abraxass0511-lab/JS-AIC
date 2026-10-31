@@ -2720,6 +2720,7 @@ function initLmStudio() {
     try {
       const extraContext = {
         workGroup: $('#txtWorkGroup')?.value || '',
+        location: $('#txtLocation')?.value || '',
         productType: $('#selProductType')?.value || '공동주택',
         progressRate: $('#txtProgressRate')?.value || 35
       };

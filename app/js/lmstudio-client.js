@@ -6,8 +6,8 @@
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.SafeLocalAI = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  else (root || globalThis).SafeLocalAI = factory();
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : this), function () {
 
   const DEFAULT_ENDPOINTS = [
     'http://localhost:1234/v1',
@@ -85,6 +85,22 @@
         photoBanner: text.includes('유도로프') ? '양중작업 시 유도로프 미사용' : (text.includes('수평양중') ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 화물을 직접 손으로 잡음'),
         analysis: '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 및 협착 위험',
         pmVerdict: '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업'
+      };
+    }
+
+    // 0-B. 말비계 / 우마 (산안규칙 제67조, 제13조 - 사용자 지시 3 정밀 일치)
+    if (text.includes('말비계') || text.includes('우마')) {
+      const isEdge = text.includes('모서리') || text.includes('단부') || text.includes('추락');
+      return {
+        severity: '중부적합',
+        law: '안전보건규칙 제67조(말비계의 구조), 제13조(안전난간의 구조 및 요건)',
+        item: '말비계',
+        hazardType: '추락',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: true,
+        photoBanner: isEdge ? '말비계 모서리 구간 단부 추락방지 미조치' : '말비계 안전기준 및 전도방지 미조치',
+        analysis: '말비계 설치범위 모서리 구간 단부 안전난간 또는 추락방지조치 미실시로 단부 추락 위험',
+        pmVerdict: '즉시 말비계 작업중지 및 모서리 단부 안전난간/추락방지망 설치 후 재검측'
       };
     }
 
@@ -280,7 +296,7 @@
   "law": "산안규칙 제OO조(조항명 전문)",
   "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식" 또는 "온열질환" 또는 "직업병",
   "item": "해당 작업 또는 기인물 명칭(예: 밀폐공간, 비계, 안전난간, 거푸집, 가설전기, 크레인, 굴착기 등)",
-  "photoBanner": "사진 상단 붉은색 배너용 15자 내외 문구. 부적합 내용을 장황하게 적지 말고 무엇을 직접 안 했는지 간단명료하게 기입(예: '양중작업 시 화물을 직접 손으로 잡음', '양중작업 시 유도로프 미사용', '비계 단부 안전난간 미설치', '바닥 개구부 덮개 미설치', '고소작업 시 안전대 미체결')",
+  "photoBanner": "사진 상단 배너용 15자 내외 문구. 지적내용과 현장 사진(또는 작업상황)의 핵심 기인물(예: 말비계, 양중, 개구부, 사다리, 비계 등)과 위험요인을 정확히 분석하여 무엇을 직접 안 했는지 간단명료하게 기입하라. (예: '말비계 모서리 구간 단부 추락방지 미조치', '양중작업 시 화물의 수평양중 미실시', '양중작업 시 화물을 직접 손으로 잡음', '양중작업 시 유도로프 미사용', '바닥 개구부 덮개 미설치', '고소작업 시 안전대 미체결'). 지적내용에 없는 다른 유형(예: 말비계 작업인데 개구부 언급 등)을 절대 혼동하지 말 것.",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
@@ -288,10 +304,12 @@
 }`;
 
     const userPrompt = `지적사항: "${content.trim()}"
+${extraContext.workGroup ? `공종명: ${extraContext.workGroup}` : ''}
+${extraContext.location ? `작업장소: ${extraContext.location}` : ''}
 ${extraContext.productType ? `건물용도: ${extraContext.productType}` : ''}
 ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
-위 지적사항의 산안법령 위반과 부적합 등급을 분석하라.`;
+위 지적사항 및 현장 상황의 산안법령 위반과 부적합 등급을 분석하라.`;
 
     let ctrl = new AbortController();
     // 35초 초과 시 자동 타임아웃하여 룰 기반 결과 반환
