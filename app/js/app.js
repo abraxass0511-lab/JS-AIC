@@ -97,7 +97,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     renderSites();
-    if (store.taxonomy) populateDatalists();
+    populateDatalists();
     checkAuth();
 
   } catch (err) {
@@ -530,21 +530,314 @@ function renderQuickChipsForField(customKey, sortedList) {
 }
 
 // ── Datalists & Taxonomy Rendering ──
+
+// ── 현장별 공정률/상품유형 캐시 (재진입 시 자동 적용) ──
+const SITE_META_CACHE_KEY = 'sp_site_meta_cache';
+
+function getSiteMetaCache() {
+  try {
+    const raw = localStorage.getItem(SITE_META_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveSiteMetaCache(siteName, progressRate, productType) {
+  if (!siteName || !siteName.trim()) return;
+  try {
+    const cache = getSiteMetaCache();
+    cache[siteName.trim()] = {
+      progressRate: progressRate !== undefined && progressRate !== null && progressRate !== '' ? Number(progressRate) : 35,
+      productType: productType || '공동주택',
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(SITE_META_CACHE_KEY, JSON.stringify(cache));
+  } catch (e) {
+    console.warn('saveSiteMetaCache error:', e);
+  }
+}
+
+function handleSiteSelectionChange(siteName) {
+  const name = (siteName || '').trim();
+  const badge = document.getElementById('siteAppliedBadge');
+  const lblProg = document.getElementById('lblPrevProgress');
+  const lblProd = document.getElementById('lblPrevProduct');
+  const txtProg = document.getElementById('txtProgressRate');
+  const selProd = document.getElementById('selProductType');
+
+  if (!name) {
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  // 1. 로컬 캐시 조회
+  const cache = getSiteMetaCache();
+  let meta = cache[name];
+
+  // 2. 캐시에 없으면 기존 store.sites 조회
+  if (!meta && typeof store !== 'undefined' && store && store.sites) {
+    const found = store.sites.find(s => s.name === name);
+    if (found && found.progress) {
+      meta = {
+        progressRate: parseFloat(found.progress) || 35,
+        productType: found.productType || '공동주택'
+      };
+    }
+  }
+
+  // 3. 기존 records 에서 해당 현장의 최근 등록값 조회 (캐시 백필)
+  if (!meta && typeof store !== 'undefined' && store && store.records && store.records.length) {
+    const rec = [...store.records].reverse().find(r => r.site === name && (r.progressRate !== undefined || r.productType));
+    if (rec) {
+      meta = {
+        progressRate: rec.progressRate !== undefined ? Number(rec.progressRate) : 35,
+        productType: rec.productType || '공동주택'
+      };
+    }
+  }
+
+  if (meta) {
+    if (txtProg && meta.progressRate !== undefined) txtProg.value = meta.progressRate;
+    if (selProd && meta.productType) selProd.value = meta.productType;
+    if (lblProg) lblProg.textContent = meta.progressRate ?? 35;
+    if (lblProd) lblProd.textContent = meta.productType ?? '공동주택';
+    if (badge) {
+      badge.style.display = 'block';
+    }
+  } else {
+    if (badge) badge.style.display = 'none';
+  }
+}
+
+// ── 9×9단 패키지 연쇄 한정 선택기 (대분류 → 중분류 → 소분류) ──
+let currentPkgMajor = '가시설';
+let currentPkgMid = '비계';
+let currentPkgMinor = '시스템비계';
+
+function initPackage9x9Selector(agentTree) {
+  const tree = agentTree || (typeof store !== 'undefined' && store && store.taxonomy9x9 && store.taxonomy9x9.agentTree);
+  if (!tree) return;
+
+  const majorContainer = document.getElementById('pkgMajorChips');
+  const midContainer = document.getElementById('pkgMidChips');
+  const minorContainer = document.getElementById('pkgMinorChips');
+  const summaryLbl = document.getElementById('lblSelectedPackage');
+  const majorLbl = document.getElementById('lblPkgMajorName');
+  const midLbl = document.getElementById('lblPkgMidName');
+  const btnReset = document.getElementById('btnResetPackage');
+
+  if (!majorContainer || !midContainer || !minorContainer) return;
+
+  function renderChips() {
+    const majors = Object.keys(tree);
+    if (!majors.includes(currentPkgMajor)) {
+      currentPkgMajor = majors[0] || '가시설';
+    }
+
+    // 1. 대분류 칩 렌더링
+    majorContainer.innerHTML = majors.map(maj => {
+      const isActive = maj === currentPkgMajor;
+      return `<button type="button" class="pkg-chip major-chip ${isActive ? 'active major-active' : ''}" data-major="${maj}">${maj}</button>`;
+    }).join('');
+
+    if (majorLbl) majorLbl.textContent = currentPkgMajor;
+
+    // 2. 중분류 칩 렌더링 (대분류 선택에 따라 한정)
+    const midMap = tree[currentPkgMajor] || {};
+    const mids = Object.keys(midMap);
+    if (!mids.includes(currentPkgMid)) {
+      currentPkgMid = mids[0] || '';
+    }
+
+    midContainer.innerHTML = mids.map(mid => {
+      const isActive = mid === currentPkgMid;
+      return `<button type="button" class="pkg-chip mid-chip ${isActive ? 'active mid-active' : ''}" data-mid="${mid}">${mid}</button>`;
+    }).join('');
+
+    if (midLbl) midLbl.textContent = currentPkgMid || '선택';
+
+    // 3. 소분류 칩 렌더링 (중분류 선택에 따라 한정)
+    const minors = (midMap && currentPkgMid && midMap[currentPkgMid]) ? midMap[currentPkgMid] : [];
+    if (minors.length > 0 && !minors.includes(currentPkgMinor)) {
+      currentPkgMinor = minors[0];
+    } else if (minors.length === 0) {
+      currentPkgMinor = '';
+    }
+
+    minorContainer.innerHTML = minors.map(min => {
+      const isActive = min === currentPkgMinor;
+      return `<button type="button" class="pkg-chip minor-chip ${isActive ? 'active minor-active' : ''}" data-minor="${min}">${min}</button>`;
+    }).join('');
+
+    // 4. 상단 요약 뱃지 갱신
+    if (summaryLbl) {
+      summaryLbl.textContent = `[${currentPkgMajor}] › [${currentPkgMid || '미지정'}] › [${currentPkgMinor || '전체'}]`;
+    }
+
+    // 5. 텍스트 입력창 및 hidden 필드 동기화
+    syncPackageInputs();
+  }
+
+  function syncPackageInputs() {
+    if (document.getElementById('txtAgentMajor')) document.getElementById('txtAgentMajor').value = currentPkgMajor;
+    if (document.getElementById('txtAgentMid')) document.getElementById('txtAgentMid').value = currentPkgMid;
+    if (document.getElementById('txtAgentMinor')) document.getElementById('txtAgentMinor').value = currentPkgMinor;
+
+    if (document.getElementById('txtKind')) document.getElementById('txtKind').value = currentPkgMajor;
+    if (document.getElementById('txtItem')) document.getElementById('txtItem').value = currentPkgMid;
+    if (document.getElementById('txtAgent')) document.getElementById('txtAgent').value = currentPkgMinor;
+
+    if (document.getElementById('txtMatrixArea')) document.getElementById('txtMatrixArea').value = currentPkgMajor;
+    if (document.getElementById('txtMatrixTarget')) document.getElementById('txtMatrixTarget').value = currentPkgMid;
+    if (document.getElementById('txtMatrixSpec')) document.getElementById('txtMatrixSpec').value = currentPkgMinor;
+  }
+
+  // 대분류 클릭 시 연쇄 한정 필터링
+  majorContainer.onclick = (e) => {
+    const btn = e.target.closest('.major-chip');
+    if (!btn) return;
+    const maj = btn.dataset.major;
+    if (maj) {
+      currentPkgMajor = maj;
+      const midMap = tree[maj] || {};
+      const mids = Object.keys(midMap);
+      currentPkgMid = mids[0] || '';
+      const minors = (currentPkgMid && midMap[currentPkgMid]) ? midMap[currentPkgMid] : [];
+      currentPkgMinor = minors[0] || '';
+      renderChips();
+      if (typeof saveDraft === 'function') saveDraft();
+    }
+  };
+
+  // 중분류 클릭 시 소분류 한정 필터링
+  midContainer.onclick = (e) => {
+    const btn = e.target.closest('.mid-chip');
+    if (!btn) return;
+    const mid = btn.dataset.mid;
+    if (mid) {
+      currentPkgMid = mid;
+      const midMap = tree[currentPkgMajor] || {};
+      const minors = midMap[mid] || [];
+      currentPkgMinor = minors[0] || '';
+      renderChips();
+      if (typeof saveDraft === 'function') saveDraft();
+    }
+  };
+
+  // 소분류 클릭
+  minorContainer.onclick = (e) => {
+    const btn = e.target.closest('.minor-chip');
+    if (!btn) return;
+    const min = btn.dataset.minor;
+    if (min) {
+      currentPkgMinor = min;
+      renderChips();
+      if (typeof saveDraft === 'function') saveDraft();
+    }
+  };
+
+  // 초기화 버튼
+  if (btnReset && !btnReset._boundReset) {
+    btnReset._boundReset = true;
+    btnReset.addEventListener('click', () => {
+      setPackageSelection('가시설', '비계', '시스템비계');
+    });
+  }
+
+  renderChips();
+}
+
+function setPackageSelection(maj, mid, min) {
+  const tree = (typeof store !== 'undefined' && store && store.taxonomy9x9 && store.taxonomy9x9.agentTree) || window._TAXONOMY_AGENT_TREE_FALLBACK;
+  if (!tree) return;
+
+  if (maj && tree[maj]) {
+    currentPkgMajor = maj;
+  }
+  const midMap = tree[currentPkgMajor] || {};
+  if (mid && midMap[mid]) {
+    currentPkgMid = mid;
+  } else if (!midMap[currentPkgMid]) {
+    currentPkgMid = Object.keys(midMap)[0] || '';
+  }
+
+  const minors = (currentPkgMid && midMap[currentPkgMid]) ? midMap[currentPkgMid] : [];
+  if (min && minors.includes(min)) {
+    currentPkgMinor = min;
+  } else if (minors.length > 0) {
+    currentPkgMinor = minors[0];
+  } else {
+    currentPkgMinor = min || '';
+  }
+
+  const majorContainer = document.getElementById('pkgMajorChips');
+  const midContainer = document.getElementById('pkgMidChips');
+  const minorContainer = document.getElementById('pkgMinorChips');
+  const summaryLbl = document.getElementById('lblSelectedPackage');
+  const majorLbl = document.getElementById('lblPkgMajorName');
+  const midLbl = document.getElementById('lblPkgMidName');
+
+  if (majorContainer && midContainer && minorContainer) {
+    const majors = Object.keys(tree);
+    majorContainer.innerHTML = majors.map(m => {
+      const isActive = m === currentPkgMajor;
+      return `<button type="button" class="pkg-chip major-chip ${isActive ? 'active major-active' : ''}" data-major="${m}">${m}</button>`;
+    }).join('');
+
+    if (majorLbl) majorLbl.textContent = currentPkgMajor;
+
+    const mids = Object.keys(midMap);
+    midContainer.innerHTML = mids.map(m => {
+      const isActive = m === currentPkgMid;
+      return `<button type="button" class="pkg-chip mid-chip ${isActive ? 'active mid-active' : ''}" data-mid="${m}">${m}</button>`;
+    }).join('');
+
+    if (midLbl) midLbl.textContent = currentPkgMid || '선택';
+
+    minorContainer.innerHTML = minors.map(m => {
+      const isActive = m === currentPkgMinor;
+      return `<button type="button" class="pkg-chip minor-chip ${isActive ? 'active minor-active' : ''}" data-minor="${m}">${m}</button>`;
+    }).join('');
+
+    if (summaryLbl) {
+      summaryLbl.textContent = `[${currentPkgMajor}] › [${currentPkgMid || '미지정'}] › [${currentPkgMinor || '전체'}]`;
+    }
+  }
+
+  // 텍스트 인풋 동기화
+  if (document.getElementById('txtAgentMajor')) document.getElementById('txtAgentMajor').value = currentPkgMajor;
+  if (document.getElementById('txtAgentMid')) document.getElementById('txtAgentMid').value = currentPkgMid;
+  if (document.getElementById('txtAgentMinor')) document.getElementById('txtAgentMinor').value = currentPkgMinor;
+
+  if (document.getElementById('txtKind')) document.getElementById('txtKind').value = currentPkgMajor;
+  if (document.getElementById('txtItem')) document.getElementById('txtItem').value = currentPkgMid;
+  if (document.getElementById('txtAgent')) document.getElementById('txtAgent').value = currentPkgMinor;
+
+  if (document.getElementById('txtMatrixArea')) document.getElementById('txtMatrixArea').value = currentPkgMajor;
+  if (document.getElementById('txtMatrixTarget')) document.getElementById('txtMatrixTarget').value = currentPkgMid;
+  if (document.getElementById('txtMatrixSpec')) document.getElementById('txtMatrixSpec').value = currentPkgMinor;
+}
+
 function populateDatalists() {
-  const tax = store.taxonomy;
-  const tax9 = store.taxonomy9x9;
-  const custom = store.custom.customValues || {};
+  const tax = store.taxonomy || {};
+  const tax9 = store.taxonomy9x9 || {};
+  const custom = (store.custom && store.custom.customValues) || {};
   const addOpts = (id, list, customKey) => {
     const el = document.getElementById(id);
     if (!el) return;
     const all = [...new Set([...(list || []), ...(custom[customKey] || [])])];
     
     // 자주 입력하는 항목이 상위에 뜨도록 빈도수 순 정렬!
-    const sorted = FieldFrequencyManager.sortByFrequency(customKey, all);
+    const sorted = (typeof FieldFrequencyManager !== 'undefined' && FieldFrequencyManager.sortByFrequency)
+      ? FieldFrequencyManager.sortByFrequency(customKey, all)
+      : all;
     el.innerHTML = sorted.map(v => `<option value="${v}">`).join('');
 
     // 입력창 바로 아래 자주 사용하는 추천 칩 바 렌더링
-    renderQuickChipsForField(customKey, sorted);
+    if (typeof renderQuickChipsForField === 'function') {
+      renderQuickChipsForField(customKey, sorted);
+    }
   };
 
   const allItems = (tax && tax.categories && tax.categories.list) ? tax.categories.list.flatMap(c => c.items) : [];
@@ -553,96 +846,495 @@ function populateDatalists() {
   addOpts('listAgents', [...new Set(allItems.flatMap(i => i.agents || []))], 'agent');
 
   // 🎯 기인물 대/중/소 3단계 계층 Datalist 연동
-  const agentTree = (tax9 && tax9.agentTree) || {
-    '가시설': {
-      '비계': ['시스템비계', '강관비계', '이동식틀비계', '달비계', '달대비계', '말비계', '각립비계'],
-      '흙막이': ['수직재', '수평재', '모서리부', '토사부', '어스앵커', '스트럿'],
-      '동바리': ['시스템동바리', '강관동바리', '잭서포트', '파이프서포트'],
-      '거푸집': ['갱폼', '알폼', '유로폼', '합판거푸집', '기타'],
-      '특수거푸집': ['ACS', 'RCS', '슬립폼', '테이블폼', '클라이밍폼'],
-      '데크': ['데크플레이트', '트러스데크', '이지데크'],
-      '철골': ['철골기둥', '철골보', '가새', '데크단부'],
-      'PC': ['PC기둥', 'PC보', 'PC슬래브', 'PC접합부'],
-      '안전시설': ['추락방지시설(안전난간)', '추락방지시설(수직방호망)', '추락방지시설(덮개)', '추락방지시설(안전대걸이시설)', '낙하방지시설(방호선반)', '낙하방지시설(낙하물방지망)']
-    },
-    '건설장비': {
-      '양중장비': ['타워크레인', '이동식크레인', '카고크레인', '호이스트'],
-      '탑승장비': ['고소작업차', '고소작업대', '곤돌라', '건설용리프트'],
-      '운반장비': ['지게차', '덤프트럭', '트레일러', '레미콘트럭'],
-      '차량계건설기계': ['펌프카'],
-      '생산장비': ['펌프카', '배처플랜트'],
-      '굴착장비': ['굴착기'],
-      '천공장비': ['천공기', '항타기', '항발기'],
-      '토공장비': ['로더', '불도저'],
-      '해상장비': ['해상크레인', '바지선', '예인선']
-    },
-    '작업공도구': {
-      '용접기': ['아크용접기', 'CO2용접기', 'TIG용접기', '인버터용접기'],
-      '화기': ['가스토치', '산소절단기', '가스용기(LPG/산소/아세틸렌)', '열풍기'],
-      '절단기구': ['고속절단기', '휴대용절단기', '원형톱(핸드쏘)', '세이버쏘(컷소)', '밴드쏘', '플라즈마절단기'],
-      '회전기구': ['핸드그라인더', '휴대용전기드릴', '해머드릴', '코아드릴', '교반기(믹서기)', '임팩트렌치/소켓'],
-      '압력기구': ['에어콤프레셔', '압력용기', '고압세척기', '에어리스(도장분출기)'],
-      '타정기구': ['에어타카/가스타카', '화약총(타정총)', '리벳건'],
-      '운반기구': ['손수레(일륜차)', '핸드파렛트(핸드자키)', '소형대차(구루마/롤테이너)'],
-      '양중기구': ['체인블록', '레버블록(풀링)', '슬링벨트(섬유벨트)', '와이어로프/샤클', '양중함/달기로프'],
-      '수공구': ['망치/함마', '몽키스패너/파이프렌치', '첼라/바이스플라이어', '쇠지레(빠루)/볼트클리퍼']
-    },
-    '작업발판': {
-      '틀비계': ['틀비계발판', '가새재', '아웃트리거'],
-      '말비계': ['말비계발판', '지주부재', '보조부재'],
-      '달비계': ['작업대', '달기로프', '구명줄'],
-      '달대비계': ['달대체인', '달대파이프', '작업발판'],
-      '각립비계': ['디딤판', '힌지고정쇠', '미끄럼방지캡'],
-      '이동식 사다리': ['사다리발판', '전도방지대', '상부걸림턱'],
-      '낮은 발판': ['족장판', '우마발판'],
-      '현장제작발판': ['목재발판', '강재발판'],
-      '지붕발판': ['지붕작업발판', '채광창덮개']
-    },
-    'PPE': {
-      '안전모': ['턱끈', '충격흡수라이너', '모체'],
-      '보안경/면': ['보안경', '차광보안경', '용접면'],
-      '귀덮개/마개': ['귀마개', '귀덮개'],
-      '호흡기보호구': ['방진마스크', '방독마스크', '송기마스크'],
-      '안전대': ['상체식하네스', '전체식하네스', '죔줄', '이중고리'],
-      '추락방지대': ['로립/롤링클램프', '안전블록(와이어/웨빙)'],
-      '안전장갑': ['방진장갑', '가죽용접장갑', '절연장갑'],
-      '안전장화': ['절연안전장화', '내유안전장화'],
-      '안전화': ['가죽안전화', '정전기안전화', '절연안전화']
-    },
-    '전기시설': {
-      '수전시설': ['고압수전반', '변압기', '특고압인입선'],
-      '분전반': ['가설분전함', '외함잠금장치', '내부차단기'],
-      '냉난방기': ['전기온풍기', '에어컨', '열풍기'],
-      '전선': ['이동전선(캡타이어)', '가설배선', '가공전선'],
-      '전등시설': ['투광등', '작업등', 'LED바', '비상유도등'],
-      '전열시설': ['열선(양생용)', '전열기구'],
-      '전기기구': ['충전기', '콘센트/플러그', '작업릴선'],
-      '접지시설': ['제3종접지', '기계외함접지', '접지극'],
-      '누전차단기': ['고감도누전차단기(30mA)', '인입누전차단기']
-    },
-    '소방시설': {
-      '비상대피시설': ['비상대피유도선', '피난사다리', '비상구'],
-      '화재수신반': ['가설화재수신기', '발신기'],
-      '화재감지시설': ['단독경보형감지기', '열감지기', '연기감지기'],
-      '스프링쿨러': ['임시소방배관', '간이스프링클러'],
-      '소화시설': ['분말소화기(ABC)', '소화수통', '마른모래(방화사)'],
-      '불티비산방지': ['방염포', '불티비산방지포', '비산방지차폐막'],
-      '충전시설': ['배터리보관함', '화재안전충전함'],
-      '가설건물': ['가설사무실', '근로자휴게실', '자재창고'],
-      '생활화재': ['난로', '취사도구', '담배꽁초수거함']
-    },
-    '작업장': {
-      '비상통로': ['주출입통로', '계단실통로', '비상대피로'],
-      '작업구획': ['출입통제라인', '안전펜스', '칼라콘'],
-      '통제구역': ['양중반경하부', '타설구역', '밀폐공간출입구'],
-      '가설통로': ['경사로', '비계다리', '안전통로'],
-      '자재야적장': ['철근야적장', '파이프적치대', '거푸집야적장'],
-      '위험물보관소': ['페인트저장소', '유류저장고', '가스용기보관소'],
-      '폐기물보관소': ['건축폐기물적재함', '분리수거장'],
-      '조도확보': ['지하작업장조명', '어두운통로조명'],
-      '청결상태': ['바닥잔재물정리', '못뽑기', '물고임제거']
-    }
-  };
+  window._TAXONOMY_AGENT_TREE_FALLBACK = {
+  "가시설": {
+    "비계": [
+      "시스템비계",
+      "강관비계",
+      "틀비계"
+    ],
+    "흙막이": [
+      "수직재",
+      "수평재",
+      "코너부",
+      "경사재",
+      "토사부",
+      "상부"
+    ],
+    "거푸집/동바리": [
+      "시스템동바리",
+      "파이프서포트",
+      "잭서포트"
+    ],
+    "특수거푸집": [
+      "갱폼",
+      "ACS",
+      "RCS",
+      "SLIP"
+    ],
+    "철골": [
+      "기둥",
+      "큰보",
+      "작은보",
+      "경사보",
+      "계단"
+    ],
+    "데크플레이트": [
+      "보접합부",
+      "코너부",
+      "데크"
+    ],
+    "PC": [
+      "기둥(C)",
+      "큰보(G)",
+      "작은보(B)",
+      "슬래브"
+    ],
+    "안전시설": [
+      "추락방지시설",
+      "낙하방지시설"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "건설장비": {
+    "굴착장비": [
+      "굴착기",
+      "불도저"
+    ],
+    "천공장비": [
+      "어스드릴",
+      "오거",
+      "항타/항발기"
+    ],
+    "하역운반장비": [
+      "지게차",
+      "페이로더",
+      "덤프트럭",
+      "화물자동차",
+      "트레일러",
+      "컨베이어"
+    ],
+    "양중장비": [
+      "타워크레인",
+      "타이어식크레인",
+      "무한궤도식크레인",
+      "천장주행크레인",
+      "겐트리크레인",
+      "호이스트",
+      "카고크레인"
+    ],
+    "탑승장비": [
+      "건설용 리프트",
+      "고소작업대",
+      "고소작업차",
+      "곤돌라"
+    ],
+    "타설장비": [
+      "펌프카",
+      "레미콘믹스트럭"
+    ],
+    "토공장비": [
+      "토공장비",
+      "포장장비",
+      "아스팔트피니셔"
+    ],
+    "해상장비": [
+      "예인선",
+      "통선",
+      "바지선",
+      "항타선",
+      "크레인선",
+      "플로팅도크",
+      "준설선"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "작업방법": {
+    "굴착작업": [
+      "터파기",
+      "되메우기",
+      "사면굴착",
+      "기타"
+    ],
+    "하역운반작업": [
+      "자재하역",
+      "자재상차",
+      "소운반",
+      "기타"
+    ],
+    "양중작업": [
+      "타워크레인양중",
+      "이동식크레인양중",
+      "줄걸이작업",
+      "신호작업",
+      "기타"
+    ],
+    "중량물취급작업": [
+      "인력운반",
+      "중량물거치",
+      "기타"
+    ],
+    "설치해체작업": [
+      "비계설치해체",
+      "거푸집설치해체",
+      "동바리설치해체",
+      "철골설치해체",
+      "안전시설설치해체",
+      "기타"
+    ],
+    "가공조립작업": [
+      "철근가공조립",
+      "배관가공",
+      "목공작업",
+      "기타"
+    ],
+    "운전조정작업": [
+      "건설기계운전",
+      "장비점검",
+      "신호유도",
+      "기타"
+    ],
+    "고소작업": [
+      "2m이상단부작업",
+      "개구부주변작업",
+      "지붕작업",
+      "철골상부작업",
+      "기타"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "작업공도구": {
+    "화기": [
+      "전기용접기",
+      "가스용접기",
+      "산소절단기",
+      "토치",
+      "용접건"
+    ],
+    "절단기구": [
+      "고속절단기",
+      "각도절단기",
+      "원형톱",
+      "직소",
+      "전동체인톱",
+      "자동목재톱",
+      "밴드톱",
+      "철근절단기",
+      "전기컷쏘",
+      "파이프머신",
+      "콘크리트 절단기",
+      "보도블럭 절단기"
+    ],
+    "회전기구": [
+      "핸드드릴",
+      "핸드그라인더",
+      "전동드릴/드라이버",
+      "철근절곡기",
+      "믹서드릴",
+      "원형사포",
+      "탁상그라인더",
+      "탁상드릴",
+      "코어드릴",
+      "마그네틱드릴",
+      "콘크리트 샌딩기",
+      "파이프홀가공기"
+    ],
+    "압력기구": [
+      "압력용기",
+      "해머드릴",
+      "고속살수기",
+      "공기압축기"
+    ],
+    "타정기구": [
+      "타카",
+      "인슬레이션 타카",
+      "타징자동총"
+    ],
+    "양중기구": [
+      "와이어로프 슬링",
+      "체인슬링",
+      "벨트슬링",
+      "라운드슬링",
+      "샤클",
+      "클램프",
+      "턴버클",
+      "마스터링",
+      "리프팅 클러치",
+      "양중함",
+      "양중디바이스",
+      "체인블럭",
+      "레버블럭"
+    ],
+    "운반기구": [
+      "손동력카트",
+      "전동샤키",
+      "핸드자키"
+    ],
+    "다짐기구": [
+      "콘크리트 다짐기",
+      "흙다짐기",
+      "다짐롤러"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "작업발판": {
+    "이동식틀비계": [
+      "상부안전난간",
+      "전도방지대(아웃트리거)",
+      "바퀴스토퍼",
+      "작업발판",
+      "승강설비"
+    ],
+    "사다리": [
+      "A형사다리",
+      "일자사다리",
+      "신축형사다리",
+      "발판사다리"
+    ],
+    "말비계": [
+      "1단말비계",
+      "2단말비계",
+      "도배우마",
+      "목공우마"
+    ],
+    "각립비계": [
+      "디딤판",
+      "힌지고정쇠",
+      "미끄럼방지캡",
+      "수평연결재"
+    ],
+    "달비계": [
+      "작업대",
+      "달기로프",
+      "구명줄",
+      "안전대체결점"
+    ],
+    "달대비계": [
+      "달대체인",
+      "행거",
+      "작업발판",
+      "발판고정철물"
+    ],
+    "낮은발판": [
+      "이동식발판",
+      "우마발판",
+      "단부받침대"
+    ],
+    "현장제작발판": [
+      "목재발판",
+      "합판발판",
+      "강재발판"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "작업장소(환경)": {
+    "습윤장소": [
+      "바닥물고임",
+      "지하침수구간",
+      "외부노출습윤지"
+    ],
+    "밀폐공간": [
+      "정화조/맨홀",
+      "배관피트/PS실",
+      "물탱크/저수조",
+      "지하실구석"
+    ],
+    "협소공간": [
+      "승강기피트",
+      "배관샤프트",
+      "옹벽틈새"
+    ],
+    "조명채광부족": [
+      "지하암실",
+      "야간작업구간",
+      "조명미설치구간"
+    ],
+    "소음진동": [
+      "압축기/발전기주변",
+      "파쇄작업구간",
+      "착암구간"
+    ],
+    "개구부/단부주변": [
+      "슬래브단부",
+      "바닥개구부주변",
+      "계단참개구부",
+      "엘리베이터개구부"
+    ],
+    "중량물 하부/주변": [
+      "크레인양중하부",
+      "자재적재하부",
+      "차량동선주변"
+    ],
+    "통로/계단": [
+      "가설통로",
+      "계단실",
+      "경사로",
+      "사다리통로"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "전기시설": {
+    "수전시설": [
+      "특고압변압기",
+      "수전반",
+      "인입전주"
+    ],
+    "전선이송설비": [
+      "가공전선지지대",
+      "케이블트레이",
+      "전선보호관"
+    ],
+    "분전반": [
+      "가설분전함",
+      "누전차단기(ELCB)",
+      "외함접지",
+      "도어잠금장치"
+    ],
+    "전선": [
+      "이동전선(캡타이어)",
+      "가설배선",
+      "가공전선",
+      "피복손상전선"
+    ],
+    "접지시설": [
+      "제3종접지",
+      "기계외함접지",
+      "접지선연결",
+      "접지극"
+    ],
+    "조명시설": [
+      "투광등",
+      "작업등",
+      "핸드램프",
+      "비상유도등"
+    ],
+    "냉난방기": [
+      "전기온풍기",
+      "열풍기",
+      "에어컨",
+      "제습기"
+    ],
+    "충전시설": [
+      "배터리보관함",
+      "화재안전충전함",
+      "고소작업대충전기"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "소방시설": {
+    "비상통로": [
+      "비상대피로",
+      "유도등/표지판",
+      "피난계단"
+    ],
+    "화재수신반": [
+      "가설화재수신기",
+      "방재실수신반",
+      "발신기"
+    ],
+    "화재감지시설": [
+      "단독경보형감지기",
+      "열감지기",
+      "연기감지기"
+    ],
+    "스프링쿨러": [
+      "소방배관",
+      "헤드방호",
+      "간이스프링클러"
+    ],
+    "임시소방시설": [
+      "분말소화기(ABC)",
+      "간이소화장치",
+      "비상경보장치",
+      "간이피난유도선"
+    ],
+    "불티비산방지": [
+      "불티비산방지포(방포)",
+      "용접차단막",
+      "모래통/수조"
+    ],
+    "가설건물": [
+      "컨테이너사무실",
+      "근로자휴게실",
+      "자재창고"
+    ],
+    "생활화재": [
+      "흡연장소",
+      "난로/전열기주변",
+      "취사설비"
+    ],
+    "기타": [
+      "기타"
+    ]
+  },
+  "개인보호구": {
+    "안전모": [
+      "턱끈체결",
+      "충격흡수재",
+      "안전모모체"
+    ],
+    "보안경": [
+      "보안경착용",
+      "차광보안경",
+      "용접면"
+    ],
+    "귀마개/덮개": [
+      "귀마개",
+      "귀덮개",
+      "방음보호구"
+    ],
+    "호흡기 마스크": [
+      "방진마스크(1급/특급)",
+      "방독마스크",
+      "송기마스크"
+    ],
+    "안전대": [
+      "상체식하네스",
+      "전체식하네스",
+      "죔줄/카라비너",
+      "충격흡수장치(쇽업소버)",
+      "이중고리"
+    ],
+    "안전장갑": [
+      "코팅장갑",
+      "절연장갑",
+      "가죽용접장갑",
+      "내화학장갑"
+    ],
+    "안전화": [
+      "가죽안전화",
+      "선심/답판보호",
+      "단화/중단화",
+      "정전기안전화"
+    ],
+    "절연장화": [
+      "절연화",
+      "방수절연장화",
+      "정전화"
+    ],
+    "기타": [
+      "기타"
+    ]
+  }
+};
+  const agentTree = (tax9 && tax9.agentTree) || window._TAXONOMY_AGENT_TREE_FALLBACK;
+
+  // 3단계 연쇄 한정 패키지 선택기 초기화
+  initPackage9x9Selector(agentTree);
 
   const agentMajorList = Object.keys(agentTree);
   addOpts('listAgentMajor', agentMajorList, 'agentMajor');
@@ -688,6 +1380,7 @@ function populateDatalists() {
       if ($('#txtKind')) $('#txtKind').value = majVal;
       updateMidOpts(majVal);
       updateMinorOpts(majVal, txtMid ? txtMid.value.trim() : '');
+      setPackageSelection(majVal, txtMid ? txtMid.value.trim() : '', txtMin ? txtMin.value.trim() : '');
     });
 
     if (txtMid) {
@@ -893,6 +1586,35 @@ function bindEvents() {
     });
   });
 
+  
+  // ── 현장명 선택 시 이전 입력값(공정률·상품유형) 자동 적용 ──
+  $('#txtSite')?.addEventListener('input', (e) => {
+    handleSiteSelectionChange(e.target.value);
+    saveDraft();
+  });
+  $('#txtSite')?.addEventListener('change', (e) => {
+    handleSiteSelectionChange(e.target.value);
+    saveDraft();
+  });
+
+  // ⚙️ 공정률/상품 수정 접이식 토글 버튼
+  $('#btnToggleSiteMeta')?.addEventListener('click', () => {
+    const box = $('#boxSiteMeta');
+    if (box) {
+      box.style.display = (box.style.display === 'none' || !box.style.display) ? 'grid' : 'none';
+    }
+  });
+
+  // 공정률 및 상품유형 수정 시 캐시 즉시 업데이트
+  $('#txtProgressRate')?.addEventListener('input', () => {
+    saveSiteMetaCache($('#txtSite')?.value, $('#txtProgressRate')?.value, $('#selProductType')?.value);
+    saveDraft();
+  });
+  $('#selProductType')?.addEventListener('change', () => {
+    saveSiteMetaCache($('#txtSite')?.value, $('#txtProgressRate')?.value, $('#selProductType')?.value);
+    saveDraft();
+  });
+
   // ── 수기 입력 vs PPT/장표 불러오기 모드 전환 ──
   $('#btnModeManual')?.addEventListener('click', () => {
     $('#btnModeManual')?.classList.add('selected');
@@ -1044,6 +1766,7 @@ function bindEvents() {
     const maj = smartResult.기인물대 || smartResult.점검영역9x9 || smartResult.종류 || '가시설';
     const mid = smartResult.기인물중 || smartResult.점검대상9x9 || smartResult.항목 || '비계';
     const min = smartResult.기인물소 || (smartResult.기인물 && smartResult.기인물[0]) || smartResult.가시설세부사양 || '';
+    setPackageSelection(maj, mid, min);
     if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
     if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
     if ($('#txtAgentMinor')) $('#txtAgentMinor').value = min;
@@ -1221,6 +1944,7 @@ function bindEvents() {
 
     try {
       await store.saveRecord(record, media, msg => { btn.textContent = msg; });
+      saveSiteMetaCache(site, progressVal, productTypeVal);
       
       // 사용자 직접입력 단어들을 customValues에 누적 학습
       await store.addCustomValues({
@@ -3230,13 +3954,16 @@ function loadDraft() {
   }
   try {
     const d = JSON.parse(raw);
-    if (d.site) $('#txtSite').value = d.site;
+    if (d.site) { $('#txtSite').value = d.site; handleSiteSelectionChange(d.site); }
     if (d.content) {
       $('#txtContent').value = d.content;
       setTimeout(() => runSmartClassification(false), 120);
     }
     if (d.location) $('#txtLocation').value = d.location;
     if (d.workName) $('#txtWorkName').value = d.workName;
+    if (d.agentMajor || d.agentMid || d.agentMinor || d.kind || d.item || d.agent) {
+      setPackageSelection(d.agentMajor || d.kind || '가시설', d.agentMid || d.item || '비계', d.agentMinor || d.agent || '');
+    }
     if (d.agentMajor && $('#txtAgentMajor')) $('#txtAgentMajor').value = d.agentMajor;
     if (d.agentMid && $('#txtAgentMid')) $('#txtAgentMid').value = d.agentMid;
     if (d.agentMinor && $('#txtAgentMinor')) $('#txtAgentMinor').value = d.agentMinor;

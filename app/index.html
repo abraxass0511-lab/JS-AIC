@@ -134,68 +134,66 @@
 
         <!-- ════════════ 모드 2: ✍️ 직접 수기 입력 모드 ════════════ -->
         <div id="sectionManualMode">
-          <!-- 1. 현장 선택 및 상품/공정률 컨설팅 메타정보 -->
-          <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <label class="form-label" style="margin-bottom: 0;">현장명<span class="required">*</span></label>
+          <!-- ── 0-A. 현장 선택 및 공정률/상품 자동적용 헤더 ── -->
+          <div style="background: #f1f5f9; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="form-label" style="font-weight: 700; color: #1e293b; margin-bottom: 0; font-size: 0.92rem; display: flex; align-items: center; gap: 5px;">
+                <span>🏢</span> <span>현장명 선택</span><span class="required">*</span>
+              </label>
               <div style="display: flex; gap: 6px;">
-                <button type="button" id="btnManageSites" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.75rem; border-color: var(--primary); color: var(--primary); font-weight: 600;">
+                <button type="button" id="btnToggleSiteMeta" class="btn btn-outline" style="padding: 2px 8px; font-size: 0.74rem; border-color: #64748b; color: #475569; font-weight: 600;">
+                  ⚙️ 공정률/상품 수정
+                </button>
+                <button type="button" id="btnManageSites" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.74rem; border-color: var(--primary); color: var(--primary); font-weight: 600;">
                   ⚙️ 현장 관리
                 </button>
-                <button type="button" id="btnManagePins" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.75rem; border-color: #8b5cf6; color: #7c3aed; font-weight: 600;">
+                <button type="button" id="btnManagePins" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.74rem; border-color: #8b5cf6; color: #7c3aed; font-weight: 600;">
                   👥 핀번호 관리
                 </button>
               </div>
             </div>
-            <input type="text" id="txtSite" class="form-control" list="listSites" placeholder="현장명을 직접 입력하거나 목록에서 선택하세요">
+            <input type="text" id="txtSite" class="form-control" list="listSites" placeholder="현장명을 선택하거나 입력하세요" style="font-size: 0.95rem; font-weight: 600; padding: 9px 12px;">
             <datalist id="listSites"></datalist>
+
+            <!-- 현장 선택 시 직전 공정률/상품유형 자동적용 안내 뱃지 -->
+            <div id="siteAppliedBadge" style="display: none; font-size: 0.76rem; color: #15803d; background: #dcfce7; border: 1px solid #86efac; border-radius: 6px; padding: 4px 8px; margin-top: 6px; font-weight: 600;">
+              💡 이전 입력값 자동 적용됨 (공정률: <span id="lblPrevProgress">35</span>%, 상품: <span id="lblPrevProduct">공동주택</span>) — 필요 시 우측 상단에서 수정 가능
+            </div>
+
+            <!-- 현장 컨설팅 메타정보: 상품 유형 & 공정률 (수정 토글 가능) -->
+            <div id="boxSiteMeta" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #ffffff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; margin-top: 8px;">
+              <div>
+                <label class="form-label" style="font-size: 0.78rem; margin-bottom: 2px;">상품(건물) 유형</label>
+                <select id="selProductType" class="form-control" style="font-size: 0.82rem;">
+                  <option value="공동주택">공동주택 (아파트/주상복합)</option>
+                  <option value="물류센터/공장">물류센터 / 공장 (철골)</option>
+                  <option value="오피스/지식산업센터">오피스 / 지식산업센터</option>
+                  <option value="플랜트/산업설비">플랜트 / 산업설비</option>
+                  <option value="토목/인프라">토목 / 인프라 (도로/교량)</option>
+                  <option value="기타">기타 건축 시설물</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.78rem; margin-bottom: 2px;">공정률 (%)</label>
+                <input type="number" id="txtProgressRate" class="form-control" placeholder="예: 35" min="0" max="100" value="35" style="font-size: 0.82rem;">
+              </div>
+            </div>
           </div>
 
-          <!-- 현장 컨설팅 메타정보: 상품 유형 & 공정률 -->
-          <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
-            <div>
-              <label class="form-label" style="font-size: 0.8rem; margin-bottom: 2px;">상품(건물) 유형</label>
-              <select id="selProductType" class="form-control" style="font-size: 0.82rem;">
-                <option value="공동주택">공동주택 (아파트/주상복합)</option>
-                <option value="물류센터/공장">물류센터 / 공장 (철골)</option>
-                <option value="오피스/지식산업센터">오피스 / 지식산업센터</option>
-                <option value="플랜트/산업설비">플랜트 / 산업설비</option>
-                <option value="토목/인프라">토목 / 인프라 (도로/교량)</option>
-                <option value="기타">기타 건축 시설물</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label" style="font-size: 0.8rem; margin-bottom: 2px;">공정률 (%)</label>
-              <input type="number" id="txtProgressRate" class="form-control" placeholder="예: 35" min="0" max="100" value="35" style="font-size: 0.82rem;">
-            </div>
-          </div>
-
-          <!-- 부적합 등급 (중부적합 vs 경부적합) 선택 -->
+          <!-- ── 0-B. 맨 처음: 📸 사진 등록 & 📝 부적합 내용 입력 ── -->
+          <!-- 1) 사진 등록 -->
           <div class="form-group">
-            <label class="form-label">부적합 등급<span class="required">*</span></label>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-              <button type="button" id="btnSeverityMajor" class="btn btn-outline severity-btn active" style="padding: 10px; font-weight: 700; border-color: #ef4444; color: #dc2626; background: #fef2f2;">
-                🚨 중부적합 (즉시 작업중지/중대위험)
-              </button>
-              <button type="button" id="btnSeverityMinor" class="btn btn-outline severity-btn" style="padding: 10px; font-weight: 700; border-color: #f59e0b; color: #d97706; background: white;">
-                ⚠️ 경부적합 (시정조치/개선권고)
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. 사진 등록 (갤러리/기기 사진 선택) -->
-          <div class="form-group">
-            <label class="form-label">부적합 사진 (갤러리 선택)<span class="required">*</span></label>
+            <label class="form-label">부적합 사진 (갤러리 / 촬영)<span class="required">*</span></label>
             <label for="filePhotos" id="photoDropArea" class="photo-uploader" style="cursor: pointer; display: block;">
               <span style="font-size: 1.8rem; display: block; margin-bottom: 4px;">📷</span>
               <span style="font-weight: 600; font-size: 0.95rem; color: var(--primary);">사진 불러오기</span>
-              <span style="display: block; font-size: 0.8rem; color: var(--gray-400); margin-top: 4px;">대표 1장 + 추가 2장 (자동 압축 및 촬영일자 인식)</span>
+              <span style="display: block; font-size: 0.8rem; color: var(--gray-400); margin-top: 4px;">대표 1장 + 추가 사진 (촬영일자 자동 인식)</span>
               <input type="file" id="filePhotos" accept="image/*" multiple style="display: none;">
             </label>
             <div id="photoPreviews" class="photo-preview-grid"></div>
           </div>
 
-          <!-- 3. 내용 입력 (AI 없는 무료 스마트 자동분류 연동 & 무료 음성입력) -->
+          <!-- 2) 부적합 내용 입력 & AI 분석 바 -->
           <div class="form-group">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <label class="form-label" style="margin-bottom: 0;">부적합 내용<span class="required">*</span></label>
@@ -208,7 +206,7 @@
               🔴 음성을 듣고 있습니다... 말씀이 끝나면 텍스트로 자동 입력됩니다.
             </div>
 
-            <!-- 🚩 사진 상단 붉은색 요약 문구 (Qwen AI 자동 생성 / 직접 편집) -->
+            <!-- 사진 상단 붉은색 요약 문구 (Qwen AI 자동 생성 / 직접 편집) -->
             <div style="margin-top: 8px; padding: 8px 12px; background: #fff5f5; border: 1.5px solid #fecaca; border-radius: 8px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <label class="form-label" style="font-size: 0.82rem; font-weight: 700; color: #991b1b; margin-bottom: 0;">
@@ -219,7 +217,7 @@
               <input type="text" id="txtPhotoBanner" class="form-control" style="border-color: #f87171; font-weight: 700; color: #991b1b; background: #ffffff;" placeholder="예) 양중작업 시 화물의 수평양중 미 실시 (Qwen AI 자동 도출)">
             </div>
 
-            <!-- 🤖 AI 자동 분석 도구 바 (기존 온디바이스 스마트 AI + 로컬 Qwen AI) -->
+            <!-- AI 자동 분석 도구 바 -->
             <div style="margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
                 <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b; display: inline-flex; align-items: center; gap: 5px;">
@@ -231,19 +229,16 @@
               </div>
               
               <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                <!-- 1. 기존 내장 온디바이스 스마트 AI (0초 즉시 자동분류) -->
-                <button type="button" id="btnRunSmartClassifier" class="btn" style="background: #ffffff; color: #1d4ed8; border: 1.5px solid #60a5fa; padding: 7px 12px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="사전 및 강화학습 기반 온디바이스 0초 즉시 추천">
+                <button type="button" id="btnRunSmartClassifier" class="btn" style="background: #ffffff; color: #1d4ed8; border: 1.5px solid #60a5fa; padding: 7px 12px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                   <span>💡</span> <span>기존 스마트 AI (0초 즉시 분류)</span>
                 </button>
-
-                <!-- 2. 신규 로컬 Qwen AI (산안법·등급·원인 심층 추론) -->
-                <button type="button" id="btnLmStudioAnalyze" class="btn" style="background: linear-gradient(135deg, #1e40af, #2563eb); color: white; padding: 7px 13px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 4px rgba(37,99,235,0.25); cursor: pointer;" title="LM Studio 로컬 Qwen3.5 모델 연동 정밀 법적 분석">
+                <button type="button" id="btnLmStudioAnalyze" class="btn" style="background: linear-gradient(135deg, #1e40af, #2563eb); color: white; padding: 7px 13px; font-size: 0.82rem; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; border: none; box-shadow: 0 2px 4px rgba(37,99,235,0.25); cursor: pointer;">
                   <span id="lmStudioBtnIcon">✨</span> <span id="lmStudioBtnText">로컬 Qwen AI 정밀 분석 (법령·등급)</span>
                 </button>
               </div>
             </div>
 
-            <!-- 기존 내장 스마트 AI 자동분류 추천 박스 -->
+            <!-- 스마트 AI 결과 박스 -->
             <div id="smartClassifyBox" class="smart-classify-box" style="margin-top: 10px;">
               <div class="smart-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                 <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; font-weight: 700; color: #1d4ed8;">
@@ -276,68 +271,143 @@
             </div>
           </div>
 
-          <!-- ── 1. [부적합 사항] 기본정보 (엑셀 2~7열) ── -->
-          <!-- 협력사 / 점검차수 -->
-          <div class="form-group" style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px;">
-            <div>
-              <label class="form-label">협력사명</label>
-              <input type="text" id="txtSubcontractor" class="form-control" placeholder="예: OO건설(주), 가설이엔지">
+          <!-- ══════════════════════════════════════════════
+               1순 : 🚨 부적합 기본정보
+               ══════════════════════════════════════════════ -->
+          <div class="card" style="padding: 14px; background: #fffdf5; border: 1.5px solid #fed7aa; margin-bottom: 16px;">
+            <div style="font-weight: 800; font-size: 0.95rem; color: #c2410c; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+              <span>1순</span> <span>🚨 부적합 (등급 · 유형 · 장소 · 법령)</span>
             </div>
-            <div>
-              <label class="form-label">점검차수</label>
-              <input type="text" id="txtInspectRound" class="form-control" placeholder="1차" value="1차">
-            </div>
-          </div>
 
-          <!-- 장소/위치 -->
-          <div class="form-group">
-            <label class="form-label">장소/위치<span class="required">*</span></label>
-            <input type="text" id="txtLocation" class="form-control" list="listLocations" placeholder="선택 또는 직접입력">
-            <datalist id="listLocations"></datalist>
-          </div>
+            <!-- 부적합 등급 (중부적합 vs 경부적합) -->
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">부적합 등급<span class="required">*</span></label>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <button type="button" id="btnSeverityMajor" class="btn btn-outline severity-btn active" style="padding: 10px; font-weight: 700; border-color: #ef4444; color: #dc2626; background: #fef2f2;">
+                  🚨 중부적합 (즉시 작업중지/중대위험)
+                </button>
+                <button type="button" id="btnSeverityMinor" class="btn btn-outline severity-btn" style="padding: 10px; font-weight: 700; border-color: #f59e0b; color: #d97706; background: white;">
+                  ⚠️ 경부적합 (시정조치/개선권고)
+                </button>
+              </div>
+            </div>
 
-          <!-- ── 2. [공종·작업방법] (엑셀 8~9열) ── -->
-          <div class="form-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div>
-              <label class="form-label">공종<span class="required">*</span></label>
-              <input type="text" id="txtWorkGroup" class="form-control" list="listWorkGroups" placeholder="가설공사, 철골공사 등">
-              <datalist id="listWorkGroups"></datalist>
-            </div>
-            <div>
-              <label class="form-label">작업방법 (9×9 핵심작업)<span class="required">*</span></label>
-              <input type="text" id="txtWorkName" class="form-control" list="listWorkNames" placeholder="고소작업, 양중작업 등">
-              <datalist id="listWorkNames"></datalist>
-            </div>
-          </div>
-
-          <!-- ── 3. [부적합 분류] 유형 & 기인물 대/중/소 (엑셀 10~13열) ── -->
-          <div class="card" style="padding: 14px; background: #fffdf8; border: 1.5px solid #fed7aa; margin-bottom: 16px;">
-            <div style="font-weight: 700; font-size: 0.9rem; color: #9a3412; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
-              <span>📋</span> <span>부적합 분류 (유형 & 기인물 대·중·소)</span>
-            </div>
-            
-            <div style="margin-bottom: 10px;">
-              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #7c2d12;">유형 (22대 재해발생 형태)</label>
+            <!-- 재해발생 유형 (22대 재해형태) -->
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">재해발생 유형<span class="required">*</span></label>
               <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="추락, 낙하, 비래, 붕괴, 도괴, 전복, 전도, 협착 등">
               <datalist id="listTypes"></datalist>
             </div>
 
-            <!-- 기인물 3단계 (대 > 중 > 소) -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+            <!-- 장소/위치 -->
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">장소/위치<span class="required">*</span></label>
+              <input type="text" id="txtLocation" class="form-control" list="listLocations" placeholder="선택 또는 직접입력 (예: 104동 14층 슬래브 단부)">
+              <datalist id="listLocations"></datalist>
+            </div>
+
+            <!-- 협력사명 & 점검차수 -->
+            <div class="form-group" style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-bottom: 10px;">
               <div>
-                <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(대분류)</label>
-                <input type="text" id="txtAgentMajor" class="form-control" list="listAgentMajor" placeholder="가시설, 작업발판 등">
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">협력사명</label>
+                <input type="text" id="txtSubcontractor" class="form-control" placeholder="예: OO건설(주), 가설이엔지">
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">점검차수</label>
+                <input type="text" id="txtInspectRound" class="form-control" placeholder="1차" value="1차">
+              </div>
+            </div>
+
+            <!-- 산업안전보건법 조문 -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">산업안전보건법 조문</label>
+              <input type="text" id="txtLaw" class="form-control" placeholder="예: 산안규칙 제56조(작업발판의 구조)">
+            </div>
+          </div>
+
+          <!-- ══════════════════════════════════════════════
+               2순 : 🎯 9x9단 패키지 입력 (연쇄 한정 선택)
+               ══════════════════════════════════════════════ -->
+          <div class="card" style="padding: 14px; background: #f0fdf4; border: 1.5px solid #86efac; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+              <div style="font-weight: 800; font-size: 0.95rem; color: #166534; display: flex; align-items: center; gap: 6px;">
+                <span>2순</span> <span>🎯 9×9단 패키지 분류 (대분류 → 중분류 → 소분류 연쇄 한정)</span>
+              </div>
+              <span style="font-size: 0.72rem; color: #15803d; font-weight: 700; background: #dcfce7; padding: 2px 8px; border-radius: 4px;">
+                ⚡ 원클릭 패키지 선택
+              </span>
+            </div>
+
+            <!-- 현재 선택된 패키지 실시간 요약 뱃지 -->
+            <div id="boxPackageSummary" style="background: #ffffff; border: 1.5px solid #22c55e; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;">
+              <div style="font-size: 0.85rem; font-weight: 700; color: #15803d;">
+                선택된 패키지: <span id="lblSelectedPackage" style="color: #047857; text-decoration: underline;">[가시설] › [비계] › [시스템비계]</span>
+              </div>
+              <button type="button" id="btnResetPackage" style="background: none; border: none; font-size: 0.75rem; color: #64748b; cursor: pointer; text-decoration: underline;">
+                초기화
+              </button>
+            </div>
+
+            <!-- 1단계: 9대 대분류 선택 칩 -->
+            <div style="margin-bottom: 10px;">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #166534; margin-bottom: 5px;">
+                ① 대분류 선택 (9개 영역)
+              </div>
+              <div id="pkgMajorChips" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <!-- 동적 렌더링 -->
+              </div>
+            </div>
+
+            <!-- 2단계: 중분류 한정 선택 칩 (대분류 선택 시 해당 항목만 노출) -->
+            <div style="margin-bottom: 10px;">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #166534; margin-bottom: 5px;">
+                ② 중분류 선택 (<span id="lblPkgMajorName">가시설</span> 항목으로 한정)
+              </div>
+              <div id="pkgMidChips" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <!-- 동적 렌더링 -->
+              </div>
+            </div>
+
+            <!-- 3단계: 소분류/세부사양 한정 선택 칩 (중분류 선택 시 해당 패키지만 노출) -->
+            <div style="margin-bottom: 12px;">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #166534; margin-bottom: 5px;">
+                ③ 소분류 / 세부사양 선택 (<span id="lblPkgMidName">비계</span> 세부패키지로 한정)
+              </div>
+              <div id="pkgMinorChips" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <!-- 동적 렌더링 -->
+              </div>
+            </div>
+
+            <!-- 직접 입력/수정 지원 필드 (상호 연동) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; background: #ffffff; padding: 8px; border-radius: 6px; border: 1px dashed #cbd5e1;">
+              <div>
+                <label class="form-label" style="font-size: 0.74rem; font-weight: 700; color: #334155; margin-bottom: 2px;">대분류(직접수정)</label>
+                <input type="text" id="txtAgentMajor" class="form-control" list="listAgentMajor" style="font-size: 0.8rem; padding: 5px 8px;">
                 <datalist id="listAgentMajor"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(중분류)</label>
-                <input type="text" id="txtAgentMid" class="form-control" list="listAgentMid" placeholder="비계, 거푸집, 사다리 등">
+                <label class="form-label" style="font-size: 0.74rem; font-weight: 700; color: #334155; margin-bottom: 2px;">중분류(직접수정)</label>
+                <input type="text" id="txtAgentMid" class="form-control" list="listAgentMid" style="font-size: 0.8rem; padding: 5px 8px;">
                 <datalist id="listAgentMid"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">기인물(소분류)</label>
-                <input type="text" id="txtAgentMinor" class="form-control" list="listAgentMinor" placeholder="시스템비계, 강관비계 등">
+                <label class="form-label" style="font-size: 0.74rem; font-weight: 700; color: #334155; margin-bottom: 2px;">소분류(직접수정)</label>
+                <input type="text" id="txtAgentMinor" class="form-control" list="listAgentMinor" style="font-size: 0.8rem; padding: 5px 8px;">
                 <datalist id="listAgentMinor"></datalist>
+              </div>
+            </div>
+
+            <!-- 공종 및 작업방법 (9x9 핵심작업) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; font-weight: 700;">공종<span class="required">*</span></label>
+                <input type="text" id="txtWorkGroup" class="form-control" list="listWorkGroups" placeholder="가설공사, 철골공사 등">
+                <datalist id="listWorkGroups"></datalist>
+              </div>
+              <div>
+                <label class="form-label" style="font-size: 0.8rem; font-weight: 700;">작업방법 (9×9 작업)<span class="required">*</span></label>
+                <input type="text" id="txtWorkName" class="form-control" list="listWorkNames" placeholder="고소작업, 양중작업 등">
+                <datalist id="listWorkNames"></datalist>
               </div>
             </div>
 
@@ -357,91 +427,92 @@
             <datalist id="listStakeholders" style="display:none;"></datalist>
           </div>
 
-          <!-- ── 4. [관련근거] 산업안전보건법 (엑셀 14열) ── -->
-          <div class="form-group">
-            <label class="form-label">산업안전보건법 조문</label>
-            <input type="text" id="txtLaw" class="form-control" placeholder="예: 산안규칙 제56조(작업발판의 구조)">
-          </div>
+          <!-- ══════════════════════════════════════════════
+               3순 : ⚠️ 위험상황 (불안전 상태 · 행동)
+               ══════════════════════════════════════════════ -->
+          <div class="card" style="padding: 14px; background: #eff6ff; border: 1.5px solid #93c5fd; margin-bottom: 16px;">
+            <div style="font-weight: 800; font-size: 0.95rem; color: #1e40af; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+              <span>3순</span> <span>⚠️ 위험상황 (불안전 상태 · 행동)</span>
+            </div>
 
-          <!-- ── 5. [불안전 상황] 상태 & 행동 (엑셀 15~16열) ── -->
-          <div class="form-group">
-            <label class="form-label">불안전 상황 세부 (상태 / 행동)</label>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700; color: #1e3a8a;">불안전 상태 (설비/물적 결함)</label>
                 <input type="text" id="txtCondition" class="form-control" list="listConditions" placeholder="상태: 방호장치 결함, 난간 미설치 등">
                 <datalist id="listConditions"></datalist>
               </div>
               <div>
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700; color: #1e3a8a;">불안전 행동 (인적 결함)</label>
                 <input type="text" id="txtAction" class="form-control" list="listActions" placeholder="행동: 보호구 미착용, 안전대 미체결 등">
                 <datalist id="listActions"></datalist>
               </div>
             </div>
           </div>
 
-          <!-- ── 6. [근본원인 분석] 법적 관리감독 & 안전시스템 (엑셀 17~18열) ── -->
-          <div class="card" style="padding: 14px; background: #fffdf5; border: 1.5px solid #fde68a; margin-bottom: 16px;">
+          <!-- ══════════════════════════════════════════════
+               4순 : 🎯 근본원인 분석
+               ══════════════════════════════════════════════ -->
+          <div class="card" style="padding: 14px; background: #faf5ff; border: 1.5px solid #d8b4fe; margin-bottom: 16px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-              <span style="font-weight: 700; font-size: 0.9rem; color: #92400e; display: inline-flex; align-items: center; gap: 5px;">
-                <span>🎯</span> <span>근본원인 분석 (법적 관리감독 & 안전시스템)</span>
-              </span>
-              <span style="font-size: 0.72rem; color: #b45309; background: #fef3c7; padding: 2px 8px; border-radius: 4px; font-weight: 600;">
-                스마트 AI 자동추론 & 엑셀 대장 연동
+              <span style="font-weight: 800; font-size: 0.95rem; color: #6b21a8; display: inline-flex; align-items: center; gap: 6px;">
+                <span>4순</span> <span>🎯 근본원인 (4M 요인 · 관리감독 · 안전시스템)</span>
               </span>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <!-- 발생원인 4대 요인 통계 (복수 선택 칩) -->
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label class="form-label" style="font-size: 0.82rem; font-weight: 700; color: #581c87;">발생원인 4대 요인 (복수 선택)</label>
+              <div id="causeChips" class="chip-grid">
+                <button type="button" class="chip" data-cause="계획 미수립">계획 미수립</button>
+                <button type="button" class="chip" data-cause="계획 미이행">계획 미이행</button>
+                <button type="button" class="chip" data-cause="불안전 행동">불안전 행동</button>
+                <button type="button" class="chip" data-cause="불안전 상태">불안전 상태</button>
+              </div>
+            </div>
+
+            <!-- 근본원인: 법적 관리감독 결여 & 안전관리시스템 결여 -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
               <div>
-                <label class="form-label" style="font-size: 0.8rem; color: #78350f; font-weight: 700;">근본원인 (법적 관리감독 결여)</label>
+                <label class="form-label" style="font-size: 0.8rem; color: #581c87; font-weight: 700;">근본원인 (법적 관리감독 결여)</label>
                 <input type="text" id="txtRootCauseMgmt" class="form-control" list="listRootCausesMgmt" placeholder="안전시설 미설치, 작업계획 미이행 등">
                 <datalist id="listRootCausesMgmt"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.8rem; color: #78350f; font-weight: 700;">근본원인 (안전관리시스템 결여)</label>
+                <label class="form-label" style="font-size: 0.8rem; color: #581c87; font-weight: 700;">근본원인 (안전관리시스템 결여)</label>
                 <input type="text" id="txtRootCauseSystem" class="form-control" list="listRootCausesSystem" placeholder="실행: 안전시설 미설치, 일일점검 미실시 등">
                 <datalist id="listRootCausesSystem"></datalist>
               </div>
             </div>
-          </div>
 
-          <!-- ── 7. [발생원인] 4대 요인 통계 (엑셀 19~22열) ── -->
-          <div class="form-group">
-            <label class="form-label">발생원인 4대 요인 (복수 선택)</label>
-            <div id="causeChips" class="chip-grid">
-              <button type="button" class="chip" data-cause="계획 미수립">계획 미수립</button>
-              <button type="button" class="chip" data-cause="계획 미이행">계획 미이행</button>
-              <button type="button" class="chip" data-cause="불안전 행동">불안전 행동</button>
-              <button type="button" class="chip" data-cause="불안전 상태">불안전 상태</button>
-            </div>
-          </div>
-
-          <!-- ── 8. [관계자·점검자 의견] (엑셀 23~25열) ── -->
-          <details style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
-            <summary style="font-weight: 700; font-size: 0.84rem; cursor: pointer; color: var(--gray-800);">
-              💬 인터뷰 결과 및 관계자·점검자 의견 (선택 입력)
-            </summary>
-            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
-              <div>
-                <label class="form-label" style="font-size: 0.78rem;">관계자 의견 (시공관리자/근로자)</label>
-                <input type="text" id="txtInterviewOpinion" class="form-control" placeholder="예: 작업 편의를 위해 임의 해체하였음">
-              </div>
-              <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px;">
+            <!-- 관계자·점검자 의견 (선택 입력 접이식) -->
+            <details style="background: #ffffff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 10px; margin-top: 6px;">
+              <summary style="font-weight: 700; font-size: 0.82rem; cursor: pointer; color: #6b21a8;">
+                💬 인터뷰 결과 및 관계자·점검자 의견 (선택 입력)
+              </summary>
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
                 <div>
-                  <label class="form-label" style="font-size: 0.78rem;">점검자 의견 구분</label>
-                  <select id="selInspectorOpinionType" class="form-control" style="font-size: 0.82rem;">
-                    <option value="시스템 개선">시스템 개선</option>
-                    <option value="교육/코칭">교육/코칭</option>
-                    <option value="페널티">페널티</option>
-                  </select>
+                  <label class="form-label" style="font-size: 0.78rem;">관계자 의견 (시공관리자/근로자)</label>
+                  <input type="text" id="txtInterviewOpinion" class="form-control" placeholder="예: 작업 편의를 위해 임의 해체하였음">
                 </div>
-                <div>
-                  <label class="form-label" style="font-size: 0.78rem;">점검자 의견</label>
-                  <input type="text" id="txtAuditProposal" class="form-control" placeholder="예: 안전난간 즉시 복구 및 임의 해체 방지 교육">
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px;">
+                  <div>
+                    <label class="form-label" style="font-size: 0.78rem;">점검자 의견 구분</label>
+                    <select id="selInspectorOpinionType" class="form-control" style="font-size: 0.82rem;">
+                      <option value="시스템 개선">시스템 개선</option>
+                      <option value="교육/코칭">교육/코칭</option>
+                      <option value="페널티">페널티</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label" style="font-size: 0.78rem;">점검자 의견</label>
+                    <input type="text" id="txtAuditProposal" class="form-control" placeholder="예: 안전난간 즉시 복구 및 임의 해체 방지 교육">
+                  </div>
                 </div>
               </div>
-            </div>
-          </details>
+            </details>
+          </div>
 
-          <!-- 9. 점검일자 (사진 EXIF 자동) -->
+          <!-- ── 최종 등록 및 점검일자 ── -->
           <div class="form-group">
             <label class="form-label">점검일자</label>
             <input type="date" id="txtInspectDate" class="form-control">
