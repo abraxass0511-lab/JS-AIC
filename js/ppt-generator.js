@@ -736,9 +736,8 @@
     const hasPhoto2 = Boolean(photo2Base64);
 
     // ── 좌측 사진 상단 행 (y = 1.982, h = 0.406) ──
-    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시: 이미지 4, 5번 실물 점검장표 100% 동일)
-    const isDualBanner = Boolean(hasPhoto2 && data.photo2Banner);
-    const bannerWidth = isDualBanner ? 4.080 : 5.715;
+    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시: 사진이 2개인 경우에도 사진이 1개처럼 빨간색 박스는 한개만)
+    const bannerWidth = 5.715;
     const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5);
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.130, y: 1.982, w: bannerWidth, h: 0.406,
@@ -760,13 +759,13 @@
       align: 'center', valign: 'middle', wrap: false, inset: 0.04
     });
 
-    // ── 현장 사진 삽입 (사용자 지시 5: 사진 1과 사진 2의 시작 y = 2.425 및 높이, 크기가 완벽히 동일하게 일치) ──
+    // ── 현장 사진 삽입 (사용자 지시: 2개의 사진은 완전히 동일한 사이즈로 배치) ──
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
     const photoBodyHeight = showGuidelineBox ? 3.730 : 4.810;
     const photoStartY = 2.425;
 
     if (hasPhoto2) {
-      // 2개 사진 배치: 동일 크기 및 높이 (w = 4.080, h = photoBodyHeight, 시작 y = 2.425, cover 사이징)
+      // 2개 사진 배치: 사진 1과 사진 2가 완전히 동일한 가로/세로 사이즈 (w = 4.080, h = photoBodyHeight, cover 사이징)
       if (photo1Base64) {
         slide.addImage({
           data: photo1Base64,
@@ -779,19 +778,6 @@
           data: photo2Base64,
           x: 4.290, y: photoStartY, w: 4.080, h: photoBodyHeight,
           sizing: { type: 'cover', w: 4.080, h: photoBodyHeight }
-        });
-      }
-      // 2-B) 사진 2 상단 적색 음영 배너 (이미지 4번 실물 점검장표 100% 동일)
-      if (isDualBanner) {
-        const banner2FontSize = calcSingleLineFontSize(data.photo2Banner, 4.080, 13, 9.5);
-        slide.addShape(pptx.ShapeType.rect, {
-          x: 4.290, y: 2.425, w: 4.080, h: 0.380,
-          fill: { color: C_PHOTO_BANNER_BG }, line: { color: C_PHOTO_BANNER_BG, width: 0 }
-        });
-        slide.addText(data.photo2Banner, {
-          x: 4.290, y: 2.425, w: 4.080, h: 0.380,
-          fontFace: FONT_MALGUN, fontSize: banner2FontSize, bold: true, color: 'FFFFFF',
-          align: 'center', valign: 'middle', wrap: false, inset: 0.04
         });
       }
     } else {
@@ -1220,9 +1206,9 @@
         <!-- 6-5. 세로 분할선 (좌측 사진 vs 우측 원인/대책, x = 8.395, y = 1.982 ~ 7.293) -->
         <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(1.982)}; width: 0; height: ${pctH(5.311)}; border-left: 1px solid #000000;"></div>
 
-        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시: 이미지 4, 5번 실물 점검장표 100% 동일) -->
-        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(hasPhoto2 && data.photo2Banner ? 4.080 : bannerWidth)}; height: ${pctH(0.406)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
-          <span style="font-size: ${pt(calcSingleLineFontSize(data.photoBanner, hasPhoto2 && data.photo2Banner ? 4.080 : bannerWidth, 13, 9.5))}; font-weight: 800; color: #ffffff;">${data.photoBanner}</span>
+        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시: 사진이 2개인 경우에도 사진 1개처럼 빨간색 박스는 한개만) -->
+        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.406)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
+          <span style="font-size: ${pt(calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5))}; font-weight: 800; color: #ffffff;">${data.photoBanner}</span>
         </div>
 
         <!-- 6-6b. Hold Point 위반 박스 (사용자 지시: 상단 0.045인치 미세 여백, y = 1.982) -->
@@ -1231,18 +1217,13 @@
           <span style="font-size: ${pt(12)}; font-weight: 800;">Hold Point 위반 (N/A)</span>
         </div>
 
-        <!-- 6-7. 사진 영역 (사용자 지시 5: 사진 1과 사진 2가 동일한 위치/크기/높이로 일치 y = 2.425, width: 100%, height: 100%, object-fit: cover) -->
+        <!-- 6-7. 사진 영역 (사용자 지시: 2개의 사진은 완전히 동일한 사이즈로 배치) -->
         ${hasPhoto2 ? `
           <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
             ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
           </div>
-          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff; position: absolute;">
+          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
             ${photo2Url ? `<img src="${photo2Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
-            ${data.photo2Banner ? `
-              <div style="position: absolute; left: 0; top: 0; width: 100%; height: ${pctH(0.380)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw; z-index: 2;">
-                <span style="font-size: ${pt(calcSingleLineFontSize(data.photo2Banner, 4.080, 13, 9.5))}; font-weight: 800; color: #ffffff;">${data.photo2Banner}</span>
-              </div>
-            ` : ''}
           </div>
         ` : `
           <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">

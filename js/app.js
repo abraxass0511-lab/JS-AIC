@@ -2697,10 +2697,6 @@ function initLmStudio() {
       if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!instant.holdPoint;
       if (instant.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = instant.pmVerdict;
       if (instant.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = instant.photoBanner;
-      if (instant.photo2Banner && $('#txtPhoto2Banner')) {
-        $('#txtPhoto2Banner').value = instant.photo2Banner;
-        if ($('#boxPhoto2Banner')) $('#boxPhoto2Banner').style.display = 'block';
-      }
 
       // 1차 즉시 요약 카드 렌더링
       if (resultCard && resultBody) {
@@ -2708,8 +2704,7 @@ function initLmStudio() {
           <div style="margin-bottom: 4px; font-weight:700; color:#1e40af;">
             ⚡ 1차 즉시 판정 완료 (${instant.law})
           </div>
-          ${instant.photoBanner ? `<div style="margin-bottom: 4px; font-weight:700; color:#c00000; font-size:0.8rem;">🚩 사진 1 배너: ${instant.photoBanner}</div>` : ''}
-          ${instant.photo2Banner ? `<div style="margin-bottom: 4px; font-weight:700; color:#c00000; font-size:0.8rem;">🚩 사진 2 배너: ${instant.photo2Banner}</div>` : ''}
+          ${instant.photoBanner ? `<div style="margin-bottom: 4px; font-weight:700; color:#c00000; font-size:0.8rem;">🚩 사진 상단 배너: ${instant.photoBanner}</div>` : ''}
           <div style="font-size:0.78rem; color:#64748b; margin-bottom:4px;">
             Qwen AI가 사진과 산안법 세부 기준을 실시간 검증하고 있습니다...
           </div>
@@ -2745,10 +2740,6 @@ function initLmStudio() {
       if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!res.holdPoint;
       if (res.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = res.pmVerdict;
       if (res.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = res.photoBanner;
-      if (res.photo2Banner && $('#txtPhoto2Banner')) {
-        $('#txtPhoto2Banner').value = res.photo2Banner;
-        if ($('#boxPhoto2Banner')) $('#boxPhoto2Banner').style.display = 'block';
-      }
 
       if (resultCard && resultBody) {
         resultBody.innerHTML = `
@@ -2758,12 +2749,7 @@ function initLmStudio() {
           </div>
           ${res.photoBanner ? `
             <div style="margin-bottom: 5px;">
-              <strong>사진 1 배너:</strong> <span style="color:#c00000; font-weight:700; background:#fef2f2; padding:2px 6px; border-radius:4px; border:1px solid #fecaca;">🚩 ${res.photoBanner}</span>
-            </div>
-          ` : ''}
-          ${res.photo2Banner ? `
-            <div style="margin-bottom: 5px;">
-              <strong>사진 2 배너:</strong> <span style="color:#c00000; font-weight:700; background:#fef2f2; padding:2px 6px; border-radius:4px; border:1px solid #fecaca;">🚩 ${res.photo2Banner}</span>
+              <strong>사진 상단 배너:</strong> <span style="color:#c00000; font-weight:700; background:#fef2f2; padding:2px 6px; border-radius:4px; border:1px solid #fecaca;">🚩 ${res.photoBanner}</span>
             </div>
           ` : ''}
           <div style="margin-bottom: 5px;">
@@ -3135,15 +3121,6 @@ function renderPhotoPreviews() {
     const item = h('div.preview-item', { style: 'position: relative;' }, ...children);
     container.append(item);
   });
-
-  const boxP2 = $('#boxPhoto2Banner');
-  if (boxP2) {
-    if (currentPhotos.length >= 2 || ($('#txtPhoto2Banner')?.value || '').trim()) {
-      boxP2.style.display = 'block';
-    } else {
-      boxP2.style.display = 'none';
-    }
-  }
 }
 
 function clearForm() {
@@ -3155,8 +3132,6 @@ function clearForm() {
   updateCauseChips();
   $('#txtContent').value = '';
   if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = '';
-  if ($('#txtPhoto2Banner')) $('#txtPhoto2Banner').value = '';
-  if ($('#boxPhoto2Banner')) $('#boxPhoto2Banner').style.display = 'none';
   $('#txtLocation').value = '';
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = '';
   if ($('#txtAgentMid')) $('#txtAgentMid').value = '';
