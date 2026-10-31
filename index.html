@@ -134,51 +134,30 @@
 
         <!-- ════════════ 모드 2: ✍️ 직접 수기 입력 모드 ════════════ -->
         <div id="sectionManualMode">
-          <!-- ── 0-A. 현장 선택 및 공정률/상품 자동적용 헤더 ── -->
-          <div style="background: #f1f5f9; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <label class="form-label" style="font-weight: 700; color: #1e293b; margin-bottom: 0; font-size: 0.92rem; display: flex; align-items: center; gap: 5px;">
-                <span>🏢</span> <span>현장명 선택</span><span class="required">*</span>
-              </label>
-              <div style="display: flex; gap: 6px;">
-                <button type="button" id="btnToggleSiteMeta" class="btn btn-outline" style="padding: 2px 8px; font-size: 0.74rem; border-color: #64748b; color: #475569; font-weight: 600;">
-                  ⚙️ 공정률/상품 수정
-                </button>
-                <button type="button" id="btnManageSites" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.74rem; border-color: var(--primary); color: var(--primary); font-weight: 600;">
-                  ⚙️ 현장 관리
-                </button>
-                <button type="button" id="btnManagePins" class="btn btn-outline" style="display: none; padding: 2px 8px; font-size: 0.74rem; border-color: #8b5cf6; color: #7c3aed; font-weight: 600;">
-                  👥 핀번호 관리
-                </button>
-              </div>
-            </div>
-            <input type="text" id="txtSite" class="form-control" list="listSites" placeholder="현장명을 선택하거나 입력하세요" style="font-size: 0.95rem; font-weight: 600; padding: 9px 12px;">
-            <datalist id="listSites"></datalist>
-
-            <!-- 현장 선택 시 직전 공정률/상품유형 자동적용 안내 뱃지 -->
-            <div id="siteAppliedBadge" style="display: none; font-size: 0.76rem; color: #15803d; background: #dcfce7; border: 1px solid #86efac; border-radius: 6px; padding: 4px 8px; margin-top: 6px; font-weight: 600;">
-              💡 이전 입력값 자동 적용됨 (공정률: <span id="lblPrevProgress">35</span>%, 상품: <span id="lblPrevProduct">공동주택</span>) — 필요 시 우측 상단에서 수정 가능
-            </div>
-
-            <!-- 현장 컨설팅 메타정보: 상품 유형 & 공정률 (수정 토글 가능) -->
-            <div id="boxSiteMeta" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px; background: #ffffff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; margin-top: 8px;">
+          <!-- ── 0-A. 현재 선택된 점검 현장 헤더 바 (팝업 선택 연동) ── -->
+          <div id="activeSiteBar" style="background: linear-gradient(135deg, #1e293b, #0f172a); color: white; border-radius: 10px; padding: 11px 14px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 3px 10px rgba(0,0,0,0.12); border: 1px solid #334155;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 1.4rem;">🏢</span>
               <div>
-                <label class="form-label" style="font-size: 0.78rem; margin-bottom: 2px;">상품(건물) 유형</label>
-                <select id="selProductType" class="form-control" style="font-size: 0.82rem;">
-                  <option value="공동주택">공동주택 (아파트/주상복합)</option>
-                  <option value="물류센터/공장">물류센터 / 공장 (철골)</option>
-                  <option value="오피스/지식산업센터">오피스 / 지식산업센터</option>
-                  <option value="플랜트/산업설비">플랜트 / 산업설비</option>
-                  <option value="토목/인프라">토목 / 인프라 (도로/교량)</option>
-                  <option value="기타">기타 건축 시설물</option>
-                </select>
-              </div>
-              <div>
-                <label class="form-label" style="font-size: 0.78rem; margin-bottom: 2px;">공정률 (%)</label>
-                <input type="number" id="txtProgressRate" class="form-control" placeholder="예: 35" min="0" max="100" value="35" style="font-size: 0.82rem;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 0.98rem; font-weight: 800; color: #ffffff;" id="activeSiteNameDisplay">현장을 선택해주세요</span>
+                  <span id="activeSiteBadgeStatus" style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #ffffff; padding: 2px 6px; border-radius: 4px; display: none;">선택됨</span>
+                </div>
+                <div style="font-size: 0.76rem; color: #94a3b8; margin-top: 2px;">
+                  공정률: <strong id="activeSiteProgressDisplay" style="color: #38bdf8;">--</strong> · 상품: <strong id="activeSiteProductDisplay" style="color: #a7f3d0;">--</strong>
+                </div>
               </div>
             </div>
+            <button type="button" id="btnChangeActiveSite" class="btn" style="background: rgba(255,255,255,0.15); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); font-size: 0.78rem; padding: 6px 12px; border-radius: 6px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: background 0.2s;" title="점검 현장 변경">
+              <span>🔄</span> <span>현장 변경</span>
+            </button>
           </div>
+
+          <!-- 하위 호환 hidden 필드 -->
+          <input type="hidden" id="txtSite">
+          <input type="hidden" id="txtProgressRate" value="35">
+          <input type="hidden" id="selProductType" value="공동주택">
+          <datalist id="listSites"></datalist>
 
           <!-- ── 0-B. 맨 처음: 📸 사진 등록 & 📝 부적합 내용 입력 ── -->
           <!-- 1) 사진 등록 -->
@@ -852,6 +831,79 @@
       <span>엑셀/PPT</span>
     </button>
   </nav>
+
+  <!-- ════════════ 점검 현장 선택 팝업 모달 ════════════ -->
+  <div id="modalSiteSelect" class="modal-overlay" style="display: none; z-index: 99999;">
+    <div class="pin-card" style="max-width: 500px; width: 92%; text-align: left; padding: 22px; background: #ffffff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.25);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 10px;">
+        <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 7px;">
+          <span>🏢</span> <span>점검 현장 선택</span>
+        </h3>
+        <button type="button" id="btnCloseSiteSelectModal" class="btn btn-outline" style="padding: 3px 8px; font-size: 0.85rem; border: none; font-weight: bold; color: #64748b;">✕</button>
+      </div>
+
+      <div style="font-size: 0.82rem; color: #64748b; margin-bottom: 14px; line-height: 1.4;">
+        점검할 현장을 선택하세요. 이전에 등록했던 <strong>공정률</strong>과 <strong>상품 유형</strong>이 자동 적용됩니다.
+      </div>
+
+      <!-- 최근/등록된 현장 빠른 선택 리스트 -->
+      <div style="margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 0.82rem; font-weight: 700; color: #334155;">
+            📌 등록된 현장 빠른 선택 (원클릭)
+          </span>
+          <span style="font-size: 0.72rem; color: #64748b;">클릭 시 즉시 선택</span>
+        </div>
+        <div id="siteQuickList" style="display: flex; flex-direction: column; gap: 7px; max-height: 200px; overflow-y: auto; padding-right: 4px;">
+          <!-- 동적 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 현장명 직접 검색 / 신규 입력 -->
+      <div style="margin-bottom: 14px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px;">
+        <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #1e293b; margin-bottom: 4px;">
+          또는 현장명 직접 입력 / 검색
+        </label>
+        <input type="text" id="modalInputSite" class="form-control" list="listSites" placeholder="현장명을 입력하거나 선택하세요" style="font-size: 0.92rem; font-weight: 600;">
+      </div>
+
+      <!-- 자동 적용된 메타정보 (공정률 & 상품유형) 확인 및 수정 -->
+      <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 0.8rem; font-weight: 700; color: #166534;">
+            ⚙️ 공정률 & 상품유형 (이전 값 자동 반영)
+          </span>
+          <span style="font-size: 0.72rem; color: #15803d; font-weight: 600;">필요 시 수정 가능</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div>
+            <label class="form-label" style="font-size: 0.74rem; margin-bottom: 2px; color: #166534; font-weight: 700;">상품 유형</label>
+            <select id="modalSelProductType" class="form-control" style="font-size: 0.82rem; padding: 6px 8px;">
+              <option value="공동주택">공동주택 (아파트/주상복합)</option>
+              <option value="물류센터/공장">물류센터 / 공장 (철골)</option>
+              <option value="오피스/지식산업센터">오피스 / 지식산업센터</option>
+              <option value="플랜트/산업설비">플랜트 / 산업설비</option>
+              <option value="토목/인프라">토목 / 인프라 (도로/교량)</option>
+              <option value="기타">기타 건축 시설물</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size: 0.74rem; margin-bottom: 2px; color: #166534; font-weight: 700;">공정률 (%)</label>
+            <input type="number" id="modalTxtProgressRate" class="form-control" placeholder="35" min="0" max="100" value="35" style="font-size: 0.82rem; padding: 6px 8px;">
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+        <button type="button" id="btnCancelSiteSelect" class="btn btn-outline" style="padding: 8px 14px; font-size: 0.85rem;">
+          취소
+        </button>
+        <button type="button" id="btnConfirmSiteSelect" class="btn btn-primary" style="padding: 9px 20px; font-size: 0.9rem; font-weight: 800; background: linear-gradient(135deg, #1d4ed8, #2563eb);">
+          🚀 이 현장으로 점검 시작
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- PIN Login Modal -->
   <div id="pinModal" class="modal-overlay" style="display: none;">
