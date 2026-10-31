@@ -321,7 +321,7 @@
     let rawLawTitle = r.law || (r.basis && r.basis.law) || '';
     let lawBody = '';
 
-    const rawContent = r.content || '';
+    const rawContent = (r.content || '').replace(/\r?\n+/g, '  ').trim();
     const text = `${rawContent} ${r.item || ''} ${r.agent || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
       rawLawTitle = rawLawTitle || '안전보건규칙 제38조, 제171조';
@@ -369,8 +369,8 @@
     let mainContentParts = { prefix: rawContent, highlight: '', suffix: '' };
     if (mainContent.includes('↔')) {
       const parts = mainContent.split('↔');
-      mainContentParts.prefix = parts[0].trim() + ' ↔ ';
-      mainContentParts.highlight = parts[1].trim();
+      mainContentParts.prefix = (parts[0] || '').trim() + ' ↔ ';
+      mainContentParts.highlight = (parts[1] || '').trim();
       mainContentParts.suffix = '';
     } else if (mainContent.includes('유도로프 미사용')) {
       const idx = mainContent.indexOf('유도로프 미사용');
@@ -681,18 +681,19 @@
 
     // 부적합 개요 1행: 5개 독립 셀 (x = 1.210 ~ 13.140, 각 w = 2.386, h = 0.406)
     const metaCols = [
-      { label: '협력사 : ', val: data.subcontractor, w: 2.386, x: 1.210 },
-      { label: '공종명 : ', val: data.workGroup, w: 2.386, x: 3.596 },
-      { label: '작업장소 : ', val: data.location, w: 2.386, x: 5.982 },
-      { label: '점검자 : ', val: data.inspector, w: 2.386, x: 8.368 },
-      { label: '점검차수 : ', val: data.inspectRound, w: 2.386, x: 10.754 }
+      { label: '협력사 : ', val: (data.subcontractor || '').replace(/[\r\n\t]+/g, ' ').trim(), w: 2.386, x: 1.210 },
+      { label: '공종명 : ', val: (data.workGroup || '').replace(/[\r\n\t]+/g, ' ').trim(), w: 2.386, x: 3.596 },
+      { label: '작업장소 : ', val: (data.location || '').replace(/[\r\n\t]+/g, ' ').trim(), w: 2.386, x: 5.982 },
+      { label: '점검자 : ', val: (data.inspector || '').replace(/[\r\n\t]+/g, ' ').trim(), w: 2.386, x: 8.368 },
+      { label: '점검차수 : ', val: (data.inspectRound || '').replace(/[\r\n\t]+/g, ' ').trim(), w: 2.386, x: 10.754 }
     ];
     metaCols.forEach(col => {
       const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 9.5);
-      slide.addText([
+      const runs = [
         { text: col.label, options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: sz } },
-        { text: col.val, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: sz } }
-      ], {
+        col.val ? { text: col.val, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: sz } } : null
+      ].filter(Boolean);
+      slide.addText(runs, {
         x: col.x, y: 1.125, w: col.w, h: 0.406,
         fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 },
         align: 'left', valign: 'middle', inset: 0.06, wrap: false
@@ -700,13 +701,16 @@
     });
 
     // 부적합 개요 2행: 부적합 내용 전체 너비 사각형 (x = 1.210, y = 1.531, w = 11.930, h = 0.406)
-    const mainSz = calcSingleLineFontSize(`부적합 내용 : ${data.mainContent}`, 11.930, 14, 9.5);
-    slide.addText([
+    const cleanMainContent = (data.mainContent || '').replace(/[\r\n\t]+/g, '  ').trim();
+    const mainSz = calcSingleLineFontSize(`부적합 내용 : ${cleanMainContent}`, 11.930, 14, 9.5);
+    const mainContentRuns = [
       { text: '부적합 내용 : ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } },
-      { text: data.mainContentParts.prefix, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } },
-      { text: data.mainContentParts.highlight, options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: mainSz } },
-      { text: data.mainContentParts.suffix, options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } }
-    ], {
+      data.mainContentParts && data.mainContentParts.prefix ? { text: data.mainContentParts.prefix.replace(/[\r\n\t]+/g, ' '), options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } } : null,
+      data.mainContentParts && data.mainContentParts.highlight ? { text: data.mainContentParts.highlight.replace(/[\r\n\t]+/g, ' '), options: { bold: true, color: C_RED, fontFace: FONT_MALGUN, fontSize: mainSz } } : null,
+      data.mainContentParts && data.mainContentParts.suffix ? { text: data.mainContentParts.suffix.replace(/[\r\n\t]+/g, ' '), options: { bold: true, color: C_TITLE_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } } : null
+    ].filter(Boolean);
+
+    slide.addText(mainContentRuns, {
       x: 1.210, y: 1.531, w: 11.930, h: 0.406,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 },
       align: 'left', valign: 'middle', inset: 0.06, wrap: false
@@ -772,12 +776,30 @@
           x: 0.130, y: photoStartY, w: 4.080, h: photoBodyHeight,
           sizing: { type: 'cover', w: 4.080, h: photoBodyHeight }
         });
+      } else {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 0.130, y: photoStartY, w: 4.080, h: photoBodyHeight,
+          fill: { color: 'F8FAFC' }, line: { color: C_BORDER, width: 0.75 }
+        });
+        slide.addText('📷 현장 사진 1', {
+          x: 0.130, y: photoStartY, w: 4.080, h: photoBodyHeight,
+          fontSize: 13, color: '64748B', fontFace: FONT_MALGUN, align: 'center', valign: 'middle'
+        });
       }
       if (photo2Base64) {
         slide.addImage({
           data: photo2Base64,
           x: 4.290, y: photoStartY, w: 4.080, h: photoBodyHeight,
           sizing: { type: 'cover', w: 4.080, h: photoBodyHeight }
+        });
+      } else {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 4.290, y: photoStartY, w: 4.080, h: photoBodyHeight,
+          fill: { color: 'F8FAFC' }, line: { color: C_BORDER, width: 0.75 }
+        });
+        slide.addText('📷 현장 사진 2', {
+          x: 4.290, y: photoStartY, w: 4.080, h: photoBodyHeight,
+          fontSize: 13, color: '64748B', fontFace: FONT_MALGUN, align: 'center', valign: 'middle'
         });
       }
     } else {
@@ -787,6 +809,15 @@
           data: photo1Base64,
           x: 0.130, y: photoStartY, w: 8.240, h: photoBodyHeight,
           sizing: { type: 'cover', w: 8.240, h: photoBodyHeight }
+        });
+      } else {
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 0.130, y: photoStartY, w: 8.240, h: photoBodyHeight,
+          fill: { color: 'F8FAFC' }, line: { color: C_BORDER, width: 0.75 }
+        });
+        slide.addText('📷 현장 사진 (첨부 이미지 없음)', {
+          x: 0.130, y: photoStartY, w: 8.240, h: photoBodyHeight,
+          fontSize: 14, color: '64748B', fontFace: FONT_MALGUN, align: 'center', valign: 'middle'
         });
       }
     }
@@ -1220,14 +1251,14 @@
         <!-- 6-7. 사진 영역 (사용자 지시: 2개의 사진은 완전히 동일한 사이즈로 배치) -->
         ${hasPhoto2 ? `
           <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
           </div>
           <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
           </div>
         ` : `
           <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
