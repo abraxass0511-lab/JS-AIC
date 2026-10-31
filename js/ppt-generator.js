@@ -27,6 +27,7 @@
   const C_ACC_BORDER = 'FFC000';      // 사고유형(떨어짐) 칸 3pt 황색 테두리 (#FFC000)
   const C_TITLE_BLUE = '002060';      // 시설물/법규 및 강조 진한 딥네이비 (#002060)
   const C_RED = 'C00000';             // 중부적합 및 위험요인 선명한 적색 (#C00000)
+  const C_PHOTO_BANNER_BG = 'A05A66'; // 사진 상단 음영 배너 와인/버건디 적색 (#A05A66, 사용자 이미지 2 실물 분석 일치)
   const C_ORANGE = 'ED7D31';          // 사고유형 및 이행 포인트 오렌지 (#ED7D31)
   const C_GRAY_TEXT = '595959';       // 보조 텍스트
   const C_DARK_TEXT = '000000';       // 본문 진한 검정 (#000000)
@@ -76,6 +77,9 @@
     if (comb.includes('양중') || comb.includes('줄걸이') || comb.includes('크레인') || comb.includes('호이스트') || comb.includes('수평양중')) {
       return '안전보건규칙 제38조, 제171조';
     }
+    if (comb.includes('말비계') || comb.includes('우마')) {
+      return '안전보건규칙 제67조, 제13조';
+    }
     if (comb.includes('비계') || comb.includes('난간') || comb.includes('작업발판') || comb.includes('안전난간') || comb.includes('단부')) {
       return '안전보건규칙 제56조, 제13조';
     }
@@ -85,7 +89,7 @@
     if (comb.includes('전기') || comb.includes('누전') || comb.includes('차단기') || comb.includes('투광등')) {
       return '안전보건규칙 제304조';
     }
-    if (comb.includes('사다리') || comb.includes('말비계') || comb.includes('우마')) {
+    if (comb.includes('사다리')) {
       return '안전보건규칙 제24조';
     }
     return '안전보건규칙 제38조';
@@ -100,6 +104,14 @@
     }
     const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     
+    // 0. 말비계 / 우마 (단부 추락, 모서리 등 사용자 지시 3 정밀 일치)
+    if (text.includes('말비계') || text.includes('우마')) {
+      if (text.includes('모서리') || text.includes('단부') || text.includes('추락')) {
+        return '말비계 모서리 구간 단부 추락방지 미조치';
+      }
+      return '말비계 안전기준 및 전도방지 미조치';
+    }
+
     if (text.includes('손으로') || (text.includes('유도로프') && text.includes('미사용'))) {
       return '양중작업 시 화물을 직접 손으로 잡음';
     }
@@ -124,7 +136,7 @@
     if (text.includes('작업발판') || text.includes('발판')) {
       return '작업발판 전면 미설치 및 틈새 방치';
     }
-    if (text.includes('사다리') || text.includes('말비계')) {
+    if (text.includes('사다리')) {
       return '이동식 사다리 최상부 발판 작업';
     }
     if (text.includes('누전') || text.includes('차단기')) {
@@ -213,6 +225,9 @@
     if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
       rawLawTitle = rawLawTitle || '안전보건규칙 제38조, 제171조';
       lawBody = '화물은 유도로프를 통해 유도하고 손으로 밀거나 당기는 행위를 금지하며 화물의 양중높이에 따라 적정한 길이를 가진 유도로프를 사용해야 한다.';
+    } else if (text.includes('말비계') || text.includes('우마')) {
+      rawLawTitle = rawLawTitle || '안전보건규칙 제67조, 제13조';
+      lawBody = '말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
     } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
       rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
       lawBody = '작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
@@ -222,7 +237,7 @@
     } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
       rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
       lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
-    } else if (text.includes('사다리') || text.includes('말비계') || text.includes('우마')) {
+    } else if (text.includes('사다리')) {
       rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
       lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
     } else {
@@ -493,7 +508,8 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
     // 기준 제목 (x = 4.380으로 아래 파란색 음영 박스와 동일한 시작선에 맞춤)
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 11, 8.5);
+    // 사용자 지시 1: 원래 14pt이며 줄이 길 때만 동적으로 줄어들도록 baseSize = 14 설정
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 14, 9.5);
     slide.addText(data.lawTitle, {
       x: 4.380, y: 0.175, w: 5.624, h: 0.300,
       fontFace: FONT_MALGUN, fontSize: lawTitleFontSize, bold: true, color: '000000',
@@ -617,12 +633,12 @@
     const hasPhoto2 = Boolean(photo2Base64);
 
     // ── 좌측 사진 상단 행 (y = 1.982, h = 0.406) ──
-    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 4: "세번째 이미지처럼 사진위에 빨간색 음영처리된 박스를 추가하고 직접적으로 무엇을 안했는지 간단하게 기입")
-    const bannerWidth = hasPhoto2 ? 4.080 : 5.715;
+    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 2: #A05A66 버건디 적색, 사용자 지시 4: 첫번째 이미지 크기 w = 5.715로 전면 통일)
+    const bannerWidth = 5.715;
     const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5);
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.130, y: 1.982, w: bannerWidth, h: 0.406,
-      fill: { color: C_RED }, line: { color: C_RED, width: 0 }
+      fill: { color: C_PHOTO_BANNER_BG }, line: { color: C_PHOTO_BANNER_BG, width: 0 }
     });
     slide.addText(data.photoBanner, {
       x: 0.130, y: 1.982, w: bannerWidth, h: 0.406,
@@ -646,28 +662,28 @@
     const photoStartY = 2.425;
 
     if (hasPhoto2) {
-      // 2개 사진 배치: 동일 크기 (w = 4.080, h = photoBodyHeight, 시작 y = 2.425)
+      // 2개 사진 배치: 동일 크기 및 높이 (w = 4.080, h = photoBodyHeight, 시작 y = 2.425, cover 사이징)
       if (photo1Base64) {
         slide.addImage({
           data: photo1Base64,
           x: 0.130, y: photoStartY, w: 4.080, h: photoBodyHeight,
-          sizing: { type: 'contain', w: 4.080, h: photoBodyHeight }
+          sizing: { type: 'cover', w: 4.080, h: photoBodyHeight }
         });
       }
       if (photo2Base64) {
         slide.addImage({
           data: photo2Base64,
           x: 4.290, y: photoStartY, w: 4.080, h: photoBodyHeight,
-          sizing: { type: 'contain', w: 4.080, h: photoBodyHeight }
+          sizing: { type: 'cover', w: 4.080, h: photoBodyHeight }
         });
       }
     } else {
-      // 1개 사진 전폭 배치 (w = 8.240)
+      // 1개 사진 전폭 배치 (w = 8.240, cover 사이징)
       if (photo1Base64) {
         slide.addImage({
           data: photo1Base64,
           x: 0.130, y: photoStartY, w: 8.240, h: photoBodyHeight,
-          sizing: { type: 'contain', w: 8.240, h: photoBodyHeight }
+          sizing: { type: 'cover', w: 8.240, h: photoBodyHeight }
         });
       }
     }
@@ -937,8 +953,8 @@
     const pctH = (h) => `${((h / 7.500) * 100).toFixed(4)}%`;
     const pt = (n) => `${(n * 0.104167).toFixed(4)}cqw`;
 
-    // 1) 관련기준 제목 폰트 (PPT와 동일 계산)
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 11, 8.5);
+    // 1) 관련기준 제목 폰트 (사용자 지시 1: 원래 14pt, 줄이 길 때만 줄어듦)
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 14, 9.5);
     const lawBodyFontSize = data.lawBody.length > 80 ? 11 : (data.lawBody.length > 55 ? 11.5 : 12.5);
 
     // 2) 부적합 개요 5개 메타 셀 좌표 (PPT와 동일)
@@ -986,12 +1002,12 @@
       counterLineSpacing = 1.22;
     }
 
-    // 7) 사진 영역 좌표 및 크기 (PPT와 100% 동일 일치)
+    // 7) 사진 영역 좌표 및 크기 (PPT와 100% 동일 일치, 사용자 지시 4: 첫번째 이미지 크기 w = 5.715 전면 통일)
     const hasPhoto2 = Boolean(photo2Url);
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
     const photoBodyHeight = showGuidelineBox ? 3.730 : 4.810;
     const photoStartY = 2.425;
-    const bannerWidth = hasPhoto2 ? 4.080 : 5.715;
+    const bannerWidth = 5.715;
     const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5);
 
     return `
@@ -1030,7 +1046,7 @@
         <!-- 4. 관련기준 내용 외곽 사각형 -->
         <div style="position: absolute; left: ${pctX(4.276)}; top: ${pctY(0.163)}; width: ${pctW(5.832)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 4-1. 관련기준 제목 (사용자 지시 3: '안전보건규칙 제//조' 간단 포맷, 좌측 시작선 x = 4.380 일치) -->
+        <!-- 4-1. 관련기준 제목 (사용자 지시 1: 원래 14pt, 줄이 길 때만 자동 축소, 좌측 시작선 x = 4.380 일치) -->
         <div style="position: absolute; left: ${pctX(4.380)}; top: ${pctY(0.175)}; width: ${pctW(5.624)}; height: ${pctH(0.300)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
           ${data.lawTitle}
         </div>
@@ -1087,8 +1103,8 @@
         <!-- 6-5. 세로 분할선 (좌측 사진 vs 우측 원인/대책, x = 8.395, y = 1.982 ~ 7.293) -->
         <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(1.982)}; width: 0; height: ${pctH(5.311)}; border-left: 1px solid #000000;"></div>
 
-        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 4) -->
-        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.406)}; background: #c00000; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
+        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 2: #A05A66 버건디 적색, 사용자 지시 4: 첫번째 이미지 크기 w = 5.715 통일) -->
+        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.406)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
           <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #ffffff;">${data.photoBanner}</span>
         </div>
 
@@ -1098,17 +1114,17 @@
           <span style="font-size: ${pt(12)}; font-weight: 800;">Hold Point 위반 (N/A)</span>
         </div>
 
-        <!-- 6-7. 사진 영역 (사용자 지시 5: 사진 1과 사진 2가 동일한 위치/크기/높이로 일치 y = 2.425 ~ 7.235) -->
+        <!-- 6-7. 사진 영역 (사용자 지시 5: 사진 1과 사진 2가 동일한 위치/크기/높이로 일치 y = 2.425, width: 100%, height: 100%, object-fit: cover) -->
         ${hasPhoto2 ? `
-          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
+          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
           </div>
-          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
+          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo2Url ? `<img src="${photo2Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
