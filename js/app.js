@@ -2818,7 +2818,15 @@ async function resolvePhotoBase64ForPPT(path, record = null, photoIndex = 0) {
       const res = await fetch(path);
       if (res.ok) blob = await res.blob();
     } else {
-      blob = await store.photoBlob(path);
+      blob = await store.photoBlob(path).catch(() => null);
+    }
+    if (!blob) {
+      // 사진 파일이 서버나 로컬에 없을 때, 샘플 이미지가 있으면 샘플로 자동 복구 폴백
+      const fallbackPath = photoIndex === 1 || path.includes('p2') || path.includes('fix') ? 'samples/sample_after.jpg' : 'samples/sample_before.jpg';
+      try {
+        const fallbackRes = await fetch(fallbackPath);
+        if (fallbackRes.ok) blob = await fallbackRes.blob();
+      } catch (err) {}
     }
     if (!blob) return '';
     return await blobToBase64(blob);
@@ -2861,8 +2869,18 @@ async function downloadSingleJangpyoPPT(btn) {
   }
 
   try {
-    const safeLoc = (rec.location || '위치').replace(/[\/\\:*?"<>|]/g, '_');
-    const filename = `점검장표_${rec.site || '현장'}_${safeLoc}_${rec.inspectedDate || todayStr()}.pptx`;
+    const safeLoc = (rec.location || '위치')
+      .replace(/[\/\\:*?"<>|]/g, '_')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/[—–]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const safeSite = (rec.site || '현장')
+      .replace(/[\/\\:*?"<>|]/g, '_')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const filename = `점검장표_${safeSite}_${safeLoc}_${rec.inspectedDate || todayStr()}.pptx`;
     await window.SafePPT.generateInspectionSheetPPT({
       records: [rec],
       loadPhotoBase64: resolvePhotoBase64ForPPT,
@@ -2896,7 +2914,13 @@ async function downloadBatchJangpyoPPT(recordsToExport, btn, label = '') {
   }
 
   try {
-    const filename = `점검장표_일괄_${label ? label + '_' : ''}${list.length}건_${todayStr()}.pptx`;
+    const safeLabel = (label || '')
+      .replace(/[\/\\:*?"<>|]/g, '_')
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/[—–]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const filename = `점검장표_일괄_${safeLabel ? safeLabel + '_' : ''}${list.length}건_${todayStr()}.pptx`;
     await window.SafePPT.generateInspectionSheetPPT({
       records: list,
       loadPhotoBase64: resolvePhotoBase64ForPPT,

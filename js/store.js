@@ -903,7 +903,7 @@ export const store = {
     return this.backend.readBlob(path);
   },
   async photoURL(path) {
-    if (!path) return '';
+    if (!path) return 'samples/sample_before.jpg';
     if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
 
@@ -920,9 +920,9 @@ export const store = {
         } catch (e) {}
       }
 
-      // 2. 앱 정적 파일(GitHub Pages / 로컬) 존재 여부 초고속 확인 (~20ms)
+      // 2. 앱 정적 파일(GitHub Pages / 로컬) 존재 여부 확인 (~20ms)
       try {
-        const staticRes = await fetch(path, { method: 'HEAD' });
+        const staticRes = await fetch(path);
         if (staticRes.ok) {
           this._photoCache.set(path, path);
           return path;
@@ -936,10 +936,11 @@ export const store = {
         return workerUrl;
       }
 
-      this._photoCache.set(path, path);
-      return path;
+      const fallback = path.includes('fix') || path.includes('p2') ? 'samples/sample_after.jpg' : 'samples/sample_before.jpg';
+      this._photoCache.set(path, fallback);
+      return fallback;
     } catch (e) {
-      return path;
+      return path.includes('fix') || path.includes('p2') ? 'samples/sample_after.jpg' : 'samples/sample_before.jpg';
     }
   },
 
