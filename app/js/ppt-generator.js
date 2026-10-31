@@ -350,7 +350,8 @@
       ], {
         x: 1.967, y: 0.163, w: 1.568, h: 0.914,
         fill: { color: 'FFFFFF' }, line: { color: C_ACC_BORDER, width: 3.0 },
-        align: 'center', valign: 'middle', lineSpacingMultiple: 0.92, inset: 0.01
+        align: 'center', valign: 'middle', lineSpacingMultiple: 0.95,
+        margin: [0, 0, 0, 5] // Top margin 5pt로 위로 처지지 않고 상하 정중앙에 배치
       });
     } else {
       slide.addText([
@@ -359,7 +360,8 @@
       ], {
         x: 1.967, y: 0.163, w: 1.568, h: 0.914,
         fill: { color: 'FFFFFF' }, line: { color: C_ACC_BORDER, width: 3.0 },
-        align: 'center', valign: 'middle', lineSpacingMultiple: 1.15, inset: 0.02
+        align: 'center', valign: 'middle', lineSpacingMultiple: 1.15,
+        margin: [0, 0, 0, 4]
       });
     }
 
@@ -372,20 +374,20 @@
     });
 
     // 4) 관련기준 내용 (x = 4.276, w = 5.832, h = 0.914, 외곽 순수 흰색 배경)
-    // 사용자 지시: "2. 원본에는 칸으로 구분되어 있지 않아. 확인해"
-    // 원본 템플릿(표 19): 단일 셀로 구성되어 있으며 제목과 본문 사이에 가로 구분선이 전혀 없음!
+    // 사용자 지시: "2. '산업안전~' 글씨가 앞으로 좀 튀어 나온것 같아. 아래의 파란색 음영과 맞춰"
+    // 원본 템플릿(표 19): 단일 셀로 구성되어 있으며 제목과 본문 시작선이 x = 4.380으로 일치함!
     slide.addShape(pptx.ShapeType.rect, {
       x: 4.276, y: 0.163, w: 5.832, h: 0.914,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
-    // 기준 제목 (음영처리 전혀 없음, 순수 흰색, 구분선 없음)
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.832, 13, 9);
+    // 기준 제목 (x = 4.380으로 아래 파란색 음영 박스와 동일한 시작선에 맞춤)
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 12, 9);
     slide.addText(data.lawTitle, {
-      x: 4.276, y: 0.163, w: 5.832, h: 0.317,
+      x: 4.380, y: 0.175, w: 5.624, h: 0.300,
       fontFace: FONT_MALGUN, fontSize: lawTitleFontSize, bold: true, color: '000000',
-      align: 'left', valign: 'middle', wrap: false, inset: 0.06
+      align: 'left', valign: 'middle', wrap: false, inset: 0.04
     });
-    // 기준 본문 (칸 전체가 아니라 칸 내부 중앙에 연청색 #DEEBF7 음영 박스를 두고 그 안에 텍스트 표시)
+    // 기준 본문 (x = 4.380, w = 5.624, 칸 내부 중앙에 연청색 #DEEBF7 음영 박스)
     slide.addShape(pptx.ShapeType.rect, {
       x: 4.380, y: 0.495, w: 5.624, h: 0.550,
       fill: { color: C_STD_CONTENT_BG }, line: { color: C_STD_CONTENT_BG, width: 0 }
@@ -489,25 +491,25 @@
       line: { color: C_BORDER, width: 0.75 }
     });
 
-    // 세로 분할선 (x = 8.395): 좌측 사진 영역(w = 8.275)과 우측 원인/대책 영역(w = 4.711)을 분할 (y = 2.060에서 시작하여 상단에 여백 확보)
+    // 세로 분할선 (x = 8.395): 좌측 사진 영역(w = 8.275)과 우측 원인/대책 영역(w = 4.711)을 분할 (y = 1.982에서 시작하여 상단에 살짝 여백 0.045인치 확보)
     slide.addShape(pptx.ShapeType.line, {
-      x: 8.395, y: 2.060, w: 0, h: 5.233,
+      x: 8.395, y: 1.982, w: 0, h: 5.311,
       line: { color: C_BORDER, width: 0.75 }
     });
 
-    // ── 좌측 사진 영역: Hold Point 위반 박스 (x = 5.975, y = 2.060, w = 2.363, h = 0.406) ──
-    // 사용자 지시: "3. hold point, 발생원인 위쪽이 살짝 띄어져 있어 확인해."
-    // y = 2.060 (부적합 내용 바닥 y = 1.937과 0.123인치 순수 흰색 여백)
+    // ── 좌측 사진 영역: Hold Point 위반 박스 (x = 5.975, y = 1.982, w = 2.363, h = 0.406) ──
+    // 사용자 지시: "3. hold, 발생원인 위에 너무 많이 띄었어. 원본참고해서 조금만 띄어"
+    // y = 1.982 (부적합 내용 바닥 y = 1.937과 약 0.045인치/~4px 살짝만 띄운 여백)
     slide.addText([
       { text: data.isHoldPoint ? '☑ ' : '☐ ', options: { fontSize: 18, bold: true, color: '000000', fontFace: FONT_MALGUN } },
       { text: 'Hold Point 위반 (N/A)', options: { fontSize: 12, bold: true, color: '000000', fontFace: FONT_MALGUN } }
     ], {
-      x: 5.975, y: 2.060, w: 2.363, h: 0.406,
+      x: 5.975, y: 1.982, w: 2.363, h: 0.406,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 },
       align: 'center', valign: 'middle', wrap: false, inset: 0.04
     });
 
-    // 사진 로드 및 삽입: 글씨/배너 없이 순수 사진만 삽입 (y = 2.503에서 시작)
+    // 사진 로드 및 삽입: 글씨/배너 없이 순수 사진만 삽입 (y = 2.425에서 시작)
     let photo1Base64 = null;
     let photo2Base64 = null;
     if (loadPhotoBase64) {
@@ -517,8 +519,8 @@
     const hasPhoto2 = Boolean(photo2Base64);
 
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
-    const photoBodyHeight = showGuidelineBox ? 3.650 : 4.740;
-    const photoStartY = 2.503;
+    const photoBodyHeight = showGuidelineBox ? 3.730 : 4.810;
+    const photoStartY = 2.425;
 
     if (hasPhoto2) {
       // 2개 사진 배치
@@ -562,21 +564,21 @@
     }
 
     // ── 우측 컬럼: 발생원인 & 개선대책 (x = 8.395 ~ 13.106, w = 4.711) ──
-    // 1) 발생원인 (인터뷰 결과) 헤더 (y = 2.060, h = 0.406, 바닥 y = 2.466)
-    // 사용자 지시: "3. hold point, 발생원인 위쪽이 살짝 띄어져 있어 확인해." -> 상단 0.123인치 여백 반영
+    // 1) 발생원인 (인터뷰 결과) 헤더 (y = 1.982, h = 0.406, 바닥 y = 2.388)
+    // 사용자 지시: "3. hold, 발생원인 위에 너무 많이 띄었어. 원본참고해서 조금만 띄어" -> 상단 0.045인치 여백 반영
     slide.addText('발생원인 (인터뷰 결과)', {
-      x: 8.395, y: 2.060, w: 4.711, h: 0.406,
+      x: 8.395, y: 1.982, w: 4.711, h: 0.406,
       fill: { color: C_YELLOW_BG }, line: { color: C_BORDER, width: 0.75 },
       fontFace: FONT_MALGUN, fontSize: 14, bold: true, color: '000000', align: 'center', valign: 'middle'
     });
 
-    // 2) 발생원인 본문 & 점검단 제안 (y = 2.503, h = 3.064, 바닥 y = 5.567)
-    // 발생원인 헤더 바닥(2.466)과 본문(2.503) 사이 0.037인치 간격
+    // 2) 발생원인 본문 & 점검단 제안 (y = 2.425, h = 3.142, 바닥 y = 5.567)
+    // 발생원인 헤더 바닥(2.388)과 본문(2.425) 사이 0.037인치 간격
     slide.addShape(pptx.ShapeType.rect, {
-      x: 8.395, y: 2.503, w: 4.711, h: 3.064,
+      x: 8.395, y: 2.425, w: 4.711, h: 3.142,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
-    // 윗칸: [ 의견 : 시공관리자 및 근로자 ] (h = 1.964, y = 2.503 ~ 4.467)
+    // 윗칸: [ 의견 : 시공관리자 및 근로자 ] (h = 2.042, y = 2.425 ~ 4.467)
     // 사용자 지시: "4. 의견 글씨가 원본 대비 밑으로 내려온것 같아. 확인해 그리고 그다음 줄간격은 좀 더 있으니까 참고하고"
     // PptxGenJS 마진 순서: [Left, Right, Bottom, Top] -> [8, 8, 2, 2]로 상단 패딩을 최소화하여 위로 바짝 올림
     // [의견 : ...] 뒤에는 paraSpaceAfter: 8을 주어 다음 본문과의 줄간격을 띄움
@@ -610,7 +612,7 @@
         }
       }
     ], {
-      x: 8.395, y: 2.503, w: 4.711, h: 1.964,
+      x: 8.395, y: 2.425, w: 4.711, h: 2.042,
       margin: [8, 8, 2, 2], valign: 'top', lineSpacingMultiple: intLineSpacing
     });
     // 가로 분리선: [의견]과 [점검단 제안] 사이 (y = 4.467)
@@ -843,8 +845,8 @@
           <div style="width: 13.8%; flex-shrink: 0; background: #bdd7ee; border-right: 1.0px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: #000000; white-space: nowrap; padding: 0 4px;">
             시설물/법규
           </div>
-          <!-- 2) 사고유형 & 등급 (사용자 지시: 음영 없음/순수 흰색 + 3px 황색 #ffc000 테두리, 원본처럼 글자색 검은색 #000000) -->
-          <div style="width: 12.0%; flex-shrink: 0; background: #ffffff; border: 3px solid #ffc000; z-index: 2; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">
+          <!-- 2) 사고유형 & 등급 (사용자 지시: 음영 없음/순수 흰색 + 3px 황색 #ffc000 테두리, 상하 균형 패딩) -->
+          <div style="width: 12.0%; flex-shrink: 0; background: #ffffff; border: 3px solid #ffc000; z-index: 2; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 2px 4px 2px; box-sizing: border-box;">
             <div style="font-weight: 800; font-size: 1.25rem; color: #000000; text-align: center; line-height: 1.15; white-space: nowrap;">
               ${data.typeMain}
             </div>
@@ -857,12 +859,12 @@
           <div style="width: 5.3%; flex-shrink: 0; background: #ffffff; border-right: 1.0px solid #000000; border-left: 1.0px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #000000; text-align: center; line-height: 1.2;">
             관련<br>기준
           </div>
-          <!-- 4) 관련기준 내용 (사용자 지시: 2. 원본에는 칸으로 구분되어 있지 않아. 제목과 본문 사이에 가로 구분선 없음) -->
-          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.0px solid #000000; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
-            <div style="background: #ffffff; padding: 4px 10px 2px 10px; font-weight: 800; font-size: ${data.lawTitle.length > 34 ? '0.86rem' : (data.lawTitle.length > 25 ? '0.90rem' : '0.95rem')}; color: #000000; display: flex; align-items: center; height: 26px; min-height: 26px; flex-shrink: 0; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          <!-- 4) 관련기준 내용 (사용자 지시: 제목 글씨가 아래 파란색 음영과 좌측 시작선 일치) -->
+          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.0px solid #000000; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; padding: 4px 8px;">
+            <div style="background: #ffffff; padding: 0 2px; font-weight: 800; font-size: ${data.lawTitle.length > 34 ? '0.86rem' : (data.lawTitle.length > 25 ? '0.90rem' : '0.95rem')}; color: #000000; display: flex; align-items: center; height: 26px; min-height: 26px; flex-shrink: 0; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
               ${data.lawTitle}
             </div>
-            <div style="padding: 2px 6px 4px 6px; background: #ffffff; flex: 1; display: flex; align-items: center; box-sizing: border-box;">
+            <div style="padding: 2px 0 4px 0; background: #ffffff; flex: 1; display: flex; align-items: center; box-sizing: border-box;">
               <div style="background: #deebf7; padding: 4px 8px; border-radius: 2px; font-size: 0.88rem; color: #111111; line-height: 1.34; width: 100%; box-sizing: border-box; word-break: keep-all;">
                 ${data.lawBody}
               </div>
@@ -933,8 +935,8 @@
         <div style="border: 1.0px solid #000000; display: grid; grid-template-columns: 1.74fr 1fr; background: #ffffff;">
           <!-- 좌측 컬럼: 사진 영역 및 Hold Point 위반 -->
           <div style="display: flex; flex-direction: column; border-right: 1.0px solid #000000; box-sizing: border-box;">
-            <!-- Hold Point 위반 박스 (사용자 지시: 3. hold point, 발생원인 위쪽이 살짝 띄어져 있어 확인해 -> margin-top: 8px) -->
-            <div style="display: flex; justify-content: flex-end; height: 38px; padding: 8px 4px 0 4px; box-sizing: border-box; align-items: center;">
+            <!-- Hold Point 위반 박스 (사용자 지시: 조금만 살짝 띄움) -->
+            <div style="display: flex; justify-content: flex-end; height: 32px; padding: 4px 4px 0 4px; box-sizing: border-box; align-items: center;">
               <div style="width: 210px; background: #ffffff; border: 1.0px solid #000000; border-radius: 2px; text-align: center; display: flex; align-items: center; justify-content: center; font-size: 0.88rem; color: #000000; font-weight: 800; white-space: nowrap; height: 26px;">
                 <span style="font-size: 16px; margin-right: 4px;">${data.isHoldPoint ? '☑' : '☐'}</span> Hold Point 위반 (N/A)
               </div>
@@ -962,9 +964,9 @@
           </div>
 
           <!-- 우측 컬럼: 발생원인 & 개선대책 & PM 판정결과 -->
-          <div style="display: flex; flex-direction: column; padding: 8px 4px 4px 4px; box-sizing: border-box;">
-            <!-- 1) 발생원인 (인터뷰 결과) 헤더 (사용자 지시: 위쪽이 살짝 띄어져 있음) -->
-            <div style="background: #ffd966; border: 1.0px solid #000000; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;">
+          <div style="display: flex; flex-direction: column; padding: 4px 4px 4px 4px; box-sizing: border-box;">
+            <!-- 1) 발생원인 (인터뷰 결과) 헤더 (사용자 지시: 위쪽이 살짝만 띄어져 있음) -->
+            <div style="background: #ffd966; border: 1.0px solid #000000; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; margin-bottom: 3px;">
               발생원인 (인터뷰 결과)
             </div>
             <!-- 2) 발생원인 본문 & 점검단 제안 (하단 margin: 8px로 개선대책 위에 0.093인치 간격 띄움) -->
