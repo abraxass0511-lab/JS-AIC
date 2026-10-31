@@ -18,25 +18,11 @@
     '도로', '야적장', '수상', '수중', '공중'
   ];
 
-  // [첨부 2] 발생형태대분류 - 유형 (17개 항목)
+  // [첨부 2] 표준 22대 재해발생 형태 - 유형 (Image 2 실물 엑셀로그 반영)
   const ACCIDENT_TYPES = [
-    '떨어짐(추락, 사람)',
-    '끼임(협착, 감김)',
-    '무너짐(붕괴, 도괴)/깔림',
-    '넘어짐(전도: 사람)',
-    '미끄러짐/접질림',
-    '쓰러짐, 뒤집힘(전도, 전복: 자재/장비 등)',
-    '부딪힘(충돌)/맞음',
-    '떨어짐(낙하/비래)/맞음',
-    '감전',
-    '화재/폭발',
-    '질식/중독 등',
-    '베임/찔림/절단',
-    '위험물질 노출/흡입/접촉 등',
-    '개인질환/근골격계',
-    '폭력행위',
-    '기타',
-    '분류불능'
+    '추락', '낙하', '비래', '붕괴', '도괴', '전복', '전도', '협착',
+    '충돌', '추돌', '충격', '접촉', '익사', '질식', '중독', '흡인',
+    '화재', '폭발', '화상', '감전', '감염', '질병'
   ];
 
   // 이전 표준 공종 분류 (가설공사, 토공사, 기초공사, 철근콘크리트공사 등)
@@ -54,27 +40,34 @@
   // 점검자 의견 3대 분류
   const INSPECTOR_OPINION_TYPES = ['페널티', '시스템 개선', '교육/코칭'];
 
-  // 유형 표준 매핑 함수 (과거 단문형 데이터 호환)
+  // 유형 표준 22대 분류 매핑 함수 (과거 단문형 및 서술형 데이터 호환)
   function mapAccidentType(raw) {
-    if (!raw) return '';
+    if (!raw) return '추락';
     const s = String(raw).trim();
     if (ACCIDENT_TYPES.includes(s)) return s;
-    if (s.includes('추락') || s.includes('떨어짐(사람)') || s === '떨어짐') return '떨어짐(추락, 사람)';
-    if (s.includes('낙하') || s.includes('비래') || s.includes('맞음')) return '떨어짐(낙하/비래)/맞음';
-    if (s.includes('협착') || s.includes('끼임') || s.includes('감김')) return '끼임(협착, 감김)';
-    if (s.includes('붕괴') || s.includes('도괴') || s.includes('무너짐') || s.includes('깔림')) return '무너짐(붕괴, 도괴)/깔림';
-    if (s.includes('전복') || s.includes('뒤집힘') || s.includes('쓰러짐')) return '쓰러짐, 뒤집힘(전도, 전복: 자재/장비 등)';
-    if (s.includes('전도') || s.includes('넘어짐')) return '넘어짐(전도: 사람)';
-    if (s.includes('미끄러짐') || s.includes('접질림')) return '미끄러짐/접질림';
-    if (s.includes('충돌') || s.includes('부딪힘')) return '부딪힘(충돌)/맞음';
+    if (s.includes('추락') || s.includes('떨어짐(사람)') || s === '떨어짐') return '추락';
+    if (s.includes('낙하')) return '낙하';
+    if (s.includes('비래') || s.includes('맞음')) return '비래';
+    if (s.includes('붕괴') || s.includes('무너짐')) return '붕괴';
+    if (s.includes('도괴')) return '도괴';
+    if (s.includes('전복') || s.includes('뒤집힘')) return '전복';
+    if (s.includes('전도') || s.includes('넘어짐') || s.includes('미끄러짐') || s.includes('접질림')) return '전도';
+    if (s.includes('협착') || s.includes('끼임') || s.includes('감김')) return '협착';
+    if (s.includes('추돌')) return '추돌';
+    if (s.includes('충돌') || s.includes('부딪힘')) return '충돌';
+    if (s.includes('충격')) return '충격';
+    if (s.includes('접촉')) return '접촉';
+    if (s.includes('익사') || s.includes('빠짐')) return '익사';
+    if (s.includes('질식') || s.includes('산소결핍')) return '질식';
+    if (s.includes('중독')) return '중독';
+    if (s.includes('흡인') || s.includes('흡입')) return '흡인';
+    if (s.includes('폭발')) return '폭발';
+    if (s.includes('화재')) return '화재';
+    if (s.includes('화상') || s.includes('열상') || s.includes('온도')) return '화상';
     if (s.includes('감전')) return '감전';
-    if (s.includes('화재') || s.includes('폭발')) return '화재/폭발';
-    if (s.includes('질식') || s.includes('중독') || s.includes('가스')) return '질식/중독 등';
-    if (s.includes('베임') || s.includes('찔림') || s.includes('절단')) return '베임/찔림/절단';
-    if (s.includes('위험물질') || s.includes('흡입') || s.includes('노출') || s.includes('접촉')) return '위험물질 노출/흡입/접촉 등';
-    if (s.includes('질환') || s.includes('근골격계')) return '개인질환/근골격계';
-    if (s.includes('폭력')) return '폭력행위';
-    return s || '기타';
+    if (s.includes('감염')) return '감염';
+    if (s.includes('질병') || s.includes('질환') || s.includes('근골격계')) return '질병';
+    return '추락';
   }
 
   // 9×9 핵심 작업방법(9종) 정규화 및 추론 함수
@@ -337,9 +330,10 @@
   const COLS = [
     ['No', 'No', 5, null, (r, i) => i + 1],
     
-    // [부적합 사항] 사진 1 & 사진 2 신규 2열 구성
+    // [부적합 사항] 사진 1 & 사진 2 및 사진 요약(배너)
     ['부적합 사항', '사진 1', 18, null, () => ''],
     ['부적합 사항', '사진 2', 18, null, () => ''],
+    ['부적합 사항', '사진 요약(배너)', 22, null, r => r.photoBanner || ''],
     ['부적합 사항', '부적합 등급', 12, 'severities', r => r.severity || '중부적합'],
     ['부적합 사항', '내용', 28, null, r => r.content || ''],
     ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],
@@ -350,7 +344,9 @@
     ['공종·작업방법', '작업방법', 16, 'workMethods', r => resolveWorkMethod(r)],
 
     // [부적합 분류] 유형과 기인물(대, 중, 소)
-    ['부적합 분류', '유형', 20, 'types', r => mapAccidentType(r.type)],
+    ['부적합 분류', '유형', 12, 'types', r => mapAccidentType(r.type)],
+    // [재해 형태 22대 유형 통계 마크 열 (Image 2 실물 엑셀로그 일치)]
+    ...ACCIDENT_TYPES.map(type => ['재해유형', type, 6, 'mark', r => mapAccidentType(r.type) === type ? '●' : '']),
     ['부적합 분류', '기인물(대)', 14, 'agentsMajor', r => resolveAgentHierarchy(r).major],
     ['부적합 분류', '기인물(중)', 14, 'agentsMid', r => resolveAgentHierarchy(r).mid],
     ['부적합 분류', '기인물(소)', 18, 'agentsMinor', r => resolveAgentHierarchy(r).minor],

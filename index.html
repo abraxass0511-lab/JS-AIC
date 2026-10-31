@@ -19,7 +19,7 @@
   <script src="js/classifier.js?v=20261018_1"></script>
   <script src="js/excel-builder.js?v=20261024_2"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-generator.js?v=20261031_no_wrap_no_banner"></script>
+  <script src="js/ppt-generator.js?v=20261101_red_banner_22types"></script>
   <script src="js/lmstudio-client.js?v=20261025_clean_ocr"></script>
 </head>
 <body>
@@ -208,6 +208,17 @@
               🔴 음성을 듣고 있습니다... 말씀이 끝나면 텍스트로 자동 입력됩니다.
             </div>
 
+            <!-- 🚩 사진 상단 붉은색 요약 문구 (Qwen AI 자동 생성 / 직접 편집) -->
+            <div style="margin-top: 8px; padding: 8px 12px; background: #fff5f5; border: 1.5px solid #fecaca; border-radius: 8px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700; color: #991b1b; margin-bottom: 0;">
+                  🚩 사진 상단 붉은색 요약 박스 (무엇을 안했는지 직시)
+                </label>
+                <span style="font-size: 0.72rem; color: #dc2626; font-weight: 600;">(Qwen AI 자동 작성 연동)</span>
+              </div>
+              <input type="text" id="txtPhotoBanner" class="form-control" style="border-color: #f87171; font-weight: 700; color: #991b1b; background: #ffffff;" placeholder="예: 양중작업 시 화물을 직접 손으로 잡음 (Qwen AI 자동 추출)">
+            </div>
+
             <!-- 🤖 AI 자동 분석 도구 바 (기존 온디바이스 스마트 AI + 로컬 Qwen AI) -->
             <div style="margin-top: 10px; padding: 10px 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
@@ -306,8 +317,8 @@
             </div>
             
             <div style="margin-bottom: 10px;">
-              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #7c2d12;">유형 (발생형태 17종)</label>
-              <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="떨어짐(추락, 사람), 맞음, 넘어짐 등">
+              <label class="form-label" style="font-size: 0.8rem; font-weight: 700; color: #7c2d12;">유형 (22대 재해발생 형태)</label>
+              <input type="text" id="txtType" class="form-control" list="listTypes" placeholder="추락, 낙하, 비래, 붕괴, 도괴, 전복, 전도, 협착 등">
               <datalist id="listTypes"></datalist>
             </div>
 
