@@ -256,6 +256,11 @@ export const store = {
       }
     }
     if (this.user) {
+      // 오염된 과거 삭제 tombstone 캐시 자동 정화 (정상 등록 레코드 은폐 원천 방지)
+      try {
+        localStorage.removeItem('sp_deleted_ids');
+      } catch (e) {}
+
       await this.loadConfig().catch(() => {});
       // 새로고침/앱 시작 즉시 로컬 미동기화 데이터 전자동 클라우드 업로드
       this.syncLocalToServer().catch(e => console.warn('Auto sync on init warning:', e));
@@ -420,9 +425,9 @@ export const store = {
           });
         }
         r.data.records.forEach(rec => {
-          // 활성 레코드는 삭제 목록에 오염되었더라도 원천 복원 및 표시
-          if (!serverDeleted.has(rec.id)) {
+          if (rec && rec.id) {
             map.set(rec.id, rec);
+            unmarkAsDeleted(rec.id);
           }
         });
       }
@@ -509,6 +514,13 @@ export const store = {
     });
     return Array.from(map.values()).sort((a, b) => ((b.inspectedDate || '') + (b.createdAt || '')).localeCompare((a.inspectedDate || '') + (a.createdAt || '')));
   },
+  async listAll(force = false) {
+    const buckets = await this.listAllBuckets();
+    if (!buckets.includes('2026-10')) buckets.push('2026-10');
+    const curM = monthStr();
+    if (!buckets.includes(curM)) buckets.push(curM);
+    return this.listMonths(buckets, force);
+  },
   async listPeriod(startDate, endDate, force = false) {
     if (!startDate && !endDate) return this.listMonth(monthStr(), force);
     if (!startDate) startDate = '2020-01-01';
@@ -539,7 +551,8 @@ export const store = {
     const buckets = new Set([monthStr(), '2026-10']);
     if (this.mode === 'github') {
       const curY = new Date().getFullYear();
-      for (const y of [curY - 1, curY, curY + 1, 2026]) {
+      const years = Array.from(new Set([2026, curY]));
+      await Promise.all(years.map(async y => {
         try {
           const res = await this.backend.readJSON(`data/${y}/index`);
           if (res && res.data && Array.isArray(res.data)) {
@@ -550,7 +563,7 @@ export const store = {
             });
           }
         } catch (e) {}
-      }
+      }));
     }
     // 로컬 IndexedDB에 있는 버킷들도 항상 통합 수집
     if (this.localBackend) {
