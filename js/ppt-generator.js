@@ -346,11 +346,11 @@
       slide.addText([
         { text: `${data.typeMain}\n`, options: { fontSize: 18, bold: true, color: '000000', fontFace: FONT_MALGUN } },
         { text: `${data.typeSub}\n`, options: { fontSize: 11, bold: true, color: '333333', fontFace: FONT_MALGUN } },
-        { text: `[${data.severity}]`, options: { fontSize: 15, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
+        { text: `[${data.severity}]`, options: { fontSize: 18, bold: true, color: data.isMajor ? C_RED : C_ORANGE, fontFace: FONT_MALGUN } }
       ], {
         x: 1.967, y: 0.163, w: 1.568, h: 0.914,
         fill: { color: 'FFFFFF' }, line: { color: C_ACC_BORDER, width: 3.0 },
-        align: 'center', valign: 'middle', lineSpacingMultiple: 0.95, inset: 0.02
+        align: 'center', valign: 'middle', lineSpacingMultiple: 0.92, inset: 0.01
       });
     } else {
       slide.addText([
@@ -828,7 +828,7 @@
               ${data.typeMain}
             </div>
             ${data.typeSub ? `<div style="font-weight: 700; font-size: 0.82rem; color: #333333; text-align: center; line-height: 1.1; margin-top: 1px; white-space: nowrap;">${data.typeSub}</div>` : ''}
-            <div style="font-weight: 800; font-size: 0.98rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'}; margin-top: 2px; white-space: nowrap;">
+            <div style="font-weight: 800; font-size: 1.25rem; color: ${data.isMajor ? '#c00000' : '#ed7d31'}; margin-top: 1px; white-space: nowrap;">
               [${data.severity}]
             </div>
           </div>
