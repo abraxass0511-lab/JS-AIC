@@ -73,8 +73,10 @@
     if (!content) return null;
     const text = content.toLowerCase();
 
-    // 0. 양중작업 / 크레인 / 유도로프 (사용자 요구사항 4 정밀 매칭)
-    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중') || text.includes('호이스트')) {
+    // 0. 양중작업 / 크레인 / 유도로프 (이미지 4, 5번 실물 점검장표 100% 동일 일치)
+    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중') || text.includes('호이스트') || text.includes('손으로')) {
+      const isHand = text.includes('손으로') || text.includes('직접 잡');
+      const isHorizontal = text.includes('수평') || text.includes('로프간격') || text.includes('수평양중');
       return {
         severity: '중부적합',
         law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
@@ -82,13 +84,14 @@
         hazardType: text.includes('낙하') ? '낙하' : '추락',
         mgmtCauses: ['계획 미이행', '불안전 행동'],
         holdPoint: true,
-        photoBanner: text.includes('유도로프') ? '양중작업 시 유도로프 미사용' : (text.includes('수평양중') ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 화물을 직접 손으로 잡음'),
+        photoBanner: isHand ? '양중작업 시 화물을 직접 손으로 잡음' : (isHorizontal ? '양중작업 시 화물의 수평양중 미 실시' : '양중작업 시 유도로프 미사용'),
+        photo2Banner: isHand ? '양중작업 시 유도로프 미사용' : (isHorizontal ? '지상에서 보 거푸집 로프체결 간격 미준수' : ''),
         analysis: '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 및 협착 위험',
         pmVerdict: '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업'
       };
     }
 
-    // 0-B. 말비계 / 우마 (산안규칙 제67조, 제13조 - 사용자 지시 3 정밀 일치)
+    // 0-B. 말비계 / 우마 (산안규칙 제67조, 제13조)
     if (text.includes('말비계') || text.includes('우마')) {
       const isEdge = text.includes('모서리') || text.includes('단부') || text.includes('추락');
       return {
@@ -101,6 +104,53 @@
         photoBanner: isEdge ? '말비계 모서리 구간 단부 추락방지 미조치' : '말비계 안전기준 및 전도방지 미조치',
         analysis: '말비계 설치범위 모서리 구간 단부 안전난간 또는 추락방지조치 미실시로 단부 추락 위험',
         pmVerdict: '즉시 말비계 작업중지 및 모서리 단부 안전난간/추락방지망 설치 후 재검측'
+      };
+    }
+
+    // 0-C. 가설전선 / 통로 정리 (이미지 1번 정밀 일치: "통로 바닥에 전선이 정리되지 않아...")
+    if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) && 
+        (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
+      return {
+        severity: '경부적합',
+        law: '안전보건규칙 제304조(가설전선 등) 및 제22조(통로의 설치)',
+        item: '가설전선',
+        hazardType: '전도',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: false,
+        photoBanner: '통로 바닥 가설전선 거치 및 정리 미실시',
+        analysis: '통로 바닥에 가설전선이 거치되지 않고 방치되어 통행 근로자의 걸림 및 전도 재해 위험',
+        pmVerdict: '즉시 전선 거치대를 설치하여 바닥으로부터 띄우고 보행 안전통로 구획 정리'
+      };
+    }
+
+    // 0-D. 보 상부작업 / 다이빙 자세 / 미승인 작업 (이미지 2번 정밀 일치: "1. 보 상부작업 미승인 2. 다이빙 자세")
+    if (text.includes('보 상부') || text.includes('다이빙') || (text.includes('보') && text.includes('승인') && (text.includes('자세') || text.includes('작업')))) {
+      return {
+        severity: '중부적합',
+        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등), 제44조',
+        item: '보 거푸집',
+        hazardType: '추락',
+        mgmtCauses: ['불안전 행동', '계획 미이행'],
+        holdPoint: true,
+        photoBanner: '보 상부 승인 미실시 및 불안전 자세 작업',
+        photo2Banner: '보 상부작업 시 다이빙 자세 취함',
+        analysis: '사전 승인 없는 보 상부 작업 및 다이빙 자세 등 불안전 행동으로 추락 위험 극심',
+        pmVerdict: '보 상부 작업 즉시 중지 및 사전 승인 절차 이행, 안전대 체결 설비 보강 후 재개'
+      };
+    }
+
+    // 0-E. 안전통로 내 거푸집/자재 방치 (이미지 3번 정밀 일치: "구획된 바닥 안전통로에 거푸집 자재 방치")
+    if ((text.includes('통로') || text.includes('통행')) && (text.includes('자재') || text.includes('거푸집') || text.includes('방치') || text.includes('적치'))) {
+      return {
+        severity: '경부적합',
+        law: '안전보건규칙 제22조(통로의 설치)',
+        item: '가설통로',
+        hazardType: '전도',
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        holdPoint: false,
+        photoBanner: '구획된 바닥 안전통로 내 거푸집 자재 방치',
+        analysis: '구획된 바닥 안전통로에 거푸집 등 자재를 무단 방치하여 통행 방해 및 전도 위험',
+        pmVerdict: '안전통로 내 적치 자재 즉시 반출 및 지정 야적 구역으로 이동 조치'
       };
     }
 
@@ -278,6 +328,7 @@
             analysis: data.analysis || (instantResult ? instantResult.analysis : '산업안전보건기준에 관한 규칙 위반 사항'),
             pmVerdict: data.pmVerdict || (instantResult ? instantResult.pmVerdict : '즉시 시정 조치 및 현장 점검 완료 후 작업'),
             photoBanner: data.photoBanner || (instantResult ? instantResult.photoBanner : ''),
+            photo2Banner: data.photo2Banner || (instantResult ? instantResult.photo2Banner : ''),
             source: 'cloudflare_cloud_qwen'
           };
         }
@@ -287,16 +338,37 @@
     }
 
     // ── [2단계-B] 내 노트북이 켜져 있는 경우: 로컬 LM Studio 스트리밍 추론 ──
-    // 프롬프트: 생각을 3~4문장으로 극단적으로 압축하고 </think> 뒤에 즉시 JSON 출력 강제
-    const systemPrompt = `너는 대한민국 산업안전보건법 및 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 전문 안전감사관 AI이다.
-주어진 지적내용을 면밀히 분석하여 가장 부합하는 현행 법령 조항과 재해형태를 도출하라.
+    const systemPrompt = `너는 대한민국 건설현장 최고 안전감사관이자 고용노동부 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 전문 AI이다.
+주어진 현장 부적합 지적사항과 첨부된 사진(또는 작업상황)을 정밀 분석하여, 실물 점검장표 사진 상단 적색 음영 배너(photoBanner, photo2Banner) 및 위반 법령을 도출하라.
+
+[핵심 작성 원칙 - 사진 상단 적색 배너 (photoBanner / photo2Banner)]
+1. 배너 안에는 반드시 구체적으로 '어떤 작업/상황'에서 '어떤 안전기준을 안 지켰는지 / 어떤 위험 행동을 했는지'를 직접적으로 작성하라 (15~20자 내외).
+   - [올바른 작성 예시]:
+     • '양중작업 시 화물을 직접 손으로 잡음'
+     • '양중작업 시 유도로프 미사용'
+     • '양중작업 시 화물의 수평양중 미 실시'
+     • '말비계 모서리 구간 단부 추락방지 미조치'
+     • '통로 바닥 가설전선 거치 및 정리 미실시'
+     • '보 상부 승인 미실시 및 불안전 자세 작업'
+     • '구획된 바닥 안전통로 내 거푸집 자재 방치'
+     • '작업발판 단부 안전난간 미설치'
+     • '바닥 개구부 덮개 미설치 및 고정 미흡'
+     • '고소작업 시 안전대 미체결'
+2. [절대 금지 사항 - 위반 시 엄격히 반려]:
+   - ❌ '표준 안전작업절차 및 안전수칙 미준수', '안전수칙 미준수' 같은 모호하고 추상적인 문구를 절대 넣지 말 것!
+   - ❌ '작업방법 불량(동작/자세 불량)', '보호구 착용 불량', '불안전 행동', '불안전 상태' 같은 통계 분류 카테고리 명칭을 그대로 넣지 말 것!
+3. 지적내용에 2가지 독립된 지적사항(예: 1. 손으로 잡음, 2. 유도로프 미사용)이 있거나 사진이 2장인 경우:
+   - photoBanner: 1번 사진용 구체적 위반 문구 (예: '양중작업 시 화물을 직접 손으로 잡음')
+   - photo2Banner: 2번 사진용 구체적 위반 문구 (예: '양중작업 시 유도로프 미사용', 단일 지적이면 빈 문자열 '')
+
 생각 과정(<think>)은 3~4문장 이내로 아주 짧게 끝내고, 반드시 </think> 태그 뒤에 아래 JSON 형식으로만 최종 답을 출력하라:
 {
   "severity": "중부적합" 또는 "경부적합",
-  "law": "산안규칙 제OO조(조항명 전문)",
-  "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식" 또는 "온열질환" 또는 "직업병",
-  "item": "해당 작업 또는 기인물 명칭(예: 밀폐공간, 비계, 안전난간, 거푸집, 가설전기, 크레인, 굴착기 등)",
-  "photoBanner": "사진 상단 배너용 15자 내외 문구. 지적내용과 현장 사진(또는 작업상황)의 핵심 기인물(예: 말비계, 양중, 개구부, 사다리, 비계 등)과 위험요인을 정확히 분석하여 무엇을 직접 안 했는지 간단명료하게 기입하라. (예: '말비계 모서리 구간 단부 추락방지 미조치', '양중작업 시 화물의 수평양중 미실시', '양중작업 시 화물을 직접 손으로 잡음', '양중작업 시 유도로프 미사용', '바닥 개구부 덮개 미설치', '고소작업 시 안전대 미체결'). 지적내용에 없는 다른 유형(예: 말비계 작업인데 개구부 언급 등)을 절대 혼동하지 말 것.",
+  "law": "안전보건규칙 제OO조(조항명 전문)",
+  "hazardType": "추락" 또는 "낙하" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식",
+  "item": "해당 작업 또는 기인물 명칭",
+  "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 위반 문구",
+  "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 위반 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
@@ -309,7 +381,29 @@ ${extraContext.location ? `작업장소: ${extraContext.location}` : ''}
 ${extraContext.productType ? `건물용도: ${extraContext.productType}` : ''}
 ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
-위 지적사항 및 현장 상황의 산안법령 위반과 부적합 등급을 분석하라.`;
+위 지적사항 및 현장 사진/상황을 분석하여 사진 상단 배너(구체적으로 어떤 점이 안 되었는지 직시)와 산안법 위반을 분석하라.`;
+
+    // 사진 첨부 시 멀티모달(Vision) 지원 포맷 구성 (미지원 모델 시 자동 텍스트 폴백)
+    const photos = Array.isArray(extraContext.photos) ? extraContext.photos.filter(Boolean) : [];
+    let messages = [
+      { role: 'system', content: systemPrompt }
+    ];
+
+    if (photos.length > 0) {
+      const contentParts = [{ type: 'text', text: userPrompt }];
+      photos.slice(0, 2).forEach((p, idx) => {
+        const url = typeof p === 'string' ? p : (p.previewUrl || p.url || '');
+        if (url && (url.startsWith('data:image/') || url.startsWith('http'))) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: { url }
+          });
+        }
+      });
+      messages.push({ role: 'user', content: contentParts });
+    } else {
+      messages.push({ role: 'user', content: userPrompt });
+    }
 
     let ctrl = new AbortController();
     // 35초 초과 시 자동 타임아웃하여 룰 기반 결과 반환
@@ -318,21 +412,42 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     try {
       onProgress({ phase: 'connecting', message: 'LM Studio 로컬 AI 연결 중...' });
 
-      const res = await fetch(`${currentEndpoint}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: currentModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.5,
-          max_tokens: 800,
-          stream: true
-        }),
-        signal: ctrl.signal
-      });
+      let res;
+      try {
+        res = await fetch(`${currentEndpoint}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: currentModel,
+            messages,
+            temperature: 0.4,
+            max_tokens: 800,
+            stream: true
+          }),
+          signal: ctrl.signal
+        });
+      } catch (postErr) {
+        // 비전 미지원 모델일 경우 텍스트 단독으로 즉시 재시도
+        if (photos.length > 0) {
+          res = await fetch(`${currentEndpoint}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: currentModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+              ],
+              temperature: 0.4,
+              max_tokens: 800,
+              stream: true
+            }),
+            signal: ctrl.signal
+          });
+        } else {
+          throw postErr;
+        }
+      }
 
       clearTimeout(timeout);
 
@@ -347,7 +462,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       let fullContent = '';
       let thinkTokens = 0;
 
-      onProgress({ phase: 'thinking', message: 'AI가 산안법령 검토 중 (🤔 추론 토큰 수신)...' });
+      onProgress({ phase: 'thinking', message: 'AI가 사진과 부적합사항 정밀 분석 중 (🤔 추론 토큰 수신)...' });
 
       while (!done) {
         const { value, done: isDone } = await reader.read();
@@ -374,7 +489,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   fullContent += delta.content;
                   onProgress({ 
                     phase: 'generating', 
-                    message: 'AI 법률 분석 결과 수신 중...' 
+                    message: 'AI 사진 배너 및 법률 분석 결과 수신 중...' 
                   });
                 }
               } catch (e) {}
@@ -397,6 +512,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           analysis: parsed.analysis || instantResult.analysis,
           pmVerdict: parsed.pmVerdict || instantResult.pmVerdict,
           photoBanner: parsed.photoBanner || instantResult.photoBanner || '',
+          photo2Banner: parsed.photo2Banner || instantResult.photo2Banner || '',
           source: 'local_qwen'
         };
       }

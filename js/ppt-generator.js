@@ -96,65 +96,166 @@
   }
 
   /**
-   * 사진 상단 직접 행동 적색 음영 배너 문구 자동 도출 (사용자 지시 4: "직접적으로 무엇을 안했는지 간단하게 기입")
+   * 통계 분류 카테고리 레이블 판별기 (이러한 레이블은 사진 상단 배너에 노출 금지)
+   */
+  function isGenericTaxonomyLabel(str) {
+    if (!str) return true;
+    const s = String(str).trim();
+    const BAD_LABELS = [
+      '작업방법 불량', '동작/자세 불량', '작업방법 불량(동작/자세 불량)',
+      '보호구 착용 불량', '기계기구 취급 불량', '불안전한 행동', '불안전한 상태',
+      '불안전 행동', '불안전 상태', '관리적', '물적', '인적', '계획 미수립', '계획 미이행',
+      '해당없음', '해당 없음', '기타', '표준 안전작업절차 및 안전수칙 미준수', '안전수칙 미준수',
+      '표준 안전작업절차', '현장 안전수칙'
+    ];
+    return BAD_LABELS.some(bad => s.includes(bad)) || s.length < 4;
+  }
+
+  /**
+   * 사진 1 상단 직접 행동 적색 음영 배너 문구 자동 도출 (사용자 지시: 이미지 4, 5번 기반 구체적 미준수 행동 직시)
    */
   function extractDirectAction(r) {
     if (r.photoBanner && String(r.photoBanner).trim()) {
-      return String(r.photoBanner).trim();
+      const banner = String(r.photoBanner).trim();
+      if (!isGenericTaxonomyLabel(banner)) return banner;
     }
     const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     
-    // 0. 말비계 / 우마 (단부 추락, 모서리 등 사용자 지시 3 정밀 일치)
+    // 1. 양중작업 시 손으로 화물 직접 잡음 (이미지 4번 실물 점검장표 100% 일치)
+    if (text.includes('손으로') || text.includes('직접 잡') || (text.includes('유도로프') && (text.includes('손') || text.includes('당기')))) {
+      return '양중작업 시 화물을 직접 손으로 잡음';
+    }
+    // 2. 양중작업 시 수평양중 미실시 (이미지 5번 실물 점검장표 100% 일치)
+    if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
+      return '양중작업 시 화물의 수평양중 미 실시';
+    }
+    // 3. 양중작업 시 유도로프 미사용 (이미지 4번 2번 사진 배너)
+    if (text.includes('유도로프')) {
+      return '양중작업 시 유도로프 미사용';
+    }
+    // 4. 통로 바닥 가설전선 거치 및 정리 미실시 (이미지 1번 지적사항 정밀 일치)
+    if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) && 
+        (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
+      return '통로 바닥 가설전선 거치 및 정리 미실시';
+    }
+    // 5. 보 상부작업 승인 미실시 및 불안전 자세 (이미지 2번 지적사항 정밀 일치)
+    if (text.includes('보 상부') || text.includes('다이빙') || (text.includes('보') && text.includes('승인') && (text.includes('자세') || text.includes('작업')))) {
+      return '보 상부 승인 미실시 및 불안전 자세 작업';
+    }
+    // 6. 구획된 바닥 안전통로 내 거푸집/자재 방치 (이미지 3번 지적사항 정밀 일치)
+    if ((text.includes('통로') || text.includes('통행')) && (text.includes('자재') || text.includes('거푸집') || text.includes('방치') || text.includes('적치'))) {
+      return '구획된 바닥 안전통로 내 거푸집 자재 방치';
+    }
+    // 7. 말비계 / 우마 (단부 추락, 모서리 등)
     if (text.includes('말비계') || text.includes('우마')) {
       if (text.includes('모서리') || text.includes('단부') || text.includes('추락')) {
         return '말비계 모서리 구간 단부 추락방지 미조치';
       }
       return '말비계 안전기준 및 전도방지 미조치';
     }
-
-    if (text.includes('손으로') || (text.includes('유도로프') && text.includes('미사용'))) {
-      return '양중작업 시 화물을 직접 손으로 잡음';
-    }
-    if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
-      return '양중작업 시 화물의 수평양중 미실시';
-    }
-    if (text.includes('유도로프')) {
-      return '양중작업 시 유도로프 미사용';
-    }
-    if (text.includes('안전대') && (text.includes('미체결') || text.includes('미착용') || text.includes('체결'))) {
-      return '고소작업 시 안전대 미체결';
-    }
-    if (text.includes('안전모')) {
-      return '작업구간 내 안전모 턱끈 미체결';
-    }
-    if (text.includes('안전난간') || text.includes('난간')) {
-      return '작업발판 단부 안전난간 미설치';
-    }
-    if (text.includes('개구부') || text.includes('덮개')) {
+    // 8. 바닥 개구부 덮개 미설치
+    if (text.includes('개구부') || text.includes('덮개') || text.includes('피트')) {
       return '바닥 개구부 덮개 미설치 및 고정 미흡';
     }
-    if (text.includes('작업발판') || text.includes('발판')) {
+    // 9. 안전난간대 미설치
+    if (text.includes('안전난간') || text.includes('난간') || (text.includes('단부') && text.includes('슬래브'))) {
+      return '작업발판 단부 안전난간 미설치';
+    }
+    // 10. 안전대 미체결
+    if (text.includes('안전대') && (text.includes('미체결') || text.includes('미착용') || text.includes('체결') || text.includes('구명줄'))) {
+      return '고소작업 시 안전대 미체결';
+    }
+    // 11. 안전모 턱끈 미체결
+    if (text.includes('안전모') || text.includes('턱끈')) {
+      return '작업구간 내 안전모 턱끈 미체결';
+    }
+    // 12. 작업발판 전면 미설치 및 틈새
+    if (text.includes('작업발판') || text.includes('발판') || text.includes('틈새')) {
       return '작업발판 전면 미설치 및 틈새 방치';
     }
+    // 13. 사다리 작업
     if (text.includes('사다리')) {
       return '이동식 사다리 최상부 발판 작업';
     }
-    if (text.includes('누전') || text.includes('차단기')) {
-      return '임시 분전함 누전차단기 미설치';
+    // 14. 임시 분전함 외함 접지 및 누전차단기
+    if (text.includes('누전') || text.includes('차단기') || text.includes('접지') || text.includes('분전함')) {
+      return '임시 분전함 외함 접지 및 누전차단기 미설치';
     }
+    // 15. 동바리 / 서포트
+    if (text.includes('동바리') || text.includes('서포트') || text.includes('수평연결재')) {
+      return '동바리 수평연결재 2방향 미체결';
+    }
+    // 16. 신호수 미배치
     if (text.includes('신호수')) {
       return '양중 및 중장비 작업 전담 신호수 미배치';
     }
+    // 17. 작업계획서 미수립
     if (text.includes('작업계획서') || text.includes('계획 미수립')) {
       return '위험기계 작업 전 작업계획서 미수립';
     }
-    if (r.action && r.action !== '-' && r.action !== '해당없음' && r.action.length <= 25) {
-      return r.action;
+
+    // 18. 사용자가 입력한 구체적 불안전 행동이 일반 카테고리가 아니면 사용
+    if (r.action && !isGenericTaxonomyLabel(r.action) && r.action.length <= 25) {
+      return r.action.trim();
     }
-    if (r.content && r.content.length <= 25) {
-      return r.content;
+
+    // 19. 지적사항(r.content) 직접 파싱 및 정제
+    if (r.content && typeof r.content === 'string') {
+      const raw = r.content.trim();
+      if (raw.includes('1.') && raw.includes('2.')) {
+        const p1 = raw.split('1.')[1].split('2.')[0].trim();
+        if (p1.length >= 6 && p1.length <= 24) return p1;
+      }
+      if (raw.includes('↔')) {
+        const p1 = raw.split('↔')[0].trim();
+        if (p1.length >= 6 && p1.length <= 24) return p1;
+      }
+      if (raw.length <= 25 && !isGenericTaxonomyLabel(raw)) {
+        return raw;
+      }
     }
-    return '표준 안전작업절차 및 안전수칙 미준수';
+
+    // 최종 대체: 모호한 문구 절대 배제하고 기인물/공종 기반 구체적 표현 생성
+    const targetItem = (r.item && r.item !== '기타') ? r.item : (r.workMethod || r.workGroup || '현장 작업');
+    return `${targetItem} 안전기준 미준수 및 조치 미흡`;
+  }
+
+  /**
+   * 사진 2 상단 직접 행동 배너 문구 도출 (이미지 4번처럼 2개 사진에 독립된 위반사항이 있는 경우 지원)
+   */
+  function extractDirectAction2(r, firstBanner = '') {
+    if (r.photo2Banner && String(r.photo2Banner).trim()) {
+      const b2 = String(r.photo2Banner).trim();
+      if (!isGenericTaxonomyLabel(b2) && b2 !== firstBanner) return b2;
+    }
+    const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
+
+    // 이미지 4번 정밀 일치: 1번이 손으로 잡음이면 2번은 유도로프 미사용
+    if (text.includes('손으로') && (text.includes('유도로프') || firstBanner.includes('손으로'))) {
+      return '양중작업 시 유도로프 미사용';
+    }
+    // 이미지 2번 정밀 일치: 1번이 보 상부 승인이면 2번은 다이빙 자세
+    if (text.includes('보 상부') && (text.includes('다이빙') || text.includes('자세'))) {
+      return '보 상부작업 시 다이빙 자세 취함';
+    }
+    // 지적사항에 2번 항목이 명시된 경우
+    if (r.content && typeof r.content === 'string') {
+      const raw = r.content.trim();
+      if (raw.includes('2.')) {
+        const p2 = raw.split('2.')[1].split('3.')[0].trim();
+        if (p2.length >= 6 && p2.length <= 25) return p2;
+        if (p2.length > 25) return p2.slice(0, 22).trim();
+      }
+      if (raw.includes('↔')) {
+        const p2 = raw.split('↔')[1].trim();
+        if (p2.length >= 6 && p2.length <= 25) return p2;
+        if (p2.length > 25) return p2.slice(0, 22).trim();
+      }
+    }
+    if (r.photo2Title && !isGenericTaxonomyLabel(r.photo2Title) && r.photo2Title !== firstBanner) {
+      return r.photo2Title;
+    }
+    return '';
   }
 
   /**
@@ -403,8 +504,9 @@
     // 사용자 지침: 전반적인 내용과 점검자 등은 모두 엑셀 로그 기반으로 작성
     let inspectorName = r.inspector || r.inspectUser || r.user || '관리자';
 
-    // 사진 상단 직접 행동 문구 (사용자 지시 4: "세번째 이미지처럼 사진위에 빨간색 음영처리된 박스를 추가하고 직접적으로 무엇을 안했는지 간단하게 기입")
+    // 사진 상단 직접 행동 문구 (사용자 지시: 이미지 4, 5번 기반 구체적 미준수 행동 직시)
     const photoBanner = extractDirectAction(r);
+    const photo2Banner = extractDirectAction2(r, photoBanner);
 
     return {
       severity,
@@ -428,6 +530,7 @@
       photo2Title,
       photoBannerTitle,
       photoBanner,
+      photo2Banner,
       interviewOpinion,
       proposalType,
       proposalSub,
@@ -633,8 +736,9 @@
     const hasPhoto2 = Boolean(photo2Base64);
 
     // ── 좌측 사진 상단 행 (y = 1.982, h = 0.406) ──
-    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 2: #A05A66 버건디 적색, 사용자 지시 4: 첫번째 이미지 크기 w = 5.715로 전면 통일)
-    const bannerWidth = 5.715;
+    // 1) 사진 상단 직접 행동 적색 음영 배너 (사용자 지시: 이미지 4, 5번 실물 점검장표 100% 동일)
+    const isDualBanner = Boolean(hasPhoto2 && data.photo2Banner);
+    const bannerWidth = isDualBanner ? 4.080 : 5.715;
     const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 13, 9.5);
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.130, y: 1.982, w: bannerWidth, h: 0.406,
@@ -675,6 +779,19 @@
           data: photo2Base64,
           x: 4.290, y: photoStartY, w: 4.080, h: photoBodyHeight,
           sizing: { type: 'cover', w: 4.080, h: photoBodyHeight }
+        });
+      }
+      // 2-B) 사진 2 상단 적색 음영 배너 (이미지 4번 실물 점검장표 100% 동일)
+      if (isDualBanner) {
+        const banner2FontSize = calcSingleLineFontSize(data.photo2Banner, 4.080, 13, 9.5);
+        slide.addShape(pptx.ShapeType.rect, {
+          x: 4.290, y: 2.425, w: 4.080, h: 0.380,
+          fill: { color: C_PHOTO_BANNER_BG }, line: { color: C_PHOTO_BANNER_BG, width: 0 }
+        });
+        slide.addText(data.photo2Banner, {
+          x: 4.290, y: 2.425, w: 4.080, h: 0.380,
+          fontFace: FONT_MALGUN, fontSize: banner2FontSize, bold: true, color: 'FFFFFF',
+          align: 'center', valign: 'middle', wrap: false, inset: 0.04
         });
       }
     } else {
@@ -1103,9 +1220,9 @@
         <!-- 6-5. 세로 분할선 (좌측 사진 vs 우측 원인/대책, x = 8.395, y = 1.982 ~ 7.293) -->
         <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(1.982)}; width: 0; height: ${pctH(5.311)}; border-left: 1px solid #000000;"></div>
 
-        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시 2: #A05A66 버건디 적색, 사용자 지시 4: 첫번째 이미지 크기 w = 5.715 통일) -->
-        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.406)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
-          <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #ffffff;">${data.photoBanner}</span>
+        <!-- 6-6a. 사진 상단 직접 행동 적색 음영 배너 (사용자 지시: 이미지 4, 5번 실물 점검장표 100% 동일) -->
+        <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(1.982)}; width: ${pctW(hasPhoto2 && data.photo2Banner ? 4.080 : bannerWidth)}; height: ${pctH(0.406)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.5cqw;">
+          <span style="font-size: ${pt(calcSingleLineFontSize(data.photoBanner, hasPhoto2 && data.photo2Banner ? 4.080 : bannerWidth, 13, 9.5))}; font-weight: 800; color: #ffffff;">${data.photoBanner}</span>
         </div>
 
         <!-- 6-6b. Hold Point 위반 박스 (사용자 지시: 상단 0.045인치 미세 여백, y = 1.982) -->
@@ -1119,8 +1236,13 @@
           <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
             ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
           </div>
-          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff; position: absolute;">
             ${photo2Url ? `<img src="${photo2Url}" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
+            ${data.photo2Banner ? `
+              <div style="position: absolute; left: 0; top: 0; width: 100%; height: ${pctH(0.380)}; background: #a05a66; border-radius: 2px; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw; z-index: 2;">
+                <span style="font-size: ${pt(calcSingleLineFontSize(data.photo2Banner, 4.080, 13, 9.5))}; font-weight: 800; color: #ffffff;">${data.photo2Banner}</span>
+              </div>
+            ` : ''}
           </div>
         ` : `
           <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
