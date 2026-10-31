@@ -58,22 +58,23 @@ window.addEventListener('DOMContentLoaded', async () => {
   // 1. 이벤트 리스너를 가장 먼저 바인딩하여 모든 UI 상호작용 즉시 활성화
   bindEvents();
 
-  // 초기 날짜 및 기간 설정
+  // 초기 날짜 및 기간 설정 (과거 등록 데이터가 즉시 보이도록 2026-10부터 오늘까지 포괄 설정)
   const today = todayStr();
   const curMonth = monthStr();
-  const firstDay = `${curMonth}-01`;
+  const defaultQueryMonth = '2026-10';
+  const defaultStartDate = '2026-10-01';
 
   if ($('#txtInspectDate')) $('#txtInspectDate').value = today;
-  if ($('#selListMonth')) $('#selListMonth').value = curMonth;
-  if ($('#txtListStartDate')) $('#txtListStartDate').value = firstDay;
+  if ($('#selListMonth')) $('#selListMonth').value = defaultQueryMonth;
+  if ($('#txtListStartDate')) $('#txtListStartDate').value = defaultStartDate;
   if ($('#txtListEndDate')) $('#txtListEndDate').value = today;
 
-  if ($('#selEduMonth')) $('#selEduMonth').value = curMonth;
-  if ($('#txtEduStartDate')) $('#txtEduStartDate').value = firstDay;
+  if ($('#selEduMonth')) $('#selEduMonth').value = defaultQueryMonth;
+  if ($('#txtEduStartDate')) $('#txtEduStartDate').value = defaultStartDate;
   if ($('#txtEduEndDate')) $('#txtEduEndDate').value = today;
 
-  if ($('#selExportMonth')) $('#selExportMonth').value = curMonth;
-  if ($('#txtExportStartDate')) $('#txtExportStartDate').value = firstDay;
+  if ($('#selExportMonth')) $('#selExportMonth').value = defaultQueryMonth;
+  if ($('#txtExportStartDate')) $('#txtExportStartDate').value = defaultStartDate;
   if ($('#txtExportEndDate')) $('#txtExportEndDate').value = today;
 
   try {
@@ -3025,12 +3026,22 @@ async function populateEduOptions(targetRecordId = null) {
     } else if (eduPeriodMode === 'month') {
       const curMonth = $('#selEduMonth')?.value || monthStr();
       records = await store.listMonth(curMonth);
-      periodLabel = curMonth;
+      if (!records || !records.length) {
+        records = await store.listAll();
+        periodLabel = '전체 누적 기간';
+      } else {
+        periodLabel = curMonth;
+      }
     } else {
-      const start = $('#txtEduStartDate')?.value || `${monthStr()}-01`;
+      const start = $('#txtEduStartDate')?.value || '2026-10-01';
       const end = $('#txtEduEndDate')?.value || todayStr();
       records = await store.listPeriod(start, end);
-      periodLabel = `${start} ~ ${end}`;
+      if (!records || !records.length) {
+        records = await store.listAll();
+        periodLabel = '전체 누적 기간';
+      } else {
+        periodLabel = `${start} ~ ${end}`;
+      }
     }
   } catch (e) {
     console.error('Jangpyo list query error:', e);
@@ -3306,27 +3317,27 @@ async function renderRecordList(triggerSync = true) {
   try {
     if (listPeriodMode === 'all') {
       records = await store.listAll(true);
-      if (!records || !records.length) {
-        records = await store.listMonth('2026-10', true);
-      }
     } else if (listPeriodMode === 'month') {
       const m = $('#selListMonth')?.value || monthStr();
       records = await store.listMonth(m, true);
-      if ((!records || !records.length) && m !== '2026-10') {
-        records = await store.listMonth('2026-10', true);
+      // 현재 선택된 월에 등록 데이터가 없으면 전체 누적 목록 자동 표시
+      if (!records || !records.length) {
+        const all = await store.listAll(true);
+        if (all && all.length) records = all;
       }
     } else {
-      const start = $('#txtListStartDate')?.value || `${monthStr()}-01`;
+      const start = $('#txtListStartDate')?.value || '2026-10-01';
       const end = $('#txtListEndDate')?.value || todayStr();
       records = await store.listPeriod(start, end, true);
       if (!records || !records.length) {
-        records = await store.listMonth('2026-10', true);
+        const all = await store.listAll(true);
+        if (all && all.length) records = all;
       }
     }
   } catch (e) {
-    console.error('List query error, attempting fallback:', e);
+    console.error('List query error, attempting fallback to listAll:', e);
     try {
-      records = await store.listMonth('2026-10', true);
+      records = await store.listAll(true);
     } catch (err2) {
       records = [];
     }
