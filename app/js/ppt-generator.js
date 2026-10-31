@@ -381,7 +381,7 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.75 }
     });
     // 기준 제목 (x = 4.380으로 아래 파란색 음영 박스와 동일한 시작선에 맞춤)
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 12, 9);
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 11, 8.5);
     slide.addText(data.lawTitle, {
       x: 4.380, y: 0.175, w: 5.624, h: 0.300,
       fontFace: FONT_MALGUN, fontSize: lawTitleFontSize, bold: true, color: '000000',
@@ -799,226 +799,264 @@
   /**
    * 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합 장표.pptx 100% 동일 일치)
    */
+  /**
+   * 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합 장표.pptx 및 addInspectionSheetSlide와 100% 동일 일치)
+   * - 16:9 고정 종횡비 (aspect-ratio: 16 / 9) 및 PPT 인치 좌표계(13.333 in x 7.500 in) 1:1 백분율 매핑
+   * - Container Query Units(cqw) 기반 반응형 폰트 스케일링으로 글자 잘림이나 여백 왜곡 없이 PPT와 동일하게 렌더링
+   */
   function renderInspectionSheetHTML(record, options = {}) {
     const { photo1Url = '', photo2Url = '', rulesFromTaxonomy = [] } = options;
-    const data = normalizeJangpyoData(record, rulesFromTaxonomy);
+    const data = normalizeJangpyoData(record, rulesFromTaxonomy, options);
 
+    const pctX = (x) => `${((x / 13.333) * 100).toFixed(4)}%`;
+    const pctY = (y) => `${((y / 7.500) * 100).toFixed(4)}%`;
+    const pctW = (w) => `${((w / 13.333) * 100).toFixed(4)}%`;
+    const pctH = (h) => `${((h / 7.500) * 100).toFixed(4)}%`;
+    const pt = (n) => `${(n * 0.104167).toFixed(4)}cqw`;
+
+    // 1) 관련기준 제목 폰트 (PPT와 동일 계산)
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.624, 11, 8.5);
+    const lawBodyFontSize = data.lawBody.length > 80 ? 11 : (data.lawBody.length > 55 ? 11.5 : 12.5);
+
+    // 2) 부적합 개요 5개 메타 셀 좌표 (PPT와 동일)
+    const metaCols = [
+      { label: '협력사 : ', val: data.subcontractor, w: 2.386, x: 1.210 },
+      { label: '공종명 : ', val: data.workGroup, w: 2.386, x: 3.596 },
+      { label: '작업장소 : ', val: data.location, w: 2.386, x: 5.982 },
+      { label: '점검자 : ', val: data.inspector, w: 2.386, x: 8.368 },
+      { label: '점검차수 : ', val: data.inspectRound, w: 2.386, x: 10.754 }
+    ];
+
+    // 3) 부적합 내용 폰트 크기
+    const mainSz = calcSingleLineFontSize(`부적합 내용 : ${data.mainContent}`, 11.930, 14, 9.5);
+
+    // 4) 발생원인 의견 폰트 크기 및 줄간격
+    let intSz = 12.5;
+    let intLineSpacing = 1.28;
+    if (data.interviewOpinion.length > 130) {
+      intSz = 10.5;
+      intLineSpacing = 1.15;
+    } else if (data.interviewOpinion.length > 80) {
+      intSz = 11.5;
+      intLineSpacing = 1.20;
+    }
+
+    // 5) 점검단 제안 폰트 크기 및 줄간격
+    let propSz = 12.5;
+    let propLineSpacing = 1.28;
+    if (data.proposalContent.length > 70) {
+      propSz = 10;
+      propLineSpacing = 1.18;
+    } else if (data.proposalContent.length > 45) {
+      propSz = 11.5;
+      propLineSpacing = 1.22;
+    }
+
+    // 6) 개선대책 본문 폰트 크기
+    let counterSz = 12.5;
+    let counterLineSpacing = 1.28;
+    if (data.countermeasureContent.length > 70) {
+      counterSz = 10;
+      counterLineSpacing = 1.18;
+    } else if (data.countermeasureContent.length > 45) {
+      counterSz = 11.5;
+      counterLineSpacing = 1.22;
+    }
+
+    // 7) 사진 영역 좌표 및 크기 (PPT와 동일)
     const hasPhoto2 = Boolean(photo2Url);
-
-    // 사용자 지시: 특별한 언급이 없으면 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣지 않고 사진이 바닥까지 꽉 차도록 확장
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
-    const photo1Height = showGuidelineBox ? '280px' : '385px';
-    const photo2Height = showGuidelineBox ? '248px' : '350px';
-
-    const photoHeight = showGuidelineBox ? '310px' : '415px';
-
-    const photo1Img = photo1Url 
-      ? `<img src="${photo1Url}" style="width: 100%; height: ${photoHeight}; object-fit: contain; background: #ffffff; border: 1.0px solid #000000; border-radius: 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: ${photoHeight}; background: #f8fafc; border: 1.0px solid #000000; border-radius: 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.95rem;">📸 사진 1</div>`;
-
-    const photo2Img = photo2Url
-      ? `<img src="${photo2Url}" style="width: 100%; height: ${photoHeight}; object-fit: contain; background: #ffffff; border: 1.0px solid #000000; border-radius: 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: ${photoHeight}; background: #f8fafc; border: 1.0px solid #000000; border-radius: 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 0.95rem;">📸 사진 2</div>`;
-
-    const photo1ImgSingle = photo1Url
-      ? `<img src="${photo1Url}" style="width: 100%; height: ${photoHeight}; object-fit: contain; background: #ffffff; border: 1.0px solid #000000; border-radius: 2px;" onerror="this.style.display='none'">`
-      : `<div style="width: 100%; height: ${photoHeight}; background: #f8fafc; border: 1.0px solid #000000; border-radius: 2px; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 1.05rem;">📸 현장 사진</div>`;
+    const photoBodyHeight = showGuidelineBox ? 3.730 : 4.810;
+    const photoStartY = 2.425;
 
     return `
       <div id="jangpyoSlidePreview" style="
-        min-width: 960px;
         width: 100%;
-        max-width: 1080px;
-        margin: 0 auto;
+        aspect-ratio: 16 / 9;
+        position: relative;
         background: #ffffff;
         border: 1.5px solid #000000;
         border-radius: 2px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-        padding: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+        box-sizing: border-box;
+        overflow: hidden;
+        container-type: inline-size;
         font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
         color: #000000;
-        box-sizing: border-box;
+        user-select: none;
       ">
-        <!-- 1. 최상단 헤더 행 (5개 블록, 0.75pt/1.0px 검은색 테두리) -->
-        <div style="display: flex; align-items: stretch; border: 1.0px solid #000000; margin-bottom: 4px; height: 74px;">
-          <!-- 1) 시설물/법규 (연청색 #bdd7ee, 18pt bold) -->
-          <div style="width: 13.8%; flex-shrink: 0; background: #bdd7ee; border-right: 1.0px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.25rem; color: #000000; white-space: nowrap; padding: 0 4px;">
-            시설물/법규
+        <!-- 1. 시설물/법규 (연청색 #bdd7ee, 18pt bold) -->
+        <div style="position: absolute; left: ${pctX(0.120)}; top: ${pctY(0.163)}; width: ${pctW(1.791)}; height: ${pctH(0.914)}; background: #bdd7ee; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; box-sizing: border-box;">
+          시설물/법규
+        </div>
+
+        <!-- 2. 사고유형 & 등급 (사용자 지시: 음영 없음/순수 흰색 + 3px 황색 #ffc000 테두리, 상하 균형 중앙 정렬) -->
+        <div style="position: absolute; left: ${pctX(1.967)}; top: ${pctY(0.163)}; width: ${pctW(1.568)}; height: ${pctH(0.914)}; background: #ffffff; border: 3px solid #ffc000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding-top: 0.15cqw;">
+          <div style="font-size: ${pt(18)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center;">${data.typeMain}</div>
+          ${data.typeSub ? `<div style="font-size: ${pt(11)}; font-weight: 700; color: #333333; line-height: 1.1; text-align: center; margin-top: 0.05cqw;">${data.typeSub}</div>` : ''}
+          <div style="font-size: ${pt(18)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center; margin-top: 0.05cqw;">[${data.severity}]</div>
+        </div>
+
+        <!-- 3. 관련기준 라벨 (순수 흰색 배경) -->
+        <div style="position: absolute; left: ${pctX(3.592)}; top: ${pctY(0.163)}; width: ${pctW(0.684)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; color: #000000; text-align: center; line-height: 1.18; box-sizing: border-box;">
+          관련<br>기준
+        </div>
+
+        <!-- 4. 관련기준 내용 외곽 사각형 -->
+        <div style="position: absolute; left: ${pctX(4.276)}; top: ${pctY(0.163)}; width: ${pctW(5.832)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
+
+        <!-- 4-1. 관련기준 제목 (사용자 지시: 제목 글씨가 아래 파란색 음영과 좌측 시작선 x = 4.380 일치) -->
+        <div style="position: absolute; left: ${pctX(4.380)}; top: ${pctY(0.175)}; width: ${pctW(5.624)}; height: ${pctH(0.300)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
+          ${data.lawTitle}
+        </div>
+
+        <!-- 4-2. 관련기준 본문 (파란색 #deebf7 음영 박스, x = 4.380) -->
+        <div style="position: absolute; left: ${pctX(4.380)}; top: ${pctY(0.495)}; width: ${pctW(5.624)}; height: ${pctH(0.550)}; background: #deebf7; border-radius: 2px; padding: 0.2cqw 0.5cqw; box-sizing: border-box; display: flex; align-items: center;">
+          <div style="font-size: ${pt(lawBodyFontSize)}; color: #111111; line-height: 1.25; word-break: keep-all;">
+            ${data.lawBody}
           </div>
-          <!-- 2) 사고유형 & 등급 (사용자 지시: 음영 없음/순수 흰색 + 3px 황색 #ffc000 테두리, 상하 균형 패딩) -->
-          <div style="width: 12.0%; flex-shrink: 0; background: #ffffff; border: 3px solid #ffc000; z-index: 2; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 2px 4px 2px; box-sizing: border-box;">
-            <div style="font-weight: 800; font-size: 1.25rem; color: #000000; text-align: center; line-height: 1.15; white-space: nowrap;">
-              ${data.typeMain}
-            </div>
-            ${data.typeSub ? `<div style="font-weight: 700; font-size: 0.82rem; color: #333333; text-align: center; line-height: 1.1; margin-top: 1px; white-space: nowrap;">${data.typeSub}</div>` : ''}
-            <div style="font-weight: 800; font-size: 1.25rem; color: #000000; margin-top: 1px; white-space: nowrap;">
-              [${data.severity}]
-            </div>
+        </div>
+
+        <!-- 5. 4대 발생요인 4개 분면 셀 -->
+        <div style="position: absolute; left: ${pctX(10.165)}; top: ${pctY(0.163)}; width: ${pctW(2.975)}; height: ${pctH(0.914)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;">
+          <div style="border-right: 0.5px solid #000000; border-bottom: 0.5px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
+            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isUnplanned ? '☑' : '☐'}</span> 계획 미수립
           </div>
-          <!-- 3) 관련기준 라벨 (순수 흰색 배경) -->
-          <div style="width: 5.3%; flex-shrink: 0; background: #ffffff; border-right: 1.0px solid #000000; border-left: 1.0px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #000000; text-align: center; line-height: 1.2;">
-            관련<br>기준
+          <div style="border-bottom: 0.5px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
+            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isUnexecuted ? '☑' : '☐'}</span> 계획 미이행
           </div>
-          <!-- 4) 관련기준 내용 (사용자 지시: 제목 글씨가 아래 파란색 음영과 좌측 시작선 일치) -->
-          <div style="flex: 1; min-width: 200px; background: #ffffff; border-right: 1.0px solid #000000; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; padding: 4px 8px;">
-            <div style="background: #ffffff; padding: 0 2px; font-weight: 800; font-size: ${data.lawTitle.length > 34 ? '0.86rem' : (data.lawTitle.length > 25 ? '0.90rem' : '0.95rem')}; color: #000000; display: flex; align-items: center; height: 26px; min-height: 26px; flex-shrink: 0; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-              ${data.lawTitle}
-            </div>
-            <div style="padding: 2px 0 4px 0; background: #ffffff; flex: 1; display: flex; align-items: center; box-sizing: border-box;">
-              <div style="background: #deebf7; padding: 4px 8px; border-radius: 2px; font-size: 0.88rem; color: #111111; line-height: 1.34; width: 100%; box-sizing: border-box; word-break: keep-all;">
-                ${data.lawBody}
-              </div>
-            </div>
+          <div style="border-right: 0.5px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
+            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isAction ? '☑' : '☐'}</span> 불안전 행동
           </div>
-          <!-- 5) 4대 발생요인 4개 분면 셀 (체크박스 16pt, 텍스트 14pt bold, 1.0px 검은색 실선) -->
-          <div style="width: 22.9%; flex-shrink: 0; background: #ffffff; display: flex; flex-direction: column;">
-            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1.0px solid #000000;">
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 800; color: #000000; border-right: 1.0px solid #000000; white-space: nowrap; padding: 0 4px;">
-                <span style="font-size: 16px; font-weight: 900; margin-right: 4px;">${data.isUnplanned ? '☑' : '☐'}</span>
-                계획 미수립
-              </div>
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 800; color: #000000; white-space: nowrap; padding: 0 4px;">
-                <span style="font-size: 16px; font-weight: 900; margin-right: 4px;">${data.isUnexecuted ? '☑' : '☐'}</span>
-                계획 미이행
-              </div>
+          <div style="display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800;">
+            <span style="font-size: ${pt(16)}; margin-right: 0.25cqw;">${data.isCondition ? '☑' : '☐'}</span> 불안전 상태
+          </div>
+        </div>
+
+        <!-- 6. 대형 통합 본문 컨테이너 (x = 0.120, y = 1.125, w = 13.020, h = 6.168) -->
+        <div style="position: absolute; left: ${pctX(0.120)}; top: ${pctY(1.125)}; width: ${pctW(13.020)}; height: ${pctH(6.168)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
+
+        <!-- 6-1. 부적합 개요 라벨 (노란색 #ffd966, 18pt bold) -->
+        <div style="position: absolute; left: ${pctX(0.120)}; top: ${pctY(1.125)}; width: ${pctW(1.090)}; height: ${pctH(0.812)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; text-align: center; line-height: 1.15; box-sizing: border-box;">
+          부적합<br>개&nbsp;&nbsp;&nbsp;요
+        </div>
+
+        <!-- 6-2. 메타 정보 5개 독립 셀 (14pt bold, 라벨 #4472c4, 자동 축소로 잘림 완전 방지) -->
+        ${metaCols.map(col => {
+          const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 9.5);
+          return `
+            <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.125)}; width: ${pctW(col.w)}; height: ${pctH(0.406)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.4cqw; box-sizing: border-box; white-space: nowrap;">
+              <strong style="color: #4472c4; font-size: ${pt(sz)}; margin-right: 0.2cqw;">${col.label}</strong>
+              <span style="font-weight: 800; color: #000000; font-size: ${pt(sz)};">${col.val}</span>
             </div>
-            <div style="flex: 1; display: grid; grid-template-columns: 1fr 1fr;">
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 800; color: #000000; border-right: 1.0px solid #000000; white-space: nowrap; padding: 0 4px;">
-                <span style="font-size: 16px; font-weight: 900; margin-right: 4px;">${data.isAction ? '☑' : '☐'}</span>
-                불안전 행동
-              </div>
-              <div style="display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 800; color: #000000; white-space: nowrap; padding: 0 4px;">
-                <span style="font-size: 16px; font-weight: 900; margin-right: 4px;">${data.isCondition ? '☑' : '☐'}</span>
-                불안전 상태
-              </div>
+          `;
+        }).join('')}
+
+        <!-- 6-3. 부적합 내용 전체 너비 사각형 (14pt bold, 자동 축소로 잘림 완전 방지) -->
+        <div style="position: absolute; left: ${pctX(1.210)}; top: ${pctY(1.531)}; width: ${pctW(11.930)}; height: ${pctH(0.406)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.5cqw; box-sizing: border-box; white-space: nowrap;">
+          <strong style="color: #4472c4; font-size: ${pt(mainSz)};">부적합 내용 :&nbsp;</strong>
+          <span style="font-weight: 800; color: #000000; font-size: ${pt(mainSz)};">${data.mainContentParts.prefix}</span>
+          ${data.mainContentParts.highlight ? `<span style="font-weight: 900; color: #c00000; font-size: ${pt(mainSz)};">${data.mainContentParts.highlight}</span>` : ''}
+          ${data.mainContentParts.suffix ? `<span style="font-weight: 800; color: #002060; font-size: ${pt(mainSz)};">${data.mainContentParts.suffix}</span>` : ''}
+        </div>
+
+        <!-- 6-4. 가로 분할선 (부적합 개요 아래, y = 1.937) -->
+        <div style="position: absolute; left: ${pctX(0.120)}; top: ${pctY(1.937)}; width: ${pctW(13.020)}; height: 0; border-top: 1px solid #000000;"></div>
+
+        <!-- 6-5. 세로 분할선 (좌측 사진 vs 우측 원인/대책, x = 8.395, y = 1.982 ~ 7.293) -->
+        <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(1.982)}; width: 0; height: ${pctH(5.311)}; border-left: 1px solid #000000;"></div>
+
+        <!-- 6-6. Hold Point 위반 박스 (사용자 지시: 상단 0.045인치 미세 여백, y = 1.982) -->
+        <div style="position: absolute; left: ${pctX(5.975)}; top: ${pctY(1.982)}; width: ${pctW(2.363)}; height: ${pctH(0.406)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap;">
+          <span style="font-size: ${pt(18)}; font-weight: 800; margin-right: 0.3cqw;">${data.isHoldPoint ? '☑' : '☐'}</span>
+          <span style="font-size: ${pt(12)}; font-weight: 800;">Hold Point 위반 (N/A)</span>
+        </div>
+
+        <!-- 6-7. 사진 영역 (사용자 지시: 글씨 없이 사진만 표시, 바닥까지 꽉 채움 y = 2.425 ~ 7.235) -->
+        ${hasPhoto2 ? `
+          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box;">
+            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 1</div>`}
+          </div>
+          <div style="position: absolute; left: ${pctX(4.290)}; top: ${pctY(photoStartY)}; width: ${pctW(4.080)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box;">
+            ${photo2Url ? `<img src="${photo2Url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 사진 2</div>`}
+          </div>
+        ` : `
+          <div style="position: absolute; left: ${pctX(0.130)}; top: ${pctY(photoStartY)}; width: ${pctW(8.240)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box;">
+            ${photo1Url ? `<img src="${photo1Url}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          </div>
+        `}
+
+        <!-- 사진 하단 규정 수칙 박스 (특별 지정 시에만 표시) -->
+        ${showGuidelineBox ? `
+          <div style="position: absolute; left: ${pctX(0.120)}; top: ${pctY(6.200)}; width: ${pctW(8.275)}; height: ${pctH(1.093)}; background: #ffffff; border: 1px solid #000000; padding: 0.3cqw 0.6cqw; box-sizing: border-box;">
+            <div style="font-size: ${pt(12)}; font-weight: 800; color: #000000; margin-bottom: 0.15cqw;">${data.guidelineTitle}</div>
+            <div style="font-size: ${pt(10.5)}; color: #222222; white-space: pre-line; line-height: 1.3;">${data.guidelineBody}</div>
+          </div>
+        ` : ''}
+
+        <!-- 6-8. 발생원인 (인터뷰 결과) 헤더 (사용자 지시: 상단 0.045인치 미세 여백, y = 1.982) -->
+        <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(1.982)}; width: ${pctW(4.711)}; height: ${pctH(0.406)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; color: #000000; box-sizing: border-box;">
+          발생원인 (인터뷰 결과)
+        </div>
+
+        <!-- 6-9. 발생원인 본문 & 점검단 제안 Box (y = 2.425, h = 3.142) -->
+        <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(2.425)}; width: ${pctW(4.711)}; height: ${pctH(3.142)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;">
+          <!-- 윗칸: [ 의견 : 시공관리자 및 근로자 ] (h = 2.042) -->
+          <div style="position: absolute; left: 0; top: 0; width: 100%; height: ${((2.042 / 3.142) * 100).toFixed(4)}%; padding: 0.4cqw 0.7cqw; box-sizing: border-box;">
+            <div style="font-size: ${pt(14)}; font-weight: 800; color: #000000; margin-bottom: 0.25cqw;">[ 의견 : 시공관리자 및 근로자 ]</div>
+            <div style="font-size: ${pt(intSz)}; line-height: ${intLineSpacing}; color: #111111; word-break: keep-all;">${data.interviewOpinion}</div>
+          </div>
+
+          <!-- 가로선: 의견과 점검단 제안 사이 (y = 4.467) -->
+          <div style="position: absolute; left: 0; top: ${((2.042 / 3.142) * 100).toFixed(4)}%; width: 100%; height: 0; border-top: 1px solid #000000;"></div>
+
+          <!-- 아랫칸: 점검단 제안 서브영역 (h = 1.100) -->
+          <div style="position: absolute; left: 0; top: ${((2.042 / 3.142) * 100).toFixed(4)}%; width: 100%; height: ${((1.100 / 3.142) * 100).toFixed(4)}%;">
+            <!-- 세로 구분선 (x = 9.829) -->
+            <div style="position: absolute; left: ${((1.434 / 4.711) * 100).toFixed(4)}%; top: 0; width: 0; height: 100%; border-left: 1px solid #000000;"></div>
+
+            <!-- 좌측 상단: [점검단 제안] 별도 독립 셀 -->
+            <div style="position: absolute; left: 0; top: 0; width: ${((1.434 / 4.711) * 100).toFixed(4)}%; height: ${((0.417 / 1.100) * 100).toFixed(4)}%; border-bottom: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; box-sizing: border-box;">
+              [점검단 제안]
+            </div>
+
+            <!-- 좌측 하단: 시스템 개선 별도 독립 셀 -->
+            <div style="position: absolute; left: 0; top: ${((0.417 / 1.100) * 100).toFixed(4)}%; width: ${((1.434 / 4.711) * 100).toFixed(4)}%; height: ${((0.683 / 1.100) * 100).toFixed(4)}%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;">
+              <div style="font-size: ${pt(14)}; font-weight: 800; color: #4472c4;">${data.proposalType}</div>
+              <div style="font-size: ${pt(11)}; color: #595959; margin-top: 0.1cqw;">${data.proposalSub}</div>
+            </div>
+
+            <!-- 우측 본문 셀 (전체 높이 확장) -->
+            <div style="position: absolute; left: ${((1.434 / 4.711) * 100).toFixed(4)}%; top: 0; width: ${((3.277 / 4.711) * 100).toFixed(4)}%; height: 100%; padding: 0.3cqw 0.6cqw; box-sizing: border-box;">
+              <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #111111; word-break: keep-all;">${data.proposalContent}</div>
             </div>
           </div>
         </div>
 
-        <!-- 2. 부적합 개요 행 (모든 테두리 1.0px 검은색, 헤더 #ffd966, 사용자 지시: 중간 빈 칸 없이 본문과 1개의 선으로 맞닿음) -->
-        <div style="display: grid; grid-template-columns: 85px 1fr; border: 1.0px solid #000000; border-bottom: none;">
-          <!-- 좌측 노란 헤더 (글자크기 18pt bold, '부적합' 붙어있음) -->
-          <div style="background: #ffd966; border-right: 1.0px solid #000000; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.25rem; color: #000000; text-align: center; line-height: 1.25; padding: 4px;">
-            부적합<br>개&nbsp;&nbsp;&nbsp;요
-          </div>
-          <!-- 우측 2행 표 구조 -->
-          <div style="display: flex; flex-direction: column;">
-            <!-- 1행: 5개 독립 네모칸 (14pt bold, 라벨 #4472c4) -->
-            <div style="display: flex; border-bottom: 1.0px solid #000000; background: #ffffff;">
-              <div style="flex: 1.05; border-right: 1.0px solid #000000; padding: 5px 8px; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #4472c4;">협력사 :</strong> <span style="font-weight: 800; color: #000000;">${data.subcontractor}</span>
-              </div>
-              <div style="flex: 1.15; border-right: 1.0px solid #000000; padding: 5px 8px; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #4472c4;">공종명 :</strong> <span style="font-weight: 800; color: #000000;">${data.workGroup}</span>
-              </div>
-              <div style="flex: 0.95; border-right: 1.0px solid #000000; padding: 5px 8px; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #4472c4;">작업장소 :</strong> <span style="font-weight: 800; color: #000000;">${data.location}</span>
-              </div>
-              <div style="flex: 1.05; border-right: 1.0px solid #000000; padding: 5px 8px; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #4472c4;">점검자 :</strong> <span style="font-weight: 800; color: #000000;">${data.inspector}</span>
-              </div>
-              <div style="flex: 1.05; padding: 5px 8px; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                <strong style="color: #4472c4;">점검차수 :</strong> <span style="font-weight: 800; color: #000000;">${data.inspectRound}</span>
-              </div>
-            </div>
-            <!-- 2행: 부적합 내용 전체 너비 (14pt bold) -->
-            <div style="padding: 5px 10px; font-size: 0.96rem; background: #ffffff; line-height: 1.4;">
-              <strong style="color: #4472c4;">부적합 내용 :</strong>
-              <span style="font-weight: 800; color: #000000;"> ${data.mainContentParts.prefix}</span>
-              ${data.mainContentParts.highlight ? `<span style="font-weight: 900; color: #c00000;">${data.mainContentParts.highlight}</span>` : ''}
-              ${data.mainContentParts.suffix ? `<span style="font-weight: 800; color: #002060;">${data.mainContentParts.suffix}</span>` : ''}
-            </div>
-          </div>
+        <!-- 6-10. 개선대책 (현장 협의 결과) 헤더 (사용자 지시: 상단 8px 간격 띄움, y = 5.660) -->
+        <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(5.660)}; width: ${pctW(4.711)}; height: ${pctH(0.406)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; color: #000000; box-sizing: border-box;">
+          개선대책 (현장 협의 결과)
         </div>
 
-        <!-- 3. 대형 통합 본문 컨테이너 (사용자 지시: 큰 테두리는 검은색이고 사진, 발생원인, 개선대책이 한 네모안에 들어감) -->
-        <div style="border: 1.0px solid #000000; display: grid; grid-template-columns: 1.74fr 1fr; background: #ffffff;">
-          <!-- 좌측 컬럼: 사진 영역 및 Hold Point 위반 -->
-          <div style="display: flex; flex-direction: column; border-right: 1.0px solid #000000; box-sizing: border-box;">
-            <!-- Hold Point 위반 박스 (사용자 지시: 조금만 살짝 띄움) -->
-            <div style="display: flex; justify-content: flex-end; height: 32px; padding: 4px 4px 0 4px; box-sizing: border-box; align-items: center;">
-              <div style="width: 210px; background: #ffffff; border: 1.0px solid #000000; border-radius: 2px; text-align: center; display: flex; align-items: center; justify-content: center; font-size: 0.88rem; color: #000000; font-weight: 800; white-space: nowrap; height: 26px;">
-                <span style="font-size: 16px; margin-right: 4px;">${data.isHoldPoint ? '☑' : '☐'}</span> Hold Point 위반 (N/A)
-              </div>
-            </div>
+        <!-- 6-11. 개선대책 본문 & PM 판정결과 Box (y = 6.102, h = 1.134) -->
+        <div style="position: absolute; left: ${pctX(8.395)}; top: ${pctY(6.102)}; width: ${pctW(4.711)}; height: ${pctH(1.134)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;">
+          <!-- 세로선: 개선대책 본문 vs PM 판정결과 (x = 11.599) -->
+          <div style="position: absolute; left: ${((3.204 / 4.711) * 100).toFixed(4)}%; top: 0; width: 0; height: 100%; border-left: 1px solid #000000;"></div>
 
-            <!-- 사진 영역: 글씨 없이 사진만 표시 -->
-            <div style="padding: 4px; flex: 1; display: flex; flex-direction: column;">
-              ${hasPhoto2 ? `
-                <div style="display: flex; gap: 4px; flex: 1;">
-                  <div style="flex: 1;">${photo1Img}</div>
-                  <div style="flex: 1;">${photo2Img}</div>
-                </div>
-              ` : `
-                <div style="flex: 1;">${photo1ImgSingle}</div>
-              `}
-            </div>
-
-            <!-- 사진 하단 규정 수칙 박스 (특별한 지정이 있는 경우에만 표시) -->
-            ${showGuidelineBox ? `
-              <div style="background: #ffffff; border-top: 1.0px solid #000000; padding: 8px 12px; font-size: 0.90rem; word-break: keep-all; line-height: 1.45;">
-                <div style="color: #000000; font-weight: 800; font-size: 0.95rem; margin-bottom: 4px;">${data.guidelineTitle}</div>
-                <div style="color: #222222; font-weight: 500; white-space: pre-line;">${data.guidelineBody}</div>
-              </div>
-            ` : ''}
+          <!-- 좌측 개선대책 본문 -->
+          <div style="position: absolute; left: 0; top: 0; width: ${((3.204 / 4.711) * 100).toFixed(4)}%; height: 100%; padding: 0.4cqw 0.7cqw; box-sizing: border-box;">
+            <div style="font-size: ${pt(counterSz)}; font-weight: 700; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all;">${data.countermeasureContent || ''}</div>
           </div>
 
-          <!-- 우측 컬럼: 발생원인 & 개선대책 & PM 판정결과 -->
-          <div style="display: flex; flex-direction: column; padding: 4px 4px 4px 4px; box-sizing: border-box;">
-            <!-- 1) 발생원인 (인터뷰 결과) 헤더 (사용자 지시: 위쪽이 살짝만 띄어져 있음) -->
-            <div style="background: #ffd966; border: 1.0px solid #000000; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; margin-bottom: 3px;">
-              발생원인 (인터뷰 결과)
-            </div>
-            <!-- 2) 발생원인 본문 & 점검단 제안 (하단 margin: 8px로 개선대책 위에 0.093인치 간격 띄움) -->
-            <div style="border: 1.0px solid #000000; background: #ffffff; margin-bottom: 8px;">
-              <!-- 발생원인 본문 (사용자 지시: 4. 의견 글씨가 원본 대비 밑으로 내려온것 같아 -> padding-top: 4px, margin-bottom: 8px) -->
-              <div style="padding: 4px 12px 8px 12px; border-bottom: 1.0px solid #000000; word-break: keep-all;">
-                <div style="font-weight: 800; font-size: 0.95rem; color: #000000; margin-bottom: 8px;">[ 의견 : 시공관리자 및 근로자 ]</div>
-                <div style="font-size: 0.90rem; font-weight: 500; color: #111111; line-height: 1.45;">${data.interviewOpinion}</div>
-              </div>
-              <!-- 점검단 제안: 좌측 2행(상하 별도 독립 칸) + 우측 본문 통합 셀 -->
-              <div style="display: grid; grid-template-columns: 120px 1fr; background: #ffffff;">
-                <div style="display: flex; flex-direction: column; border-right: 1.0px solid #000000;">
-                  <!-- 좌측 상단: [점검단 제안] 별도 독립 칸 -->
-                  <div style="border-bottom: 1.0px solid #000000; font-size: 0.92rem; font-weight: 800; color: #000000; padding: 6px 4px; text-align: center; height: 32px; display: flex; align-items: center; justify-content: center;">
-                    [점검단 제안]
-                  </div>
-                  <!-- 좌측 하단: 시스템 개선 별도 독립 칸 -->
-                  <div style="flex: 1; padding: 6px 4px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                    <div style="font-size: 1.02rem; font-weight: 900; color: #4472c4; margin-bottom: 2px;">${data.proposalType}</div>
-                    <div style="font-size: 0.76rem; font-weight: 600; color: #555555;">${data.proposalSub}</div>
-                  </div>
-                </div>
-                <!-- 우측 본문 셀 (전체 높이 확장) -->
-                <div style="padding: 8px 12px; font-size: ${data.proposalContent.length > 70 ? '0.78rem' : '0.88rem'}; font-weight: 500; color: #000000; line-height: 1.36; display: flex; align-items: flex-start; word-break: keep-all;">
-                  ${data.proposalContent}
-                </div>
-              </div>
-            </div>
+          <!-- 우측 상단 [PM 판정결과] 헤더 셀 (h = 0.377) -->
+          <div style="position: absolute; left: ${((3.204 / 4.711) * 100).toFixed(4)}%; top: 0; width: ${((1.507 / 4.711) * 100).toFixed(4)}%; height: ${((0.377 / 1.134) * 100).toFixed(4)}%; border-bottom: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(13)}; font-weight: 800; box-sizing: border-box;">
+            [PM 판정결과]
+          </div>
 
-            <!-- 3) 개선대책 (현장 협의 결과) 헤더 (사용자 지시: 위는 8px, 아래는 4px 띄어져 독립된 별도 표임) -->
-            <div style="background: #ffd966; border: 1.0px solid #000000; color: #000000; font-weight: 900; font-size: 0.98rem; text-align: center; padding: 4px 6px; height: 34px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; margin-bottom: 4px;">
-              개선대책 (현장 협의 결과)
-            </div>
-            <!-- 4) 개선대책 본문 & PM 판정결과 (상단 margin 4px로 개선대책 아래 0.037인치 간격 띄움) -->
-            <div style="border: 1.0px solid #000000; display: grid; grid-template-columns: 1fr 110px; background: #ffffff; flex: 1; min-height: 95px;">
-              <!-- 개선대책 본문 좌측 칸 -->
-              <div style="padding: 10px 12px; font-size: 0.90rem; font-weight: 700; color: #000000; border-right: 1.0px solid #000000; word-break: keep-all; line-height: 1.45; display: flex; flex-direction: column; justify-content: center; white-space: pre-line;">
-                ${data.countermeasureContent || ''}
-              </div>
-              <!-- PM 판정결과 우측 구획 -->
-              <div style="display: flex; flex-direction: column; background: #ffffff;">
-                <div style="border-bottom: 1.0px solid #000000; font-size: 0.92rem; font-weight: 800; color: #000000; text-align: center; padding: 4px 2px; height: 30px; display: flex; align-items: center; justify-content: center;">
-                  [PM 판정결과]
-                </div>
-                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 2px; text-align: center;">
-                  ${data.pmVerdictType ? `
-                    <div style="font-size: 1.02rem; font-weight: 900; color: #4472c4; margin: 2px 0 1px 0;">${data.pmVerdictType}</div>
-                    <div style="font-size: 0.76rem; font-weight: 600; color: #555555;">${data.pmVerdictSub}</div>
-                  ` : ''}
-                </div>
-              </div>
-            </div>
+          <!-- 우측 하단 PM 내용 서브박스 (h = 0.756) -->
+          <div style="position: absolute; left: ${((3.204 / 4.711) * 100).toFixed(4)}%; top: ${((0.377 / 1.134) * 100).toFixed(4)}%; width: ${((1.507 / 4.711) * 100).toFixed(4)}%; height: ${((0.756 / 1.134) * 100).toFixed(4)}%; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;">
+            <div style="font-size: ${pt(14)}; font-weight: 800; color: #4472c4;">${data.pmVerdictType || ''}</div>
+            <div style="font-size: ${pt(11)}; color: #595959; margin-top: 0.1cqw;">${data.pmVerdictSub || ''}</div>
           </div>
         </div>
       </div>
