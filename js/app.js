@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261106_v5';
+import { store } from './store.js?v=20261106_v6';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v5';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v6';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4658,20 +4658,26 @@ async function handlePptxImportChange(e) {
     try {
       const lowerName = f.name.toLowerCase();
       if (lowerName.endsWith('.pdf') || f.type === 'application/pdf') {
-        const records = await parsePDF(f, (prog) => {
-          const pct = Math.min(100, Math.round(((prog.current || 1) / Math.max(1, prog.total || 1)) * 100));
+        const pdfRes = await parsePDF(f, (prog) => {
+          const cur = prog.current || prog.currentPage || 1;
+          const tot = Math.max(1, prog.total || prog.totalPages || 1);
+          const ext = prog.extracted !== undefined ? prog.extracted : (prog.extractedCount || 0);
+          const skp = prog.skipped !== undefined ? prog.skipped : (prog.skippedCount || 0);
+          const pct = Math.min(100, Math.round((cur / tot) * 100));
           if (progStatus) {
             const phaseText = prog.phase === 'skip'
-              ? `페이지 ${prog.current}/${prog.total}: 일반 글씨/간지 페이지 생략`
-              : `페이지 ${prog.current}/${prog.total} 분석 중... (점검장표 ${prog.extracted || 0}건 추출 / 일반 글씨 ${prog.skipped || 0}장 생략)`;
+              ? `페이지 ${cur}/${tot}: 일반 글씨/간지 페이지 생략`
+              : `페이지 ${cur}/${tot} 분석 중... (점검장표 ${ext}건 추출 / 일반 글씨 ${skp}장 생략)`;
             progStatus.textContent = `📕 [${f.name}] ${phaseText}`;
           }
           if (progPct) progPct.textContent = `${pct}%`;
           if (progBar) progBar.style.width = `${pct}%`;
         });
-        totalSkippedPages += (records._skippedPages || 0);
+        const records = Array.isArray(pdfRes) ? pdfRes : ((pdfRes && pdfRes.records) || []);
+        totalSkippedPages += (pdfRes && (pdfRes._skippedPages || pdfRes.skippedCount)) || 0;
         records.forEach(r => {
-          r._sourceFile = r.pageNumber ? `${f.name} · P.${r.pageNumber}` : f.name;
+          const pNo = r.pageNumber || r.slideNumber;
+          r._sourceFile = pNo ? `${f.name} · P.${pNo}` : f.name;
         });
         importedRecords.push(...records);
       } else if (lowerName.endsWith('.pptx')) {

@@ -1069,6 +1069,10 @@ export async function parsePDF(file, onProgress = () => {}) {
     for (let i = 0; i < binaryResult.jpegPages.length; i++) {
       const pg = binaryResult.jpegPages[i];
       onProgress({
+        current: pg.pageNumber,
+        total: totalPages,
+        extracted: records.length,
+        skipped: skippedCount,
         currentPage: pg.pageNumber,
         totalPages,
         extractedCount: records.length,
@@ -1081,6 +1085,17 @@ export async function parsePDF(file, onProgress = () => {}) {
       // 일반 글씨가 있는 표지/간지/요약 장표는 생략!
       if (!sig.isSheet) {
         skippedCount++;
+        onProgress({
+          phase: 'skip',
+          current: pg.pageNumber,
+          total: totalPages,
+          extracted: records.length,
+          skipped: skippedCount,
+          currentPage: pg.pageNumber,
+          totalPages,
+          extractedCount: records.length,
+          skippedCount
+        });
         console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (일반 텍스트/간지 페이지, score=${sig.score})`);
         continue;
       }
@@ -1093,12 +1108,20 @@ export async function parsePDF(file, onProgress = () => {}) {
     }
 
     onProgress({
+      current: totalPages,
+      total: totalPages,
+      extracted: records.length,
+      skipped: skippedCount,
       currentPage: totalPages,
       totalPages,
       extractedCount: records.length,
       skippedCount
     });
-    return { records, totalPages, skippedCount };
+    records.records = records;
+    records.totalPages = totalPages;
+    records.skippedCount = skippedCount;
+    records._skippedPages = skippedCount;
+    return records;
   }
 
   // 2단계: 디지털/벡터 PDF인 경우 PDF.js로 페이지별 렌더링 및 텍스트 추출
@@ -1115,6 +1138,10 @@ export async function parsePDF(file, onProgress = () => {}) {
 
   for (let pNum = 1; pNum <= totalPages; pNum++) {
     onProgress({
+      current: pNum,
+      total: totalPages,
+      extracted: records.length,
+      skipped: skippedCount,
       currentPage: pNum,
       totalPages,
       extractedCount: records.length,
@@ -1148,6 +1175,17 @@ export async function parsePDF(file, onProgress = () => {}) {
 
     if (!sig.isSheet && !hasSheetKeywords) {
       skippedCount++;
+      onProgress({
+        phase: 'skip',
+        current: pNum,
+        total: totalPages,
+        extracted: records.length,
+        skipped: skippedCount,
+        currentPage: pNum,
+        totalPages,
+        extractedCount: records.length,
+        skippedCount
+      });
       console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (일반 텍스트/간지 페이지)`);
       continue;
     }
@@ -1161,12 +1199,20 @@ export async function parsePDF(file, onProgress = () => {}) {
   }
 
   onProgress({
+    current: totalPages,
+    total: totalPages,
+    extracted: records.length,
+    skipped: skippedCount,
     currentPage: totalPages,
     totalPages,
     extractedCount: records.length,
     skippedCount
   });
-  return { records, totalPages, skippedCount };
+  records.records = records;
+  records.totalPages = totalPages;
+  records.skippedCount = skippedCount;
+  records._skippedPages = skippedCount;
+  return records;
 }
 
 /**
