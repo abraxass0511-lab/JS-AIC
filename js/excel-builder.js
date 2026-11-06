@@ -307,14 +307,17 @@
       else if (major === '건설장비') mid = '차량계건설기계';
     }
 
-    // 2) 중분류가 '거푸집동바리'로 묶인 경우 -> 9×9 단독 중분류 '동바리' 또는 '거푸집'으로 정규화
-    if (mid === '거푸집동바리') {
-      mid = (minor.includes('동바리') || minor.includes('서포트')) ? '동바리' : '거푸집';
+    // 2) 건설안전 9×9 표준(가시설 > 거푸집/동바리) 정규화
+    //    '동바리', '거푸집', '거푸집동바리' 등 분리/변형 표기를 모두 '거푸집/동바리'로 통일
+    //    (갱폼·ACS·RCS·SLIP 등은 9×9 표준상 '특수거푸집')
+    const isSpecialForm = /갱폼|ACS|RCS|SLIP|슬립폼/i.test(minor);
+    if (['동바리', '거푸집', '거푸집동바리', '거푸집 동바리'].includes(mid)) {
+      mid = (mid === '거푸집' && isSpecialForm) ? '특수거푸집' : '거푸집/동바리';
     }
 
-    // 3) 비계 하위에 거푸집이 들어간 경우 (예: 비계 > 거푸집) -> '거푸집' 중분류로 교정
+    // 3) 비계 하위에 거푸집이 들어간 경우 (예: 비계 > 거푸집) -> '거푸집/동바리' 중분류로 교정
     if (mid === '비계' && (minor.includes('거푸집') || minor.includes('폼'))) {
-      mid = '거푸집';
+      mid = isSpecialForm ? '특수거푸집' : '거푸집/동바리';
     }
 
     // 이미 유효한 대/중이 정해져 있다면 즉시 반환
@@ -360,11 +363,11 @@
       }
     } else if (text.includes('동바리') || text.includes('서포트')) {
       major = '가시설';
-      mid = '동바리';
+      mid = '거푸집/동바리';
       minor = minor || '파이프서포트';
     } else if (text.includes('거푸집') || text.includes('갱폼') || text.includes('알폼') || text.includes('유로폼')) {
       major = '가시설';
-      mid = '거푸집';
+      mid = text.includes('갱폼') ? '특수거푸집' : '거푸집/동바리';
       minor = minor || (text.includes('갱폼') ? '갱폼' : '유로폼');
     } else if (text.includes('난간') || text.includes('개구부') || text.includes('방호선반') || text.includes('방망') || text.includes('낙하물방지')) {
       major = '가시설';

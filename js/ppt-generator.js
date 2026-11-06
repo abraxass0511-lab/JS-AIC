@@ -289,6 +289,39 @@
   }
 
   /**
+   * 여러 줄 텍스트 박스 실측 기반 글자크기 계산기
+   * - 기본값(baseSize, 12pt)을 유지하고, 칸(너비×높이)에 실제로 다 들어가지 않을 때만 0.5pt씩 축소
+   * - 글자수 기준 일괄 축소(예: 70자 초과 시 10pt)로 인해 충분히 들어가는데도 작아지는 문제 방지
+   */
+  function calcFitMultilineFontSize(text, widthInch, heightInch, baseSize = 12, minSize = 9, lineSpacing = 1.15, marginPt = [6, 8, 4, 6]) {
+    const str = String(text || '').trim();
+    if (!str) return baseSize;
+    const [mTop, mRight, mBottom, mLeft] = marginPt;
+    const availW = widthInch * 72 - mLeft - mRight;
+    const availH = heightInch * 72 - mTop - mBottom;
+    const paragraphs = str.split(/\r?\n/);
+    let sz = baseSize;
+    while (sz >= minSize) {
+      let lines = 0;
+      for (const p of paragraphs) {
+        let w = 0;
+        for (let i = 0; i < p.length; i++) {
+          const code = p.charCodeAt(i);
+          if (code === 32) w += sz * 0.32;
+          else if (code > 127) w += sz * 0.95;
+          else w += sz * 0.56;
+        }
+        // 단어 단위 줄바꿈 여유분 6% 반영
+        lines += Math.max(1, Math.ceil((w * 1.06) / availW));
+      }
+      const neededH = lines * sz * 1.2 * lineSpacing;
+      if (neededH <= availH) return sz;
+      sz -= 0.5;
+    }
+    return minSize;
+  }
+
+  /**
    * 기존 등록 레코드의 중부적합 / 경부적합 판별 (severity 미지정 과거 데이터 자동 분류 포함)
    */
   function inferRecordSeverity(r) {
@@ -1028,18 +1061,10 @@
     });
 
     // 7) 개선대책 좌측 본문 셀 (SHAPE #11: x = 8.2448, y = 5.9064, w = 3.3858, h = 1.3959)
-    let counterSz = 12;
-    let counterLineSpacing = 1.15;
-    let counterMargin = [6, 8, 4, 6];
-    if (data.countermeasureContent.length > 70) {
-      counterSz = 10;
-      counterLineSpacing = 1.08;
-      counterMargin = [4, 6, 2, 4];
-    } else if (data.countermeasureContent.length > 45) {
-      counterSz = 11;
-      counterLineSpacing = 1.12;
-      counterMargin = [4, 6, 3, 5];
-    }
+    // 기본 12pt 유지, 칸에 실제로 다 들어가지 않을 때만 축소
+    const counterMargin = [6, 8, 4, 6];
+    const counterLineSpacing = 1.15;
+    const counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 9, counterLineSpacing, counterMargin);
     slide.addText(data.countermeasureContent || '', {
       x: 8.2448, y: 5.9064, w: 3.3858, h: 1.3959,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
@@ -1336,15 +1361,9 @@
       propLineSpacing = 1.20;
     }
 
-    let counterSz = 12;
-    let counterLineSpacing = 1.25;
-    if (data.countermeasureContent.length > 70) {
-      counterSz = 10;
-      counterLineSpacing = 1.15;
-    } else if (data.countermeasureContent.length > 45) {
-      counterSz = 11;
-      counterLineSpacing = 1.20;
-    }
+    // 개선대책: 기본 12pt 유지, 칸에 실제로 다 들어가지 않을 때만 축소 (PPT 생성 로직과 동일)
+    const counterLineSpacing = 1.25;
+    const counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 9, 1.15, [6, 8, 4, 6]);
 
     const hasPhoto2 = Boolean(photo2Url);
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
@@ -1529,7 +1548,7 @@
 
         <!-- 개선대책 본문 셀 (SHAPE #11: x = 8.2448, y = 5.9064, w = 3.3858, h = 1.3959) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.35cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(counterSz)}; font-weight: 700; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all;">${data.countermeasureContent || ''}</div>
+          <div style="font-size: ${pt(counterSz)}; font-weight: 700; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all; white-space: pre-line;">${data.countermeasureContent || ''}</div>
         </div>
 
         <!-- [PM 판정결과] 헤더 셀 (SHAPE #9: x = 11.6307, y = 5.9064, w = 1.5354, h = 0.3329) -->
