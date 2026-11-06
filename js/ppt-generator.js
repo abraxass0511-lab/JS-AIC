@@ -211,23 +211,26 @@
 
     // 19. 지적사항(r.content) 직접 파싱 및 정제
     if (r.content && typeof r.content === 'string') {
-      const raw = r.content.trim();
-      if (raw.includes('1.') && raw.includes('2.')) {
-        const p1 = raw.split('1.')[1].split('2.')[0].trim();
-        if (p1.length >= 6 && p1.length <= 24) return p1;
-      }
-      if (raw.includes('↔')) {
-        const p1 = raw.split('↔')[0].trim();
-        if (p1.length >= 6 && p1.length <= 24) return p1;
-      }
-      if (raw.length <= 25 && !isGenericTaxonomyLabel(raw)) {
-        return raw;
-      }
+      let c = r.content.replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
+      c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '');
+      c = c.replace(/^\d+\)\s*/, '');
+      const firstLine = c.split('\n')[0].trim();
+      if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
+      if (firstLine.includes('버팀대')) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+      if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
+      if (firstLine.includes('가새')) return '비계 설치구간 가새 설치 누락';
+      if (firstLine.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
+      if (firstLine.length >= 6 && firstLine.length <= 26 && !isGenericTaxonomyLabel(firstLine)) return firstLine;
+      if (firstLine.length > 26) return firstLine.substring(0, 24) + '...';
     }
 
-    // 최종 대체: 모호한 문구 절대 배제하고 기인물/공종 기반 구체적 표현 생성
+    // 최종 대체: 지적사항 또는 기인물/공종 기반 구체적 행동 표현
+    if (r.content && r.content.trim().length >= 6) {
+      const trimmed = r.content.trim().replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '');
+      return trimmed.length <= 26 ? trimmed : trimmed.substring(0, 24) + '...';
+    }
     const targetItem = (r.item && r.item !== '기타') ? r.item : (r.workMethod || r.workGroup || '현장 작업');
-    return `${targetItem} 안전기준 미준수 및 조치 미흡`;
+    return `${targetItem} 안전조치 기준 미준수`;
   }
 
   /**
@@ -509,39 +512,34 @@
       }
     }
 
-    // 점검단 제안
-    let proposalType = '시스템 개선';
-    let proposalSub = r.inspectorOpinionSub || '(이행강화안 수립)';
-    const rawProp = (r.inspectorOpinionType || '').trim();
-    if (rawProp.includes('교육')) {
-      proposalType = '교육/코칭';
-      proposalSub = r.inspectorOpinionSub || '(협력사 교육)';
-    } else if (rawProp.includes('페널티')) {
-      proposalType = '페널티';
-      proposalSub = r.inspectorOpinionSub || '(패널티 부과)';
-    } else {
-      proposalType = '시스템 개선';
-      proposalSub = r.inspectorOpinionSub || (text.includes('동바리') ? '(모니터링 강화)' : '(이행강화안 수립)');
-    }
-
-    let proposalContent = r.auditProposal || r.inspectorOpinion || '';
-    if (!proposalContent || (text.includes('수평') || text.includes('로프간격'))) {
-      if (text.includes('수평') || text.includes('로프간격')) {
-        proposalContent = '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다. 지상에서 양중로프를 체결할 때 화물의 여장간격이 동일하도록 작업팀 교육 및 이행강화 노력이 필요함. 또한 원인이 되는 자재 적재방법 고려 필요.';
-      } else if (text.includes('양중') || text.includes('유도로프')) {
-        proposalContent = '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.';
-      } else {
-        proposalContent = '설치조립작업 시 발생 가능한 사고를 방지하기 위해 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.';
+    // 점검단 제안 분류 (복수 선택 지원)
+    let proposalItems = Array.isArray(r.proposalItems) && r.proposalItems.length > 0 ? r.proposalItems : [];
+    if (proposalItems.length === 0) {
+      const rawProp = (r.inspectorOpinionType || r.auditType || '').trim();
+      if (/시스템\s*개선|시스템개선/i.test(rawProp)) {
+        proposalItems.push({ type: '시스템 개선', sub: r.inspectorOpinionSub || '(현장모니터링 강화)' });
       }
+      if (/교육\/코칭|교육|코칭/i.test(rawProp)) {
+        proposalItems.push({ type: '교육/코칭', sub: r.inspectorOpinionSub || '(근로자 교육)' });
+      }
+      if (/패널티|페널티/i.test(rawProp)) {
+        proposalItems.push({ type: '페널티', sub: r.inspectorOpinionSub || '(관리감독자 경고)' });
+      }
+      if (proposalItems.length === 0) {
+        proposalItems.push({ type: '시스템 개선', sub: r.inspectorOpinionSub || '(이행강화안 수립)' });
+      }
+    }
+    const proposalType = proposalItems[0].type;
+    const proposalSub = proposalItems[0].sub || '';
+
+    // 점검단 제안 본문: 등록된 auditProposal 최우선 사용 (더미 텍스트 덮어쓰기 절대 금지)
+    let proposalContent = (r.auditProposal || r.inspectorOpinion || '').trim();
+    if (!proposalContent) {
+      proposalContent = '- 현장 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.';
     }
 
     // 개선대책 본문 & PM 판정결과
     let countermeasureContent = '';
-    let pmVerdictType = (r.pmVerdictType || '').trim();
-    let pmVerdictSub = '';
-
-    const SHORT_VERDICTS = ['시스템 개선', '시스템개선', '교육/코칭', '교육', '코칭', '페널티', '시정명령', '현장시정', '즉시시정', '조치완료'];
-
     const rawPm = (r.pmVerdict || '').trim();
     const rawFix = (r.fix && r.fix.content ? r.fix.content : '').trim();
     const rawPlan = (r.actionPlan || r.countermeasure || '').trim();
@@ -552,48 +550,38 @@
       countermeasureContent = rawFix;
     } else if (Array.isArray(r.countermeasures) && r.countermeasures.length) {
       countermeasureContent = r.countermeasures.join('\n');
-    } else if (rawPm && !SHORT_VERDICTS.includes(rawPm) && rawPm.length > 12) {
+    } else if (rawPm && rawPm.length > 12) {
       countermeasureContent = rawPm;
     }
 
-    if (!countermeasureContent) {
-      if (text.includes('수평') || text.includes('로프간격')) {
-        countermeasureContent = '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈';
-      } else if (text.includes('양중') || text.includes('유도로프')) {
-        countermeasureContent = '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립';
-      } else {
-        countermeasureContent = '부적합 사항에 대해 작업팀 교육 및 표준 안전작업절차를 보완하고 일일 점검을 강화하여 재발 방지 조치함.';
+    // PM 판정결과 분류 (복수 선택 지원)
+    let pmVerdictItems = Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0 ? r.pmVerdictItems : [];
+    if (pmVerdictItems.length === 0) {
+      const rawPmType = String(r.pmVerdictType || r.pmVerdict || '').trim();
+      if (/시스템\s*개선|시스템개선/i.test(rawPmType)) {
+        pmVerdictItems.push({ type: '시스템 개선', sub: '(모니터링 강화)' });
       }
-    } else if (countermeasureContent.includes('신호수 대상으로 부적합사항 공유') && !countermeasureContent.includes('신호수 자격 박탈')) {
-      countermeasureContent = '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈';
-    }
-
-    // PM 판정결과 판별:
-    // 사용자 지시: "교육/코칭이고" -> 기본 표준 및 권장값은 '교육/코칭 (협력사 교육)'
-    if (!pmVerdictType) {
-      if (rawPm && SHORT_VERDICTS.includes(rawPm)) {
-        pmVerdictType = rawPm;
-      } else if (rawPm.includes('교육') || rawPm.includes('코칭') || countermeasureContent.includes('교육') || countermeasureContent.includes('신호수')) {
-        pmVerdictType = '교육/코칭';
-      } else if (rawPm.includes('시스템')) {
-        pmVerdictType = '시스템 개선';
-      } else if (rawPm.includes('페널티')) {
-        pmVerdictType = '페널티';
-      } else {
-        // 원본 점검장표 표준: 교육/코칭
-        pmVerdictType = '교육/코칭';
+      if (/교육\/코칭|교육|코칭/i.test(rawPmType)) {
+        pmVerdictItems.push({ type: '교육/코칭', sub: '(근로자 교육)' });
+      }
+      if (/패널티|페널티/i.test(rawPmType)) {
+        pmVerdictItems.push({ type: '페널티', sub: '(관리감독자 경고)' });
+      }
+      if (pmVerdictItems.length === 0 && (rawPlan || rawFix || rawPm)) {
+        pmVerdictItems.push({ type: '시스템 개선', sub: '(모니터링 강화)' });
       }
     }
+    let pmVerdictType = pmVerdictItems.length > 0 ? pmVerdictItems[0].type : '';
+    let pmVerdictSub = pmVerdictItems.length > 0 ? pmVerdictItems[0].sub : '';
 
     // 등록된 장표에 이미 개선대책/PM판정결과가 기입되어 있는 경우 그대로 표시, 없는 경우에만 공란 처리
-    const hasRegisteredPostAction = Boolean(rawPlan || r.pmVerdictType || r.pmVerdictSub);
+    const hasRegisteredPostAction = Boolean(rawPlan || r.pmVerdictType || r.pmVerdictSub || pmVerdictItems.length > 0);
     const isPostActionFilled = Boolean((options && options.includePostActions) || hasRegisteredPostAction);
     if (!isPostActionFilled) {
       countermeasureContent = '';
       pmVerdictType = '';
       pmVerdictSub = '';
-    } else {
-      pmVerdictSub = r.pmVerdictSub || (pmVerdictType === '시스템 개선' ? '(모니터링 강화)' : pmVerdictType === '교육/코칭' ? '(협력사 교육)' : '');
+      pmVerdictItems = [];
     }
 
     let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
@@ -604,6 +592,7 @@
     const photoBanner = extractDirectAction(r);
     const photo2Banner = extractDirectAction2(r, photoBanner);
     const greenBanner = r.greenBanner || '';
+    const interviewAuthorTitle = r.interviewAuthorTitle || (r.interviewAuthor ? `[관리자 의견 : ${r.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]');
 
     return {
       severity,
@@ -630,13 +619,17 @@
       photoBannerTitle,
       photoBanner,
       photo2Banner,
+      interviewAuthor: r.interviewAuthor || '시공관리자 및 근로자',
+      interviewAuthorTitle,
       interviewOpinion,
       proposalType,
       proposalSub,
+      proposalItems,
       proposalContent,
       countermeasureContent,
       pmVerdictType,
       pmVerdictSub,
+      pmVerdictItems,
       subcontractor: r.subcontractor !== undefined ? r.subcontractor : '',
       workGroup: r.workGroup || r.workMethod || r.workName || '거푸집동바리공사',
       location: r.location !== undefined ? r.location : '',
@@ -990,7 +983,7 @@
     }
     slide.addText([
       {
-        text: '[의견 : 시공관리자 및 근로자]',
+        text: data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]',
         options: {
           fontSize: 14,
           bold: true,
@@ -1023,13 +1016,24 @@
     });
 
     // 4) [점검단 제안] 좌측 하단 셀 (SHAPE #6: x = 8.2448, y = 4.7522, w = 1.5342, h = 0.6790)
-    slide.addText([
-      { text: `${data.proposalType}\n`, options: { fontSize: 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN } },
-      { text: data.proposalSub, options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } }
-    ], {
+    const propRuns = [];
+    (data.proposalItems || [{ type: data.proposalType, sub: data.proposalSub }]).forEach((it, idx) => {
+      if (idx > 0) propRuns.push({ text: '\n', options: { fontSize: 4 } });
+      propRuns.push({
+        text: `${it.type}\n`,
+        options: { fontSize: (data.proposalItems && data.proposalItems.length > 1) ? 11 : 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN }
+      });
+      if (it.sub) {
+        propRuns.push({
+          text: it.sub,
+          options: { fontSize: (data.proposalItems && data.proposalItems.length > 1) ? 9 : 11, bold: true, color: '000000', fontFace: FONT_MALGUN }
+        });
+      }
+    });
+    slide.addText(propRuns, {
       x: 8.2448, y: 4.7522, w: 1.5342, h: 0.6790,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15
+      align: 'center', valign: 'middle', lineSpacingMultiple: 1.10
     });
 
     // 5) [점검단 제안] 우측 본문 셀 (SHAPE #4: x = 9.7790, y = 4.3979, w = 3.3871, h = 1.0333)
@@ -1065,7 +1069,7 @@
     const counterMargin = [4, 6, 2, 4];
     const counterLineSpacing = 1.10;
     let counterSz = 12;
-    if ((data.countermeasureContent || '').length > 140) {
+    if ((data.countermeasureContent || '').length > 190) {
       counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 10, counterLineSpacing, counterMargin);
     }
     slide.addText(data.countermeasureContent || '', {
@@ -1084,16 +1088,24 @@
     });
 
     // 9) [PM 판정결과] 우측 하단 셀 (SHAPE #10: x = 11.6307, y = 6.2394, w = 1.5354, h = 1.0630)
-    const pmRuns = data.pmVerdictType
-      ? [
-          { text: `${data.pmVerdictType}\n`, options: { fontSize: 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN } },
-          data.pmVerdictSub ? { text: data.pmVerdictSub, options: { fontSize: 11, bold: true, color: '000000', fontFace: FONT_MALGUN } } : null
-        ].filter(Boolean)
-      : '';
-    slide.addText(pmRuns, {
+    const pmRuns = [];
+    (data.pmVerdictItems || (data.pmVerdictType ? [{ type: data.pmVerdictType, sub: data.pmVerdictSub }] : [])).forEach((it, idx) => {
+      if (idx > 0) pmRuns.push({ text: '\n', options: { fontSize: 4 } });
+      pmRuns.push({
+        text: `${it.type}\n`,
+        options: { fontSize: (data.pmVerdictItems && data.pmVerdictItems.length > 1) ? 11 : 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN }
+      });
+      if (it.sub) {
+        pmRuns.push({
+          text: it.sub,
+          options: { fontSize: (data.pmVerdictItems && data.pmVerdictItems.length > 1) ? 9 : 11, bold: true, color: '000000', fontFace: FONT_MALGUN }
+        });
+      }
+    });
+    slide.addText(pmRuns.length ? pmRuns : '', {
       x: 11.6307, y: 6.2394, w: 1.5354, h: 1.0630,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.15, margin: [4, 4, 4, 4]
+      align: 'center', valign: 'middle', lineSpacingMultiple: 1.10, margin: [4, 4, 4, 4]
     });
   }
 
@@ -1527,7 +1539,7 @@
 
         <!-- [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.5748) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.5748)}; background: #ffffff; border: 1px solid #000000; padding: 0.35cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(14)}; font-weight: 800; color: #181717; margin-bottom: 0.25cqw;">[의견 : 시공관리자 및 근로자]</div>
+          <div style="font-size: ${pt(14)}; font-weight: 800; color: #181717; margin-bottom: 0.25cqw;">${data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]'}</div>
           <div style="font-size: ${pt(intSz)}; line-height: ${intLineSpacing}; color: #111111; word-break: keep-all;">${data.interviewOpinion}</div>
         </div>
 
@@ -1537,9 +1549,11 @@
         </div>
 
         <!-- [점검단 제안] 분류 셀 (SHAPE #6: x = 8.2448, y = 4.7522, w = 1.5342, h = 0.6790) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.7522)}; width: ${pctW(1.5342)}; height: ${pctH(0.6790)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;">
-          <div style="font-size: ${pt(14)}; font-weight: 800; color: #0000ff;">${data.proposalType}</div>
-          <div style="font-size: ${pt(11)}; font-weight: 800; color: #000000; margin-top: 0.1cqw;">${data.proposalSub}</div>
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.7522)}; width: ${pctW(1.5342)}; height: ${pctH(0.6790)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px;">
+          ${(data.proposalItems || [{ type: data.proposalType, sub: data.proposalSub }]).map(it => `
+            <div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 11 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.15;">${it.type}</div>
+            ${it.sub ? `<div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 9 : 11)}; font-weight: 800; color: #000000; margin-bottom: 2px;">${it.sub}</div>` : ''}
+          `).join('')}
         </div>
 
         <!-- [점검단 제안] 본문 셀 (SHAPE #4: x = 9.7790, y = 4.3979, w = 3.3871, h = 1.0333) -->
@@ -1563,9 +1577,11 @@
         </div>
 
         <!-- [PM 판정결과] 값 셀 (SHAPE #10: x = 11.6307, y = 6.2394, w = 1.5354, h = 1.0630) -->
-        <div style="position: absolute; left: ${pctX(11.6307)}; top: ${pctY(6.2394)}; width: ${pctW(1.5354)}; height: ${pctH(1.0630)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;">
-          <div style="font-size: ${pt(14)}; font-weight: 800; color: #0000ff;">${data.pmVerdictType || ''}</div>
-          <div style="font-size: ${pt(11)}; font-weight: 800; color: #000000; margin-top: 0.1cqw;">${data.pmVerdictSub || ''}</div>
+        <div style="position: absolute; left: ${pctX(11.6307)}; top: ${pctY(6.2394)}; width: ${pctW(1.5354)}; height: ${pctH(1.0630)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px;">
+          ${(data.pmVerdictItems || (data.pmVerdictType ? [{ type: data.pmVerdictType, sub: data.pmVerdictSub }] : [])).map(it => `
+            <div style="font-size: ${pt((data.pmVerdictItems && data.pmVerdictItems.length > 1) ? 11 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.15;">${it.type}</div>
+            ${it.sub ? `<div style="font-size: ${pt((data.pmVerdictItems && data.pmVerdictItems.length > 1) ? 9 : 11)}; font-weight: 800; color: #000000; margin-bottom: 2px;">${it.sub}</div>` : ''}
+          `).join('')}
         </div>
       </div>
     `;

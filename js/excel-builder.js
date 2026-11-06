@@ -4,8 +4,11 @@
  *   - 2026 개정 안전점검표 규격 반영 (사고장소 20종, 발생형태대분류 17종, 9×9 공종·작업방법, 4대 관리원인 통계, 관계자·점검자 의견 및 3대 분류, 2매 사진 지원)
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.SafeExcel = factory();
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.SafeExcel = api;
+  if (typeof globalThis !== 'undefined') globalThis.SafeExcel = api;
+  if (root) root.SafeExcel = api;
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : this), function () {
 
   // ── 1. 첨부 사진 기반 표준 마스터 데이터 ──
@@ -175,11 +178,11 @@
 
   // 관리적 4대 발생원인 판별 함수 (● 마크)
   function markCause(r, causeName) {
-    const mgmt = r.mgmtCauses || [];
-    const causes = r.causes || [];
+    const mgmt = r.mgmtCauses;
+    const causes = r.causes;
 
     // 1) mgmtCauses가 명시된 경우 (장표 체크박스 or 폼 선택을 절대 기준으로 판별)
-    if (Array.isArray(mgmt) && mgmt.length > 0) {
+    if (Array.isArray(mgmt)) {
       return mgmt.some(c => String(c).includes(causeName)) ? '●' : '';
     } else if (typeof mgmt === 'string' && mgmt.length > 0) {
       return mgmt.includes(causeName) ? '●' : '';
@@ -188,7 +191,6 @@
     // 2) causes가 명시된 경우 (과거 데이터 호환)
     if (Array.isArray(causes) && causes.length > 0) {
       if (causes.some(c => String(c).includes(causeName))) return '●';
-      // '물적' 단독으로는 불안전 상태를 강제하지 않고, 실제 causeName과 일치할 때만 처리
     }
 
     // 3) 원인 데이터가 아예 없는 구형 레코드인 경우에 한해서만 필드 추론
@@ -253,10 +255,10 @@
   function cleanOpinionText(raw) {
     if (!raw) return '';
     return String(raw)
-      .replace(/^[\s|ㅣ¦_!\-•·]+/gm, '')
+      .replace(/^[\s|ㅣ¦_!\-•·~—]+/gm, '')
       .replace(/\s+/g, ' ')
-      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
-      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
+      .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
+      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
       .trim();
   }
 
@@ -267,21 +269,24 @@
     if (!raw || raw === '(미조치)') return '(미조치)';
     const lines = String(raw)
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
-      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
+      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/g, '')
       .split(/\r?\n/)
-      .map(line => line.replace(/^[\s|ㅣ¦_!]+/, '').replace(/[\s|ㅣ¦_!]+$/, '').trim())
+      .map(line => line.replace(/^[\s|ㅣ¦_!~—\-]+/, '').replace(/[\s|ㅣ¦_!~—\-]+$/, '').trim())
       .filter(Boolean);
     return lines.length > 0 ? lines.join('\n') : '(미조치)';
   }
 
-  // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티')
+  // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티' - 복수 지원)
   function getPmVerdictType(r) {
     if (!r) return '시스템 개선';
     const raw = String(r.pmVerdictType || r.pmVerdict || '').trim();
     if (raw) {
-      if (raw.includes('시스템')) return '시스템 개선';
-      if (raw.includes('페널티') || raw.includes('패널티') || raw.includes('벌점') || raw.includes('박탈')) return '페널티';
-      if (raw.includes('교육') || raw.includes('코칭')) return '교육/코칭';
+      const types = [];
+      if (raw.includes('시스템')) types.push('시스템 개선');
+      if (raw.includes('교육') || raw.includes('코칭')) types.push('교육/코칭');
+      if (raw.includes('페널티') || raw.includes('패널티') || raw.includes('벌점') || raw.includes('박탈')) types.push('페널티');
+      if (types.length > 0) return types.join(', ');
+      return raw;
     }
     return getInspectorOpinionType(r);
   }
@@ -424,7 +429,8 @@
     ['발생원인', '불안전 행동', 8, 'mark', r => markCause(r, '불안전 행동')],
     ['발생원인', '불안전 상태', 8, 'mark', r => markCause(r, '불안전 상태')],
 
-    // [관계자·점검자 의견] 시공자/관리자 의견 -> 관계자 의견, 점검단 제안 -> 점검자 의견, 3대 분류 추가
+    // [관계자·점검자 의견] 관계자 구분(작성자), 관계자 의견, 점검자 의견 구분, 점검자 의견
+    ['관계자·점검자 의견', '관계자 구분', 14, null, r => r.interviewAuthor || '시공관리자 및 근로자'],
     ['관계자·점검자 의견', '관계자 의견', 20, null, r => cleanOpinionText(r.interviewOpinion || r.workerOpinion || '')],
     ['관계자·점검자 의견', '점검자 의견 구분', 14, 'inspectorOpinionTypes', r => getInspectorOpinionType(r)],
     ['관계자·점검자 의견', '점검자 의견', 24, null, r => cleanOpinionText(r.auditProposal || r.inspectorOpinion || '')],
