@@ -517,9 +517,6 @@ export const store = {
           rec.severity = rec.status !== '조치완료' ? '중부적합' : '경부적합';
         }
       }
-      if (rec.severity === '중부적합' && rec.holdPoint === undefined) {
-        rec.holdPoint = true;
-      }
       return rec;
     }).sort((a, b) => (b.inspectedDate + (b.createdAt || '')).localeCompare(a.inspectedDate + (a.createdAt || '')));
     this._monthCache.set(bucket, list);
@@ -861,7 +858,6 @@ export const store = {
     if (!rec || !rec.id) return rec;
     const sev = newSeverity === '중부적합' ? '중부적합' : '경부적합';
     rec.severity = sev;
-    if (sev === '중부적합') rec.holdPoint = true;
     rec.updatedAt = new Date().toISOString();
     rec.updatedBy = (this.user && this.user.name) || '점검자';
     const bucket = rec.bucket || (rec.inspectedDate ? rec.inspectedDate.slice(0, 7) : '2026-10');

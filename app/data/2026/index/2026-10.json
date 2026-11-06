@@ -103,7 +103,7 @@
         "불안전 행동",
         "불안전 상태"
       ],
-      "holdPoint": true,
+      "holdPoint": false,
       "interviewOpinion": "",
       "auditProposal": "",
       "pmVerdict": "",
@@ -230,7 +230,7 @@
         "계획 미수립",
         "불안전 상태"
       ],
-      "holdPoint": true,
+      "holdPoint": false,
       "interviewOpinion": "통로구간으로 자재를 운반하는 것에 대한 위함성을 인지하지 못했다. 즉시 설치하겠다.",
       "auditProposal": "통로구간에는 상부 방호선반이나 낙하물방지시설을 설치해야 함",
       "pmVerdict": "",
@@ -359,7 +359,7 @@
         "불안전 행동",
         "불안전 상태"
       ],
-      "holdPoint": true,
+      "holdPoint": false,
       "interviewOpinion": "",
       "auditProposal": "",
       "pmVerdict": "",
@@ -449,7 +449,7 @@
       "agentMid": "안전시설",
       "agentMinor": "추락방지시설(안전대걸이시설)",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "송도1",
@@ -668,7 +668,7 @@
       "agentMid": "안전시설",
       "agentMinor": "추락방지시설(안전대걸이시설)",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "송도2",
@@ -779,7 +779,7 @@
       "agentMid": "거푸집",
       "agentMinor": "갱폼",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "송도1",
@@ -834,7 +834,7 @@
       "agentMid": "동바리",
       "agentMinor": "파이프서포트",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "송도1",
@@ -889,7 +889,7 @@
       "agentMid": "생산장비",
       "agentMinor": "펌프카",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "송도1",
@@ -941,7 +941,7 @@
       "agentMid": "말비계",
       "agentMinor": "말비계",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "송도1",
@@ -993,7 +993,7 @@
       "agentMid": "말비계",
       "agentMinor": "말비계",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     },
     {
       "site": "반포3",
@@ -1049,7 +1049,7 @@
       "agentMid": "안전시설",
       "agentMinor": "추락방지시설(안전난간)",
       "severity": "중부적합",
-      "holdPoint": true
+      "holdPoint": false
     }
   ],
   "deletedIds": [
