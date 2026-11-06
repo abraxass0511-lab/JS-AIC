@@ -3976,7 +3976,7 @@ async function populateEduOptions(targetRecordId = null) {
   }
 
   sel.innerHTML = records.map(r => {
-    const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
+    const isMajor = r.severity === '중부적합';
     const sev = isMajor ? '🚨중부적합' : '⚠️경부적합';
     const title = `[${r.site || '현장'}] [${sev}] ${r.content || ''} (${r.location || '-'}, ${r.inspectedDate || ''})`;
     return `<option value="${r.id}">${title}</option>`;
