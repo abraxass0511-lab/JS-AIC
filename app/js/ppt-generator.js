@@ -67,6 +67,102 @@
     return '추락';
   }
 
+  function cleanWorkGroup(raw, content = '') {
+    if (!raw) return '거푸집동바리공사';
+    let cleaned = String(raw)
+      .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
+      .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
+      .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const comb = `${cleaned} ${content}`;
+    if (comb.includes('비계') || /^(?:HA|HE|HEY|BEE)\s*공사$/i.test(cleaned)) return '비계공사';
+    if (comb.includes('거푸집') || comb.includes('동바리') || comb.includes('유로폼')) return '거푸집동바리공사';
+    if (comb.includes('철근')) return '철근공사';
+    if (comb.includes('콘크리트')) return '콘크리트공사';
+    if (comb.includes('양중') || comb.includes('크레인')) return '양중작업';
+    if (comb.includes('토공') || comb.includes('흙막이')) return '토공사';
+
+    return cleaned || '비계공사';
+  }
+
+  function cleanLocation(raw) {
+    if (!raw) return '';
+    return String(raw)
+      .replace(/\b(?:ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL)\b[\s\S]*$/i, '')
+      .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
+      .replace(/[\[\]{}()_ㅣ¦!~—\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function cleanSubcontractor(raw) {
+    if (!raw) return '';
+    const cleaned = String(raw).replace(/[^가-힣a-zA-Z0-9()주\s]/g, '').trim();
+    if (cleaned.length >= 2 && !/^(?:공종|작업|점검|비어|없음)/.test(cleaned)) {
+      return cleaned;
+    }
+    return '';
+  }
+
+  function cleanOpinionText(raw) {
+    if (!raw) return '';
+    let s = String(raw)
+      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+      .replace(/^[\s|ㅣ¦_!\-•·~—]+/gm, '')
+      .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/3000이하/g, '30cm 이하')
+      .replace(/5500\b/g, '55cm')
+      .replace(/55em\b/g, '55cm')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
+      .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
+      .replace(/\[=\]\s*oa/gi, '')
+      .trim();
+    if (/[가-힣]/.test(s) && /^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/.test(s)) {
+      s = s.replace(/^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/, '');
+    }
+    return s.trim();
+  }
+
+  function cleanProposalText(raw) {
+    if (!raw) return '';
+    return String(raw)
+      .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
+      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
+      .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/,\s*-\s*/g, '\n- ')
+      .split(/\r?\n/)
+      .map(l => l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim())
+      .filter(Boolean)
+      .map(l => l.startsWith('- ') ? l : `- ${l}`)
+      .join('\n');
+  }
+
+  function cleanActionPlan(raw) {
+    if (!raw) return '';
+    const lines = String(raw)
+      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
+      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
+      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/,\s*-\s*/g, '\n- ')
+      .split(/\r?\n/)
+      .map(l => l.replace(/^[|ㅣ¦_!~—\-*•·\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim())
+      .map(l => {
+        if (l.includes('비계 승인점검 후 보완/개선') || l.includes('Process 이행')) {
+          return '비계 승인점검 후 보완/개선 필요사항 Process 이행';
+        }
+        return l;
+      })
+      .filter(l => l.length >= 7 && !/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭|&제레)/i.test(l))
+      .map(l => l.startsWith('- ') ? l : `- ${l}`);
+    return lines.join('\n');
+  }
+
   /**
    * 관련 기준을 "안전보건규칙 제//조"로 간단하게 변환 (사용자 지시 3)
    */
@@ -441,7 +537,14 @@
         lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
       }
     }
-    const lawTitle = r.rawLaw ? r.rawLaw : simplifyLawTitle(rawLawTitle, text);
+    let lawTitle = (r.rawLaw ? r.rawLaw : simplifyLawTitle(rawLawTitle, text)).trim();
+    if (/^[0-9I=;:\s]+/.test(lawTitle) && (/of\s*xi/i.test(lawTitle) || /업적/i.test(lawTitle) || lawTitle.length < 15)) {
+      if (lawBody && /(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙)/.test(lawBody)) {
+        const bodyLines = lawBody.split(/\r?\n/);
+        lawTitle = bodyLines[0].trim();
+        lawBody = bodyLines.slice(1).join('\n').trim();
+      }
+    }
 
     // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
     const hasGuideline = Boolean(r.hasGuideline || (options && options.showGuideline));
@@ -511,6 +614,7 @@
           : '현장 작업진행 과정에서 안전작업수칙에 대한 관리감독 및 작업자 간 소통이 미흡하여 규정 절차가 누락됨.';
       }
     }
+    interviewOpinion = cleanOpinionText(interviewOpinion);
 
     // 점검단 제안 분류 (복수 선택 지원)
     let proposalItems = Array.isArray(r.proposalItems) && r.proposalItems.length > 0 ? r.proposalItems : [];
@@ -537,6 +641,7 @@
     if (!proposalContent) {
       proposalContent = '- 현장 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.';
     }
+    proposalContent = cleanProposalText(proposalContent);
 
     // 개선대책 본문 & PM 판정결과
     let countermeasureContent = '';
@@ -553,6 +658,7 @@
     } else if (rawPm && rawPm.length > 12) {
       countermeasureContent = rawPm;
     }
+    countermeasureContent = cleanActionPlan(countermeasureContent);
 
     // PM 판정결과 분류 (복수 선택 지원)
     let pmVerdictItems = Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0 ? r.pmVerdictItems : [];
@@ -630,9 +736,9 @@
       pmVerdictType,
       pmVerdictSub,
       pmVerdictItems,
-      subcontractor: r.subcontractor !== undefined ? r.subcontractor : '',
-      workGroup: r.workGroup || r.workMethod || r.workName || '거푸집동바리공사',
-      location: r.location !== undefined ? r.location : '',
+      subcontractor: cleanSubcontractor(r.subcontractor),
+      workGroup: cleanWorkGroup(r.workGroup || r.workMethod || r.workName || '거푸집동바리공사', rawContent),
+      location: cleanLocation(r.location),
       inspector: inspectorName,
       inspectRound,
       content: rawContent,

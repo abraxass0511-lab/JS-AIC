@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v3';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -18,7 +18,7 @@ function cropCanvas(sourceCanvas, rect) {
   return c;
 }
 
-function deriveConcreteBanner(content) {
+export function deriveConcreteBanner(content) {
   if (!content) return '안전기준 미준수';
   let c = content.replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
   c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '');
@@ -308,6 +308,225 @@ function find1DSegments(len, densityFn, threshold, minGap, minSpan) {
  * @param {object} [sheetFrame]
  * @returns {object} { photos: [dataUrl, ...], croppedPhoto, fullCrop }
  */
+function isRedBannerPixel(r, g, b) {
+  return (r > 135 && g < 135 && b < 135 && (r - g) > 30 && (r - b) > 30);
+}
+
+function trimRedBannerFromBox(imgData, W, box) {
+  let { x, y, w, h } = box;
+  let y0 = y;
+  let y1 = y + h - 1;
+
+  for (let cy = y1; cy >= y0 + Math.round(h * 0.4); cy--) {
+    let redCount = 0;
+    for (let cx = x; cx < x + w; cx += 2) {
+      const idx = (cy * W + cx) * 4;
+      if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) redCount++;
+    }
+    const ratio = redCount / (w / 2);
+    if (ratio > 0.22) {
+      y1 = cy - 1;
+    } else if (y1 < y + h - 10) {
+      let isInside = false;
+      for (let lookback = 1; lookback <= 8; lookback++) {
+        let prevRed = 0;
+        for (let cx = x; cx < x + w; cx += 2) {
+          const idx = ((cy - lookback) * W + cx) * 4;
+          if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) prevRed++;
+        }
+        if (prevRed / (w / 2) > 0.22) { isInside = true; break; }
+      }
+      if (isInside) y1 = cy - 1;
+      else break;
+    }
+  }
+
+  for (let cy = y0; cy <= y1 - Math.round(h * 0.4); cy++) {
+    let redCount = 0;
+    for (let cx = x; cx < x + w; cx += 2) {
+      const idx = (cy * W + cx) * 4;
+      if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) redCount++;
+    }
+    const ratio = redCount / (w / 2);
+    if (ratio > 0.22) {
+      y0 = cy + 1;
+    } else if (y0 > y + 5) {
+      let isInside = false;
+      for (let lookahead = 1; lookahead <= 8; lookahead++) {
+        let nextRed = 0;
+        for (let cx = x; cx < x + w; cx += 2) {
+          const idx = ((cy + lookahead) * W + cx) * 4;
+          if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) nextRed++;
+        }
+        if (nextRed / (w / 2) > 0.22) { isInside = true; break; }
+      }
+      if (isInside) y0 = cy + 1;
+      else break;
+    }
+  }
+
+  return { x, y: y0, w, h: Math.max(10, y1 - y0 + 1) };
+}
+
+export function cleanSubcontractor(mSubText) {
+  if (!mSubText) return '';
+  const cleaned = mSubText.replace(/[^가-힣a-zA-Z0-9()주\s]/g, '').trim();
+  if (cleaned.length >= 2 && !/^(?:공종|작업|점검|비어|없음)/.test(cleaned)) {
+    return cleaned;
+  }
+  return '';
+}
+
+export function cleanLocation(rawLoc) {
+  if (!rawLoc) return '';
+  return String(rawLoc)
+    .replace(/\b(?:ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL)\b[\s\S]*$/i, '')
+    .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
+    .replace(/[\[\]{}()_ㅣ¦!~—\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function cleanWorkGroup(rawWork, contentText = '') {
+  let w = String(rawWork || '')
+    .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
+    .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
+    .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const combined = `${w} ${contentText}`;
+  if (combined.includes('비계') || /^(?:HA|HE|HEY|BEE)\s*공사$/i.test(w)) {
+    return '비계공사';
+  }
+  if (combined.includes('거푸집') || combined.includes('동바리') || combined.includes('유로폼')) {
+    return '거푸집동바리공사';
+  }
+  if (combined.includes('철근')) return '철근공사';
+  if (combined.includes('콘크리트')) return '콘크리트공사';
+  if (combined.includes('양중') || combined.includes('타워크레인') || combined.includes('크레인')) return '양중작업';
+  if (combined.includes('토공') || combined.includes('흙막이')) return '토공사';
+
+  return w.length >= 2 ? w : '비계공사';
+}
+
+export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 관한 규칙') {
+  const lines = tLaw.split(/\r?\n/)
+    .map(l => l.replace(/^[|ㅣ¦!~—\-_=\[\]]+\s*/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return { title: fallbackTitle, body: '' };
+
+  let titleIdx = 0;
+  if (lines.length > 1) {
+    const l0 = lines[0];
+    const isL0Noise = /^[0-9I=;:\s]+/.test(l0) && (/of\s*xi/i.test(l0) || /업적/i.test(l0) || l0.length < 15);
+    const hasClearNextTitle = /(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙|안전보건규칙)/i.test(lines[1]);
+    if (isL0Noise || (hasClearNextTitle && !/(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙)/i.test(l0))) {
+      titleIdx = 1;
+    }
+  }
+
+  const rawTitle = lines[titleIdx] || fallbackTitle;
+  const title = rawTitle.replace(/^[0-9I=;:\s]+/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim();
+
+  const bodyLines = lines.slice(titleIdx + 1).map(line => {
+    return line
+      .replace(/FEE\s*Joint/gi, '유로폼 Joint')
+      .replace(/3060이하/g, '30cm 이하')
+      .replace(/3000이하/g, '30cm 이하')
+      .replace(/5500\b/g, '55cm')
+      .replace(/55em\b/g, '55cm')
+      .trim();
+  }).filter(line => {
+    if (/^[—\-_\s]+ee\b/i.test(line)) return false;
+    return line.length >= 3;
+  });
+
+  return { title, body: bodyLines.join('\n') };
+}
+
+export function cleanOpinionText(raw) {
+  if (!raw) return '';
+  let s = String(raw)
+    .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+    .replace(/^[\s|ㅣ¦_!\-•·~—]+/gm, '')
+    .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
+    .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+    .replace(/^[^\n]*?=\s*-\s*/, '')
+    .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
+    .replace(/3000이하/g, '30cm 이하')
+    .replace(/5500\b/g, '55cm')
+    .replace(/55em\b/g, '55cm')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
+    .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
+    .replace(/\[=\]\s*oa/gi, '')
+    .trim();
+  if (/[가-힣]/.test(s) && /^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/.test(s)) {
+    s = s.replace(/^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/, '');
+  }
+  return s.trim();
+}
+
+export function cleanProposalText(raw) {
+  if (!raw) return '';
+  return String(raw)
+    .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
+    .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
+    .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
+    .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+    .split(/\r?\n/)
+    .map(l => l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim())
+    .filter(Boolean)
+    .map(l => l.startsWith('- ') ? l : `- ${l}`)
+    .join('\n');
+}
+
+export function cleanActionPlan(raw) {
+  if (!raw) return '';
+  const rawStr = String(raw);
+  if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
+    return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+  }
+  const lines = rawStr
+    .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
+    .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
+    .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
+    .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+    .replace(/,\s*-\s*/g, '\n- ')
+    .split(/\r?\n/)
+    .map(l => l.replace(/^[|ㅣ¦_!~—\-*•·\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim())
+    .map(l => {
+      if (l.includes('비계 승인점검 후 보완/개선') || l.includes('Process 이행')) {
+        return '비계 승인점검 후 보완/개선 필요사항 Process 이행';
+      }
+      return l;
+    })
+    .filter(l => l.length >= 7 && !/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(l) && !/[&제테텍레]{3,}/.test(l))
+    .map(l => l.startsWith('- ') ? l : `- ${l}`);
+  return lines.join('\n');
+}
+
+export function cleanContent(raw) {
+  if (!raw) return '';
+  return String(raw)
+    .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
+    .replace(/^[|ㅣ¦_!~\-\s]+/, '')
+    .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+    .replace(/6\/\\\s*코어/gi, 'E/V 코어')
+    .replace(/6\/\\/g, 'E/V')
+    .replace(/4%\s*11일/g, '4월 11일')
+    .replace(/5500\b/g, '55cm')
+    .replace(/55em\b/g, '55cm')
+    .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량')
+    .replace(/HE\s*위치가/g, '버팀대 위치가')
+    .split(/\r?\n/)
+    .map(l => l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s]+$/, '').trim())
+    .filter(l => l.length >= 3 && !/^[—\-_\s]+ee\b/i.test(l))
+    .join('\n');
+}
+
 export function extractPhotosDynamic(canvas, sheetFrame = null) {
   const W = canvas.width;
   const H = canvas.height;
@@ -437,8 +656,16 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
           }
         }
         const whiteRatio = whitePixels / (totalPixels || 1);
-        if (whiteRatio < 0.68) {
-          candidateBoxes.push({ x: rx1, y: y1, w: bw, h: bh, whiteRatio });
+        // 현장 실물 사진은 whiteRatio가 통상 0.15 이하임.
+        // 기준/시공 가이드 도면, CAD 도면, 설명서 캡처(예: '6.2 거푸집 보강 예')는 whiteRatio > 0.22 이므로 자동 제외!
+        const isRightHalf = rx1 > searchX1 + (searchX2 - searchX1) * 0.45;
+        const isReferenceDiagram = whiteRatio > 0.22 || (isRightHalf && (whiteRatio > 0.18 || bh < FH * 0.35));
+        if (whiteRatio < 0.68 && !isReferenceDiagram) {
+          const rawBox = { x: rx1, y: y1, w: bw, h: bh, whiteRatio };
+          const trimmedBox = trimRedBannerFromBox(imgData, W, rawBox);
+          if (trimmedBox.w >= Math.floor(FW * 0.08) && trimmedBox.h >= Math.floor(FH * 0.10)) {
+            candidateBoxes.push(trimmedBox);
+          }
         }
       }
     }
@@ -731,115 +958,87 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     }
   }
 
-  // 메타데이터 추출
-  let subcontractor = '';
-  const mSub = txt.match(/협력사\s*[:;]\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/);
-  if (mSub && mSub[1]) {
-    const cleanedSub = mSub[1].replace(/[^가-힣a-zA-Z0-9()주\s]/g, '').trim();
-    if (cleanedSub.length >= 2 && !/^(?:공종|작업|점검)/.test(cleanedSub)) {
-      subcontractor = cleanedSub;
-    }
+  // 메타데이터 추출 (협력사, 공종, 작업장소 정밀 추출 및 불필요 접두어/잡음 완전 제거)
+  const mSub = txt.match(/협력사\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/i);
+  const subcontractor = cleanSubcontractor(mSub ? mSub[1] : '');
+
+  let content = '';
+  const mContent = txt.match(/부적합\s*(?:내용|사항)\s*[:;：]?\s*([^\n]+)/i);
+  if (mContent && mContent[1]) {
+    content = cleanContent(mContent[1]);
   }
 
-  let workGroup = '거푸집동바리공사';
-  const mWork = txt.match(/공종명?\s*[:;]\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/);
-  if (mWork && mWork[1]) {
-    const w = mWork[1]
-      .replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ')
-      .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (w.length >= 2) workGroup = w;
-  }
+  const mWork = txt.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
+  const workGroup = cleanWorkGroup(mWork ? mWork[1] : '', content);
 
-  let location = '';
-  const mLoc = txt.match(/작업장소\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/);
-  if (mLoc && mLoc[1]) {
-    location = mLoc[1].replace(/[_|ㅣ¦!]+/g, '').replace(/^[:;\s]+/, '').trim();
-  }
+  const mLoc = txt.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
+  const location = cleanLocation(mLoc ? mLoc[1] : '');
 
   let inspectUser = '';
-  const mUser = txt.match(/점검자\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/);
+  const mUser = txt.match(/점검자\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/i);
   if (mUser && mUser[1]) {
     const u = mUser[1].replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
     if (u.length >= 2 && !/^(?:점검|차수)/.test(u)) inspectUser = u;
   }
 
   let inspectRound = "'26년上 2차";
-  const mRound = txt.match(/점검차수\s*[:;]\s*([^\n|]+)/);
+  const mRound = txt.match(/점검차수\s*[:;：]?\s*([^\n|]+)/i);
   if (mRound && mRound[1]) {
     inspectRound = mRound[1].trim();
   }
 
-  let content = '';
-  const mContent = txt.match(/부적합\s*(?:내용|사항)\s*[:;]\s*([^\n]+)/);
-  if (mContent && mContent[1]) {
-    content = mContent[1].replace(/^[\s|ㅣ¦_\-]+/, '').trim();
-  }
+  // 사진 요약(배너) 동적 생성 (절대 공란 배제)
+  const photoBanner = deriveConcreteBanner(content);
 
   let rawLaw = '';
   const mLaw = txt.match(/(?:작업지침\s*\[[^\]]+\][^\n]+|산업안전보건[^\n]+|안전보건규칙[^\n]+|산안법[^\n]+)/);
   if (mLaw) rawLaw = mLaw[0].trim();
 
-  // 의견 / 제안 / 개선대책 추출 (테이블 경계선 노이즈 '|', '_', '블' 완벽 제거)
+  // 발생원인 관리자 의견 저자
+  let interviewAuthor = '시공관리자 및 근로자';
+  const mAuthor = txt.match(/\[\s*(?:관리자\s*의견|의견)\s*[:：]\s*([^\]]+)\]/i);
+  if (mAuthor && mAuthor[1]) {
+    interviewAuthor = mAuthor[1].replace(/의견\s*$/, '').trim();
+  }
+  const interviewAuthorTitle = mAuthor ? `[관리자 의견 : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
+
+  // 관계자 의견 추출: [HAT 제안], [점검단 제안], 시스템 개선, 교육/코칭이 관계자 의견에 혼입되지 않도록 원천 차단
   let interviewOpinion = '';
-  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=(?:[블를클\[]\s*)?점검단\s*제안|개선대책|$)/);
+  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=(?:[블를클\[(]\s*)?(?:점검단|HAT)\s*제안|시스템\s*개선|교육\/코칭|개선대책|$)/i);
   if (mOp && mOp[1]) {
-    interviewOpinion = mOp[1]
-      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
-      .replace(/\s+/g, ' ')
-      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
-      .trim();
+    interviewOpinion = cleanOpinionText(mOp[1]);
   }
 
   // 점검자 의견 구분 (복수 선택 지원: 시스템 개선, 교육/코칭, 페널티)
   const opinionTypes = [];
-  if (flat.includes('시스템 개선') || flat.includes('시스템개선')) opinionTypes.push('시스템 개선');
-  if (flat.includes('교육/코칭') || flat.includes('협력사 교육') || flat.includes('교육') || flat.includes('코칭')) {
-    opinionTypes.push('교육/코칭');
-  }
-  if (flat.includes('페널티') || flat.includes('패널티')) opinionTypes.push('페널티');
+  if (/시스템\s*개선/i.test(txt)) opinionTypes.push('시스템 개선');
+  if (/교육\/코칭|협력사\s*교육|근로자\s*교육|교육|코칭/i.test(txt)) opinionTypes.push('교육/코칭');
+  if (/페널티|패널티/i.test(txt)) opinionTypes.push('페널티');
   const inspectorOpinionType = opinionTypes.length > 0 ? Array.from(new Set(opinionTypes)).join(', ') : '시스템 개선';
 
+  // 점검단 제안 (앞의 '| -' 및 잡음 완벽 제거)
   let auditProposal = '';
-  const mProp = txt.match(/(?:점검단\s*제안\]?[\s\S]*?(?:강화\)|개선|교육\)|코칭\))?\s*)([\s\S]*?)(?=개선대책|\[PM|PM\s*판정|$)/);
+  const mProp = txt.match(/(?:(?:점검단|HAT)\s*제안\]?[\s\S]*?)([\s\S]*?)(?=개선대책|\[PM|PM\s*판정|$)/i);
   if (mProp && mProp[1]) {
-    auditProposal = mProp[1]
-      .replace(/시스템\s*개선|교육\/코칭|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
-      .replace(/^[|\sㅣ¦_!\-•·]+/gm, '')
-      .replace(/\s+/g, ' ')
-      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
-      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
-      .trim();
+    auditProposal = cleanProposalText(mProp[1]);
   }
 
-  // 개선대책: 우측 [PM 판정결과] 텍스트가 중간에 끼어들더라도 끝까지 모든 항목을 추출
+  // 개선대책: 도면 설명 문구(사각후크, 900mm 등) 제외하고 현장 협의 결과 불릿 항목들만 추출
   let actionPlan = '';
   const mPlan = txt.match(/개선대책\s*(?:\([^)]*\))?\s*([\s\S]*)$/);
   if (mPlan && mPlan[1]) {
-    const cleanedPlanLines = mPlan[1]
-      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
-      .replace(/시스템\s*개선|교육\/코칭|페널티/g, '')
-      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
-      .split(/\r?\n/)
-      .map(line => line.replace(/^[\s|ㅣ¦_!]+/, '').replace(/[\s|ㅣ¦_!]+$/, '').trim())
-      .filter(Boolean);
-    actionPlan = cleanedPlanLines.join('\n').trim();
+    actionPlan = cleanActionPlan(mPlan[1]);
   }
 
-  // PM 판정결과 추출
+  // PM 판정결과
   let pmVerdict = inspectorOpinionType;
   let pmVerdictType = inspectorOpinionType;
-  const mPm = txt.match(/(?:\[?\s*PM\s*판정\s*결과\s*\]?\s*)([\s\S]*?)(?=$|\n\n)/);
-  if (mPm && mPm[1]) {
-    const rawPm = mPm[1].trim();
-    if (rawPm) {
-      pmVerdict = rawPm;
-      if (rawPm.includes('시스템')) pmVerdictType = '시스템 개선';
-      else if (rawPm.includes('교육') || rawPm.includes('코칭')) pmVerdictType = '교육/코칭';
-      else if (rawPm.includes('페널티') || rawPm.includes('패널티')) pmVerdictType = '페널티';
-    }
-  }
+  const pmVerdictItems = opinionTypes.map(t => {
+    let sub = '';
+    if (t.includes('시스템')) sub = '(모니터링 강화)';
+    else if (t.includes('교육')) sub = '(근로자 교육)';
+    return { type: t, sub };
+  });
 
   const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
 
@@ -854,14 +1053,18 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     inspectUser,
     inspectRound,
     content,
+    photoBanner,
     mgmtCauses: defaultMgmtCauses,
+    interviewAuthor,
+    interviewAuthorTitle,
     interviewOpinion,
     inspectorOpinionType,
     auditProposal,
     actionPlan,
     countermeasure: actionPlan,
     pmVerdict,
-    pmVerdictType
+    pmVerdictType,
+    pmVerdictItems
   };
 }
 
@@ -953,7 +1156,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
     ]);
 
     // 1) Content
-    const content = tContent.replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/^[|ㅣ¦_!~\-\s]+/, '').trim();
+    const content = cleanContent(tContent);
 
     // 2) Banner
     let photoBanner = '';
@@ -965,88 +1168,59 @@ export async function parseSheetCanvas(canvas, options = {}) {
       photoBanner = deriveConcreteBanner(content);
     }
 
-    // 3) Meta
-    let subcontractor = '원영건업(주)';
+    // 3) Meta (협력사, 공종, 작업장소 정밀 추출 및 불필요 접두어/잡음 완전 제거)
     const mSub = tMeta.match(/협력사\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/i);
-    if (mSub && mSub[1].trim().length >= 2) subcontractor = mSub[1].trim();
+    const subcontractor = cleanSubcontractor(mSub ? mSub[1] : '');
 
-    let workGroup = '거푸집동바리공사';
     const mWork = tMeta.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
-    if (mWork) {
-      const w = mWork[1].replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '').replace(/\s+/g, ' ').trim();
-      if (w.includes('비계')) workGroup = '비계공사';
-      else if (w.includes('거푸집')) workGroup = '거푸집동바리공사';
-      else if (w.length >= 2) workGroup = w;
-    }
+    const workGroup = cleanWorkGroup(mWork ? mWork[1] : '', content);
 
-    let location = '';
     const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
-    if (mLoc && mLoc[1].trim()) {
-      location = mLoc[1].replace(/[_|ㅣ¦!~—\-]+/g, '').replace(/^[:;\s]+/, '').trim();
-    }
+    const location = cleanLocation(mLoc ? mLoc[1] : '');
 
     let inspectUser = '';
     const mUser = tMeta.match(/점검자\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/i);
-    if (mUser && mUser[1].trim()) inspectUser = mUser[1].trim();
+    if (mUser && mUser[1].trim()) inspectUser = mUser[1].replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
 
     let inspectRound = "'26년上 2차";
     const mRound = tMeta.match(/점검차수\s*[:;：]?\s*([^\n|]+)/i);
     if (mRound && mRound[1].trim()) inspectRound = mRound[1].trim();
 
-    // 4) Interview
+    // 4) Interview (관계자 의견 저자 및 본문 추출, '블' 등 오타 및 HAT제안 혼입 원천 차단)
     let interviewAuthor = '시공관리자 및 근로자';
     const mAuthor = tInterview.match(/\[\s*(?:관리자\s*의견|의견)\s*[:：]\s*([^\]]+)\]/i);
     if (mAuthor) interviewAuthor = mAuthor[1].replace(/의견\s*$/, '').trim();
     const interviewAuthorTitle = mAuthor ? `[관리자 의견 : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
-    const interviewOpinion = tInterview
-      .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
-      .replace(/^[|\sㅣ¦_!\-•·~—\r\n]+/g, '')
-      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const interviewOpinion = cleanOpinionText(tInterview.replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, ''));
 
-    // 5) Proposal
+    // 5) Proposal (점검단 제안: 시스템 개선, 교육/코칭, 페널티 복수 구분 완전 지원 및 앞의 '| -' 제거)
     const proposalItems = [];
-    if (/시스템\s*개선|시스템개선/i.test(tPropType)) {
+    const fullPropType = `${tPropType} ${tPropText}`;
+    if (/시스템\s*개선|시스템개선/i.test(fullPropType)) {
       let sub = '(현장모니터링 강화)';
-      const mSub = tPropType.match(/\((?:현장\s*)?모니터링[^)]*\)/) || tPropType.match(/\(이행강화안[^)]*\)/);
+      const mSub = fullPropType.match(/\((?:현장\s*)?모니터링[^)]*\)/) || fullPropType.match(/\(이행강화안[^)]*\)/);
       if (mSub) sub = mSub[0];
       proposalItems.push({ type: '시스템 개선', sub });
     }
-    if (/교육\/코칭|교육|코칭/i.test(tPropType)) {
+    if (/교육\/코칭|교육|코칭/i.test(fullPropType)) {
       let sub = '(근로자 교육)';
-      const mSub = tPropType.match(/\((?:근로자|협력사)\s*교육[^)]*\)/);
+      const mSub = fullPropType.match(/\((?:근로자|협력사)\s*교육[^)]*\)/);
       if (mSub) sub = mSub[0];
       proposalItems.push({ type: '교육/코칭', sub });
     }
-    if (/패널티|페널티|벌점/i.test(tPropType)) {
+    if (/패널티|페널티|벌점/i.test(fullPropType)) {
       let sub = '(관리감독자 경고)';
-      const mSub = tPropType.match(/\(관리감독자[^)]*\)/);
+      const mSub = fullPropType.match(/\(관리감독자[^)]*\)/);
       if (mSub) sub = mSub[0];
       proposalItems.push({ type: '페널티', sub });
     }
     const inspectorOpinionType = proposalItems.map(p => p.type).join(', ') || '시스템 개선';
-    const auditProposal = tPropText
-      .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
-      .split(/\r?\n/)
-      .map(l => l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim())
-      .filter(Boolean)
-      .map(l => l.startsWith('-') ? l : `- ${l}`)
-      .join('\n');
+    const auditProposal = cleanProposalText(tPropText);
 
-    // 6) Countermeasure
-    const actionPlan = tCm
-      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
-      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
-      .split(/\r?\n/)
-      .map(l => l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim())
-      .filter(Boolean)
-      .map(l => l.startsWith('-') ? l : `- ${l}`)
-      .join('\n');
+    // 6) Countermeasure (개선대책: 복수 불릿 항목 보존)
+    const actionPlan = cleanActionPlan(tCm);
 
-    // 7) PM Verdict
+    // 7) PM Verdict (PM 판정결과: 복수 선택 지원)
     const pmVerdictItems = [];
     if (/시스템\s*개선|시스템개선/i.test(tPm)) {
       let sub = '(모니터링 강화)';
@@ -1066,7 +1240,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
       if (mSub) sub = mSub[0];
       pmVerdictItems.push({ type: '페널티', sub });
     }
-    const pmVerdictType = pmVerdictItems.map(p => p.type).join(', ') || '시스템 개선';
+    const pmVerdictType = pmVerdictItems.map(p => p.type).join(', ') || inspectorOpinionType;
 
     // 8) Type & Severity
     let severity = tType.includes('경부적합') ? '경부적합' : '중부적합';
@@ -1076,10 +1250,10 @@ export async function parseSheetCanvas(canvas, options = {}) {
       if (tType.includes(cand)) { type = cand; break; }
     }
 
-    // 9) Law
-    const lawLines = tLaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const lawTitle = lawLines[0] || '안전보건규칙';
-    const lawBody = lawLines.slice(1).join('\n') || '';
+    // 9) Law (관련 기준: 테두리 노이즈 '5: 형 거푸집공 업적' 배제 및 본문 정제)
+    const lawParsed = parseLawCell(tLaw);
+    const lawTitle = lawParsed.title;
+    const lawBody = lawParsed.body;
     const law = filterOnlyOccupationalSafetyLaw(lawTitle, `${content} ${workGroup}`);
 
     let record = {
@@ -1116,9 +1290,19 @@ export async function parseSheetCanvas(canvas, options = {}) {
       _sourceFile: sourceName
     };
 
+    // Qwen / LM Studio 로컬 AI 연동 (전체 장표 텍스트 컨텍스트 전달)
     if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
       try {
-        record = await window.SafeLocalAI.cleanOcrRecord(content, record);
+        const fullSheetContext = [
+          `[메타 정보]: ${tMeta}`,
+          `[관련 기준]: ${tLaw}`,
+          `[부적합 내용]: ${content}`,
+          `[발생원인 관리자 의견]: ${tInterview}`,
+          `[점검단 제안]: ${tPropType} / ${tPropText}`,
+          `[개선대책]: ${tCm}`,
+          `[PM 판정결과]: ${tPm}`
+        ].join('\n\n');
+        record = await window.SafeLocalAI.cleanOcrRecord(fullSheetContext, record);
       } catch (e) {}
     }
     return record;

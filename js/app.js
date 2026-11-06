@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261106_v10';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v10';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261107_v3';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -3476,10 +3476,10 @@ function initLmStudio() {
             badge.style.background = '#f0fdf4';
             badge.style.borderColor = '#86efac';
             badge.style.color = '#15803d';
-            badge.title = '노트북 종료 상태: Cloudflare 24시간 클라우드 AI 연결됨 (클릭하여 설정)';
+            badge.title = 'Cloudflare 24시간 상시 가동 Qwen AI 연결됨 (클릭하여 설정)';
           }
           if ($('#lmStudioInlineStatus')) {
-            $('#lmStudioInlineStatus').textContent = '🟢 Qwen 24시간 클라우드 AI 준비 완료 (노트북 꺼져도 동작)';
+            $('#lmStudioInlineStatus').textContent = '🟢 Qwen 24시간 클라우드 AI 준비 완료 (365일 24시간 가동)';
             $('#lmStudioInlineStatus').style.color = '#16a34a';
           }
         } else {
@@ -5040,11 +5040,11 @@ async function handleSaveImportedRecords() {
           amount: siteObj.amount || ''
         },
         content: rec.content || '부적합 사항 지적',
-        photoBanner: rec.photoBanner || '',
-        location: rec.location || '',
+        photoBanner: (rec.photoBanner && rec.photoBanner.trim()) ? rec.photoBanner.trim() : (typeof deriveConcreteBanner === 'function' ? deriveConcreteBanner(rec.content || '') : '현장 부적합 작업 전경'),
+        location: (rec.location || '').replace(/[_|ㅣ¦!~—\-]+/g, '').trim(),
         workName: workMethod,
         workMethod: workMethod,
-        workGroup: rec.workGroup || '거푸집동바리공사',
+        workGroup: (rec.workGroup || '거푸집동바리공사').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/\s+/g, ' ').trim(),
         kind: matrixArea,
         item: matrixTarget,
         agent: matrixSpec,
@@ -5062,17 +5062,25 @@ async function handleSaveImportedRecords() {
         stakeholder,
         mgmtCauses,
         holdPoint: !!rec.holdPoint,
-        interviewAuthor: rec.interviewAuthor || '시공관리자 및 근로자',
+        interviewAuthor: rec.interviewAuthor || '협력사 시공관리자',
         interviewAuthorTitle: rec.interviewAuthorTitle || (rec.interviewAuthor ? `[관리자 의견 : ${rec.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]'),
-        interviewOpinion: rec.interviewOpinion || '',
+        interviewOpinion: (rec.interviewOpinion || '')
+          .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+          .replace(/^[\s|ㅣ¦_!\-•·~—\r\n]+/g, '')
+          .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+          .replace(/\[=\]\s*oa/gi, '')
+          .trim(),
         proposalItems: rec.proposalItems || [],
         inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
         inspectorOpinionSub: rec.inspectorOpinionSub || '',
-        auditProposal: rec.auditProposal || '',
+        auditProposal: (rec.auditProposal || '')
+          .replace(/^[|\sㅣ¦_!\-•·~—]+/gm, '')
+          .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+          .trim(),
         actionPlan: rec.actionPlan || '',
         countermeasure: rec.countermeasure || rec.actionPlan || '',
-        pmVerdict: rec.pmVerdict || '',
-        pmVerdictType: rec.pmVerdictType || '',
+        pmVerdict: rec.pmVerdict || rec.inspectorOpinionType || '시스템 개선',
+        pmVerdictType: rec.pmVerdictType || rec.inspectorOpinionType || '시스템 개선',
         pmVerdictSub: rec.pmVerdictSub || '',
         pmVerdictItems: rec.pmVerdictItems || [],
         fix: rec.actionPlan ? { content: rec.actionPlan } : {},

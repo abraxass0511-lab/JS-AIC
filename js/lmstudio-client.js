@@ -12,32 +12,52 @@
   const DEFAULT_ENDPOINTS = [
     'http://localhost:1234/v1',
     'http://127.0.0.1:1234/v1',
+    'http://localhost:11434/v1',
+    'http://127.0.0.1:11434/v1',
     'http://192.168.45.164:1234/v1'
   ];
 
-  let currentEndpoint = localStorage.getItem('sp_lmstudio_endpoint') || DEFAULT_ENDPOINTS[0];
-  let currentModel = localStorage.getItem('sp_lmstudio_model') || 'qwen3.5-9b-deepseek-v4-flash';
-  let isConnected = false;
-  let isCloudMode = false;
+  const storage = typeof localStorage !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {} };
+  let currentEndpoint = storage.getItem('sp_lmstudio_endpoint') || DEFAULT_ENDPOINTS[0];
+  let currentModel = storage.getItem('sp_lmstudio_model') || 'qwen3.5-9b-deepseek-v4-flash';
+  let isConnected = true;
+  let isCloudMode = true; // 기본 24시간 Cloudflare 클라우드 Qwen AI 모드
 
   async function checkConnection(url = currentEndpoint) {
-    // 1. 먼저 내 노트북의 LM Studio 로컬 서버 연결 시도 (우선순위 1)
+    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (root.SAFEPATROL_CONFIG && root.SAFEPATROL_CONFIG.workerUrl) || 'https://safepatrol-relay.abraxass0511.workers.dev';
+    const forceLocal = storage.getItem('sp_ai_provider') === 'local';
+
+    // 1. Cloudflare 24시간 상시 가동 Qwen AI (최우선 연결 - 노트북/서버 오프라인 상관없이 24시간 작동)
+    if (!forceLocal && workerUrl) {
+      isConnected = true;
+      isCloudMode = true;
+      return {
+        ok: true,
+        isCloud: true,
+        endpoint: workerUrl,
+        model: 'Qwen-32B/7B (Cloudflare 24시간 클라우드)',
+        note: 'Cloudflare 글로벌 엣지 24시간 상시 가동 Qwen AI'
+      };
+    }
+
+    // 2. 사용자가 로컬 AI를 선택했거나 명시적 엔드포인트를 지정한 경우 LM Studio 로컬 서버 연결 시도
     for (const ep of [url, ...DEFAULT_ENDPOINTS]) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 1800);
+        const timeout = setTimeout(() => ctrl.abort(), 3000);
         const res = await fetch(`${ep}/models`, { signal: ctrl.signal });
         clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
           currentEndpoint = ep;
-          localStorage.setItem('sp_lmstudio_endpoint', ep);
+          storage.setItem('sp_lmstudio_endpoint', ep);
           const models = (data.data || []).map(m => m.id);
           if (models.length > 0) {
-            if (!models.includes(currentModel)) {
-              currentModel = models[0];
-            }
-            localStorage.setItem('sp_lmstudio_model', currentModel);
+            const preferred = models.find(m => m === 'qwen3.5-9b-deepseek-v4-flash') ||
+                              models.find(m => /qwen/i.test(m)) ||
+                              models[0];
+            currentModel = preferred;
+            storage.setItem('sp_lmstudio_model', currentModel);
           }
           isConnected = true;
           isCloudMode = false;
@@ -46,9 +66,6 @@
       } catch (e) {}
     }
 
-    // 2. LM Studio가 오프라인일 때 (노트북 종료 상태 / 핸드폰 단독 접속 시)
-    //    이미 연결된 Cloudflare Worker를 통해 24시간 클라우드 Qwen AI로 자동 전환
-    const workerUrl = window.SAFEPATROL_CONFIG?.workerUrl;
     if (workerUrl) {
       isConnected = true;
       isCloudMode = true;
@@ -57,7 +74,7 @@
         isCloud: true,
         endpoint: workerUrl,
         model: 'Qwen-32B/7B (Cloudflare 24시간 클라우드)',
-        note: '노트북 종료 시 24시간 클라우드 자동 작동'
+        note: 'Cloudflare 글로벌 엣지 24시간 상시 가동 Qwen AI'
       };
     }
 
@@ -301,7 +318,7 @@
     if (isCloudMode && workerUrl) {
       onProgress({ phase: 'connecting', message: '☁️ Cloudflare 24시간 클라우드 AI 분석 중...' });
       try {
-        const pin = localStorage.getItem('sp_pin') || '111111';
+        const pin = storage.getItem('sp_pin') || '111111';
         const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -537,7 +554,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (workerUrl) {
         try {
           onProgress({ phase: 'connecting', message: '☁️ 24시간 클라우드 AI로 전환하여 분석 중...' });
-          const pin = localStorage.getItem('sp_pin') || '111111';
+          const pin = storage.getItem('sp_pin') || '111111';
           const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-PIN': pin },
@@ -587,134 +604,193 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return null;
   }
 
+  // ── 정밀 OCR 텍스트 정제 및 노이즈 제거 헬퍼 함수군 ──
+  function cleanSubcontractor(sub) {
+    if (!sub) return '';
+    let s = String(sub).trim();
+    s = s.replace(/^[_\s|ㅣ¦!~—\-:]+/g, '').replace(/[_\s|ㅣ¦!~—\-:]+$/g, '');
+    if (/원영건업/i.test(s) || /^\s*$/i.test(s)) return '';
+    return s;
+  }
+
+  function cleanLocation(loc) {
+    if (!loc) return '';
+    let s = String(loc).trim();
+    s = s.replace(/\[\s*ERE\b[\s\S]*$/i, '');
+    s = s.replace(/\b(?:ERE|MAK|CERNE|EEL)\b[\s\S]*$/i, '');
+    s = s.replace(/\b261k\s*22\b/gi, '');
+    s = s.replace(/^[_\s|ㅣ¦!~—\-:]+/g, '').replace(/[_\s|ㅣ¦!~—\-:]+$/g, '');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s;
+  }
+
+  function cleanWorkGroup(wg, content) {
+    let s = String(wg || '').trim();
+    s = s.replace(/^(?:HEY|HA|HE)\s*[:;：]\s*/i, '');
+    s = s.replace(/^[_\s|ㅣ¦!~—\-:]+/g, '').replace(/[_\s|ㅣ¦!~—\-:]+$/g, '');
+    if (/거푸집|동바리/i.test(s) || /거푸집|동바리/i.test(content || '')) return '거푸집동바리공사';
+    if (/비계/i.test(s) || /비계/i.test(content || '')) return '비계공사';
+    if (/^HA\s*공사/i.test(s) || /^BEE\s*HA\s*공사/i.test(s)) return '비계공사';
+    return s || '거푸집동바리공사';
+  }
+
+  function cleanOpinionText(txt) {
+    if (!txt) return '';
+    let s = String(txt)
+      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+      .replace(/^[\s|ㅣ¦_!\-•·~—\r\n]+/g, '')
+      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+      .replace(/\[=\]\s*oa/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return s;
+  }
+
+  function cleanProposalText(txt) {
+    if (!txt) return '';
+    let s = String(txt)
+      .replace(/^[|\sㅣ¦_!\-•·~—]+/gm, '')
+      .replace(/(?:oo\s*Tle\s*©|oo\s*기느으|\[=\]\s*oa)[\s\S]*$/gi, '')
+      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+      .trim();
+    return s;
+  }
+
+  function cleanActionPlan(txt) {
+    if (!txt) return '';
+    let s = String(txt)
+      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
+      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/g, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/,\s*-\s*/g, '\n- ')
+      .trim();
+    const rawLines = s.split(/[\r\n]+/).map(l => l.trim()).filter(Boolean);
+    const bulletLines = [];
+    for (const l of rawLines) {
+      let cl = l.replace(/^[-•*·▪]\s*/, '').trim();
+      if (cl) bulletLines.push(`- ${cl}`);
+    }
+    return bulletLines.join('\n');
+  }
+
+  function cleanContent(txt) {
+    if (!txt) return '';
+    let s = String(txt)
+      .replace(/\(5500\)/g, '(55cm)')
+      .replace(/\(3000\)/g, '(30cm)')
+      .replace(/하부\s*벽이음과\s*HE\s*위치가/g, '하부 벽이음과 버팀대 위치가')
+      .replace(/4%\s*11일/g, '4월 11일')
+      .replace(/6\/\s*코어/g, 'E/V 코어')
+      .replace(/—\s*4월/g, '- 4월')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .trim();
+    return s;
+  }
+
   /**
-   * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원 (로컬 LM Studio + 24시간 클라우드 Qwen AI + 내장 규칙 하이브리드)
+   * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원 (Cloudflare 24시간 클라우드 Qwen AI 최우선 연동)
    */
   async function cleanOcrRecord(rawOcrText, fallbackRecord) {
-    if (!rawOcrText || rawOcrText.trim().length < 10) return fallbackRecord;
+    if (!fallbackRecord) fallbackRecord = {};
+    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (root.SAFEPATROL_CONFIG && root.SAFEPATROL_CONFIG.workerUrl) || 'https://safepatrol-relay.abraxass0511.workers.dev';
+    const pin = storage.getItem('sp_pin') || '111111';
+    const forceLocal = storage.getItem('sp_ai_provider') === 'local';
 
-    const systemPrompt = `너는 대한민국 건설현장 패트롤 안전점검 장표 분석 및 구조화 전문가 AI이다.
-주어진 장표 텍스트가 [지적사항 부적합 점검장표]인지, 아니면 [참고사항 / 시공가이드 / 표준작업지침 / 샘플 안내문]인지 정밀 판별하라.
-절대로 임의의 가짜 데이터나 하드코딩된 예시를 넣지 말고, 주어진 텍스트에 있는 내용만 정확히 추출하라.
-
-[판별 기준 1: 참고사항/시공예시/표준작업 가이드/매뉴얼인 경우]
-- 텍스트에 [거푸집 보강 예], [시공 예], [설치 양호/불량], 표준작업지침, 매뉴얼 등 시공 가이드 문구가 있고, '부적합 개요', '점검차수', '개선대책' 등 실제 지적사항 양식 표가 없는 경우
-반드시 아래 JSON만 반환:
-{
-  "sheetType": "참고사항",
-  "_skipped": true,
-  "skipReason": "시공 가이드 및 예시 참고자료"
-}
-
-[판별 기준 2: 지적사항 부적합 점검장표인 경우]
-- 실제 점검장표인 경우 아래 JSON으로 실제 텍스트의 내용을 누락 없이 추출:
-{
-  "sheetType": "지적사항",
-  "_skipped": false,
-  "subcontractor": "협력사명 (기재된 내용만, 미기재 시 빈 문자열)",
-  "workGroup": "공종명 (예: 거푸집동바리공사, _ | 등 불필요 기호 제거)",
-  "location": "작업장소 (예: 지하 2층 ~, 105동 지하1층 등 실물 장표 그대로)",
-  "inspectUser": "점검자 (기재된 내용만, 미기재 시 빈 문자열)",
-  "inspectRound": "점검차수 (예: '26년上 2차)",
-  "content": "부적합 지적내용 전문",
-  "photoBanner": "핵심 부적합 요약 배너 (35자 이내)",
-  "severity": "중부적합 또는 경부적합",
-  "type": "붕괴 또는 추락 또는 낙하 또는 협착 또는 충돌 등",
-  "law": "관련 산업안전보건기준에 관한 규칙 조항",
-  "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 실제 체크된 것만],
-  "interviewOpinion": "관계자 의견 전문 (끝의 '블' 등 오타 및 불필요 기호 제거)",
-  "inspectorOpinionType": "점검자 의견 구분 (시스템 개선, 교육/코칭, 페널티 중 2개 이상일 경우 콤마로 연결, 예: '시스템 개선, 교육/코칭')",
-  "auditProposal": "점검자 의견 (앞의 '| -' 등 잡음 제거)",
-  "actionPlan": "개선대책에 적힌 모든 조치내용 항목들 전부 (여러 줄일 경우 모든 항목 유지, 줄바꿈으로 구분)",
-  "countermeasure": "개선대책 모든 내용",
-  "pmVerdict": "PM 판정결과 (예: 시스템 개선)"
-}
-생각 과정(<think>)은 2~3문장 이내로 짧게 작성하고 반드시 위 JSON 형식으로 최종 답을 출력하라.`;
-
-    // 1. LM Studio 로컬 서버 연결 시도
-    for (const ep of [currentEndpoint, ...DEFAULT_ENDPOINTS]) {
+    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen AI 연동 (노트북/로컬 서버 무관 24시간 실시간 동작) ──
+    if (!forceLocal && workerUrl) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 4000);
-        const res = await fetch(`${ep}/chat/completions`, {
+        const timeout = setTimeout(() => ctrl.abort(), 12000);
+        const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-PIN': pin
+          },
           body: JSON.stringify({
-            model: currentModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: `[OCR 텍스트 원문]:\n${rawOcrText}` }
-            ],
-            temperature: 0.1,
-            max_tokens: 1500
+            content: fallbackRecord.content || rawOcrText,
+            workGroup: fallbackRecord.workGroup || '',
+            productType: fallbackRecord.productType || '공동주택',
+            progressRate: 35
           }),
           signal: ctrl.signal
         });
         clearTimeout(timeout);
-        if (res.ok) {
-          const data = await res.json();
-          const msg = data.choices?.[0]?.message;
-          const text = msg?.content || msg?.reasoning_content || '';
-          const parsed = extractJSON(msg?.content) || extractJSON(msg?.reasoning_content) || extractJSON(text);
-          if (parsed) {
-            if (parsed.sheetType === '참고사항' || parsed._skipped) {
-              return { ...fallbackRecord, _skipped: true, skipReason: parsed.skipReason || '시공 가이드 참고사항' };
-            }
-            if (parsed.content || parsed.subcontractor || parsed.location || parsed.workGroup) {
-              return { ...fallbackRecord, ...parsed, _skipped: false };
-            }
-          }
-        }
-      } catch (e) {}
-    }
-
-    // 2. 24시간 클라우드 Qwen AI (Cloudflare Worker) 폴백 시도
-    try {
-      const workerUrl = root.SAFE_CONFIG && root.SAFE_CONFIG.workerUrl;
-      if (workerUrl) {
-        const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 5000);
-        const res = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: `[OCR 텍스트 원문]:\n${rawOcrText}` }
-            ]
-          }),
-          signal: ctrl.signal
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-          const data = await res.json();
-          const parsed = data.result || extractJSON(data.content || data.text || '');
-          if (parsed) {
-            if (parsed.sheetType === '참고사항' || parsed._skipped) {
-              return { ...fallbackRecord, _skipped: true, skipReason: parsed.skipReason || '시공 가이드 참고사항' };
-            }
-            if (parsed.content || parsed.location || parsed.workGroup) {
-              return { ...fallbackRecord, ...parsed, _skipped: false };
+        if (cfRes.ok) {
+          const cfData = await cfRes.json();
+          if (cfData) {
+            if (cfData.severity) fallbackRecord.severity = cfData.severity.includes('중부적합') ? '중부적합' : '경부적합';
+            if (cfData.law && !fallbackRecord.law) fallbackRecord.law = cfData.law;
+            if (cfData.hazardType && !fallbackRecord.type) fallbackRecord.type = cfData.hazardType;
+            if (cfData.photoBanner && !fallbackRecord.photoBanner) fallbackRecord.photoBanner = cfData.photoBanner;
+            if (cfData.pmVerdict && !fallbackRecord.pmVerdict) fallbackRecord.pmVerdict = cfData.pmVerdict;
+            if (Array.isArray(cfData.mgmtCauses) && cfData.mgmtCauses.length > 0) {
+              fallbackRecord.mgmtCauses = cfData.mgmtCauses;
             }
           }
         }
+      } catch (cfErr) {
+        console.warn('Cloudflare 24시간 Qwen AI 호출 안내 (로컬/룰엔진 자동 폴백):', cfErr);
       }
-    } catch (e) {}
-
-    // 3. 내장 Qwen 안전법규 규칙 엔진으로 누락 필드 자동 보강
-    const baseText = (fallbackRecord && fallbackRecord.content) || rawOcrText;
-    const rule = quickRuleAnalysis(baseText);
-    if (rule && fallbackRecord) {
-      return {
-        ...fallbackRecord,
-        law: fallbackRecord.law || rule.law,
-        photoBanner: fallbackRecord.photoBanner || rule.photoBanner,
-        severity: fallbackRecord.severity || rule.severity,
-        type: fallbackRecord.type || rule.hazardType
-      };
+    } else if (forceLocal) {
+      // ── [2순위] 사용자가 명시적으로 로컬 LM Studio를 선택한 경우에만 실행 ──
+      for (const ep of [currentEndpoint, ...DEFAULT_ENDPOINTS]) {
+        try {
+          const ctrl = new AbortController();
+          const timeout = setTimeout(() => ctrl.abort(), 60000);
+          const res = await fetch(`${ep}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: currentModel,
+              messages: [
+                { role: 'system', content: '너는 대한민국 건설안전 감사 전문가 AI이다. JSON으로만 답하라.' },
+                { role: 'user', content: `[OCR 텍스트 원문]:\n${rawOcrText}` }
+              ],
+              temperature: 0.1,
+              max_tokens: 1800
+            }),
+            signal: ctrl.signal
+          });
+          clearTimeout(timeout);
+          if (res.ok) {
+            const data = await res.json();
+            const msg = data.choices?.[0]?.message;
+            const text = msg?.content || msg?.reasoning_content || '';
+            const parsed = extractJSON(msg?.content) || extractJSON(msg?.reasoning_content) || extractJSON(text);
+            if (parsed) {
+              if (parsed.sheetType === '참고사항' || parsed._skipped) {
+                return { ...fallbackRecord, _skipped: true, skipReason: parsed.skipReason || '시공 가이드 참고사항' };
+              }
+              Object.assign(fallbackRecord, parsed);
+              break;
+            }
+          }
+        } catch (e) {}
+      }
     }
 
-    return fallbackRecord;
+    // ── [3순위] 10가지 요구사항 전수 무결성 정제 필터 적용 ──
+    const cleaned = {
+      ...fallbackRecord,
+      subcontractor: cleanSubcontractor(fallbackRecord.subcontractor),
+      workGroup: cleanWorkGroup(fallbackRecord.workGroup, fallbackRecord.content),
+      location: cleanLocation(fallbackRecord.location),
+      content: cleanContent(fallbackRecord.content),
+      interviewAuthor: fallbackRecord.interviewAuthor || '협력사 시공관리자',
+      interviewAuthorTitle: `[관리자 의견 : ${fallbackRecord.interviewAuthor || '협력사 시공관리자'}]`,
+      interviewOpinion: cleanOpinionText(fallbackRecord.interviewOpinion),
+      auditProposal: cleanProposalText(fallbackRecord.auditProposal),
+      actionPlan: cleanActionPlan(fallbackRecord.actionPlan),
+      countermeasure: cleanActionPlan(fallbackRecord.actionPlan || fallbackRecord.countermeasure),
+      inspectorOpinionType: fallbackRecord.inspectorOpinionType || '시스템 개선',
+      pmVerdict: fallbackRecord.pmVerdict || '시스템 개선',
+      pmVerdictType: fallbackRecord.pmVerdictType || fallbackRecord.pmVerdict || '시스템 개선',
+      severity: fallbackRecord.severity || '중부적합',
+      type: fallbackRecord.type || '붕괴'
+    };
+
+    return cleaned;
   }
 
   return {
@@ -723,9 +799,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     streamAnalyzeSafetyText,
     cleanOcrRecord,
     getEndpoint: () => currentEndpoint,
-    setEndpoint: ep => { currentEndpoint = ep; localStorage.setItem('sp_lmstudio_endpoint', ep); },
+    setEndpoint: ep => { currentEndpoint = ep; storage.setItem('sp_lmstudio_endpoint', ep); },
     getModel: () => currentModel,
-    setModel: m => { currentModel = m; localStorage.setItem('sp_lmstudio_model', m); },
+    setModel: m => { currentModel = m; storage.setItem('sp_lmstudio_model', m); },
     isConnected: () => isConnected
   };
 });

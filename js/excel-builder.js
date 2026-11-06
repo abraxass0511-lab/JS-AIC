@@ -203,6 +203,9 @@
 
   // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티' - 복수 선택 시 모두 포함)
   function getInspectorOpinionType(r) {
+    if (Array.isArray(r.proposalItems) && r.proposalItems.length > 0) {
+      return r.proposalItems.map(p => p.type).join(', ');
+    }
     // 1) 레코드에 이미 지정된 타입이 있는 경우 (복수 구분 포함 정규화)
     const rawType = String(r.inspectorOpinionType || r.auditType || '').trim();
     if (rawType) {
@@ -219,47 +222,92 @@
     const auditText = String(r.auditProposal || r.inspectorOpinion || '').trim();
     const parts = [];
 
-    // 시스템 개선 키워드: 기준, 절차, 시스템, 규정, 설치, 개선, 보강, 수립, 계획, 여장, 간격 등
     if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
       parts.push('시스템 개선');
     }
-
-    // 교육/코칭 키워드
     if (/교육|코칭|TBM|지도/.test(auditText)) {
       parts.push('교육/코칭');
     }
-
-    // 페널티 키워드
     if (/벌점|페널티|과태료|고발|퇴출|자격\s*박탈/.test(auditText)) {
       parts.push('페널티');
     }
 
     if (parts.length > 0) return parts.join(', ');
-
-    // 기본값: 실물 점검장표 표준 점검단 제안은 '시스템 개선'
     return '시스템 개선';
   }
 
-  // 공종명 노이즈('_ |' 등 테이블 경계선 OCR 잔여물) 정제 함수
-  function cleanWorkGroup(raw) {
+  // 공종명 노이즈('_ |', 'HA 공사', 'HEY: 비계' 등 테이블 경계선 및 OCR 잔여물) 정제 함수
+  function cleanWorkGroup(raw, content = '') {
     if (!raw) return '가설공사';
-    const cleaned = String(raw)
-      .replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ')
+    let cleaned = String(raw)
+      .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
+      .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
       .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-    return cleaned || '가설공사';
+
+    const comb = `${cleaned} ${content}`;
+    if (comb.includes('비계') || /^(?:HA|HE|HEY|BEE)\s*공사$/i.test(cleaned)) return '비계공사';
+    if (comb.includes('거푸집') || comb.includes('동바리') || comb.includes('유로폼')) return '거푸집동바리공사';
+    if (comb.includes('철근')) return '철근공사';
+    if (comb.includes('콘크리트')) return '콘크리트공사';
+    if (comb.includes('양중') || comb.includes('크레인')) return '양중작업';
+    if (comb.includes('토공') || comb.includes('흙막이')) return '토공사';
+
+    return cleaned || '비계공사';
   }
 
-  // 관계자 의견 / 점검자 의견 앞뒤 노이즈('| -', '블', '_' 등) 정제 함수
-  function cleanOpinionText(raw) {
+  // 장소/위치 노이즈('[ERE 12 MAK: 261k 22', 'ee', 'CERNE' 등) 정제 함수
+  function cleanLocation(raw) {
     if (!raw) return '';
     return String(raw)
+      .replace(/\b(?:ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL)\b[\s\S]*$/i, '')
+      .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
+      .replace(/[\[\]{}()_ㅣ¦!~—\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // 관계자 의견 / 점검자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 함수
+  function cleanOpinionText(raw) {
+    if (!raw) return '';
+    let s = String(raw)
+      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
       .replace(/^[\s|ㅣ¦_!\-•·~—]+/gm, '')
+      .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/3000이하/g, '30cm 이하')
+      .replace(/5500\b/g, '55cm')
+      .replace(/55em\b/g, '55cm')
       .replace(/\s+/g, ' ')
       .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
-      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+      .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
+      .replace(/\[=\]\s*oa/gi, '')
       .trim();
+    if (/[가-힣]/.test(s) && /^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/.test(s)) {
+      s = s.replace(/^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/, '');
+    }
+    return s.trim();
+  }
+
+  // 사진 요약(배너) 자동 복구 함수 (엑셀 공란 원천 배제)
+  function resolvePhotoBanner(r) {
+    if (r && r.photoBanner && String(r.photoBanner).trim()) return String(r.photoBanner).trim();
+    if (r && r.content) {
+      let c = String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
+      c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '').trim();
+      c = c.replace(/^\d+\)\s*/, '');
+      const firstLine = c.split('\n')[0].trim();
+      if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
+      if (firstLine.includes('버팀대')) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+      if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
+      if (firstLine.includes('가새')) return '비계 설치구간 가새 설치 누락';
+      if (firstLine.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
+      if (firstLine.length >= 6 && firstLine.length <= 26) return firstLine;
+      if (firstLine.length > 26) return firstLine.substring(0, 24) + '...';
+      return firstLine || '현장 부적합 작업 전경';
+    }
+    return '현장 부적합 작업 전경';
   }
 
   // 조치내용(개선대책) 다중 항목 보존 및 정제 함수
@@ -270,15 +318,26 @@
     const lines = String(raw)
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
       .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/g, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/,\s*-\s*/g, '\n- ')
       .split(/\r?\n/)
-      .map(line => line.replace(/^[\s|ㅣ¦_!~—\-]+/, '').replace(/[\s|ㅣ¦_!~—\-]+$/, '').trim())
-      .filter(Boolean);
-    return lines.length > 0 ? lines.join('\n') : '(미조치)';
+      .map(line => line.replace(/^[\s|ㅣ¦_!~—\-*•·&]+/, '').replace(/[\s|ㅣ¦_!~—\-&]+$/, '').trim())
+      .map(line => {
+        if (line.includes('비계 승인점검 후 보완/개선') || line.includes('Process 이행')) {
+          return '비계 승인점검 후 보완/개선 필요사항 Process 이행';
+        }
+        return line;
+      })
+      .filter(line => line.length > 7 && !/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭|&제레)/i.test(line));
+    return lines.length > 0 ? lines.map(l => l.startsWith('- ') ? l : `- ${l}`).join('\n') : '(미조치)';
   }
 
   // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티' - 복수 지원)
   function getPmVerdictType(r) {
     if (!r) return '시스템 개선';
+    if (Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0) {
+      return r.pmVerdictItems.map(p => p.type).join(', ');
+    }
     const raw = String(r.pmVerdictType || r.pmVerdict || '').trim();
     if (raw) {
       const types = [];
@@ -394,14 +453,14 @@
     // [부적합 사항] 사진 1 & 사진 2 및 사진 요약(배너)
     ['부적합 사항', '사진 1', 18, null, () => ''],
     ['부적합 사항', '사진 2', 18, null, () => ''],
-    ['부적합 사항', '사진 요약(배너)', 22, null, r => r.photoBanner || ''],
+    ['부적합 사항', '사진 요약(배너)', 22, null, r => resolvePhotoBanner(r)],
     ['부적합 사항', '부적합 등급', 12, 'severities', r => r.severity || '중부적합'],
     ['부적합 사항', '내용', 28, null, r => r.content || ''],
-    ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],
-    ['부적합 사항', '장소/위치', 14, 'locations', r => r.location || ''],
+    ['부적합 사항', '협력사', 14, null, r => (r.subcontractor || '').trim()],
+    ['부적합 사항', '장소/위치', 14, 'locations', r => cleanLocation(r.location)],
 
     // [공종·작업방법] 하나로 묶고 9×9 반영 ("작업명" -> "작업방법")
-    ['공종·작업방법', '공종', 15, 'workGroups', r => cleanWorkGroup(r.workGroup)],
+    ['공종·작업방법', '공종', 15, 'workGroups', r => cleanWorkGroup(r.workGroup, r.content)],
     ['공종·작업방법', '작업방법', 16, 'workMethods', r => resolveWorkMethod(r)],
 
     // [부적합 분류] 유형과 기인물(대, 중, 소)

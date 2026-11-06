@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>최종 점검장표 미리보기 검증</title>
+  <style>
+    body {
+      background: #0f172a;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+    }
+    .wrapper {
+      width: 100%;
+      max-width: 1200px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper" id="container">
+  </div>
+
+  <script src="../app/js/ppt-generator.js?v=20261101_red_banner_22types_v2"></script>
+  <script>
+    const sampleRecord = {
+      id: 'REC-TEST-PREVIEW-001',
+      site: '강남 A 현장',
+      location: '108동 지상 15층',
+      subcontractor: '원영건업(주)',
+      workGroup: '거푸집동바리공사',
+      type: '떨어짐(추락, 사람)',
+      severity: '중부적합',
+      content: '양중작업 시 유도로프 미사용 및 화물을 직접 손으로 잡고 유도함',
+      law: '산업안전보건기준에 관한 규칙 제56조(작업발판의 구조), 제13조(안전난간의 구조 및 요건)',
+      causes: ['불안전 상태', '계획 미수립'],
+      mgmtCauses: ['계획 미수립'],
+      holdPoint: false,
+      inspectRound: "'26년 下 3차",
+      inspector: '김안전'
+    };
+
+    const html = SafePPT.renderInspectionSheetHTML(sampleRecord, {
+      photo1Url: '../app/samples/horizontal_photo1.jpg',
+      photo2Url: '../app/samples/horizontal_photo2.jpg'
+    });
+
+    document.getElementById('container').innerHTML = html;
+  </script>
+</body>
+</html>
