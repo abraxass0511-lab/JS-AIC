@@ -81,6 +81,9 @@
 
     // 키워드 기반 기본 매핑
     const comb = `${s} ${text}`;
+    if (comb.includes('동바리') || comb.includes('서포트') || comb.includes('멍에')) {
+      return '안전보건규칙 제332조';
+    }
     if (comb.includes('양중') || comb.includes('줄걸이') || comb.includes('크레인') || comb.includes('호이스트') || comb.includes('수평양중')) {
       return '안전보건규칙 제38조, 제171조';
     }
@@ -369,35 +372,40 @@
     const holdPointCode = (r.holdPointCode || '').trim();
     const isHoldPoint = Boolean(holdPointCode && r.holdPoint);
 
-    // 관련 법령 및 수칙 내용 (사용자 지시 3: "관련 기준을 '안전보건규칙 제//조'로 간단하게 변경")
-    let rawLawTitle = r.law || (r.basis && r.basis.law) || '';
-    let lawBody = '';
+    // 관련 법령 및 수칙 내용 (등록된 데이터의 rawLaw / lawBody 최우선 존중)
+    let rawLawTitle = r.rawLaw || r.law || (r.basis && r.basis.law) || '';
+    let lawBody = r.lawBody || '';
 
     const rawContent = (r.content || '').replace(/\r?\n+/g, '  ').trim();
     const text = `${rawContent} ${r.item || ''} ${r.agent || ''} ${r.workMethod || ''} ${r.workName || ''}`;
-    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제38조, 제171조';
-      lawBody = '화물은 유도로프를 통해 유도하고 손으로 밀거나 당기는 행위를 금지하며 화물의 양중높이에 따라 적정한 길이를 가진 유도로프를 사용해야 한다.';
-    } else if (text.includes('말비계') || text.includes('우마')) {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제67조, 제13조';
-      lawBody = '말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
-    } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
-      lawBody = '작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
-    } else if (text.includes('개구부') || text.includes('덮개')) {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제59조';
-      lawBody = '바닥 개구부에는 충분한 강도를 가진 덮개를 뒤집히거나 벗겨지지 않도록 고정 설치하고 "추락주의" 위험표지를 부착해야 한다.';
-    } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
-      lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
-    } else if (text.includes('사다리')) {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
-      lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
-    } else {
-      rawLawTitle = rawLawTitle || '안전보건규칙 제38조';
-      lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
+    if (!lawBody) {
+      if (text.includes('동바리') || text.includes('서포트') || text.includes('멍에')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제332조';
+        lawBody = '• 파이프 서포트는 2본이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용 하지 않는다.';
+      } else if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제38조, 제171조';
+        lawBody = '화물은 유도로프를 통해 유도하고 손으로 밀거나 당기는 행위를 금지하며 화물의 양중높이에 따라 적정한 길이를 가진 유도로프를 사용해야 한다.';
+      } else if (text.includes('말비계') || text.includes('우마')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제67조, 제13조';
+        lawBody = '말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
+      } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
+        lawBody = '작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
+      } else if (text.includes('개구부') || text.includes('덮개')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제59조';
+        lawBody = '바닥 개구부에는 충분한 강도를 가진 덮개를 뒤집히거나 벗겨지지 않도록 고정 설치하고 "추락주의" 위험표지를 부착해야 한다.';
+      } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
+        lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
+      } else if (text.includes('사다리')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
+        lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
+      } else {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제38조';
+        lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
+      }
     }
-    const lawTitle = simplifyLawTitle(rawLawTitle, text);
+    const lawTitle = r.rawLaw ? r.rawLaw : simplifyLawTitle(rawLawTitle, text);
 
     // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
     const hasGuideline = Boolean(r.hasGuideline || (options && options.showGuideline));
@@ -470,17 +478,17 @@
 
     // 점검단 제안
     let proposalType = '시스템 개선';
-    let proposalSub = '(이행강화안 수립)';
+    let proposalSub = r.inspectorOpinionSub || '(이행강화안 수립)';
     const rawProp = (r.inspectorOpinionType || '').trim();
     if (rawProp.includes('교육')) {
       proposalType = '교육/코칭';
-      proposalSub = '(협력사 교육)';
+      proposalSub = r.inspectorOpinionSub || '(협력사 교육)';
     } else if (rawProp.includes('페널티')) {
       proposalType = '페널티';
-      proposalSub = '(패널티 부과)';
+      proposalSub = r.inspectorOpinionSub || '(패널티 부과)';
     } else {
       proposalType = '시스템 개선';
-      proposalSub = '(이행강화안 수립)';
+      proposalSub = r.inspectorOpinionSub || (text.includes('동바리') ? '(모니터링 강화)' : '(이행강화안 수립)');
     }
 
     let proposalContent = r.auditProposal || r.inspectorOpinion || '';
@@ -544,17 +552,20 @@
       }
     }
 
-    // 사용자 지시: 개선대책, PM 판정결과는 추후 기입되는 공간이므로 기본 점검장표에서는 공란으로 유지
-    const isPostActionFilled = Boolean(options && options.includePostActions);
+    // 등록된 장표에 이미 개선대책/PM판정결과가 기입되어 있는 경우 그대로 표시, 없는 경우에만 공란 처리
+    const hasRegisteredPostAction = Boolean(rawPlan || r.pmVerdictType || r.pmVerdictSub);
+    const isPostActionFilled = Boolean((options && options.includePostActions) || hasRegisteredPostAction);
     if (!isPostActionFilled) {
       countermeasureContent = '';
       pmVerdictType = '';
       pmVerdictSub = '';
+    } else {
+      pmVerdictSub = r.pmVerdictSub || (pmVerdictType === '시스템 개선' ? '(모니터링 강화)' : pmVerdictType === '교육/코칭' ? '(협력사 교육)' : '');
     }
 
     let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
-    // 사용자 지침: 전반적인 내용과 점검자 등은 모두 엑셀 로그 기반으로 작성
-    let inspectorName = r.inspector || r.inspectUser || r.user || '관리자';
+    // 사용자 지침: 전반적인 내용과 점검자 등은 모두 등록된 데이터를 기반으로 작성 (빈칸이면 빈칸 유지)
+    let inspectorName = r.inspectUser !== undefined ? r.inspectUser : (r.inspector || r.user || '');
 
     // 사진 상단 직접 행동 문구 (사용자 지시: 이미지 4, 5번 기반 구체적 미준수 행동 직시)
     const photoBanner = extractDirectAction(r);
@@ -593,9 +604,9 @@
       countermeasureContent,
       pmVerdictType,
       pmVerdictSub,
-      subcontractor: r.subcontractor || '원영건업(주)',
+      subcontractor: r.subcontractor !== undefined ? r.subcontractor : '',
       workGroup: r.workGroup || r.workMethod || r.workName || '거푸집동바리공사',
-      location: r.location || '108동',
+      location: r.location !== undefined ? r.location : '',
       inspector: inspectorName,
       inspectRound,
       content: rawContent,

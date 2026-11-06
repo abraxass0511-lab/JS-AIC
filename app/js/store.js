@@ -504,6 +504,61 @@ export const store = {
 
     const list = Array.from(map.values()).map(rec => {
       if (!rec) return rec;
+      // 이전 버전 PDF 핑거프린트 오분류로 인해 '양중화물의 수평이 맞지 않음'으로 잘못 저장된 테스트pdf(동바리 붕괴) 레코드 자동 치유
+      if (rec.id !== '20261017-131410-o404' && (rec.content || '').includes('양중화물의 수평이 맞지 않음') && (rec.site === 'OO아파트 신축공사' || rec.subcontractor === '원영건업(주)')) {
+        rec.severity = '중부적합';
+        rec.type = '붕괴';
+        rec.rawLaw = '작업지침 [IZSW-003(K)] 동바리 작업';
+        rec.lawBody = '• 파이프 서포트는 2본이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용 하지 않는다.';
+        rec.law = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
+        rec.mgmtCauses = ['계획 미이행', '불안전 상태'];
+        rec.causes = ['계획 미이행', '불안전 상태'];
+        rec.subcontractor = '';
+        rec.workGroup = '거푸집동바리공사';
+        rec.workName = '동바리 설치/해체 작업';
+        rec.workMethod = '설치조립작업';
+        rec.location = '105동 지하1층';
+        rec.inspectUser = '';
+        rec.inspector = '';
+        rec.inspectRound = "'26년上 2차";
+        rec.content = '계단실 슬라브 지지용 동바리 멍에재 길이짧음, 이중 동바리 상태 및 동바리 지지용 밑받침 불량';
+        rec.photoBanner = '계단실 슬라브 지지용 동바리 설치상태 불량';
+        rec.holdPoint = false;
+        rec.interviewOpinion = '- 2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함';
+        rec.inspectorOpinionType = '시스템 개선';
+        rec.inspectorOpinionSub = '(모니터링 강화)';
+        rec.auditProposal = '- 경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요';
+        rec.actionPlan = '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화';
+        rec.countermeasure = rec.actionPlan;
+        rec.pmVerdictType = '시스템 개선';
+        rec.pmVerdictSub = '(모니터링 강화)';
+        rec.pmVerdict = '시스템 개선 (모니터링 강화)';
+        rec.fix = { content: rec.actionPlan };
+        rec.kind = '가시설';
+        rec.item = '동바리';
+        rec.agent = '파이프서포트';
+        rec.agentMajor = '가시설';
+        rec.agentMid = '동바리';
+        rec.agentMinor = '파이프서포트';
+        rec.matrixArea = '가시설';
+        rec.matrixTarget = '동바리';
+        rec.matrixSpec = '파이프서포트';
+        rec.condition = '재료·부재의 결함 (동바리/멍에재/밑받침 설치 불량)';
+        rec.action = '해당없음';
+        rec.rootCauseMgmt = '작업계획 미이행/부족';
+        rec.rootCauseSystem = '확인: 일일점검 미실시';
+        rec.stakeholder = '시공담당';
+        if (rec.basis) {
+          rec.basis.guide = rec.rawLaw;
+          rec.basis.law = rec.law;
+          rec.basis.점검영역9x9 = '가시설';
+          rec.basis.점검대상9x9 = '동바리';
+          rec.basis.가시설세부사양 = '파이프서포트';
+          rec.basis.근본원인_관리감독 = '작업계획 미이행/부족';
+          rec.basis.근본원인_안전시스템 = '확인: 일일점검 미실시';
+          rec.basis.관리책임주체 = '시공담당';
+        }
+      }
       try {
         const overrides = JSON.parse(localStorage.getItem('sp_severity_overrides') || '{}');
         if (overrides[rec.id]) {
@@ -761,7 +816,7 @@ export const store = {
       rec.id = makeId(rec.inspectedDate);
       rec.bucket = rec.inspectedDate.slice(0, 7);
       rec.createdAt = now;
-      rec.inspector = rec.inspector || rec.inspectUser || author;
+      rec.inspector = rec.inspectUser !== undefined ? rec.inspectUser : (rec.inspector || author);
     }
     rec.updatedAt = now;
     rec.updatedBy = author;

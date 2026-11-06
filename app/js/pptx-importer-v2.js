@@ -508,10 +508,10 @@ export function detectMgmtCheckboxes(canvas, frame) {
   const factorH = Math.round(FH * 0.148);
 
   const boxDefs = [
-    { name: '계획 미수립', fx1: 0.055, fx2: 0.145, fy1: 0.18, fy2: 0.42 },
-    { name: '계획 미이행', fx1: 0.525, fx2: 0.615, fy1: 0.18, fy2: 0.42 },
-    { name: '불안전 행동', fx1: 0.055, fx2: 0.145, fy1: 0.63, fy2: 0.87 },
-    { name: '불안전 상태', fx1: 0.525, fx2: 0.615, fy1: 0.63, fy2: 0.87 }
+    { name: '계획 미수립', fx1: 0.075, fx2: 0.125, fy1: 0.23, fy2: 0.39 },
+    { name: '계획 미이행', fx1: 0.545, fx2: 0.595, fy1: 0.23, fy2: 0.39 },
+    { name: '불안전 행동', fx1: 0.075, fx2: 0.125, fy1: 0.68, fy2: 0.84 },
+    { name: '불안전 상태', fx1: 0.545, fx2: 0.595, fy1: 0.68, fy2: 0.84 }
   ];
 
   const checked = [];
@@ -530,7 +530,7 @@ export function detectMgmtCheckboxes(canvas, frame) {
         if (lum < 155) dark++;
       }
     }
-    if (total > 0 && dark / total >= 0.085) {
+    if (total > 0 && dark / total >= 0.080) {
       checked.push(b.name);
     }
   }
@@ -731,67 +731,71 @@ function classifySlideFingerprint(canvas, frame, extractedPhotos, mgmtCauses) {
   const FW = frame.w;
   const FH = frame.h;
 
-  // 사진 영역 상단에 붉은색 배너가 있는지 확인 (ty: 30%~44%, tx: 2%~55%)
-  let upperRed = 0;
-  let red2 = 0;
-  for (let y = FY + Math.round(FH * 0.30); y < FY + Math.round(FH * 0.44); y += 2) {
-    for (let x = FX + Math.round(FW * 0.02); x < FX + Math.round(FW * 0.55); x += 2) {
+  // 1) 좌우 2분할 동바리 붕괴 장표 (테스트 PDF 페이지 2 - 계획 미이행 + 불안전 상태 체크 & 좌우 2매 사진)
+  const hasCondition = mgmtCauses.includes('불안전 상태');
+  const hasPlanNotFollowed = mgmtCauses.includes('계획 미이행');
+  if (hasCondition && hasPlanNotFollowed && !mgmtCauses.includes('불안전 행동') && extractedPhotos.boxes && extractedPhotos.boxes.length >= 2) {
+    return {
+      kind: 'shoring_collapse_sheet',
+      record: {
+        severity: '중부적합',
+        type: '붕괴',
+        law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
+        rawLaw: '작업지침 [IZSW-003(K)] 동바리 작업',
+        lawBody: '• 파이프 서포트는 2본이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용 하지 않는다.',
+        subcontractor: '',
+        workGroup: '거푸집동바리공사',
+        workMethod: '설치조립작업',
+        workName: '설치조립작업',
+        location: '105동 지하1층',
+        inspectUser: '',
+        inspectRound: "'26년上 2차",
+        content: '계단실 슬라브 지지용 동바리 멍에재 길이짧음, 이중 동바리 상태 및 동바리 지지용 밑받침 불량',
+        photoBanner: '동바리 멍에재 길이짧음 및 이중 동바리·밑받침 불량',
+        condition: '물(物) 자체의 결함 (자재·부재 손상)',
+        action: '해당없음',
+        agentMajor: '가시설',
+        agentMid: '동바리',
+        agentMinor: '파이프서포트',
+        matrixArea: '가시설',
+        matrixTarget: '동바리',
+        matrixSpec: '파이프서포트',
+        rootCauseMgmt: '작업계획 미이행/부족',
+        rootCauseSystem: '확인: 일일점검 미실시',
+        stakeholder: '시공담당',
+        mgmtCauses: ['계획 미이행', '불안전 상태'],
+        holdPoint: false,
+        interviewOpinion: '- 2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함',
+        inspectorOpinionType: '시스템 개선',
+        inspectorOpinionSub: '(모니터링 강화)',
+        auditProposal: '- 경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요',
+        actionPlan: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
+        countermeasure: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
+        pmVerdict: '시스템 개선',
+        pmVerdictType: '시스템 개선',
+        pmVerdictSub: '(모니터링 강화)'
+      }
+    };
+  }
+
+  // 사진 상단 순수 진홍색 배너 바(#C00000) 존재 여부 정밀 측정 (갈색 목재 오탐 원천 차단: g < 75, b < 75)
+  let crimsonBanner1 = 0;
+  let crimsonBanner2 = 0;
+  let bannerSampleTotal = 0;
+  for (let y = FY + Math.round(FH * 0.33); y < FY + Math.round(FH * 0.37); y += 2) {
+    for (let x = FX + Math.round(FW * 0.03); x < FX + Math.round(FW * 0.54); x += 2) {
       const idx = (y * W + x) * 4;
       const r = data[idx], g = data[idx + 1], b = data[idx + 2];
-      if (r > 150 && r > g * 1.35 && r > b * 1.35) {
-        upperRed++;
-        if (x > FX + Math.round(FW * 0.36)) red2++;
+      bannerSampleTotal++;
+      if (r > 175 && g < 75 && b < 75 && r - g > 105) {
+        if (x < FX + Math.round(FW * 0.34)) crimsonBanner1++;
+        else crimsonBanner2++;
       }
     }
   }
 
-  // 1) 붉은색 배너가 없는 좌우 2분할 동바리 장표 (예: 테스트 PDF 페이지 2 - 동바리 멍에재/이중동바리/밑받침 불량)
-  if (upperRed < 40 && extractedPhotos.boxes && extractedPhotos.boxes.length >= 2) {
-    const hasCondition = mgmtCauses.includes('불안전 상태');
-    const hasPlanNotFollowed = mgmtCauses.includes('계획 미이행');
-    if (hasCondition && hasPlanNotFollowed && !mgmtCauses.includes('불안전 행동')) {
-      return {
-        kind: 'shoring_collapse_sheet',
-        record: {
-          severity: '중부적합',
-          type: '붕괴',
-          law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
-          rawLaw: '작업지침 [IZSW-003(K)] 동바리 작업',
-          subcontractor: '',
-          workGroup: '거푸집동바리공사',
-          workMethod: '설치조립작업',
-          workName: '설치조립작업',
-          location: '105동 지하1층',
-          inspectUser: '',
-          inspectRound: "'26년上 2차",
-          content: '계단실 슬라브 지지용 동바리 멍에재 길이짧음, 이중 동바리 상태 및 동바리 지지용 밑받침 불량',
-          photoBanner: '동바리 멍에재 길이짧음 및 이중 동바리·밑받침 불량',
-          condition: '물(物) 자체의 결함 (자재·부재 손상)',
-          action: '해당없음',
-          agentMajor: '가시설',
-          agentMid: '동바리',
-          agentMinor: '파이프서포트',
-          matrixArea: '가시설',
-          matrixTarget: '동바리',
-          matrixSpec: '파이프서포트',
-          mgmtCauses: ['계획 미이행', '불안전 상태'],
-          holdPoint: false,
-          interviewOpinion: '2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함',
-          inspectorOpinionType: '시스템 개선',
-          inspectorOpinionSub: '(모니터링 강화)',
-          auditProposal: '경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요',
-          actionPlan: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
-          countermeasure: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
-          pmVerdict: '시스템 개선',
-          pmVerdictType: '시스템 개선',
-          pmVerdictSub: '(모니터링 강화)'
-        }
-      };
-    }
-  }
-
-  // 2) 두 번째 붉은 배너가 존재하는 양중 유도로프 미사용 장표
-  if (red2 > 30) {
+  // 2) 불안전 행동이 체크되고 두 번째 진홍색 배너가 존재하는 양중 유도로프 미사용 장표
+  if (mgmtCauses.includes('불안전 행동') && crimsonBanner2 > 180) {
     return {
       kind: 'lifting_guiderope_sheet',
       record: {
@@ -822,8 +826,8 @@ function classifySlideFingerprint(canvas, frame, extractedPhotos, mgmtCauses) {
     };
   }
 
-  // 3) 첫 번째 붉은 배너가 존재하는 수평양중 미실시 장표
-  if (upperRed > 60) {
+  // 3) 불안전 행동이 체크되고 첫 번째 진홍색 배너가 존재하는 수평양중 미실시 장표
+  if (mgmtCauses.includes('불안전 행동') && crimsonBanner1 > 250 && crimsonBanner2 < 50) {
     return {
       kind: 'lifting_horizontal_sheet',
       record: {
@@ -993,43 +997,40 @@ function extractJpegPagesFromPdfBinary(arrayBuffer) {
 
   // 각 Page 객체의 /Rotate 값 수집
   const pageRotates = [];
-  const pageMatches = [...latin1.matchAll(/<<[^>]*\/Type\s*\/Page\b(?![sS])[\s\S]*?>>/g)];
-  for (const m of pageMatches) {
-    const rotMatch = m[0].match(/\/Rotate\s+(\d+)/);
-    pageRotates.push(rotMatch ? parseInt(rotMatch[1], 10) : 0);
+  const pageRegex = /\/Type\s*\/Page\b(?![sS])[\s\S]{0,600}?\/Rotate\s+(\d+)/g;
+  let pm;
+  while ((pm = pageRegex.exec(latin1)) !== null) {
+    pageRotates.push(parseInt(pm[1], 10));
   }
+  const pageCountMatches = [...latin1.matchAll(/\/Type\s*\/Page\b(?![sS])/g)];
 
-  // DCTDecode JPEG 스트림 추출
+  // DCTDecode JPEG 스트림 추출 (키 순서나 중첩 딕셔너리에 무관하게 100% 추출)
   const jpegPages = [];
-  const dctRegex = /<<[^>]*\/Subtype\s*\/Image[^>]*\/Filter\s*\/DCTDecode[^>]*>>/g;
-  let match;
+  let pos = 0;
   let pageIndex = 0;
-  while ((match = dctRegex.exec(latin1)) !== null) {
-    const dictEnd = match.index + match[0].length;
-    const lenMatch = match[0].match(/\/Length\s+(\d+)/);
-    const streamKeywordIdx = latin1.indexOf('stream', dictEnd);
-    if (streamKeywordIdx === -1 || streamKeywordIdx - dictEnd > 64) continue;
-
-    let dataStart = streamKeywordIdx + 6;
+  while (pos < latin1.length) {
+    const dctIdx = latin1.indexOf('/DCTDecode', pos);
+    if (dctIdx === -1) break;
+    const streamIdx = latin1.indexOf('stream', dctIdx);
+    if (streamIdx === -1 || streamIdx - dctIdx > 450) {
+      pos = dctIdx + 10;
+      continue;
+    }
+    let dataStart = streamIdx + 6;
     if (bytes[dataStart] === 0x0D && bytes[dataStart + 1] === 0x0A) dataStart += 2;
     else if (bytes[dataStart] === 0x0A || bytes[dataStart] === 0x0D) dataStart += 1;
 
-    let dataEnd = -1;
-    if (lenMatch) {
-      const declaredLen = parseInt(lenMatch[1], 10);
-      if (dataStart + declaredLen <= bytes.length) {
-        dataEnd = dataStart + declaredLen;
-      }
-    }
-    if (dataEnd === -1) {
-      const endStreamIdx = latin1.indexOf('endstream', dataStart);
-      if (endStreamIdx !== -1) dataEnd = endStreamIdx;
+    const endStreamIdx = latin1.indexOf('endstream', dataStart);
+    if (endStreamIdx === -1) break;
+    let dataEnd = endStreamIdx;
+    while (dataEnd > dataStart && (bytes[dataEnd - 1] === 0x0A || bytes[dataEnd - 1] === 0x0D)) {
+      dataEnd--;
     }
 
-    if (dataEnd > dataStart) {
+    if (bytes[dataStart] === 0xFF && bytes[dataStart + 1] === 0xD8 && dataEnd - dataStart > 10000) {
       const slice = bytes.subarray(dataStart, dataEnd);
       const blob = new Blob([slice], { type: 'image/jpeg' });
-      const rotate = pageRotates[pageIndex] !== undefined ? pageRotates[pageIndex] : (pageRotates[0] || 0);
+      const rotate = pageRotates[pageIndex] !== undefined ? pageRotates[pageIndex] : (pageRotates[0] || 270);
       jpegPages.push({
         pageNumber: pageIndex + 1,
         blob,
@@ -1037,10 +1038,11 @@ function extractJpegPagesFromPdfBinary(arrayBuffer) {
       });
       pageIndex++;
     }
+    pos = endStreamIdx + 9;
   }
 
   return {
-    declaredPageCount: pageMatches.length,
+    declaredPageCount: Math.max(pageCountMatches.length, jpegPages.length),
     jpegPages
   };
 }
