@@ -686,7 +686,7 @@ function buildCleanTextStripCanvas(canvas, frame) {
 /**
  * 추출된 텍스트(디지털 PDF 텍스트 또는 OCR 텍스트)로부터 장표 구조화 필드 파싱
  */
-function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미이행', '불안전 상태']) {
+export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미이행', '불안전 상태']) {
   const txt = String(rawText || '').replace(/\r/g, '\n');
   const flat = txt.replace(/\s+/g, ' ').trim();
 
@@ -765,9 +765,14 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
       .trim();
   }
 
-  let inspectorOpinionType = '시스템 개선';
-  if (flat.includes('교육/코칭') || flat.includes('협력사 교육')) inspectorOpinionType = '교육/코칭';
-  else if (flat.includes('페널티') || flat.includes('패널티')) inspectorOpinionType = '페널티';
+  // 점검자 의견 구분 (복수 선택 지원: 시스템 개선, 교육/코칭, 페널티)
+  const opinionTypes = [];
+  if (flat.includes('시스템 개선') || flat.includes('시스템개선')) opinionTypes.push('시스템 개선');
+  if (flat.includes('교육/코칭') || flat.includes('협력사 교육') || flat.includes('교육') || flat.includes('코칭')) {
+    opinionTypes.push('교육/코칭');
+  }
+  if (flat.includes('페널티') || flat.includes('패널티')) opinionTypes.push('페널티');
+  const inspectorOpinionType = opinionTypes.length > 0 ? Array.from(new Set(opinionTypes)).join(', ') : '시스템 개선';
 
   let auditProposal = '';
   const mProp = txt.match(/(?:점검단\s*제안\]?[\s\S]*?(?:강화\)|개선|교육\)|코칭\))?\s*)([\s\S]*?)(?=개선대책|\[PM|PM\s*판정|$)/);
@@ -789,10 +794,24 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
       .replace(/시스템\s*개선|교육\/코칭|페널티/g, '')
       .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
-      .split(/\n+/)
+      .split(/\r?\n/)
       .map(line => line.replace(/^[\s|ㅣ¦_!]+/, '').replace(/[\s|ㅣ¦_!]+$/, '').trim())
       .filter(Boolean);
     actionPlan = cleanedPlanLines.join('\n').trim();
+  }
+
+  // PM 판정결과 추출
+  let pmVerdict = inspectorOpinionType;
+  let pmVerdictType = inspectorOpinionType;
+  const mPm = txt.match(/(?:\[?\s*PM\s*판정\s*결과\s*\]?\s*)([\s\S]*?)(?=$|\n\n)/);
+  if (mPm && mPm[1]) {
+    const rawPm = mPm[1].trim();
+    if (rawPm) {
+      pmVerdict = rawPm;
+      if (rawPm.includes('시스템')) pmVerdictType = '시스템 개선';
+      else if (rawPm.includes('교육') || rawPm.includes('코칭')) pmVerdictType = '교육/코칭';
+      else if (rawPm.includes('페널티') || rawPm.includes('패널티')) pmVerdictType = '페널티';
+    }
   }
 
   const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
@@ -814,156 +833,33 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
     auditProposal,
     actionPlan,
     countermeasure: actionPlan,
-    pmVerdict: inspectorOpinionType,
-    pmVerdictType: inspectorOpinionType
+    pmVerdict,
+    pmVerdictType
   };
 }
 
 /**
- * 슬라이드 캔버스 지문 판별 (테스트 PDF 동바리 장표 / 수평양중 장표 / 유도로프 장표 초고속 판별 포함)
+ * 시공 가이드 / 샘플 안내문 / 표준 작업지침 등 참고사항 페이지 판별
+ * - 실제 부적합 점검장표가 아닌 참고자료(예: [거푸집 보강 예], [사각 후크 설치 양호/불량], 시공 상세도) 자동 감지
+ */
+export function isSampleOrReferencePage(rawText, sig = null) {
+  const t = String(rawText || '');
+  // 1) 명시적 시공 가이드 / 샘플 안내 키워드
+  const hasSampleKeywords = /\[\s*(?:[^\]]*\s*)?(?:보강|시공|설치)\s*예\s*\]|\[\s*사각\s*후크\s*설치\s*(?:양호|불량)\s*\]|대형\s*거푸집\s*상부는|전용\s*철물\s*\(사각후크\)|사각\s*후크\s*설치\s*양호|사각\s*후크\s*설치\s*불량|표준\s*작업\s*지침|시공\s*상세도|시공\s*가이드/i.test(t);
+  
+  // 2) 점검장표 필수 헤더 존재 여부
+  const hasInspectionHeaders = /(?:부적합\s*(?:개요|사항|내용)|점검차수|시설물\/법규|위험성평가|개선대책\s*\(현장\s*협의)/.test(t);
+
+  if (hasSampleKeywords && !hasInspectionHeaders) return true;
+  if (sig && !sig.isSheet && !hasInspectionHeaders) return true;
+  return false;
+}
+
+/**
+ * 슬라이드 캔버스 지문 판별
+ * - 실제 업로드된 장표의 텍스트와 사진이 100% 동적으로 OCR 및 AI 파싱되도록 하드코딩 mock 배제
  */
 function classifySlideFingerprint(canvas, frame, extractedPhotos, mgmtCauses) {
-  const W = canvas.width;
-  const H = canvas.height;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const data = ctx.getImageData(0, 0, W, H).data;
-
-  const FX = frame.x;
-  const FY = frame.y;
-  const FW = frame.w;
-  const FH = frame.h;
-
-  // 1) 좌우 2분할 동바리 붕괴 장표 (테스트 PDF 페이지 2 - 계획 미이행 + 불안전 상태 체크 & 좌우 2매 사진)
-  const hasCondition = mgmtCauses.includes('불안전 상태');
-  const hasPlanNotFollowed = mgmtCauses.includes('계획 미이행');
-  if (hasCondition && hasPlanNotFollowed && !mgmtCauses.includes('불안전 행동') && extractedPhotos.boxes && extractedPhotos.boxes.length >= 2) {
-    return {
-      kind: 'shoring_collapse_sheet',
-      record: {
-        severity: '중부적합',
-        type: '붕괴',
-        law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
-        rawLaw: '작업지침 [IZSW-003(K)] 동바리 작업',
-        lawBody: '• 파이프 서포트는 2본이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용 하지 않는다.',
-        subcontractor: '',
-        workGroup: '거푸집동바리공사',
-        workMethod: '설치조립작업',
-        workName: '설치조립작업',
-        location: '105동 지하1층',
-        inspectUser: '',
-        inspectRound: "'26년上 2차",
-        content: '계단실 슬라브 지지용 동바리 멍에재 길이짧음, 이중 동바리 상태 및 동바리 지지용 밑받침 불량',
-        photoBanner: '동바리 멍에재 길이짧음 및 이중 동바리·밑받침 불량',
-        condition: '물(物) 자체의 결함 (자재·부재 손상)',
-        action: '해당없음',
-        agentMajor: '가시설',
-        agentMid: '거푸집/동바리',
-        agentMinor: '파이프서포트',
-        matrixArea: '가시설',
-        matrixTarget: '거푸집/동바리',
-        matrixSpec: '파이프서포트',
-        rootCauseMgmt: '작업계획 미이행/부족',
-        rootCauseSystem: '확인: 일일점검 미실시',
-        stakeholder: '시공담당',
-        mgmtCauses: ['계획 미이행', '불안전 상태'],
-        holdPoint: false,
-        interviewOpinion: '2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함',
-        inspectorOpinionType: '시스템 개선',
-        inspectorOpinionSub: '(모니터링 강화)',
-        auditProposal: '경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요',
-        actionPlan: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
-        countermeasure: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
-        pmVerdict: '시스템 개선',
-        pmVerdictType: '시스템 개선',
-        pmVerdictSub: '(모니터링 강화)'
-      }
-    };
-  }
-
-  // 사진 상단 순수 진홍색 배너 바(#C00000) 존재 여부 정밀 측정 (갈색 목재 오탐 원천 차단: g < 75, b < 75)
-  let crimsonBanner1 = 0;
-  let crimsonBanner2 = 0;
-  let bannerSampleTotal = 0;
-  for (let y = FY + Math.round(FH * 0.33); y < FY + Math.round(FH * 0.37); y += 2) {
-    for (let x = FX + Math.round(FW * 0.03); x < FX + Math.round(FW * 0.54); x += 2) {
-      const idx = (y * W + x) * 4;
-      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
-      bannerSampleTotal++;
-      if (r > 175 && g < 75 && b < 75 && r - g > 105) {
-        if (x < FX + Math.round(FW * 0.34)) crimsonBanner1++;
-        else crimsonBanner2++;
-      }
-    }
-  }
-
-  // 2) 불안전 행동이 체크되고 두 번째 진홍색 배너가 존재하는 양중 유도로프 미사용 장표
-  if (mgmtCauses.includes('불안전 행동') && crimsonBanner2 > 180) {
-    return {
-      kind: 'lifting_guiderope_sheet',
-      record: {
-        severity: '중부적합',
-        type: '협착',
-        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
-        subcontractor: '원영건업(주)',
-        workGroup: '거푸집동바리공사',
-        workMethod: '양중작업',
-        workName: '양중작업',
-        location: '108동',
-        inspectUser: '신우석 프로',
-        inspectRound: "'26년 下 3차",
-        content: '양중화물 유도로프 미사용 (직접 손으로 양중화물을 잡고 작업함)',
-        photoBanner: '양중작업 시 화물을 직접 손으로 잡음',
-        condition: '해당없음',
-        action: '불안전한 동작·자세',
-        agentMajor: '가시설',
-        agentMid: '거푸집',
-        agentMinor: '유로폼',
-        mgmtCauses: mgmtCauses.length ? mgmtCauses : ['계획 미이행', '불안전 행동'],
-        holdPoint: false,
-        interviewOpinion: '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.',
-        inspectorOpinionType: '시스템 개선',
-        auditProposal: '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.',
-        pmVerdict: '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립'
-      }
-    };
-  }
-
-  // 3) 불안전 행동이 체크되고 첫 번째 진홍색 배너가 존재하는 수평양중 미실시 장표
-  if (mgmtCauses.includes('불안전 행동') && crimsonBanner1 > 250 && crimsonBanner2 < 50) {
-    return {
-      kind: 'lifting_horizontal_sheet',
-      record: {
-        severity: '중부적합',
-        type: '낙하',
-        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
-        subcontractor: '원영건업(주)',
-        workGroup: '거푸집동바리공사',
-        workMethod: '양중작업',
-        workName: '양중작업',
-        location: '108동',
-        inspectUser: '신우석 프로',
-        inspectRound: "'26년 下 3차",
-        content: '보 거푸집 양중작업 시 양중화물의 수평이 맞지 않음 ↔ 지상에서 보 거푸집 양중로프 체결 시 로프간격을 맞추지 않음',
-        photoBanner: '양중작업 시 화물의 수평양중 미 실시',
-        condition: '해당없음',
-        action: '불안전한 동작·자세',
-        agentMajor: '가시설',
-        agentMid: '거푸집',
-        agentMinor: '유로폼',
-        mgmtCauses: mgmtCauses.length ? mgmtCauses : ['계획 미이행', '불안전 행동'],
-        holdPoint: false,
-        interviewOpinion: '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다. 양중로프를 걸 수 있는 위치가 어느 정도 적당하다고 생각되는 곳에 로프를 걸었다.',
-        inspectorOpinionType: '시스템 개선',
-        auditProposal: '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다. 지상에서 양중로프를 체결할 때 화물의 여장간격이 동일하도록 작업팀 교육 및 이행강화 노력이 필요함. 또한 원인이 되는 자재 적재방법 고려 필요.',
-        actionPlan: '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈',
-        countermeasure: '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈',
-        pmVerdict: '교육/코칭',
-        pmVerdictType: '교육/코칭',
-        pmVerdictSub: '(협력사 교육)'
-      }
-    };
-  }
-
   return { kind: 'generic_sheet', record: null };
 }
 
@@ -975,6 +871,17 @@ export async function parseSheetCanvas(canvas, options = {}) {
   const sig = measureHeaderSignature(canvas);
   const frame = sig.frame;
   const fullDocDataUrl = canvas.toDataURL('image/jpeg', 0.90);
+
+  // 0. 참고사항 / 시공가이드 / 샘플 안내문 사전 판별 (지적사항 점검장표가 아닌 경우 생략)
+  if (isSampleOrReferencePage(digitalText, sig)) {
+    console.log(`[SafePatrol] Page ${pageNumber} 생략: 시공 가이드 및 예시 참고자료 (지적사항 장표 아님)`);
+    return {
+      _skipped: true,
+      reason: '시공 가이드 및 예시 참고자료 (지적사항 장표 아님)',
+      slideNumber: pageNumber,
+      pageNumber
+    };
+  }
 
   // 1. 2D XY-Cut 동적 사진 추출 (테두리/여백 없는 순수 사진만 추출)
   const extracted = extractPhotosDynamic(canvas, frame);
@@ -998,15 +905,23 @@ export async function parseSheetCanvas(canvas, options = {}) {
       if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
         try {
           record = await window.SafeLocalAI.cleanOcrRecord(digitalText, record);
+          if (record && (record.sheetType === '참고사항' || record._skipped)) {
+            return {
+              _skipped: true,
+              reason: record.skipReason || '시공 가이드 참고자료',
+              slideNumber: pageNumber,
+              pageNumber
+            };
+          }
         } catch (e) {}
       }
       return record;
     }
   }
 
-  // 4. 고속 시각 지문 매칭 (테스트 PDF 동바리 장표 및 표준 양중 장표 0.01초 즉시 인식)
+  // 4. 고속 시각 지문 매칭
   const fp = classifySlideFingerprint(canvas, frame, extracted, mgmtCauses);
-  if (fp.record) {
+  if (fp && fp.record) {
     return {
       ...fp.record,
       slideNumber: pageNumber,
@@ -1018,14 +933,14 @@ export async function parseSheetCanvas(canvas, options = {}) {
     };
   }
 
-  // 5. 임의의 신규 스캔 장표인 경우: 클린 텍스트 스트립 생성 -> Tesseract OCR -> Qwen AI 정제
+  // 5. 스캔 장표: 클린 텍스트 스트립 생성 -> Tesseract OCR -> Qwen AI 정제
   let record = {
     slideNumber: pageNumber,
     severity: '중부적합',
     type: '붕괴',
     law: '',
     subcontractor: '',
-    workGroup: '가설공사',
+    workGroup: '거푸집동바리공사',
     workMethod: '설치조립작업',
     workName: '설치조립작업',
     location: '',
@@ -1040,6 +955,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
     inspectorOpinionType: '시스템 개선',
     auditProposal: '',
     pmVerdict: '시스템 개선',
+    pmVerdictType: '시스템 개선',
     photos: extracted.photos,
     photo1: extracted.photos[0] || null,
     photo2: extracted.photos[1] || null,
@@ -1052,11 +968,31 @@ export async function parseSheetCanvas(canvas, options = {}) {
       const stripCanvas = buildCleanTextStripCanvas(canvas, frame);
       const ret = await window.Tesseract.recognize(stripCanvas.toDataURL('image/jpeg', 0.90), 'kor+eng');
       const ocrText = (ret && ret.data && ret.data.text) || '';
+
+      // OCR 텍스트 기반 참고자료/샘플 판별
+      if (isSampleOrReferencePage(ocrText, sig)) {
+        console.log(`[SafePatrol] OCR 분석 결과: Page ${pageNumber} 생략 (시공 가이드 / 샘플 안내문)`);
+        return {
+          _skipped: true,
+          reason: '시공 가이드 및 예시 참고자료 (지적사항 장표 아님)',
+          slideNumber: pageNumber,
+          pageNumber
+        };
+      }
+
       if (ocrText.trim().length > 10) {
         const parsedOcr = parseStructuredTextFromSheet(ocrText, mgmtCauses);
         record = { ...record, ...parsedOcr, mgmtCauses };
         if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
           record = await window.SafeLocalAI.cleanOcrRecord(ocrText, record);
+          if (record && (record.sheetType === '참고사항' || record._skipped)) {
+            return {
+              _skipped: true,
+              reason: record.skipReason || '시공 가이드 참고자료',
+              slideNumber: pageNumber,
+              pageNumber
+            };
+          }
         }
       }
     } catch (ocrErr) {
@@ -1208,6 +1144,22 @@ export async function parsePDF(file, onProgress = () => {}) {
         pageNumber: pg.pageNumber,
         sourceName: `${file.name} (p.${pg.pageNumber})`
       });
+      if (rec && rec._skipped) {
+        skippedCount++;
+        onProgress({
+          phase: 'skip',
+          current: pg.pageNumber,
+          total: totalPages,
+          extracted: records.length,
+          skipped: skippedCount,
+          currentPage: pg.pageNumber,
+          totalPages,
+          extractedCount: records.length,
+          skippedCount
+        });
+        console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
+        continue;
+      }
       records.push(rec);
     }
 
@@ -1299,6 +1251,22 @@ export async function parsePDF(file, onProgress = () => {}) {
       pageNumber: pNum,
       sourceName: `${file.name} (p.${pNum})`
     });
+    if (rec && rec._skipped) {
+      skippedCount++;
+      onProgress({
+        phase: 'skip',
+        current: pNum,
+        total: totalPages,
+        extracted: records.length,
+        skipped: skippedCount,
+        currentPage: pNum,
+        totalPages,
+        extractedCount: records.length,
+        skippedCount
+      });
+      console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
+      continue;
+    }
     records.push(rec);
   }
 
@@ -1346,6 +1314,11 @@ export async function parsePPTX(file) {
 
     const textNodes = [...xmlText.matchAll(/<a:t>([^<]+)<\/a:t>/g)].map(m => m[1]);
     const fullText = textNodes.join(' ');
+
+    // 시공가이드 / 샘플 안내 슬라이드 생략
+    if (isSampleOrReferencePage(fullText)) {
+      continue;
+    }
 
     // 일반 표지/목차/간지 슬라이드 생략
     if (!fullText.includes('부적합') && !fullText.includes('지적사항')) {

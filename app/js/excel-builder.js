@@ -199,35 +199,40 @@
     return '';
   }
 
-  // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티')
+  // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티' - 복수 선택 시 모두 포함)
   function getInspectorOpinionType(r) {
-    // 1) 레코드에 이미 지정된 타입이 있는 경우 (완전일치 및 부분일치 정규화)
+    // 1) 레코드에 이미 지정된 타입이 있는 경우 (복수 구분 포함 정규화)
     const rawType = String(r.inspectorOpinionType || r.auditType || '').trim();
     if (rawType) {
-      if (rawType.includes('시스템')) return '시스템 개선';
-      if (rawType.includes('페널티') || rawType.includes('벌점') || rawType.includes('시정명령')) return '페널티';
-      if (rawType.includes('교육') || rawType.includes('코칭')) return '교육/코칭';
+      const parts = [];
+      if (rawType.includes('시스템')) parts.push('시스템 개선');
+      if (rawType.includes('교육') || rawType.includes('코칭')) parts.push('교육/코칭');
+      if (rawType.includes('페널티') || rawType.includes('패널티') || rawType.includes('벌점') || rawType.includes('시정명령')) parts.push('페널티');
+      if (parts.length > 0) return parts.join(', ');
+      return rawType;
     }
 
     // 2) 점검자의견 본문(auditProposal / inspectorOpinion) 기반 판정
     // 주의: pmVerdict(PM 판정결과)는 점검자 의견 구분을 오염시키지 않도록 제외
     const auditText = String(r.auditProposal || r.inspectorOpinion || '').trim();
+    const parts = [];
+
+    // 시스템 개선 키워드: 기준, 절차, 시스템, 규정, 설치, 개선, 보강, 수립, 계획, 여장, 간격 등
+    if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
+      parts.push('시스템 개선');
+    }
+
+    // 교육/코칭 키워드
+    if (/교육|코칭|TBM|지도/.test(auditText)) {
+      parts.push('교육/코칭');
+    }
 
     // 페널티 키워드
     if (/벌점|페널티|과태료|고발|퇴출|자격\s*박탈/.test(auditText)) {
-      return '페널티';
+      parts.push('페널티');
     }
 
-    // 시스템 개선 키워드: 기준, 절차, 시스템, 규정, 설치, 개선, 보강, 수립, 계획, 여장, 간격 등
-    // 점검단 제안은 현장 안전 시스템/기준 보완을 의미하므로 최우선 매칭
-    if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
-      return '시스템 개선';
-    }
-
-    // 순수 교육/코칭 단독 제안인 경우
-    if (/교육|코칭|TBM|지도/.test(auditText)) {
-      return '교육/코칭';
-    }
+    if (parts.length > 0) return parts.join(', ');
 
     // 기본값: 실물 점검장표 표준 점검단 제안은 '시스템 개선'
     return '시스템 개선';
@@ -255,18 +260,10 @@
       .trim();
   }
 
-  // 조치내용(개선대책) 다중 항목 보존 및 누락 복원 함수
+  // 조치내용(개선대책) 다중 항목 보존 및 정제 함수
   function resolveActionPlanText(r) {
     if (!r) return '(미조치)';
     const raw = (r.fix && r.fix.content) || r.actionPlan || r.countermeasure || '';
-    const contentStr = String(r.content || '');
-    // 동바리 붕괴 장표(테스트pdf)에서 첫 줄만 잘려 저장된 레코드인 경우 2개 항목 전체 복원
-    if (
-      (contentStr.includes('멍에재') || contentStr.includes('이중 동바리') || raw.includes('경사 슬라브 동바리 지지상태 전수 점검 실시')) &&
-      !raw.includes('계단실 작업 전 수립한 방법')
-    ) {
-      return '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화';
-    }
     if (!raw || raw === '(미조치)') return '(미조치)';
     const lines = String(raw)
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
