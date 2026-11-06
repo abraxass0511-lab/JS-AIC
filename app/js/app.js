@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261106_v8';
+﻿import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
+import { store } from './store.js?v=20261106_v9';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v8';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v9';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4774,7 +4774,7 @@ function renderImportedCards() {
           </span>
           <span style="font-weight: 700; color: var(--gray-800);">${rec.type || '추락'}</span>
           <span style="font-size: 0.71rem; background: #f1f5f9; color: #334155; padding: 1px 6px; border-radius: 4px; font-weight: 600;">
-            ${rec.agentMajor || '가시설'} &gt; ${rec.agentMid || '동바리'} &gt; ${rec.agentMinor || ''}
+            ${rec.agentMajor || '가시설'} &gt; ${rec.agentMid || '거푸집/동바리'} &gt; ${rec.agentMinor || ''}
           </span>
           <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
         </div>
@@ -4911,7 +4911,7 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
   const maj = rec.agentMajor || rec.kind || '가시설';
-  const mid = rec.agentMid || rec.item || '동바리';
+  const mid = rec.agentMid || rec.item || '거푸집/동바리';
   const min = rec.agentMinor || rec.agent || '파이프서포트';
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
   if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
@@ -5009,7 +5009,7 @@ async function handleSaveImportedRecords() {
 
       const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
       const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (m9 && m9.점검영역9x9) || '가시설';
-      const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (m9 && m9.점검대상9x9) || '동바리';
+      const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (m9 && m9.점검대상9x9) || '거푸집/동바리';
       const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (m9 && m9.가시설세부사양) || '파이프서포트';
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';

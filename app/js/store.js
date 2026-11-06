@@ -541,13 +541,13 @@ export const store = {
         rec.pmVerdict = '시스템 개선';
         rec.fix = { ...(rec.fix || {}), content: rec.actionPlan };
         rec.kind = '가시설';
-        rec.item = '동바리';
+        rec.item = '거푸집/동바리';
         rec.agent = '파이프서포트';
         rec.agentMajor = '가시설';
-        rec.agentMid = '동바리';
+        rec.agentMid = '거푸집/동바리';
         rec.agentMinor = '파이프서포트';
         rec.matrixArea = '가시설';
-        rec.matrixTarget = '동바리';
+        rec.matrixTarget = '거푸집/동바리';
         rec.matrixSpec = '파이프서포트';
         rec.condition = '물(物) 자체의 결함 (자재·부재 손상)';
         rec.action = '해당없음';
@@ -558,7 +558,7 @@ export const store = {
           rec.basis.guide = rec.rawLaw;
           rec.basis.law = rec.law;
           rec.basis.점검영역9x9 = '가시설';
-          rec.basis.점검대상9x9 = '동바리';
+          rec.basis.점검대상9x9 = '거푸집/동바리';
           rec.basis.가시설세부사양 = '파이프서포트';
           rec.basis.근본원인_관리감독 = '작업계획 미이행/부족';
           rec.basis.근본원인_안전시스템 = '확인: 일일점검 미실시';
@@ -589,6 +589,14 @@ export const store = {
           .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
           .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
           .trim();
+      }
+      // 모든 레코드 공통: 건설안전 9×9 표준 기인물(중) '거푸집/동바리' 통일 (기존 '동바리'/'거푸집동바리' 표기 자동 보정)
+      const FORM_SHORING_ALIASES = ['동바리', '거푸집동바리', '거푸집 동바리'];
+      ['agentMid', 'matrixTarget', 'item'].forEach(k => {
+        if (FORM_SHORING_ALIASES.includes(rec[k])) rec[k] = '거푸집/동바리';
+      });
+      if (rec.basis && FORM_SHORING_ALIASES.includes(rec.basis.점검대상9x9)) {
+        rec.basis.점검대상9x9 = '거푸집/동바리';
       }
       try {
         const overrides = JSON.parse(localStorage.getItem('sp_severity_overrides') || '{}');
