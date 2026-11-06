@@ -3476,10 +3476,10 @@ function initLmStudio() {
             badge.style.background = '#f0fdf4';
             badge.style.borderColor = '#86efac';
             badge.style.color = '#15803d';
-            badge.title = '노트북 종료 상태: Cloudflare 24시간 클라우드 AI 연결됨 (클릭하여 설정)';
+            badge.title = 'Cloudflare 24시간 상시 가동 Qwen AI 연결됨 (클릭하여 설정)';
           }
           if ($('#lmStudioInlineStatus')) {
-            $('#lmStudioInlineStatus').textContent = '🟢 Qwen 24시간 클라우드 AI 준비 완료 (노트북 꺼져도 동작)';
+            $('#lmStudioInlineStatus').textContent = '🟢 Qwen 24시간 클라우드 AI 준비 완료 (365일 24시간 가동)';
             $('#lmStudioInlineStatus').style.color = '#16a34a';
           }
         } else {

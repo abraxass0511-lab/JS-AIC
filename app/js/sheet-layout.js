@@ -18,7 +18,65 @@ function isYellow(d, k) {
 
 function isRedBanner(d, k) {
   const r = d[k], g = d[k + 1], b = d[k + 2];
-  return r > 150 && g < 120 && b < 120 && r - g > 70 && r - b > 60;
+  return r > 135 && g < 135 && b < 135 && (r - g) > 30 && (r - b) > 30;
+}
+
+function trimRedBannerFromBox(data, W, box) {
+  let { x, y, w, h } = box;
+  let y0 = y;
+  let y1 = y + h - 1;
+
+  // Trim from bottom up (적색 배너 및 흰 글씨 띠 제거)
+  for (let cy = y1; cy >= y0 + Math.round(h * 0.4); cy--) {
+    let redCount = 0;
+    for (let cx = x; cx < x + w; cx += 2) {
+      const idx = (cy * W + cx) * 4;
+      if (isRedBanner(data, idx)) redCount++;
+    }
+    const ratio = redCount / (w / 2);
+    if (ratio > 0.22) {
+      y1 = cy - 1;
+    } else if (y1 < y + h - 10) {
+      let isInside = false;
+      for (let lookback = 1; lookback <= 8; lookback++) {
+        let prevRed = 0;
+        for (let cx = x; cx < x + w; cx += 2) {
+          const idx = ((cy - lookback) * W + cx) * 4;
+          if (isRedBanner(data, idx)) prevRed++;
+        }
+        if (prevRed / (w / 2) > 0.22) { isInside = true; break; }
+      }
+      if (isInside) y1 = cy - 1;
+      else break;
+    }
+  }
+
+  // Trim from top down
+  for (let cy = y0; cy <= y1 - Math.round(h * 0.4); cy++) {
+    let redCount = 0;
+    for (let cx = x; cx < x + w; cx += 2) {
+      const idx = (cy * W + cx) * 4;
+      if (isRedBanner(data, idx)) redCount++;
+    }
+    const ratio = redCount / (w / 2);
+    if (ratio > 0.22) {
+      y0 = cy + 1;
+    } else if (y0 > y + 5) {
+      let isInside = false;
+      for (let lookahead = 1; lookahead <= 8; lookahead++) {
+        let nextRed = 0;
+        for (let cx = x; cx < x + w; cx += 2) {
+          const idx = ((cy + lookahead) * W + cx) * 4;
+          if (isRedBanner(data, idx)) nextRed++;
+        }
+        if (nextRed / (w / 2) > 0.22) { isInside = true; break; }
+      }
+      if (isInside) y0 = cy + 1;
+      else break;
+    }
+  }
+
+  return rect(x, y0, x + w, Math.max(y0 + 10, y1 + 1));
 }
 
 function isNonWhite(d, k) {
@@ -301,7 +359,10 @@ export function findPhotoBoxes(img, area, banners = []) {
   cut(0, 0, mw - 1, mh - 1, 0);
 
   return boxes.map(([a, b, c, e]) => {
-    const r = rect(area.x + a, area.y + b, area.x + c + 1, area.y + e + 1);
+    let r = rect(area.x + a, area.y + b, area.x + c + 1, area.y + e + 1);
+    // 상/하단 적색 배너 바를 사진 영역에서 완전히 제거
+    r = trimRedBannerFromBox(data, W, r);
+
     // 박스 내부 백색 비율 / 어두운 글자 비율 → 기준 문서 캡처 판별
     let white = 0, tot = 0;
     for (let y = r.y; y < r.y + r.h; y += 2) {
@@ -312,8 +373,11 @@ export function findPhotoBoxes(img, area, banners = []) {
       }
     }
     const whiteRatio = white / Math.max(1, tot);
-    return { ...r, whiteRatio, isReference: whiteRatio > 0.22 };
-  }).sort((p, q) => (Math.abs(p.y - q.y) < 40 ? p.x - q.x : p.y - q.y));
+    // 우측 절반에 위치하면서 백색 비율이 높거나 가이드 도면인 경우 reference 처리
+    const isRightHalf = r.x > area.x + Math.round(area.w * 0.45);
+    const isReference = whiteRatio > 0.22 || (isRightHalf && whiteRatio > 0.18);
+    return { ...r, whiteRatio, isReference };
+  }).filter(b => b.w >= minSide && b.h >= minSide).sort((p, q) => (Math.abs(p.y - q.y) < 40 ? p.x - q.x : p.y - q.y));
 }
 
 /**
