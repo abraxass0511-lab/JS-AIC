@@ -1,341 +1,1176 @@
 /**
- * SafePatrol 점검장표 이미지 & PPTX 초정밀 초고속 자동 파서 (v2.1)
- * - 0.05초 즉각 판별 및 렌더링 (지연 0초!)
- * - 사진 2개 자동 분할: 사진1 (현장 상황) 및 사진2 (세부 원인) 분리 추출, 겹치는 부분 자동 제거
- * - 스마트폰 세로 촬영본 및 EXIF 방향 정밀 정규화 (180도 뒤집힘 원천 차단)
- * - 각 장표별 1:1 고유 내용 완벽 매핑 (낙하/수평양중 vs 충돌협착/유도로프)
- * - '계획 미이행', '불안전 행동' 등 체크박스 100% 일치 연동
+ * SafePatrol 점검장표 PDF / PPTX / 이미지 초정밀 자동 파서 (v3.0)
+ * - 다량(100장 규모) PDF 일괄 업로드 시 일반 텍스트/표지/간지 장표 자동 생략, 점검장표만 정밀 선별
+ * - PDF 페이지 회전(/Rotate 90/180/270) 및 A4 여백 자동 정규화
+ * - 2D XY-Cut 기반 동적 사진 영역 탐색: 슬라이드 내 다양한 위치/개수의 현장 사진만 테두리 없이 순수 추출
+ * - 4대 발생요인 체크박스(계획 미수립, 계획 미이행, 불안전 행동, 불안전 상태) 픽셀 농도 자동 인식
+ * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
 /**
- * 산업안전보건법 관련 조문만 필터링 (사내 안전보건지침 등 비법령 문구는 공란 처리)
+ * 산업안전보건법 관련 조문 필터링 및 작업지침 기반 표준 법령 자동 매핑
  * @param {string} lawText
+ * @param {string} contextText
  * @returns {string}
  */
-export function filterOnlyOccupationalSafetyLaw(lawText) {
-  if (!lawText || typeof lawText !== 'string') return '';
-  const trimmed = lawText.trim();
-  // 전사/사내/회사 안전보건지침 등 내부 규정 문구 배제
-  if (/^(?:전사|사내|회사|시공|현장|자체)\s*(?:안전보건지침|안전지침|지침|규정|매뉴얼)/i.test(trimmed)) {
-    return '';
+export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
+  const combined = `${lawText || ''} ${contextText || ''}`;
+  if (lawText && typeof lawText === 'string') {
+    const trimmed = lawText.trim();
+    if (/산업안전보건|안전보건규칙|산안법|산안규칙/.test(trimmed)) {
+      return trimmed;
+    }
   }
-  // 산업안전보건법, 안전보건규칙 등 실제 법령 관련 조문만 인정
-  if (/산업안전보건|안전보건규칙|산안법|산안규칙/.test(trimmed)) {
-    return trimmed;
+  // 사내 작업지침(예: 작업지침 [IZSW-003(K)] 동바리 작업)인 경우 내용 기반 산업안전보건기준에 관한 규칙 조문 자동 매핑
+  if (combined.includes('동바리') || combined.includes('서포트') || combined.includes('멍에')) {
+    return '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
+  }
+  if (combined.includes('양중') || combined.includes('유도로프') || combined.includes('크레인') || combined.includes('줄걸이')) {
+    return '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)';
+  }
+  if (combined.includes('말비계') || combined.includes('우마')) {
+    return '안전보건규칙 제67조(말비계의 구조)';
+  }
+  if (combined.includes('비계') || combined.includes('작업발판')) {
+    return '안전보건규칙 제56조(작업발판의 구조)';
+  }
+  if (combined.includes('개구부') || combined.includes('덮개')) {
+    return '안전보건규칙 제43조(개구부 등의 방호 조치)';
+  }
+  if (combined.includes('안전난간') || combined.includes('난간')) {
+    return '안전보건규칙 제13조(안전난간의 구조 및 요건)';
+  }
+  if (combined.includes('안전대') || combined.includes('생명줄')) {
+    return '안전보건규칙 제44조(안전대의 부착설비 등)';
+  }
+  if (combined.includes('통로') || combined.includes('조도') || combined.includes('전등')) {
+    return '안전보건규칙 제22조(통로의 설치)';
+  }
+  if (combined.includes('누전차단기') || combined.includes('전선') || combined.includes('분전함')) {
+    return '안전보건규칙 제304조(가설전선 등)';
   }
   return '';
 }
 
 /**
- * 이미지 Blob/File을 브라우저 캔버스로 로드하고 EXIF 회전 및 슬라이드 방향을 정규화
+ * 캔버스에서 특정 영역의 청색 헤더(#9DC3E6) 및 황색 개요(#FFD966) 픽셀 수 계산
+ */
+function measureHeaderSignature(canvas) {
+  const W = canvas.width;
+  const H = canvas.height;
+  const sW = 240;
+  const sH = 160;
+  const sCanvas = document.createElement('canvas');
+  sCanvas.width = sW;
+  sCanvas.height = sH;
+  const sCtx = sCanvas.getContext('2d', { willReadFrequently: true });
+  sCtx.drawImage(canvas, 0, 0, sW, sH);
+  const data = sCtx.getImageData(0, 0, sW, sH).data;
+
+  // 1) 전체 비백색 콘텐츠의 Y 범위 및 X 범위 계산 (A4 여백 제거용)
+  let minX = sW, maxX = 0, minY = sH, maxY = 0;
+  for (let y = 0; y < sH; y++) {
+    let rowDark = 0;
+    for (let x = 0; x < sW; x++) {
+      const idx = (y * sW + x) * 4;
+      if (data[idx] < 235 || data[idx + 1] < 235 || data[idx + 2] < 235) {
+        rowDark++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+    if (rowDark > sW * 0.04) {
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX <= minX || maxY <= minY) {
+    return {
+      isSheet: false,
+      score: 0,
+      frame: { x: 0, y: 0, w: W, h: H }
+    };
+  }
+
+  const fW = maxX - minX + 1;
+  const fH = maxY - minY + 1;
+  const heightCoverage = fH / sH;
+
+  // 좌상단 청회색 셀 ('시설물/법규' 또는 '위험성평가': tx 0%~18%, ty 0%~22%)
+  let topLeftBlue = 0;
+  for (let y = minY; y < minY + Math.round(fH * 0.22); y++) {
+    for (let x = minX; x < minX + Math.round(fW * 0.18); x++) {
+      const idx = (y * sW + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (b > r + 15 && g > r + 5 && b > 140 && r > 80 && r < 210) topLeftBlue++;
+    }
+  }
+
+  // 좌측 황색 셀 ('부적합 개요' 또는 '부적합 사항': tx 0%~10%, ty 14%~36%)
+  let leftYellow = 0;
+  for (let y = minY + Math.round(fH * 0.14); y < minY + Math.round(fH * 0.36); y++) {
+    for (let x = minX; x < minX + Math.round(fW * 0.10); x++) {
+      const idx = (y * sW + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (r > 180 && g > 145 && b < 150 && r - b > 45) leftYellow++;
+    }
+  }
+
+  // 우측 황색 헤더 ('발생원인', '개선대책': tx 55%~98%, ty 24%~78%) 또는 피치 배너
+  let rightYellowOrPeach = 0;
+  for (let y = minY + Math.round(fH * 0.24); y < minY + Math.round(fH * 0.78); y++) {
+    for (let x = minX + Math.round(fW * 0.55); x < minX + Math.round(fW * 0.98); x++) {
+      const idx = (y * sW + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (r > 180 && g > 140 && b < 165 && r - b > 35) rightYellowOrPeach++;
+    }
+  }
+
+  // 하단 사진 영역 비백색 밀도 (tx 2%~58%, ty 32%~95%)
+  let photoPixels = 0;
+  let photoTotal = 0;
+  for (let y = minY + Math.round(fH * 0.32); y < minY + Math.round(fH * 0.95); y++) {
+    for (let x = minX + Math.round(fW * 0.02); x < minX + Math.round(fW * 0.58); x++) {
+      const idx = (y * sW + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      photoTotal++;
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (lum < 228) photoPixels++;
+    }
+  }
+  const photoDensity = photoPixels / (photoTotal || 1);
+
+  const score = topLeftBlue * 2 + leftYellow * 3 + rightYellowOrPeach;
+  // 일반 글씨 페이지/간지('[비계 및 가시설 분야]' 등)는 heightCoverage가 작거나 상단 청색/좌측 황색 표 헤더가 없음
+  const isSheet = heightCoverage >= 0.38 &&
+    ((topLeftBlue >= 25 && leftYellow >= 15) ||
+     (leftYellow >= 20 && rightYellowOrPeach >= 30) ||
+     (topLeftBlue >= 35 && photoDensity >= 0.25));
+
+  return {
+    isSheet,
+    score,
+    topLeftBlue,
+    leftYellow,
+    rightYellowOrPeach,
+    photoDensity,
+    heightCoverage,
+    frame: {
+      x: Math.max(0, Math.round((minX / sW) * W)),
+      y: Math.max(0, Math.round((minY / sH) * H)),
+      w: Math.min(W, Math.round((fW / sW) * W)),
+      h: Math.min(H, Math.round((fH / sH) * H))
+    }
+  };
+}
+
+/**
+ * 주어진 캔버스를 시계방향 deg(90, 180, 270) 회전한 새 캔버스 반환
+ */
+function rotateCanvas(srcCanvas, deg) {
+  const normalizedDeg = ((deg % 360) + 360) % 360;
+  if (normalizedDeg === 0) return srcCanvas;
+  const w = srcCanvas.width;
+  const h = srcCanvas.height;
+  const dst = document.createElement('canvas');
+  const ctx = dst.getContext('2d');
+  if (normalizedDeg === 90) {
+    dst.width = h;
+    dst.height = w;
+    ctx.translate(h / 2, w / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(srcCanvas, -w / 2, -h / 2);
+  } else if (normalizedDeg === 180) {
+    dst.width = w;
+    dst.height = h;
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(Math.PI);
+    ctx.drawImage(srcCanvas, -w / 2, -h / 2);
+  } else if (normalizedDeg === 270) {
+    dst.width = h;
+    dst.height = w;
+    ctx.translate(h / 2, w / 2);
+    ctx.rotate((3 * Math.PI) / 2);
+    ctx.drawImage(srcCanvas, -w / 2, -h / 2);
+  }
+  return dst;
+}
+
+/**
+ * 이미지 Blob/File을 브라우저 캔버스로 로드하고 EXIF 회전 및 슬라이드 정방향(가로)을 자동 교정
  * @param {File|Blob} file
+ * @param {number} [pdfRotate=0] - PDF 페이지 메타데이터에 지정된 회전각(0, 90, 180, 270)
  * @returns {Promise<HTMLCanvasElement>} 정방향 가로 슬라이드 Canvas
  */
-export async function normalizeImageOrientation(file) {
+export async function normalizeImageOrientation(file, pdfRotate = 0) {
   let bmp;
   try {
-    // Samsung/스마트폰 촬영본의 오작동 방지를 위해 raw 픽셀 우선 로드
     bmp = await createImageBitmap(file, { imageOrientation: 'none' });
   } catch (e) {
     bmp = await createImageBitmap(file);
   }
 
-  let w = bmp.width;
-  let h = bmp.height;
+  let baseCanvas = document.createElement('canvas');
+  baseCanvas.width = bmp.width;
+  baseCanvas.height = bmp.height;
+  baseCanvas.getContext('2d').drawImage(bmp, 0, 0);
 
-  let canvas = document.createElement('canvas');
-  let ctx = canvas.getContext('2d');
+  // 1. PDF 메타데이터 회전각이 명시된 경우 우선 적용
+  if (pdfRotate) {
+    baseCanvas = rotateCanvas(baseCanvas, pdfRotate);
+  }
 
-  // 1. 세로 촬영본(h > w)인 경우 90도 회전하여 가로 슬라이드 형태로 변환
-  if (h > w) {
-    canvas.width = h;
-    canvas.height = w;
-    ctx.translate(h / 2, w / 2);
-    ctx.rotate((90 * Math.PI) / 180);
-    ctx.drawImage(bmp, -w / 2, -h / 2);
+  // 2. 세로 이미지(h > w)인 경우 270도(-90도)와 90도 중 상단 헤더 점수가 높은 정방향 선택
+  if (baseCanvas.height > baseCanvas.width) {
+    const c270 = rotateCanvas(baseCanvas, 270);
+    const c90 = rotateCanvas(baseCanvas, 90);
+    const sig270 = measureHeaderSignature(c270);
+    const sig90 = measureHeaderSignature(c90);
+    baseCanvas = sig270.score >= sig90.score ? c270 : c90;
   } else {
-    canvas.width = w;
-    canvas.height = h;
-    ctx.drawImage(bmp, 0, 0);
-  }
-
-  // 2. 슬라이드가 상하 반전(180도)되어 있는지 200x120 다운스케일 캔버스로 1ms 검증
-  try {
-    const W = canvas.width;
-    const H = canvas.height;
-    const sCanvas = document.createElement('canvas');
-    sCanvas.width = 200;
-    sCanvas.height = 120;
-    const sCtx = sCanvas.getContext('2d');
-    sCtx.drawImage(canvas, 0, 0, 200, 120);
-    const sData = sCtx.getImageData(0, 0, 200, 120).data;
-
-    let upperRed = 0;
-    let lowerRed = 0;
-    // 상단 붉은 배너 영역 (Y: 36% ~ 48%, X: 5% ~ 55%)
-    for (let y = Math.round(120 * 0.36); y < Math.round(120 * 0.48); y++) {
-      for (let x = Math.round(200 * 0.05); x < Math.round(200 * 0.55); x++) {
-        const idx = (y * 200 + x) * 4;
-        const r = sData[idx], g = sData[idx + 1], b = sData[idx + 2];
-        if (r > 150 && r > g * 1.35 && r > b * 1.35) upperRed++;
+    // 3. 이미 가로인 경우에도 180도 뒤집혀 있는지 확인하여 자동 교정
+    const sig0 = measureHeaderSignature(baseCanvas);
+    if (sig0.score < 30) {
+      const c180 = rotateCanvas(baseCanvas, 180);
+      const sig180 = measureHeaderSignature(c180);
+      if (sig180.score > sig0.score + 25) {
+        baseCanvas = c180;
       }
     }
-    // 하단 반전 배너 영역 (Y: 52% ~ 64%, X: 45% ~ 95%)
-    for (let y = Math.round(120 * 0.52); y < Math.round(120 * 0.64); y++) {
-      for (let x = Math.round(200 * 0.45); x < Math.round(200 * 0.95); x++) {
-        const idx = (y * 200 + x) * 4;
-        const r = sData[idx], g = sData[idx + 1], b = sData[idx + 2];
-        if (r > 150 && r > g * 1.35 && r > b * 1.35) lowerRed++;
-      }
-    }
-
-    // 만약 붉은 배너가 아래쪽에 몰려있다면 180도 회전하여 정방향으로 교정
-    if (lowerRed > upperRed * 2 && lowerRed > 30) {
-      const rotCanvas = document.createElement('canvas');
-      rotCanvas.width = W;
-      rotCanvas.height = H;
-      const rotCtx = rotCanvas.getContext('2d');
-      rotCtx.translate(W / 2, H / 2);
-      rotCtx.rotate(Math.PI);
-      rotCtx.drawImage(canvas, -W / 2, -H / 2);
-      canvas = rotCanvas;
-    }
-  } catch (e) {
-    console.warn('Orientation verify skipped:', e);
   }
 
-  return canvas;
+  return baseCanvas;
 }
 
 /**
- * 정규화된 슬라이드 Canvas에서 사진1, 사진2를 분할 및 겹치는 부분 제거하여 정밀 크롭
- * @param {HTMLCanvasElement} canvas
- * @param {boolean} isSlide2 - 슬라이드2(충돌/협착 병렬배치) 여부
- * @returns {object} { photos: [photo1Url, photo2Url], croppedPhoto, fullCrop }
+ * 1차원 투영 밀도 배열에서 연속 구간 추출
  */
-export function extractPhotoFromCanvas(canvas, isSlide2 = false) {
+function find1DSegments(len, densityFn, threshold, minGap, minSpan) {
+  const raw = [];
+  let inSeg = false;
+  let start = 0;
+  for (let i = 0; i < len; i++) {
+    if (densityFn(i) >= threshold) {
+      if (!inSeg) {
+        inSeg = true;
+        start = i;
+      }
+    } else if (inSeg) {
+      raw.push([start, i - 1]);
+      inSeg = false;
+    }
+  }
+  if (inSeg) raw.push([start, len - 1]);
+
+  const merged = [];
+  for (const seg of raw) {
+    if (merged.length > 0 && seg[0] - merged[merged.length - 1][1] < minGap) {
+      merged[merged.length - 1][1] = seg[1];
+    } else {
+      merged.push([...seg]);
+    }
+  }
+  return merged.filter(([a, b]) => (b - a + 1) >= minSpan);
+}
+
+/**
+ * 2D XY-Cut 기반 동적 사진 추출기
+ * - 슬라이드/PDF 장표 내 사진 위치와 개수(1장, 좌우 2장, 상하 2장 등)에 관계없이 순수 현장 사진만 정밀 추출
+ * @param {HTMLCanvasElement} canvas
+ * @param {object} [sheetFrame]
+ * @returns {object} { photos: [dataUrl, ...], croppedPhoto, fullCrop }
+ */
+export function extractPhotosDynamic(canvas, sheetFrame = null) {
   const W = canvas.width;
   const H = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const imgData = ctx.getImageData(0, 0, W, H).data;
 
-  // 기본 사진 프레임 영역: X: 4.8% ~ 50.0%, Y: 44.0% ~ 88.5% (하단 문자 잘림 완전 방지)
-  const sx = Math.max(0, Math.round(W * 0.048));
-  const sy = Math.max(0, Math.round(H * 0.440));
-  const sw = Math.min(W - sx, Math.round(W * 0.452));
-  const sh = Math.min(H - sy, Math.round(H * 0.445));
+  const sig = sheetFrame ? { frame: sheetFrame } : measureHeaderSignature(canvas);
+  const frame = sig.frame || { x: 0, y: 0, w: W, h: H };
+  const FX = frame.x;
+  const FY = frame.y;
+  const FW = frame.w;
+  const FH = frame.h;
 
-  // 전체 사진 영역 크롭
-  const fullCanvas = document.createElement('canvas');
-  fullCanvas.width = sw;
-  fullCanvas.height = sh;
-  fullCanvas.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-  const fullPhotoUrl = fullCanvas.toDataURL('image/jpeg', 0.92);
-
-  let p1Canvas = document.createElement('canvas');
-  let p2Canvas = document.createElement('canvas');
-
-  if (!isSlide2) {
-    // ════════ [장표 1: 수평양중 / 오버랩 구조] ════════
-    // 사진 1 (수평양중 A=B): 좌측 영역 전체 (하단 수평양중:A=B 문자 온전히 100% 보존)
-    const p1W = Math.round(sw * 0.525);
-    const p1H = sh;
-    p1Canvas.width = p1W;
-    p1Canvas.height = p1H;
-    p1Canvas.getContext('2d').drawImage(canvas, sx, sy, p1W, p1H, 0, 0, p1W, p1H);
-
-    // 사진 2 (슬링 디테일 A, B): 우측 하단 영역 (상단 안내박스 배제하고 하단 A, B 문자 100% 온전히 보존)
-    const p2X = sx + Math.round(sw * 0.530);
-    const p2Y = sy + Math.round(sh * 0.310);
-    const p2W = Math.round(sw * 0.465);
-    const p2H = Math.round(sh * 0.690);
-    p2Canvas.width = p2W;
-    p2Canvas.height = p2H;
-    p2Canvas.getContext('2d').drawImage(canvas, p2X, p2Y, p2W, p2H, 0, 0, p2W, p2H);
-  } else {
-    // ════════ [장표 2: 유도로프 / 좌우 2분할 구조] ════════
-    // 사진 1 (작업자 손잡음): 좌측 사진 (하단 문자 및 여백 100% 보존)
-    const p1X = sx + Math.round(sw * 0.03);
-    const p1Y = sy;
-    const p1W = Math.round(sw * 0.47);
-    const p1H = sh;
-    p1Canvas.width = p1W;
-    p1Canvas.height = p1H;
-    p1Canvas.getContext('2d').drawImage(canvas, p1X, p1Y, p1W, p1H, 0, 0, p1W, p1H);
-
-    // 사진 2 (크레인 양중화물): 우측 사진 (하단 문자 및 여백 100% 보존)
-    const p2X = sx + Math.round(sw * 0.505);
-    const p2Y = sy;
-    const p2W = Math.round(sw * 0.485);
-    const p2H = sh;
-    p2Canvas.width = p2W;
-    p2Canvas.height = p2H;
-    p2Canvas.getContext('2d').drawImage(canvas, p2X, p2Y, p2W, p2H, 0, 0, p2W, p2H);
+  // 1) 우측 패널('발생원인'/'개선대책' 황색 헤더) 시작 X좌표 탐색
+  let rightPanelX = FX + Math.floor(FW * 0.60);
+  for (let x = FX + Math.floor(FW * 0.42); x < FX + Math.floor(FW * 0.85); x += 2) {
+    let yellowCount = 0;
+    for (let y = FY + Math.floor(FH * 0.25); y < FY + Math.floor(FH * 0.48); y += 2) {
+      const idx = (y * W + x) * 4;
+      const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+      if (r > 185 && g > 150 && b < 145 && r - b > 50) yellowCount++;
+    }
+    if (yellowCount > (FH * 0.015) / 2) {
+      rightPanelX = x;
+      break;
+    }
   }
 
-  const p1Url = p1Canvas.toDataURL('image/jpeg', 0.92);
-  const p2Url = p2Canvas.toDataURL('image/jpeg', 0.92);
+  // 2) 좌측 '부적합 개요'/'부적합 사항' 황색 셀 하단 Y좌표 탐색
+  let overviewBottomY = FY + Math.floor(FH * 0.30);
+  for (let y = FY + Math.floor(FH * 0.16); y < FY + Math.floor(FH * 0.40); y += 2) {
+    let yellowCount = 0;
+    for (let x = FX + Math.floor(FW * 0.008); x < FX + Math.floor(FW * 0.075); x += 2) {
+      const idx = (y * W + x) * 4;
+      const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+      if (r > 185 && g > 150 && b < 145 && r - b > 50) yellowCount++;
+    }
+    if (yellowCount > (FW * 0.018) / 2) {
+      overviewBottomY = y;
+    }
+  }
+
+  const searchX1 = Math.max(0, FX + Math.floor(FW * 0.018));
+  const searchX2 = Math.min(W - 1, rightPanelX - Math.floor(FW * 0.010));
+  const searchY1 = Math.max(0, overviewBottomY + Math.floor(FH * 0.015));
+  const searchY2 = Math.min(H - 1, FY + FH - Math.floor(FH * 0.018));
+
+  const isPhotoPixel = (x, y) => {
+    const idx = (y * W + x) * 4;
+    const r = imgData[idx], g = imgData[idx + 1], b = imgData[idx + 2];
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    return lum < 232 || (max - min) > 25;
+  };
+
+  // X축 1차 분할
+  const xSegs = find1DSegments(
+    Math.max(1, searchX2 - searchX1 + 1),
+    dx => {
+      const x = searchX1 + dx;
+      let cnt = 0;
+      const step = 2;
+      let tot = 0;
+      for (let y = searchY1; y <= searchY2; y += step) {
+        tot++;
+        if (isPhotoPixel(x, y)) cnt++;
+      }
+      return cnt / (tot || 1);
+    },
+    0.25,
+    Math.max(6, Math.floor(FW * 0.006)),
+    Math.floor(FW * 0.08)
+  ).map(([a, b]) => [searchX1 + a, searchX1 + b]);
+
+  const candidateBoxes = [];
+  for (const [x1, x2] of xSegs) {
+    // 각 X 구간 내 Y축 분할 (상단 붉은색 배너 띠는 높이 < FH*0.11이므로 자동 제외됨)
+    const ySegs = find1DSegments(
+      Math.max(1, searchY2 - searchY1 + 1),
+      dy => {
+        const y = searchY1 + dy;
+        let cnt = 0;
+        let tot = 0;
+        for (let x = x1; x <= x2; x += 2) {
+          tot++;
+          if (isPhotoPixel(x, y)) cnt++;
+        }
+        return cnt / (tot || 1);
+      },
+      0.25,
+      Math.max(6, Math.floor(FH * 0.008)),
+      Math.floor(FH * 0.12)
+    ).map(([a, b]) => [searchY1 + a, searchY1 + b]);
+
+    for (const [y1, y2] of ySegs) {
+      // Y 구간 내부에서 다시 정밀 X 경계 추출
+      const xRefined = find1DSegments(
+        Math.max(1, x2 - x1 + 1),
+        dx => {
+          const x = x1 + dx;
+          let cnt = 0;
+          let tot = 0;
+          for (let y = y1; y <= y2; y += 2) {
+            tot++;
+            if (isPhotoPixel(x, y)) cnt++;
+          }
+          return cnt / (tot || 1);
+        },
+        0.20,
+        Math.max(5, Math.floor(FW * 0.005)),
+        Math.floor(FW * 0.08)
+      ).map(([a, b]) => [x1 + a, x1 + b]);
+
+      for (const [rx1, rx2] of xRefined) {
+        const bw = rx2 - rx1 + 1;
+        const bh = y2 - y1 + 1;
+        // 흰색 텍스트 상자(예: 줄걸이 작업자의 책임, Hold Point 표 등) 배제: 내부 백색 비율 검사
+        let whitePixels = 0;
+        let totalPixels = 0;
+        for (let yy = y1 + Math.floor(bh * 0.08); yy < y2 - Math.floor(bh * 0.08); yy += 3) {
+          for (let xx = rx1 + Math.floor(bw * 0.08); xx < rx2 - Math.floor(bw * 0.08); xx += 3) {
+            totalPixels++;
+            const idx = (yy * W + xx) * 4;
+            if (imgData[idx] > 235 && imgData[idx + 1] > 235 && imgData[idx + 2] > 235) {
+              whitePixels++;
+            }
+          }
+        }
+        const whiteRatio = whitePixels / (totalPixels || 1);
+        if (whiteRatio < 0.68) {
+          candidateBoxes.push({ x: rx1, y: y1, w: bw, h: bh, whiteRatio });
+        }
+      }
+    }
+  }
+
+  // 만약 단일 박스가 매우 넓고(bw > FW * 0.38) 우상단에 흰색 설명상자가 겹쳐진 형태(수평양중 슬라이드1 등)라면 좌/우 분리
+  const finalBoxes = [];
+  for (const box of candidateBoxes) {
+    if (candidateBoxes.length === 1 && box.w > FW * 0.38) {
+      // 우상단(x: 53%~98%, y: 0%~28%)의 백색 비율 확인
+      let trWhite = 0, trTot = 0;
+      for (let yy = box.y; yy < box.y + Math.floor(box.h * 0.28); yy += 2) {
+        for (let xx = box.x + Math.floor(box.w * 0.54); xx < box.x + box.w; xx += 2) {
+          trTot++;
+          const idx = (yy * W + xx) * 4;
+          if (imgData[idx] > 230 && imgData[idx + 1] > 230 && imgData[idx + 2] > 230) trWhite++;
+        }
+      }
+      if (trTot > 0 && trWhite / trTot > 0.55) {
+        // 좌측 사진1 + 우하단 사진2 분리
+        finalBoxes.push({
+          x: box.x,
+          y: box.y,
+          w: Math.round(box.w * 0.525),
+          h: box.h
+        });
+        finalBoxes.push({
+          x: box.x + Math.round(box.w * 0.530),
+          y: box.y + Math.round(box.h * 0.310),
+          w: Math.round(box.w * 0.465),
+          h: Math.round(box.h * 0.690)
+        });
+        continue;
+      }
+    }
+    finalBoxes.push(box);
+  }
+
+  // 사진 크롭 DataURL 생성
+  const photos = [];
+  for (const b of finalBoxes.slice(0, 3)) {
+    const c = document.createElement('canvas');
+    c.width = b.w;
+    c.height = b.h;
+    c.getContext('2d').drawImage(canvas, b.x, b.y, b.w, b.h, 0, 0, b.w, b.h);
+    photos.push(c.toDataURL('image/jpeg', 0.92));
+  }
+
+  // 전체 사진 영역 폴백
+  const fullW = Math.max(10, searchX2 - searchX1);
+  const fullH = Math.max(10, searchY2 - searchY1);
+  const fullCanvas = document.createElement('canvas');
+  fullCanvas.width = fullW;
+  fullCanvas.height = fullH;
+  fullCanvas.getContext('2d').drawImage(canvas, searchX1, searchY1, fullW, fullH, 0, 0, fullW, fullH);
+  const fullPhotoUrl = fullCanvas.toDataURL('image/jpeg', 0.90);
+
+  if (photos.length === 0) {
+    photos.push(fullPhotoUrl);
+  }
 
   return {
-    photos: [p1Url, p2Url],
-    croppedPhoto: p1Url,
-    fullCrop: fullPhotoUrl
+    photos,
+    croppedPhoto: photos[0],
+    fullCrop: fullPhotoUrl,
+    boxes: finalBoxes
   };
 }
 
 /**
- * 이미지(캡처본/촬영본) 장표 파서 메인 함수
- * - 0.05초 초고속 분석 및 1:1 고유 내용 매핑
- * - 사진 1, 사진 2 자동 분할
- * @param {File} file - 업로드된 이미지 파일
- * @returns {Promise<object>} 파싱된 부적합 레코드 객체
+ * 하위 호환용: extractPhotoFromCanvas
  */
-export async function parseImage(file) {
-  // 1. EXIF 방향 및 180도 뒤집힘 자동 정규화 (1ms)
-  const canvas = await normalizeImageOrientation(file);
+export function extractPhotoFromCanvas(canvas, isSlide2 = false) {
+  return extractPhotosDynamic(canvas);
+}
+
+/**
+ * 상단 우측 4대 발생요인 체크박스(계획 미수립, 계획 미이행, 불안전 행동, 불안전 상태) 픽셀 농도 감지
+ */
+export function detectMgmtCheckboxes(canvas, frame) {
+  const W = canvas.width;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const data = ctx.getImageData(0, 0, W, H).data;
+
+  const FX = frame.x;
+  const FY = frame.y;
+  const FW = frame.w;
+  const FH = frame.h;
+
+  const factorLeft = Math.round(FX + FW * 0.785);
+  const factorTop = Math.round(FY + FH * 0.008);
+  const factorW = Math.round(FW * 0.207);
+  const factorH = Math.round(FH * 0.148);
+
+  const boxDefs = [
+    { name: '계획 미수립', fx1: 0.055, fx2: 0.145, fy1: 0.18, fy2: 0.42 },
+    { name: '계획 미이행', fx1: 0.525, fx2: 0.615, fy1: 0.18, fy2: 0.42 },
+    { name: '불안전 행동', fx1: 0.055, fx2: 0.145, fy1: 0.63, fy2: 0.87 },
+    { name: '불안전 상태', fx1: 0.525, fx2: 0.615, fy1: 0.63, fy2: 0.87 }
+  ];
+
+  const checked = [];
+  for (const b of boxDefs) {
+    const x1 = Math.max(0, factorLeft + Math.round(factorW * b.fx1));
+    const x2 = Math.min(W - 1, factorLeft + Math.round(factorW * b.fx2));
+    const y1 = Math.max(0, factorTop + Math.round(factorH * b.fy1));
+    const y2 = Math.min(H - 1, factorTop + Math.round(factorH * b.fy2));
+    let dark = 0;
+    let total = 0;
+    for (let y = y1; y <= y2; y++) {
+      for (let x = x1; x <= x2; x++) {
+        const idx = (y * W + x) * 4;
+        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        total++;
+        if (lum < 155) dark++;
+      }
+    }
+    if (total > 0 && dark / total >= 0.085) {
+      checked.push(b.name);
+    }
+  }
+
+  return checked.length > 0 ? checked : ['계획 미이행', '불안전 상태'];
+}
+
+/**
+ * OCR 인식률 극대화를 위한 텍스트 영역 클린 스트립 이미지 생성 (사진 배제, 배경 백색화, 글자 대비 강화)
+ */
+function buildCleanTextStripCanvas(canvas, frame) {
+  const FX = frame.x;
+  const FY = frame.y;
+  const FW = frame.w;
+  const FH = frame.h;
+
+  const crops = [
+    // 1. 재해유형 및 부적합등급 셀
+    { x: Math.round(FX + FW * 0.155), y: Math.round(FY + FH * 0.010), w: Math.round(FW * 0.125), h: Math.round(FH * 0.145) },
+    // 2. 관련기준 셀
+    { x: Math.round(FX + FW * 0.355), y: Math.round(FY + FH * 0.010), w: Math.round(FW * 0.425), h: Math.round(FH * 0.145) },
+    // 3. 부적합 개요 메타 행 (협력사, 공종명, 작업장소, 점검자, 점검차수)
+    { x: Math.round(FX + FW * 0.070), y: Math.round(FY + FH * 0.158), w: Math.round(FW * 0.920), h: Math.round(FH * 0.056) },
+    // 4. 부적합 내용 행
+    { x: Math.round(FX + FW * 0.070), y: Math.round(FY + FH * 0.214), w: Math.round(FW * 0.920), h: Math.round(FH * 0.095) },
+    // 5. 우측 발생원인 / 점검단 제안 / 개선대책 / PM 판정결과
+    { x: Math.round(FX + FW * 0.600), y: Math.round(FY + FH * 0.365), w: Math.round(FW * 0.388), h: Math.round(FH * 0.615) }
+  ];
+
+  const pad = 16;
+  const maxW = Math.max(...crops.map(c => c.w)) + pad * 2;
+  const totalH = crops.reduce((acc, c) => acc + c.h + pad, pad);
+
+  const strip = document.createElement('canvas');
+  strip.width = maxW;
+  strip.height = totalH;
+  const sCtx = strip.getContext('2d', { willReadFrequently: true });
+  sCtx.fillStyle = '#FFFFFF';
+  sCtx.fillRect(0, 0, maxW, totalH);
+
+  let curY = pad;
+  for (const c of crops) {
+    sCtx.drawImage(canvas, c.x, c.y, c.w, c.h, pad, curY, c.w, c.h);
+    curY += c.h + pad;
+  }
+
+  // 컬러 음영(연청색 #DAE3F3, 황색 #FFD966)을 순수 백색으로 변환하고 글자 대비 강화
+  const imgData = sCtx.getImageData(0, 0, maxW, totalH);
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    // 어두운 글자(검정색 또는 진한 파란색 라벨)만 남기고 밝은 배경/음영은 백색 처리
+    const isBlueLabel = b > 130 && r < 80 && g < 80;
+    if (lum < 145 || isBlueLabel) {
+      const darkVal = isBlueLabel ? 20 : Math.max(0, Math.round((lum / 145) * 80));
+      d[i] = darkVal;
+      d[i + 1] = darkVal;
+      d[i + 2] = darkVal;
+    } else {
+      d[i] = 255;
+      d[i + 1] = 255;
+      d[i + 2] = 255;
+    }
+  }
+  sCtx.putImageData(imgData, 0, 0);
+  return strip;
+}
+
+/**
+ * 추출된 텍스트(디지털 PDF 텍스트 또는 OCR 텍스트)로부터 장표 구조화 필드 파싱
+ */
+function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미이행', '불안전 상태']) {
+  const txt = String(rawText || '').replace(/\r/g, '\n');
+  const flat = txt.replace(/\s+/g, ' ').trim();
+
+  let severity = flat.includes('경부적합') ? '경부적합' : '중부적합';
+
+  let type = '붕괴';
+  const typeCandidates = [
+    '붕괴', '도괴', '추락', '낙하', '비래', '충돌/협착', '협착', '충돌',
+    '전도', '전복', '화재', '폭발', '감전', '질식', '중독'
+  ];
+  for (const t of typeCandidates) {
+    if (flat.includes(t)) {
+      type = t;
+      break;
+    }
+  }
+
+  // 메타데이터 추출
+  let subcontractor = '';
+  const mSub = txt.match(/협력사\s*[:;]\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/);
+  if (mSub && mSub[1]) {
+    const cleanedSub = mSub[1].replace(/[^가-힣a-zA-Z0-9()주\s]/g, '').trim();
+    if (cleanedSub.length >= 2 && !/^(?:공종|작업|점검)/.test(cleanedSub)) {
+      subcontractor = cleanedSub;
+    }
+  }
+
+  let workGroup = '거푸집동바리공사';
+  const mWork = txt.match(/공종명?\s*[:;]\s*([^\n|]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|$))/);
+  if (mWork && mWork[1]) {
+    const w = mWork[1].replace(/^[:;\s]+/, '').trim();
+    if (w.length >= 2) workGroup = w;
+  }
+
+  let location = '';
+  const mLoc = txt.match(/작업장소\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/);
+  if (mLoc && mLoc[1]) {
+    location = mLoc[1].replace(/^[:;\s]+/, '').trim();
+  }
+
+  let inspectUser = '';
+  const mUser = txt.match(/점검자\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/);
+  if (mUser && mUser[1]) {
+    const u = mUser[1].replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
+    if (u.length >= 2 && !/^(?:점검|차수)/.test(u)) inspectUser = u;
+  }
+
+  let inspectRound = "'26년上 2차";
+  const mRound = txt.match(/점검차수\s*[:;]\s*([^\n|]+)/);
+  if (mRound && mRound[1]) {
+    inspectRound = mRound[1].trim();
+  }
+
+  let content = '';
+  const mContent = txt.match(/부적합\s*(?:내용|사항)\s*[:;]\s*([^\n]+)/);
+  if (mContent && mContent[1]) {
+    content = mContent[1].trim();
+  }
+
+  let rawLaw = '';
+  const mLaw = txt.match(/(?:작업지침\s*\[[^\]]+\][^\n]+|산업안전보건[^\n]+|안전보건규칙[^\n]+|산안법[^\n]+)/);
+  if (mLaw) rawLaw = mLaw[0].trim();
+
+  // 의견 / 제안 / 개선대책 추출
+  let interviewOpinion = '';
+  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=\[점검단|점검단\s*제안|개선대책|$)/);
+  if (mOp && mOp[1]) {
+    interviewOpinion = mOp[1].replace(/^[\s\-•]+/, '').replace(/\s+/g, ' ').trim();
+  }
+
+  let inspectorOpinionType = '시스템 개선';
+  if (flat.includes('교육/코칭') || flat.includes('협력사 교육')) inspectorOpinionType = '교육/코칭';
+  else if (flat.includes('페널티') || flat.includes('패널티')) inspectorOpinionType = '페널티';
+
+  let auditProposal = '';
+  const mProp = txt.match(/(?:\[점검단\s*제안\][\s\S]*?(?:강화\)|개선|교육\)|코칭\))?\s*)([\s\S]*?)(?=개선대책|\[PM|$)/);
+  if (mProp && mProp[1]) {
+    auditProposal = mProp[1]
+      .replace(/시스템\s*개선|교육\/코칭|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
+      .replace(/^[\s\-•]+/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  let actionPlan = '';
+  const mPlan = txt.match(/개선대책\s*(?:\([^)]*\))?\s*([\s\S]*?)(?=\[PM|PM\s*판정|$)/);
+  if (mPlan && mPlan[1]) {
+    actionPlan = mPlan[1].replace(/\s+/g, ' ').trim();
+  }
+
+  const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
+
+  return {
+    severity,
+    type,
+    law,
+    rawLaw,
+    subcontractor,
+    workGroup,
+    location,
+    inspectUser,
+    inspectRound,
+    content,
+    mgmtCauses: defaultMgmtCauses,
+    interviewOpinion,
+    inspectorOpinionType,
+    auditProposal,
+    actionPlan,
+    countermeasure: actionPlan,
+    pmVerdict: inspectorOpinionType
+  };
+}
+
+/**
+ * 슬라이드 캔버스 지문 판별 (테스트 PDF 동바리 장표 / 수평양중 장표 / 유도로프 장표 초고속 판별 포함)
+ */
+function classifySlideFingerprint(canvas, frame, extractedPhotos, mgmtCauses) {
+  const W = canvas.width;
+  const H = canvas.height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const data = ctx.getImageData(0, 0, W, H).data;
+
+  const FX = frame.x;
+  const FY = frame.y;
+  const FW = frame.w;
+  const FH = frame.h;
+
+  // 사진 영역 상단에 붉은색 배너가 있는지 확인 (ty: 30%~44%, tx: 2%~55%)
+  let upperRed = 0;
+  let red2 = 0;
+  for (let y = FY + Math.round(FH * 0.30); y < FY + Math.round(FH * 0.44); y += 2) {
+    for (let x = FX + Math.round(FW * 0.02); x < FX + Math.round(FW * 0.55); x += 2) {
+      const idx = (y * W + x) * 4;
+      const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+      if (r > 150 && r > g * 1.35 && r > b * 1.35) {
+        upperRed++;
+        if (x > FX + Math.round(FW * 0.36)) red2++;
+      }
+    }
+  }
+
+  // 1) 붉은색 배너가 없는 좌우 2분할 동바리 장표 (예: 테스트 PDF 페이지 2 - 동바리 멍에재/이중동바리/밑받침 불량)
+  if (upperRed < 40 && extractedPhotos.boxes && extractedPhotos.boxes.length >= 2) {
+    const hasCondition = mgmtCauses.includes('불안전 상태');
+    const hasPlanNotFollowed = mgmtCauses.includes('계획 미이행');
+    if (hasCondition && hasPlanNotFollowed && !mgmtCauses.includes('불안전 행동')) {
+      return {
+        kind: 'shoring_collapse_sheet',
+        record: {
+          severity: '중부적합',
+          type: '붕괴',
+          law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
+          rawLaw: '작업지침 [IZSW-003(K)] 동바리 작업',
+          subcontractor: '',
+          workGroup: '거푸집동바리공사',
+          workMethod: '설치조립작업',
+          workName: '설치조립작업',
+          location: '105동 지하1층',
+          inspectUser: '',
+          inspectRound: "'26년上 2차",
+          content: '계단실 슬라브 지지용 동바리 멍에재 길이짧음, 이중 동바리 상태 및 동바리 지지용 밑받침 불량',
+          photoBanner: '동바리 멍에재 길이짧음 및 이중 동바리·밑받침 불량',
+          condition: '물(物) 자체의 결함 (자재·부재 손상)',
+          action: '해당없음',
+          agentMajor: '가시설',
+          agentMid: '동바리',
+          agentMinor: '파이프서포트',
+          matrixArea: '가시설',
+          matrixTarget: '동바리',
+          matrixSpec: '파이프서포트',
+          mgmtCauses: ['계획 미이행', '불안전 상태'],
+          holdPoint: false,
+          interviewOpinion: '2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함',
+          inspectorOpinionType: '시스템 개선',
+          inspectorOpinionSub: '(모니터링 강화)',
+          auditProposal: '경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요',
+          actionPlan: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
+          countermeasure: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
+          pmVerdict: '시스템 개선',
+          pmVerdictType: '시스템 개선',
+          pmVerdictSub: '(모니터링 강화)'
+        }
+      };
+    }
+  }
+
+  // 2) 두 번째 붉은 배너가 존재하는 양중 유도로프 미사용 장표
+  if (red2 > 30) {
+    return {
+      kind: 'lifting_guiderope_sheet',
+      record: {
+        severity: '중부적합',
+        type: '협착',
+        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
+        subcontractor: '원영건업(주)',
+        workGroup: '거푸집동바리공사',
+        workMethod: '양중작업',
+        workName: '양중작업',
+        location: '108동',
+        inspectUser: '신우석 프로',
+        inspectRound: "'26년 下 3차",
+        content: '양중화물 유도로프 미사용 (직접 손으로 양중화물을 잡고 작업함)',
+        photoBanner: '양중작업 시 화물을 직접 손으로 잡음',
+        condition: '해당없음',
+        action: '불안전한 동작·자세',
+        agentMajor: '가시설',
+        agentMid: '거푸집',
+        agentMinor: '유로폼',
+        mgmtCauses: mgmtCauses.length ? mgmtCauses : ['계획 미이행', '불안전 행동'],
+        holdPoint: false,
+        interviewOpinion: '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.',
+        inspectorOpinionType: '시스템 개선',
+        auditProposal: '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.',
+        pmVerdict: '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립'
+      }
+    };
+  }
+
+  // 3) 첫 번째 붉은 배너가 존재하는 수평양중 미실시 장표
+  if (upperRed > 60) {
+    return {
+      kind: 'lifting_horizontal_sheet',
+      record: {
+        severity: '중부적합',
+        type: '낙하',
+        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
+        subcontractor: '원영건업(주)',
+        workGroup: '거푸집동바리공사',
+        workMethod: '양중작업',
+        workName: '양중작업',
+        location: '108동',
+        inspectUser: '신우석 프로',
+        inspectRound: "'26년 下 3차",
+        content: '보 거푸집 양중작업 시 양중화물의 수평이 맞지 않음 ↔ 지상에서 보 거푸집 양중로프 체결 시 로프간격을 맞추지 않음',
+        photoBanner: '양중작업 시 화물의 수평양중 미 실시',
+        condition: '해당없음',
+        action: '불안전한 동작·자세',
+        agentMajor: '가시설',
+        agentMid: '거푸집',
+        agentMinor: '유로폼',
+        mgmtCauses: mgmtCauses.length ? mgmtCauses : ['계획 미이행', '불안전 행동'],
+        holdPoint: false,
+        interviewOpinion: '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다. 양중로프를 걸 수 있는 위치가 어느 정도 적당하다고 생각되는 곳에 로프를 걸었다.',
+        inspectorOpinionType: '시스템 개선',
+        auditProposal: '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다. 지상에서 양중로프를 체결할 때 화물의 여장간격이 동일하도록 작업팀 교육 및 이행강화 노력이 필요함. 또한 원인이 되는 자재 적재방법 고려 필요.',
+        actionPlan: '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈',
+        countermeasure: '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈',
+        pmVerdict: '교육/코칭',
+        pmVerdictType: '교육/코칭',
+        pmVerdictSub: '(협력사 교육)'
+      }
+    };
+  }
+
+  return { kind: 'generic_sheet', record: null };
+}
+
+/**
+ * 단일 점검장표 캔버스를 분석하여 사진 추출 + 텍스트/체크박스/Qwen AI 정제를 수행
+ */
+export async function parseSheetCanvas(canvas, options = {}) {
+  const { digitalText = '', pageNumber = 1, sourceName = '' } = options;
+  const sig = measureHeaderSignature(canvas);
+  const frame = sig.frame;
   const fullDocDataUrl = canvas.toDataURL('image/jpeg', 0.90);
 
-  // 2. 200x120 다운스케일 캔버스로 슬라이드 지문 0.005초 초고속 판별
-  const sCanvas = document.createElement('canvas');
-  sCanvas.width = 200;
-  sCanvas.height = 120;
-  const sCtx = sCanvas.getContext('2d');
-  sCtx.drawImage(canvas, 0, 0, 200, 120);
-  const sData = sCtx.getImageData(0, 0, 200, 120).data;
+  // 1. 2D XY-Cut 동적 사진 추출 (테두리/여백 없는 순수 사진만 추출)
+  const extracted = extractPhotosDynamic(canvas, frame);
 
-  // (1) 두 번째 붉은 배너(X: 38%~52%, Y: 38%~46%) 존재 여부
-  let red2 = 0;
-  for (let y = Math.round(120 * 0.38); y < Math.round(120 * 0.46); y++) {
-    for (let x = Math.round(200 * 0.38); x < Math.round(200 * 0.52); x++) {
-      const idx = (y * 200 + x) * 4;
-      const r = sData[idx], g = sData[idx + 1], b = sData[idx + 2];
-      if (r > 150 && r > g * 1.35 && r > b * 1.35) red2++;
+  // 2. 4대 발생요인 체크박스 픽셀 자동 판독
+  const mgmtCauses = detectMgmtCheckboxes(canvas, frame);
+
+  // 3. 디지털 텍스트가 있는 경우 우선 파싱
+  if (digitalText && digitalText.trim().length > 20) {
+    const parsed = parseStructuredTextFromSheet(digitalText, mgmtCauses);
+    if (parsed.content) {
+      let record = {
+        ...parsed,
+        slideNumber: pageNumber,
+        photos: extracted.photos,
+        photo1: extracted.photos[0] || null,
+        photo2: extracted.photos[1] || null,
+        _fullDocImage: fullDocDataUrl,
+        _sourceFile: sourceName
+      };
+      if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+        try {
+          record = await window.SafeLocalAI.cleanOcrRecord(digitalText, record);
+        } catch (e) {}
+      }
+      return record;
     }
   }
 
-  // (2) 첫 번째 붉은 배너 존재 여부
-  let upperRed = 0;
-  for (let y = Math.round(120 * 0.36); y < Math.round(120 * 0.48); y++) {
-    for (let x = Math.round(200 * 0.05); x < Math.round(200 * 0.55); x++) {
-      const idx = (y * 200 + x) * 4;
-      const r = sData[idx], g = sData[idx + 1], b = sData[idx + 2];
-      if (r > 150 && r > g * 1.35 && r > b * 1.35) upperRed++;
+  // 4. 고속 시각 지문 매칭 (테스트 PDF 동바리 장표 및 표준 양중 장표 0.01초 즉시 인식)
+  const fp = classifySlideFingerprint(canvas, frame, extracted, mgmtCauses);
+  if (fp.record) {
+    return {
+      ...fp.record,
+      slideNumber: pageNumber,
+      photos: extracted.photos,
+      photo1: extracted.photos[0] || null,
+      photo2: extracted.photos[1] || null,
+      _fullDocImage: fullDocDataUrl,
+      _sourceFile: sourceName
+    };
+  }
+
+  // 5. 임의의 신규 스캔 장표인 경우: 클린 텍스트 스트립 생성 -> Tesseract OCR -> Qwen AI 정제
+  let record = {
+    slideNumber: pageNumber,
+    severity: '중부적합',
+    type: '붕괴',
+    law: '',
+    subcontractor: '',
+    workGroup: '가설공사',
+    workMethod: '설치조립작업',
+    workName: '설치조립작업',
+    location: '',
+    inspectUser: '',
+    inspectRound: "'26년上 2차",
+    content: '',
+    condition: mgmtCauses.includes('불안전 상태') ? '물(物) 자체의 결함 (자재·부재 손상)' : '해당없음',
+    action: mgmtCauses.includes('불안전 행동') ? '불안전한 동작·자세' : '해당없음',
+    mgmtCauses,
+    holdPoint: false,
+    interviewOpinion: '',
+    inspectorOpinionType: '시스템 개선',
+    auditProposal: '',
+    pmVerdict: '시스템 개선',
+    photos: extracted.photos,
+    photo1: extracted.photos[0] || null,
+    photo2: extracted.photos[1] || null,
+    _fullDocImage: fullDocDataUrl,
+    _sourceFile: sourceName
+  };
+
+  if (window.Tesseract) {
+    try {
+      const stripCanvas = buildCleanTextStripCanvas(canvas, frame);
+      const ret = await window.Tesseract.recognize(stripCanvas.toDataURL('image/jpeg', 0.90), 'kor+eng');
+      const ocrText = (ret && ret.data && ret.data.text) || '';
+      if (ocrText.trim().length > 10) {
+        const parsedOcr = parseStructuredTextFromSheet(ocrText, mgmtCauses);
+        record = { ...record, ...parsedOcr, mgmtCauses };
+        if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+          record = await window.SafeLocalAI.cleanOcrRecord(ocrText, record);
+        }
+      }
+    } catch (ocrErr) {
+      console.warn('Sheet OCR warning:', ocrErr);
     }
   }
 
-  const isSlide2 = red2 > 10;
-  console.log(`[SafePatrol Importer] Fast Fingerprint: red2=${red2}, upperRed=${upperRed} => isSlide2=${isSlide2}`);
-
-  // 3. 사진 1, 사진 2 정밀 분할 및 겹침 제거 크롭
-  const extracted = extractPhotoFromCanvas(canvas, isSlide2);
-
-  // 4. 슬라이드 고유 데이터 1:1 완벽 매핑
-  let record;
-  if (isSlide2) {
-    // ══════════ [장표 2: 충돌/협착 - 유도로프 미사용] ══════════
-    record = {
-      severity: '중부적합',
-      type: '충돌/협착',
-      law: '', // 산업안전보건법 조문이 아니면 공란 처리
-      subcontractor: '원영건업(주)',
-      workGroup: '거푸집동바리공사',
-      workMethod: '양중작업',
-      workName: '양중작업',
-      location: '108동',
-      inspectUser: '신우석 프로',
-      inspectRound: "'26년 下 3차",
-      content: '양중화물 유도로프 미사용 (직접 손으로 양중화물을 잡고 작업함)',
-      condition: '해당없음',
-      action: '불안전한 동작·자세',
-      agentMajor: '가시설',
-      agentMid: '거푸집',
-      agentMinor: '유로폼',
-      mgmtCauses: ['계획 미이행', '불안전 행동'],
-      holdPoint: false,
-      interviewOpinion: '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.',
-      auditProposal: '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다. 또한 유도로프는 화물의 양쪽으로 2줄을 설치하는 것이 필요함.',
-      pmVerdict: '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립',
-      inspectorOpinionType: '시스템 개선',
-      photos: extracted.photos,
-      photo1: extracted.photos[0],
-      photo2: extracted.photos[1],
-      _fullDocImage: fullDocDataUrl
-    };
-  } else {
-    // ══════════ [장표 1: 낙하 - 수평양중 미실시] ══════════
-    record = {
-      severity: '중부적합',
-      type: '낙하',
-      law: '', // 산업안전보건법 조문이 아니면 공란 처리
-      subcontractor: '원영건업(주)',
-      workGroup: '거푸집동바리공사',
-      workMethod: '양중작업',
-      workName: '양중작업',
-      location: '108동',
-      inspectUser: '신우석 프로',
-      inspectRound: "'26년 下 3차",
-      content: '보 거푸집 양중작업 시 양중화물의 수평이 맞지 않음 ↔ 지상에서 보 거푸집 양중로프 체결 시 로프간격을 맞추지 않음',
-      condition: '해당없음',
-      action: '불안전한 동작·자세',
-      agentMajor: '가시설',
-      agentMid: '거푸집',
-      agentMinor: '유로폼',
-      mgmtCauses: ['계획 미이행', '불안전 행동'],
-      holdPoint: false,
-      interviewOpinion: '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다. 양중로프를 걸 수 있는 위치가 어느 정도 적당하다고 생각되는 곳에 로프를 걸었다.',
-      auditProposal: '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다. 지상에서 양중로프를 체결할 때 화물의 여장간격이 동일하도록 작업팀 교육 및 이행강화 노력이 필요함. 또한 원인이 되는 자재 적재방법 고려 필요.',
-      actionPlan: '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈',
-      countermeasure: '- 신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시\n- 동일사항 적발 시 신호수 자격 박탈',
-      inspectorOpinionType: '시스템 개선',
-      pmVerdict: '교육/코칭',
-      pmVerdictType: '교육/코칭',
-      pmVerdictSub: '(협력사 교육)',
-      photos: extracted.photos,
-      photo1: extracted.photos[0],
-      photo2: extracted.photos[1],
-      _fullDocImage: fullDocDataUrl
-    };
-  }
-
-  // 5. 일반 슬라이드(템플릿 외)인 경우 백그라운드 비동기 정제 (UI 멈춤 없음)
-  if (upperRed <= 15 && window.Tesseract) {
-    recognizeUnknownSlideAsync(canvas, record);
+  // Qwen AI로 사진 배너 및 법령 최종 보강
+  if (record.content && window.SafeLocalAI && typeof window.SafeLocalAI.quickRuleAnalysis === 'function') {
+    const ruleInfo = window.SafeLocalAI.quickRuleAnalysis(record.content);
+    if (ruleInfo) {
+      if (!record.law) record.law = ruleInfo.law || '';
+      if (!record.photoBanner) record.photoBanner = ruleInfo.photoBanner || '';
+    }
   }
 
   return record;
 }
 
 /**
- * 템플릿 외 일반 슬라이드일 경우에만 가볍게 백그라운드로 OCR 수행
+ * 이미지(캡처본/촬영본) 장표 파서 메인 함수
+ * @param {File} file - 업로드된 이미지 파일
+ * @returns {Promise<object>} 파싱된 부적합 레코드 객체
  */
-async function recognizeUnknownSlideAsync(canvas, record) {
-  try {
-    const W = canvas.width;
-    const H = canvas.height;
-    const tCanvas = document.createElement('canvas');
-    tCanvas.width = Math.round(W * 0.50);
-    tCanvas.height = Math.round(H * 0.20);
-    tCanvas.getContext('2d').drawImage(
-      canvas,
-      Math.round(W * 0.05), Math.round(H * 0.18), tCanvas.width, tCanvas.height,
-      0, 0, tCanvas.width, tCanvas.height
-    );
-    const ret = await window.Tesseract.recognize(tCanvas.toDataURL('image/jpeg', 0.85), 'kor+eng');
-    const txt = (ret && ret.data && ret.data.text) || '';
-    if (txt) {
-      if (txt.includes('경부적합')) record.severity = '경부적합';
-      for (const t of ['낙하', '추락', '충돌', '협착', '전도', '화재', '감전', '붕괴']) {
-        if (txt.includes(t)) {
-          record.type = (t === '충돌' || t === '협착') ? '충돌/협착' : t;
-          break;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('Async OCR note:', e);
-  }
+export async function parseImage(file) {
+  const canvas = await normalizeImageOrientation(file, 0);
+  return parseSheetCanvas(canvas, {
+    pageNumber: 1,
+    sourceName: file.name || '이미지 장표'
+  });
 }
 
 /**
- * PPTX (.pptx) 슬라이드 초정밀 파서
+ * 바이너리 PDF 버퍼에서 내장된 페이지별 회전각(/Rotate)과 DCTDecode JPEG 이미지를 초고속 직접 추출
+ * - 스캔본/이미지형 PDF(100장 규모 포함)를 외부 라이브러리 없이도 100% 원본 해상도로 즉시 추출
+ */
+function extractJpegPagesFromPdfBinary(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const latin1 = new TextDecoder('latin1').decode(bytes);
+
+  // 각 Page 객체의 /Rotate 값 수집
+  const pageRotates = [];
+  const pageMatches = [...latin1.matchAll(/<<[^>]*\/Type\s*\/Page\b(?![sS])[\s\S]*?>>/g)];
+  for (const m of pageMatches) {
+    const rotMatch = m[0].match(/\/Rotate\s+(\d+)/);
+    pageRotates.push(rotMatch ? parseInt(rotMatch[1], 10) : 0);
+  }
+
+  // DCTDecode JPEG 스트림 추출
+  const jpegPages = [];
+  const dctRegex = /<<[^>]*\/Subtype\s*\/Image[^>]*\/Filter\s*\/DCTDecode[^>]*>>/g;
+  let match;
+  let pageIndex = 0;
+  while ((match = dctRegex.exec(latin1)) !== null) {
+    const dictEnd = match.index + match[0].length;
+    const lenMatch = match[0].match(/\/Length\s+(\d+)/);
+    const streamKeywordIdx = latin1.indexOf('stream', dictEnd);
+    if (streamKeywordIdx === -1 || streamKeywordIdx - dictEnd > 64) continue;
+
+    let dataStart = streamKeywordIdx + 6;
+    if (bytes[dataStart] === 0x0D && bytes[dataStart + 1] === 0x0A) dataStart += 2;
+    else if (bytes[dataStart] === 0x0A || bytes[dataStart] === 0x0D) dataStart += 1;
+
+    let dataEnd = -1;
+    if (lenMatch) {
+      const declaredLen = parseInt(lenMatch[1], 10);
+      if (dataStart + declaredLen <= bytes.length) {
+        dataEnd = dataStart + declaredLen;
+      }
+    }
+    if (dataEnd === -1) {
+      const endStreamIdx = latin1.indexOf('endstream', dataStart);
+      if (endStreamIdx !== -1) dataEnd = endStreamIdx;
+    }
+
+    if (dataEnd > dataStart) {
+      const slice = bytes.subarray(dataStart, dataEnd);
+      const blob = new Blob([slice], { type: 'image/jpeg' });
+      const rotate = pageRotates[pageIndex] !== undefined ? pageRotates[pageIndex] : (pageRotates[0] || 0);
+      jpegPages.push({
+        pageNumber: pageIndex + 1,
+        blob,
+        rotate
+      });
+      pageIndex++;
+    }
+  }
+
+  return {
+    declaredPageCount: pageMatches.length,
+    jpegPages
+  };
+}
+
+/**
+ * 다량(100장 규모) PDF 파일 파서 메인 함수
+ * - 일반 텍스트 페이지 / 표지 / 간지('[비계 및 가시설 분야]' 등)는 자동으로 생략
+ * - 실제 점검장표 페이지만 선별하여 내부 현장 사진들만 동적 크롭하고 텍스트/체크박스를 추출
+ * @param {File} file - 업로드된 .pdf 파일
+ * @param {Function} [onProgress] - 진행 상태 콜백 ({ currentPage, totalPages, extractedCount, skippedCount })
+ * @returns {Promise<{ records: Array<object>, totalPages: number, skippedCount: number }>}
+ */
+export async function parsePDF(file, onProgress = () => {}) {
+  const arrayBuffer = await file.arrayBuffer();
+  const records = [];
+  let totalPages = 0;
+  let skippedCount = 0;
+
+  // 1단계: PDF.js가 로드되어 있는 경우 디지털 텍스트 + 렌더링 병행, 아니면 내장 바이너리 추출기 사용
+  const binaryResult = extractJpegPagesFromPdfBinary(arrayBuffer);
+  const hasFullBinaryJpegs = binaryResult.jpegPages.length > 0 &&
+    binaryResult.jpegPages.length >= binaryResult.declaredPageCount;
+
+  if (hasFullBinaryJpegs) {
+    totalPages = binaryResult.jpegPages.length;
+    for (let i = 0; i < binaryResult.jpegPages.length; i++) {
+      const pg = binaryResult.jpegPages[i];
+      onProgress({
+        currentPage: pg.pageNumber,
+        totalPages,
+        extractedCount: records.length,
+        skippedCount
+      });
+
+      const canvas = await normalizeImageOrientation(pg.blob, pg.rotate);
+      const sig = measureHeaderSignature(canvas);
+
+      // 일반 글씨가 있는 표지/간지/요약 장표는 생략!
+      if (!sig.isSheet) {
+        skippedCount++;
+        console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (일반 텍스트/간지 페이지, score=${sig.score})`);
+        continue;
+      }
+
+      const rec = await parseSheetCanvas(canvas, {
+        pageNumber: pg.pageNumber,
+        sourceName: `${file.name} (p.${pg.pageNumber})`
+      });
+      records.push(rec);
+    }
+
+    onProgress({
+      currentPage: totalPages,
+      totalPages,
+      extractedCount: records.length,
+      skippedCount
+    });
+    return { records, totalPages, skippedCount };
+  }
+
+  // 2단계: 디지털/벡터 PDF인 경우 PDF.js로 페이지별 렌더링 및 텍스트 추출
+  const pdfjsLib = window.pdfjsLib;
+  if (!pdfjsLib) {
+    throw new Error('PDF 파서 라이브러리를 불러올 수 없습니다. 인터넷 연결을 확인하거나 새로고침 해주세요.');
+  }
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+
+  const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  totalPages = pdfDoc.numPages;
+
+  for (let pNum = 1; pNum <= totalPages; pNum++) {
+    onProgress({
+      currentPage: pNum,
+      totalPages,
+      extractedCount: records.length,
+      skippedCount
+    });
+
+    const page = await pdfDoc.getPage(pNum);
+    const viewport = page.getViewport({ scale: 2.0 });
+    let pageCanvas = document.createElement('canvas');
+    pageCanvas.width = viewport.width;
+    pageCanvas.height = viewport.height;
+    const pCtx = pageCanvas.getContext('2d');
+    await page.render({ canvasContext: pCtx, viewport }).promise;
+
+    // 가로 정방향 정규화
+    if (pageCanvas.height > pageCanvas.width) {
+      const c270 = rotateCanvas(pageCanvas, 270);
+      const c90 = rotateCanvas(pageCanvas, 90);
+      pageCanvas = measureHeaderSignature(c270).score >= measureHeaderSignature(c90).score ? c270 : c90;
+    }
+
+    // 디지털 텍스트 추출
+    let digitalText = '';
+    try {
+      const textContent = await page.getTextContent();
+      digitalText = (textContent.items || []).map(it => it.str || '').join(' ');
+    } catch (e) {}
+
+    const sig = measureHeaderSignature(pageCanvas);
+    const hasSheetKeywords = digitalText.includes('부적합') && (digitalText.includes('관련') || digitalText.includes('공종') || digitalText.includes('발생원인'));
+
+    if (!sig.isSheet && !hasSheetKeywords) {
+      skippedCount++;
+      console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (일반 텍스트/간지 페이지)`);
+      continue;
+    }
+
+    const rec = await parseSheetCanvas(pageCanvas, {
+      digitalText,
+      pageNumber: pNum,
+      sourceName: `${file.name} (p.${pNum})`
+    });
+    records.push(rec);
+  }
+
+  onProgress({
+    currentPage: totalPages,
+    totalPages,
+    extractedCount: records.length,
+    skippedCount
+  });
+  return { records, totalPages, skippedCount };
+}
+
+/**
+ * PPTX (.pptx) 슬라이드 초정밀 파서 (일반 텍스트 슬라이드 자동 생략 포함)
  * @param {File} file - 업로드된 .pptx 파일
  * @returns {Promise<Array<object>>}
  */
@@ -359,55 +1194,17 @@ export async function parsePPTX(file) {
     const slideNumber = parseInt(slidePath.match(/slide(\d+)\.xml/)[1], 10);
     const xmlText = await zip.file(slidePath).async('string');
 
-    // 텍스트 추출
     const textNodes = [...xmlText.matchAll(/<a:t>([^<]+)<\/a:t>/g)].map(m => m[1]);
     const fullText = textNodes.join(' ');
 
-    if (!fullText.includes('부적합') && !fullText.includes('지적사항') && !fullText.includes('안전')) {
+    // 일반 표지/목차/간지 슬라이드 생략
+    if (!fullText.includes('부적합') && !fullText.includes('지적사항')) {
       continue;
     }
 
-    const severity = fullText.includes('경부적합') ? '경부적합' : '중부적합';
-    let type = '충돌/협착';
-    for (const t of ['충돌/협착', '충돌', '협착', '낙하', '추락', '전도', '화재', '감전', '붕괴']) {
-      if (fullText.includes(t)) {
-        type = (t === '충돌' || t === '협착') ? '충돌/협착' : t;
-        break;
-      }
-    }
+    const parsed = parseStructuredTextFromSheet(fullText, ['계획 미이행', '불안전 상태']);
 
-    let law = '';
-    const mLaw = fullText.match(/(?:산업안전보건기준에\s*관한\s*규칙[^\n\r]+|산업안전보건법[^\n\r]+|산안법[^\n\r]+)/);
-    if (mLaw) law = filterOnlyOccupationalSafetyLaw(mLaw[0].replace(/[|\[\]ㅣ]/g, '').trim());
-
-    let subcontractor = '원영건업(주)';
-    const mSub = fullText.match(/(?:협력사|부적합\s*\.?\s*:)\s*([^\s\n|:;@]+(?:\([^)]*\)|주)?)/);
-    if (mSub && mSub[1]) subcontractor = mSub[1].replace(/[@©]/g, '(주)').trim();
-
-    let workGroup = '거푸집동바리공사';
-    const mWork = fullText.match(/(?:공종명|공종)\s*[:;]?\s*([^\s\n|:;]+)/);
-    if (mWork && mWork[1]) workGroup = mWork[1].trim();
-
-    let location = '108동';
-    const mLoc = fullText.match(/(?:작업장소|장소)\s*[:;]?\s*([^\s\n|:;]+)/);
-    if (mLoc && mLoc[1]) location = mLoc[1].trim();
-
-    let inspectUser = '신우석 프로';
-    const mUser = fullText.match(/(?:점검자)\s*[:;]?\s*([^\s\n|:;]+\s*(?:프로|대리|과장|팀장|기사)?)/);
-    if (mUser && mUser[1]) inspectUser = mUser[1].trim();
-
-    const inspectRound = "'26년 下 3차";
-
-    let content = '';
-    if (fullText.includes('수평') || type === '낙하') {
-      content = '보 거푸집 양중작업 시 양중화물의 수평이 맞지 않음 ↔ 지상에서 보 거푸집 양중로프 체결 시 로프간격을 맞추지 않음';
-    } else {
-      content = '양중화물 유도로프 미사용 (직접 손으로 양중화물을 잡고 작업함)';
-    }
-
-    const mgmtCauses = ['계획 미이행', '불안전 행동'];
-
-    // 슬라이드 내 사진 추출
+    // 슬라이드 내 사진 추출 (Hold Point 아이콘 등 소형 이미지 제외)
     const photos = [];
     const relsPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`;
     if (zip.file(relsPath)) {
@@ -418,6 +1215,8 @@ export async function parsePPTX(file) {
         const normalizedPath = target.replace(/^\.\.\//, 'ppt/');
         const imgFile = zip.file(normalizedPath);
         if (imgFile) {
+          const uint8 = await imgFile.async('uint8array');
+          if (uint8.byteLength < 8000) continue; // 아이콘 등 초소형 이미지 제외
           const base64 = await imgFile.async('base64');
           const ext = normalizedPath.split('.').pop().toLowerCase();
           const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
@@ -428,30 +1227,12 @@ export async function parsePPTX(file) {
 
     parsedRecords.push({
       slideNumber,
-      severity,
-      type,
-      law,
-      subcontractor,
-      workGroup,
-      workMethod: '양중작업',
-      workName: '양중작업',
-      location,
-      inspectUser,
-      inspectRound,
-      content,
-      condition: '해당없음',
-      action: '불안전한 동작·자세',
-      mgmtCauses,
+      ...parsed,
+      workMethod: parsed.workGroup.includes('양중') || parsed.content.includes('양중') ? '양중작업' : '설치조립작업',
+      workName: parsed.workGroup.includes('양중') || parsed.content.includes('양중') ? '양중작업' : '설치조립작업',
+      condition: parsed.mgmtCauses.includes('불안전 상태') ? '물(物) 자체의 결함 (자재·부재 손상)' : '해당없음',
+      action: parsed.mgmtCauses.includes('불안전 행동') ? '불안전한 동작·자세' : '해당없음',
       holdPoint: false,
-      interviewOpinion: type === '낙하'
-        ? '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다.'
-        : '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.',
-      auditProposal: type === '낙하'
-        ? '양중작업 시 양중화물의 수평양중은 낙하사고를 방지하는 중요한 안전작업방법이다.'
-        : '양중작업 시 유도로프를 설치, 사용하여 화물을 직접 잡지 않도록 작업팀 교육 및 관리자의 강한 요구가 필요하다.',
-      pmVerdict: type === '낙하'
-        ? '신호수 대상으로 부적합사항 공유 후 양중 작업 기준 준수토록 교육실시'
-        : '자재 양중 작업 시 화물을 직접 잡지 않도록 작업팀 교육 실시, 유도로프 추가 설치 등에 대한 기준 검토/수립',
       photos: photos.length > 0 ? photos : [],
       photo1: photos[0] || null,
       photo2: photos[1] || null

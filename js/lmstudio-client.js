@@ -588,7 +588,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   }
 
   /**
-   * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원
+   * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원 (로컬 LM Studio + 24시간 클라우드 Qwen AI + 내장 규칙 하이브리드)
    */
   async function cleanOcrRecord(rawOcrText, fallbackRecord) {
     if (!rawOcrText || rawOcrText.trim().length < 10) return fallbackRecord;
@@ -597,18 +597,21 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 주어진 OCR 원문 텍스트에서 안전점검 항목을 정확히 추출하여 오직 유효한 JSON 하나만 반환하라.
 반드시 아래 JSON 키를 포함해야 한다:
 {
-  "subcontractor": "협력사명 (예: 원영건업(주))",
-  "workGroup": "공종명 (예: 거푸집동바리공사)",
-  "location": "작업장소 (예: 108동)",
-  "inspectUser": "점검자 (예: 신우석 프로)",
+  "subcontractor": "협력사명 (예: 원영건업(주), 미기재 시 빈 문자열)",
+  "workGroup": "공종명 (예: 거푸집동바리공사, 가설공사 등)",
+  "location": "작업장소 (예: 105동 지하1층, 108동 등)",
+  "inspectUser": "점검자 (예: 신우석 프로, 미기재 시 빈 문자열)",
   "inspectRound": "점검차수 (예: '26년 下 3차)",
   "content": "부적합 지적내용 전문",
+  "photoBanner": "핵심 부적합 요약 배너 (35자 이내)",
   "severity": "중부적합 또는 경부적합",
-  "type": "충돌/협착 또는 낙하 또는 추락 등",
-  "law": "관련 기준 또는 법규",
-  "mgmtCauses": ["계획 미이행", "불안전 행동" 등],
-  "interviewOpinion": "시공관리자/근로자 의견",
+  "type": "추락 또는 낙하 또는 붕괴 또는 충돌/협착 등",
+  "law": "관련 산업안전보건기준에 관한 규칙 조항",
+  "mgmtCauses": ["계획 미이행", "불안전 상태" 등],
+  "interviewOpinion": "시공자/관리자 의견",
   "auditProposal": "점검단 제안",
+  "actionPlan": "향후 조치계획",
+  "countermeasure": "재발방지대책",
   "pmVerdict": "PM 판정결과"
 }`;
 
@@ -616,7 +619,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     for (const ep of [currentEndpoint, ...DEFAULT_ENDPOINTS]) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 6000);
+        const timeout = setTimeout(() => ctrl.abort(), 3500);
         const res = await fetch(`${ep}/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -636,11 +639,52 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const data = await res.json();
           let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
           const parsed = extractJSON(text);
-          if (parsed && (parsed.content || parsed.subcontractor)) {
+          if (parsed && (parsed.content || parsed.subcontractor || parsed.location)) {
             return { ...fallbackRecord, ...parsed };
           }
         }
       } catch (e) {}
+    }
+
+    // 2. 24시간 클라우드 Qwen AI (Cloudflare Worker) 폴백 시도
+    try {
+      const workerUrl = root.SAFE_CONFIG && root.SAFE_CONFIG.workerUrl;
+      if (workerUrl) {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 4500);
+        const res = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `[OCR 텍스트 원문]:\n${rawOcrText}` }
+            ]
+          }),
+          signal: ctrl.signal
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const data = await res.json();
+          const parsed = data.result || extractJSON(data.content || data.text || '');
+          if (parsed && (parsed.content || parsed.location)) {
+            return { ...fallbackRecord, ...parsed };
+          }
+        }
+      }
+    } catch (e) {}
+
+    // 3. 내장 Qwen 안전법규 규칙 엔진으로 누락 필드 자동 보강
+    const baseText = (fallbackRecord && fallbackRecord.content) || rawOcrText;
+    const rule = quickRuleAnalysis(baseText);
+    if (rule && fallbackRecord) {
+      return {
+        ...fallbackRecord,
+        law: fallbackRecord.law || rule.law,
+        photoBanner: fallbackRecord.photoBanner || rule.photoBanner,
+        severity: fallbackRecord.severity || rule.severity,
+        type: fallbackRecord.type || rule.hazardType
+      };
     }
 
     return fallbackRecord;
