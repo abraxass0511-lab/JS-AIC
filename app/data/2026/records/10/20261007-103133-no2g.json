@@ -49,5 +49,7 @@
   ],
   "agentMajor": "소방시설",
   "agentMid": "소화시설",
-  "agentMinor": "분말소화기"
+  "agentMinor": "분말소화기",
+  "severity": "경부적합",
+  "holdPoint": false
 }

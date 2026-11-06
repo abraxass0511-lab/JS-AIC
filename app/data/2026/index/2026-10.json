@@ -103,7 +103,7 @@
         "불안전 행동",
         "불안전 상태"
       ],
-      "holdPoint": false,
+      "holdPoint": true,
       "interviewOpinion": "",
       "auditProposal": "",
       "pmVerdict": "",
@@ -230,7 +230,7 @@
         "계획 미수립",
         "불안전 상태"
       ],
-      "holdPoint": false,
+      "holdPoint": true,
       "interviewOpinion": "통로구간으로 자재를 운반하는 것에 대한 위함성을 인지하지 못했다. 즉시 설치하겠다.",
       "auditProposal": "통로구간에는 상부 방호선반이나 낙하물방지시설을 설치해야 함",
       "pmVerdict": "",
@@ -447,7 +447,9 @@
       ],
       "agentMajor": "가시설",
       "agentMid": "안전시설",
-      "agentMinor": "추락방지시설(안전대걸이시설)"
+      "agentMinor": "추락방지시설(안전대걸이시설)",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "송도1",
@@ -500,7 +502,9 @@
       ],
       "agentMajor": "소방시설",
       "agentMid": "소화시설",
-      "agentMinor": "분말소화기"
+      "agentMinor": "분말소화기",
+      "severity": "경부적합",
+      "holdPoint": false
     },
     {
       "site": "송도3",
@@ -553,7 +557,9 @@
       ],
       "agentMajor": "전기시설",
       "agentMid": "누전차단기",
-      "agentMinor": "가설전선/이동릴선"
+      "agentMinor": "가설전선/이동릴선",
+      "severity": "경부적합",
+      "holdPoint": false
     },
     {
       "site": "송도3",
@@ -606,7 +612,9 @@
       ],
       "agentMajor": "전기시설",
       "agentMid": "누전차단기",
-      "agentMinor": "가설전선/이동릴선"
+      "agentMinor": "가설전선/이동릴선",
+      "severity": "경부적합",
+      "holdPoint": false
     },
     {
       "site": "송도1",
@@ -658,7 +666,9 @@
       ],
       "agentMajor": "가시설",
       "agentMid": "안전시설",
-      "agentMinor": "추락방지시설(안전대걸이시설)"
+      "agentMinor": "추락방지시설(안전대걸이시설)",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "송도2",
@@ -711,7 +721,9 @@
       ],
       "agentMajor": "가시설",
       "agentMid": "거푸집",
-      "agentMinor": "갱폼"
+      "agentMinor": "갱폼",
+      "severity": "경부적합",
+      "holdPoint": false
     },
     {
       "site": "송도2",
@@ -765,7 +777,9 @@
       ],
       "agentMajor": "가시설",
       "agentMid": "거푸집",
-      "agentMinor": "갱폼"
+      "agentMinor": "갱폼",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "송도1",
@@ -818,7 +832,9 @@
       ],
       "agentMajor": "가시설",
       "agentMid": "동바리",
-      "agentMinor": "파이프서포트"
+      "agentMinor": "파이프서포트",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "송도1",
@@ -871,7 +887,9 @@
       ],
       "agentMajor": "건설장비",
       "agentMid": "생산장비",
-      "agentMinor": "펌프카"
+      "agentMinor": "펌프카",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "송도1",
@@ -921,7 +939,9 @@
       ],
       "agentMajor": "작업발판",
       "agentMid": "말비계",
-      "agentMinor": "말비계"
+      "agentMinor": "말비계",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "송도1",
@@ -971,7 +991,9 @@
       ],
       "agentMajor": "작업발판",
       "agentMid": "말비계",
-      "agentMinor": "말비계"
+      "agentMinor": "말비계",
+      "severity": "중부적합",
+      "holdPoint": true
     },
     {
       "site": "반포3",
@@ -1025,7 +1047,9 @@
       ],
       "agentMajor": "가시설",
       "agentMid": "안전시설",
-      "agentMinor": "추락방지시설(안전난간)"
+      "agentMinor": "추락방지시설(안전난간)",
+      "severity": "중부적합",
+      "holdPoint": true
     }
   ],
   "deletedIds": [

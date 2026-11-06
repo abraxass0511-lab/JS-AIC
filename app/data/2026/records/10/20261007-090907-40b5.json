@@ -46,5 +46,7 @@
   ],
   "agentMajor": "작업발판",
   "agentMid": "말비계",
-  "agentMinor": "말비계"
+  "agentMinor": "말비계",
+  "severity": "중부적합",
+  "holdPoint": true
 }

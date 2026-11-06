@@ -49,5 +49,7 @@
   ],
   "agentMajor": "가시설",
   "agentMid": "거푸집",
-  "agentMinor": "갱폼"
+  "agentMinor": "갱폼",
+  "severity": "경부적합",
+  "holdPoint": false
 }

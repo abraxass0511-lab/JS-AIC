@@ -286,11 +286,55 @@
   }
 
   /**
+   * 기존 등록 레코드의 중부적합 / 경부적합 판별 (severity 미지정 과거 데이터 자동 분류 포함)
+   */
+  function inferRecordSeverity(r) {
+    if (!r) return '경부적합';
+    if (r.severity === '중부적합') return '중부적합';
+    if (r.severity === '경부적합') return '경부적합';
+    if (r.holdPoint === true) return '중부적합';
+    const text = `${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.workName || ''} ${r.type || ''}`;
+    if (
+      text.includes('소화기') ||
+      text.includes('누전차단기') ||
+      text.includes('조도') ||
+      text.includes('전등') ||
+      text.includes('통로') ||
+      text.includes('위험표지') ||
+      (text.includes('방치') && !text.includes('추락') && !text.includes('안전대') && !text.includes('난간'))
+    ) {
+      return '경부적합';
+    }
+    if (
+      text.includes('추락') ||
+      text.includes('양중') ||
+      text.includes('안전대') ||
+      text.includes('생명줄') ||
+      text.includes('안전벨트') ||
+      text.includes('선해체') ||
+      text.includes('선헤체') ||
+      text.includes('동바리') ||
+      text.includes('펌프카') ||
+      text.includes('말비계') ||
+      text.includes('비계') ||
+      text.includes('안전난간') ||
+      text.includes('낙하물방지') ||
+      text.includes('밀폐') ||
+      text.includes('지게차') ||
+      text.includes('붕괴') ||
+      text.includes('도괴')
+    ) {
+      return '중부적합';
+    }
+    return r.status !== '조치완료' ? '중부적합' : '경부적합';
+  }
+
+  /**
    * 레코드로부터 점검장표용 세부 데이터 정규화 및 추론 (템플릿 1, 2 정밀 일치)
    */
   function normalizeJangpyoData(r, rulesFromTaxonomy = [], options = {}) {
-    const isMajor = r.severity === '중부적합';
-    const severity = isMajor ? '중부적합' : '경부적합';
+    const severity = inferRecordSeverity(r);
+    const isMajor = severity === '중부적합';
     const type = r.type || '충돌/협착';
 
     // 사고유형 파싱 및 포맷팅 (사용자 지시 2: 22대 재해발생 형태 표준 목록 매핑)
@@ -322,7 +366,7 @@
       }
     }
 
-    const isHoldPoint = r.holdPoint || (typeof r.content === 'string' && r.content.includes('Hold'));
+    const isHoldPoint = isMajor ? true : Boolean(r.holdPoint || (typeof r.content === 'string' && r.content.includes('Hold')));
 
     // 관련 법령 및 수칙 내용 (사용자 지시 3: "관련 기준을 '안전보건규칙 제//조'로 간단하게 변경")
     let rawLawTitle = r.law || (r.basis && r.basis.law) || '';
@@ -1822,6 +1866,7 @@
     generateInspectionSheetPPT,
     renderInspectionSheetHTML,
     normalizeJangpyoData,
+    inferRecordSeverity,
     addInspectionSheetSlide,
     generatePresentation,
     extractInsights

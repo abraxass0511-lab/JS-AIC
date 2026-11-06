@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261018_1';
+import { store } from './store.js?v=20261106_v3';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_solid_v10';
@@ -2510,6 +2510,26 @@ function bindEvents() {
   $('#txtEduEndDate')?.addEventListener('change', () => populateEduOptions());
   $('#selEduRecord')?.addEventListener('change', () => updateEduPreview());
 
+  async function switchSelectedEduTemplate(newSeverity) {
+    const sel = $('#selEduRecord');
+    const recordId = sel?.value;
+    if (!recordId) return;
+    const rec = currentEduRecords.find(r => r.id === recordId) || currentLoadedRecords.find(r => r.id === recordId);
+    if (!rec) return;
+    await store.updateRecordSeverity(rec, newSeverity);
+    const isMajor = newSeverity === '중부적합';
+    const sevLabel = isMajor ? '🚨중부적합' : '⚠️경부적합';
+    const opt = sel.querySelector(`option[value="${recordId}"]`);
+    if (opt) {
+      opt.textContent = `[${rec.site || '현장'}] [${sevLabel}] ${rec.content || ''} (${rec.location || '-'}, ${rec.inspectedDate || ''})`;
+    }
+    await updateEduPreview();
+    toast(`선택 항목이 [${newSeverity}] 신규 장표 양식으로 변경 및 저장되었습니다.`, 'success', 2200);
+  }
+
+  $('#btnSwitchMajorTemplate')?.addEventListener('click', () => switchSelectedEduTemplate('중부적합'));
+  $('#btnSwitchMinorTemplate')?.addEventListener('click', () => switchSelectedEduTemplate('경부적합'));
+
   // ── 엑셀/PPT 내보내기 기간 선택 모드 전환 (전체 vs 월별 vs 직접지정) ──
   $('#btnExportModeAll')?.addEventListener('click', () => {
     exportPeriodMode = 'all';
@@ -3907,6 +3927,25 @@ async function updateEduPreview() {
     }
   }
 
+  const inferredSev = (window.SafePPT && typeof window.SafePPT.inferRecordSeverity === 'function')
+    ? window.SafePPT.inferRecordSeverity(rec)
+    : (rec.severity === '중부적합' || (!rec.severity && rec.status !== '조치완료') ? '중부적합' : '경부적합');
+  const isMajorRec = inferredSev === '중부적합';
+  const badgeEl = $('#eduCurrentTemplateBadge');
+  if (badgeEl) {
+    badgeEl.textContent = isMajorRec ? '🚨 중부적합 장표 양식 (Hold Point 포함)' : '⚠️ 경부적합 장표 양식 (위험성평가표 포함)';
+    badgeEl.style.background = isMajorRec ? '#fee2e2' : '#fef3c7';
+    badgeEl.style.color = isMajorRec ? '#b91c1c' : '#b45309';
+  }
+  const btnMajor = $('#btnSwitchMajorTemplate');
+  const btnMinor = $('#btnSwitchMinorTemplate');
+  if (btnMajor && btnMinor) {
+    btnMajor.style.background = isMajorRec ? '#dc2626' : '#fef2f2';
+    btnMajor.style.color = isMajorRec ? '#ffffff' : '#b91c1c';
+    btnMinor.style.background = !isMajorRec ? '#d97706' : '#fffbeb';
+    btnMinor.style.color = !isMajorRec ? '#ffffff' : '#b45309';
+  }
+
   if (window.SafePPT && window.SafePPT.renderInspectionSheetHTML) {
     const html = window.SafePPT.renderInspectionSheetHTML(rec, {
       photo1Url,
@@ -3976,7 +4015,10 @@ async function populateEduOptions(targetRecordId = null) {
   }
 
   sel.innerHTML = records.map(r => {
-    const isMajor = r.severity === '중부적합';
+    const sevVal = (window.SafePPT && typeof window.SafePPT.inferRecordSeverity === 'function')
+      ? window.SafePPT.inferRecordSeverity(r)
+      : (r.severity === '중부적합' || (!r.severity && r.status !== '조치완료') ? '중부적합' : '경부적합');
+    const isMajor = sevVal === '중부적합';
     const sev = isMajor ? '🚨중부적합' : '⚠️경부적합';
     const title = `[${r.site || '현장'}] [${sev}] ${r.content || ''} (${r.location || '-'}, ${r.inspectedDate || ''})`;
     return `<option value="${r.id}">${title}</option>`;
@@ -4376,7 +4418,10 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
     if (thisSeq !== listRenderSeq) return;
 
     const isFixed = r.status === '조치완료';
-    const isMajor = r.severity === '중부적합' || (!r.severity && r.status !== '조치완료');
+    const sevVal = (window.SafePPT && typeof window.SafePPT.inferRecordSeverity === 'function')
+      ? window.SafePPT.inferRecordSeverity(r)
+      : (r.severity === '중부적합' || (!r.severity && r.status !== '조치완료') ? '중부적합' : '경부적합');
+    const isMajor = sevVal === '중부적합';
     const agent = resolveAgent(r);
     const accType = mapType(r.type);
     const opType = getOpType(r);

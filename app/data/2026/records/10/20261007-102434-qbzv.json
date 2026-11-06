@@ -49,5 +49,7 @@
   ],
   "agentMajor": "전기시설",
   "agentMid": "누전차단기",
-  "agentMinor": "가설전선/이동릴선"
+  "agentMinor": "가설전선/이동릴선",
+  "severity": "경부적합",
+  "holdPoint": false
 }

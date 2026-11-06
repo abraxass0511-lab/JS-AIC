@@ -19,7 +19,7 @@
   <script src="js/classifier.js?v=20261018_1"></script>
   <script src="js/excel-builder.js?v=20261024_2"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-generator.js?v=20261106_major_minor_templates"></script>
+  <script src="js/ppt-generator.js?v=20261106_v3"></script>
   <script src="js/lmstudio-client.js?v=20261101_concrete_defect"></script>
 </head>
 <body>
@@ -709,9 +709,16 @@
         </div>
 
         <!-- 16:9 점검장표 실시간 미리보기 컨테이너 -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-size: 0.84rem; font-weight: 700; color: var(--gray-800);">🖥️ 점검장표 PPT 슬라이드 실시간 미리보기 (16:9 와이드)</span>
-          <span style="font-size: 0.74rem; color: #475569;">※ 맑은 고딕 서식 및 실제 다운로드되는 PPT와 동일</span>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 0.84rem; font-weight: 700; color: var(--gray-800);">🖥️ 점검장표 PPT 양식:</span>
+            <span id="eduCurrentTemplateBadge" style="font-size: 0.8rem; font-weight: 800; padding: 3px 10px; border-radius: 999px; background: #fee2e2; color: #b91c1c;">🚨 중부적합 장표 양식</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 0.75rem; color: #475569; font-weight: 600;">양식 전환:</span>
+            <button type="button" id="btnSwitchMajorTemplate" class="btn btn-sm" style="padding: 4px 10px; font-size: 0.76rem; font-weight: 700; border-radius: 6px; border: 1px solid #dc2626; background: #fef2f2; color: #b91c1c; cursor: pointer;">🚨 중부적합 양식</button>
+            <button type="button" id="btnSwitchMinorTemplate" class="btn btn-sm" style="padding: 4px 10px; font-size: 0.76rem; font-weight: 700; border-radius: 6px; border: 1px solid #d97706; background: #fffbeb; color: #b45309; cursor: pointer;">⚠️ 경부적합 양식</button>
+          </div>
         </div>
         <div id="eduPreviewWrapper" style="overflow-x: auto; background: #1e293b; padding: 16px; border-radius: 8px; margin-bottom: 14px; box-shadow: inset 0 2px 6px rgba(0,0,0,0.3); -webkit-overflow-scrolling: touch;">
           <div id="eduContainer" style="min-width: 880px; width: 100%; max-width: 1040px; margin: 0 auto;"></div>
@@ -1141,6 +1148,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261106_major_minor_templates"></script>
+  <script type="module" src="js/app.js?v=20261106_v3"></script>
 </body>
 </html>
