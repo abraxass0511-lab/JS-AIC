@@ -366,7 +366,8 @@
       }
     }
 
-    const isHoldPoint = isMajor ? true : Boolean(r.holdPoint || (typeof r.content === 'string' && r.content.includes('Hold')));
+    const holdPointCode = (r.holdPointCode || '').trim();
+    const isHoldPoint = Boolean(holdPointCode && r.holdPoint);
 
     // 관련 법령 및 수칙 내용 (사용자 지시 3: "관련 기준을 '안전보건규칙 제//조'로 간단하게 변경")
     let rawLawTitle = r.law || (r.basis && r.basis.law) || '';
@@ -558,7 +559,6 @@
     // 사진 상단 직접 행동 문구 (사용자 지시: 이미지 4, 5번 기반 구체적 미준수 행동 직시)
     const photoBanner = extractDirectAction(r);
     const photo2Banner = extractDirectAction2(r, photoBanner);
-    const holdPointCode = r.holdPointCode || '21-3';
     const greenBanner = r.greenBanner || '';
 
     return {
@@ -871,18 +871,10 @@
     }
 
     // ── [중앙 컬럼] Hold Point 위반 박스 + 하단 그림 공간 확보 + 초록색 음영 박스 (x = 5.9202, w = 2.2594) ──
-    // 1) Hold Point 위반 표 (TABLE #3: x = 5.9202, y = 2.3772, w = 2.2594, h = 0.4039, 상단/좌측/우측 0.5pt 테두리)
-    slide.addShape(pptx.ShapeType.line, {
-      x: 5.9202, y: 2.3772, w: 2.2594, h: 0,
-      line: { color: C_BORDER, width: 0.5 }
-    });
-    slide.addShape(pptx.ShapeType.line, {
-      x: 5.9202, y: 2.3772, w: 0, h: 0.4039,
-      line: { color: C_BORDER, width: 0.5 }
-    });
-    slide.addShape(pptx.ShapeType.line, {
-      x: 8.1796, y: 2.3772, w: 0, h: 0.4039,
-      line: { color: C_BORDER, width: 0.5 }
+    // 1) Hold Point 위반 표 (TABLE #3: x = 5.9202, y = 2.3772, w = 2.2594, h = 0.4039, 상/하/좌/우 4면 0.5pt 테두리 완비)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 5.9202, y: 2.3772, w: 2.2594, h: 0.4039,
+      fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 }
     });
     // 내부 체크박스 (Cell(2,2): x = 5.9748, y = 2.4207, w = 0.3150, h = 0.3168)
     slide.addText(data.isHoldPoint ? '✔' : '', {
@@ -892,7 +884,8 @@
       align: 'center', valign: 'middle', margin: 0
     });
     // Hold Point 위반 텍스트 (Cell(2,3): x = 6.2898, y = 2.4207, w = 1.8897, h = 0.3168, 11pt Bold)
-    slide.addText(` Hold Point 위반 (${data.holdPointCode})`, {
+    const holdPointLabel = data.holdPointCode ? ` Hold Point 위반 (${data.holdPointCode})` : ' Hold Point 위반';
+    slide.addText(holdPointLabel, {
       x: 6.2898, y: 2.4207, w: 1.8897, h: 0.3168,
       fontFace: FONT_MALGUN, fontSize: 11, bold: true, color: '000000',
       align: 'left', valign: 'middle', wrap: false, margin: 0
@@ -1472,12 +1465,12 @@
         ` : ''}
 
         <!-- 7-3. [중앙 컬럼] Hold Point 위반 박스 + 그림 예약 공간 + 초록색 음영 박스 -->
-        <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.3772)}; width: ${pctW(2.2594)}; height: ${pctH(0.4039)}; background: #ffffff; border-top: 1px solid #000000; border-left: 1px solid #000000; border-right: 1px solid #000000; box-sizing: border-box;"></div>
+        <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.3772)}; width: ${pctW(2.2594)}; height: ${pctH(0.4039)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
         <div style="position: absolute; left: ${pctX(5.9748)}; top: ${pctY(2.4207)}; width: ${pctW(0.3150)}; height: ${pctH(0.3168)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(15)}; font-weight: 900; color: #000000; box-sizing: border-box;">
           ${data.isHoldPoint ? '✔' : ''}
         </div>
         <div style="position: absolute; left: ${pctX(6.2898)}; top: ${pctY(2.4207)}; width: ${pctW(1.8897)}; height: ${pctH(0.3168)}; display: flex; align-items: center; padding-left: 0.3cqw; font-size: ${pt(11)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
-          Hold Point 위반 (${data.holdPointCode})
+          ${data.holdPointCode ? `Hold Point 위반 (${data.holdPointCode})` : 'Hold Point 위반'}
         </div>
 
         <!-- Hold Point 그림 영역 공간 확보 (x = 5.9202, y = 2.7584, w = 2.2712, h = 2.7348) -->

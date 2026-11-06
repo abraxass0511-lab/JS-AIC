@@ -50,5 +50,5 @@
   "agentMid": "안전시설",
   "agentMinor": "추락방지시설(안전대걸이시설)",
   "severity": "중부적합",
-  "holdPoint": true
+  "holdPoint": false
 }
