@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261106_v7';
+import { store } from './store.js?v=20261106_v8';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v7';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v8';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4394,7 +4394,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       msg = '해당 월에 등록된 내역이 없습니다.';
     }
     if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-500); font-weight:500;">${msg}</div>`;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="36" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="37" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
     return;
   }
 
@@ -4408,6 +4408,10 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
   const mapType = se.mapAccidentType || (t => t || '기타');
   const markCauseFn = se.markCause || ((r, k) => ((r.mgmtCauses || []).includes(k) || (r.causes || []).includes(k) ? '●' : ''));
   const getOpType = se.getInspectorOpinionType || (r => r.inspectorOpinionType || '시스템 개선');
+  const getPmType = se.getPmVerdictType || (r => r.pmVerdictType || getOpType(r));
+  const cleanWorkGroupFn = se.cleanWorkGroup || (w => String(w || '가설공사').replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ').trim() || '가설공사');
+  const cleanOpinionFn = se.cleanOpinionText || (t => String(t || '').replace(/^[\s|ㅣ¦_!\-•·]+/gm, '').replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '').trim());
+  const resolveActionPlanFn = se.resolveActionPlanText || (r => (r.fix && r.fix.content) || r.actionPlan || r.countermeasure || '(미조치)');
 
   const cardElements = [];
   const rowElements = [];
@@ -4423,6 +4427,12 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
     const agent = resolveAgent(r);
     const accType = mapType(r.type);
     const opType = getOpType(r);
+    const pmType = getPmType(r);
+    const cleanedWorkGroup = cleanWorkGroupFn(r.workGroup);
+    const cleanedInterviewOp = cleanOpinionFn(r.interviewOpinion || r.workerOpinion || '');
+    const cleanedAuditProp = cleanOpinionFn(r.auditProposal || r.inspectorOpinion || '');
+    const actionPlanText = resolveActionPlanFn(r);
+    const hasActionText = actionPlanText && actionPlanText !== '(미조치)';
 
     // 1) 모바일 카드형 뷰 (즉시 동기 렌더링)
     if (c) {
@@ -4563,7 +4573,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:8px 10px; text-align:left; font-weight:500; color:var(--gray-900); min-width:220px;">${r.content || ''}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.subcontractor || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${r.location || '-'}</td>
-        <td style="padding:8px 6px; color:var(--gray-700);">${r.workGroup || '가설공사'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700);">${cleanedWorkGroup}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${resolveDisplayWorkMethod(r)}</td>
         <td style="padding:8px 6px;"><span class="badge" style="font-size:0.74rem;">${accType}</span></td>
         <td style="padding:8px 6px; font-weight:600; color:var(--gray-800);">${agent.major}</td>
@@ -4578,15 +4588,16 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:8px 4px; font-weight:700; color:${cause2 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause2}</td>
         <td style="padding:8px 4px; font-weight:700; color:${cause3 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause3}</td>
         <td style="padding:8px 4px; font-weight:700; color:${cause4 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause4}</td>
-        <td style="padding:8px 6px; color:var(--gray-700); text-align:left;">${r.interviewOpinion || r.workerOpinion || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700); text-align:left;">${cleanedInterviewOp || '-'}</td>
         <td style="padding:8px 6px;"><span class="badge" style="font-size:0.72rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">${opType}</span></td>
-        <td style="padding:8px 10px; color:var(--gray-700); text-align:left; min-width:150px;">${r.auditProposal || r.inspectorOpinion || '-'}</td>
+        <td style="padding:8px 10px; color:var(--gray-700); text-align:left; min-width:150px;">${cleanedAuditProp || '-'}</td>
         <td style="padding:8px 6px; font-weight:600; color:var(--gray-800);">${r.site || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.productType || '공동주택'}</td>
         <td style="padding:8px 4px; color:var(--gray-700);">${r.progressRate !== undefined && r.progressRate !== null ? (r.progressRate + '%') : '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.stage || '지하 골조 단계'}</td>
         <td style="padding:8px 6px; white-space:nowrap;"><span class="badge ${isFixed ? 'success' : 'danger'}" style="font-size:0.75rem;">${isFixed ? '✅ 조치완료' : '⚠️ 미조치'}</span></td>
-        <td style="padding:8px 10px; text-align:left; color:${isFixed ? 'var(--gray-800)' : 'var(--gray-400)'}; min-width:150px;">${(r.fix && r.fix.content) || '(미조치)'}</td>
+        <td style="padding:8px 10px; text-align:left; white-space:pre-line; color:${hasActionText ? 'var(--gray-800)' : 'var(--gray-400)'}; min-width:180px;">${actionPlanText}</td>
+        <td style="padding:8px 6px;"><span class="badge" style="font-size:0.72rem; background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0;">${pmType}</span></td>
         <td style="padding:4px;">${fixThumb}</td>
         <td style="padding:8px 6px; color:var(--gray-600);">${r.inspectedDate || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-600);">${r.inspector || '-'}</td>
@@ -4786,11 +4797,11 @@ function renderImportedCards() {
           <div style="color: var(--gray-700); font-size: 0.74rem; line-height: 1.4;">
             <strong>공종:</strong> ${rec.workGroup || '-'} | <strong>장소:</strong> ${rec.location || '-'} | <strong>협력사:</strong> ${rec.subcontractor || '(미기재)'} | <strong>원인:</strong> <span style="color:#b91c1c;font-weight:700;">${causesStr}</span>
           </div>
-          ${(rec.interviewOpinion || rec.auditProposal) ? `
+          ${(rec.interviewOpinion || rec.auditProposal || rec.actionPlan) ? `
           <div style="color: var(--gray-600); font-size: 0.72rem; margin-top: 3px; background: #f8fafc; padding: 4px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">
             ${rec.interviewOpinion ? `<div>💬 <strong>관계자 의견:</strong> ${rec.interviewOpinion}</div>` : ''}
-            ${rec.auditProposal ? `<div>💡 <strong>점검단 제안:</strong> ${rec.auditProposal}</div>` : ''}
-            ${rec.actionPlan ? `<div>🔧 <strong>조치계획:</strong> ${rec.actionPlan}</div>` : ''}
+            ${rec.auditProposal ? `<div>💡 <strong>점검자 의견(${rec.inspectorOpinionType || '시스템 개선'}):</strong> ${rec.auditProposal}</div>` : ''}
+            ${rec.actionPlan ? `<div style="white-space: pre-line;">🔧 <strong>조치내용(PM판정: ${rec.pmVerdictType || rec.pmVerdict || '시스템 개선'}):</strong>\n${rec.actionPlan}</div>` : ''}
           </div>` : ''}
         </div>
       </div>

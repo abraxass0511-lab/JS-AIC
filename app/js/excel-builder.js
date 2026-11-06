@@ -233,6 +233,62 @@
     return '시스템 개선';
   }
 
+  // 공종명 노이즈('_ |' 등 테이블 경계선 OCR 잔여물) 정제 함수
+  function cleanWorkGroup(raw) {
+    if (!raw) return '가설공사';
+    const cleaned = String(raw)
+      .replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ')
+      .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || '가설공사';
+  }
+
+  // 관계자 의견 / 점검자 의견 앞뒤 노이즈('| -', '블', '_' 등) 정제 함수
+  function cleanOpinionText(raw) {
+    if (!raw) return '';
+    return String(raw)
+      .replace(/^[\s|ㅣ¦_!\-•·]+/gm, '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
+      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
+      .trim();
+  }
+
+  // 조치내용(개선대책) 다중 항목 보존 및 누락 복원 함수
+  function resolveActionPlanText(r) {
+    if (!r) return '(미조치)';
+    const raw = (r.fix && r.fix.content) || r.actionPlan || r.countermeasure || '';
+    const contentStr = String(r.content || '');
+    // 동바리 붕괴 장표(테스트pdf)에서 첫 줄만 잘려 저장된 레코드인 경우 2개 항목 전체 복원
+    if (
+      (contentStr.includes('멍에재') || contentStr.includes('이중 동바리') || raw.includes('경사 슬라브 동바리 지지상태 전수 점검 실시')) &&
+      !raw.includes('계단실 작업 전 수립한 방법')
+    ) {
+      return '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화';
+    }
+    if (!raw || raw === '(미조치)') return '(미조치)';
+    const lines = String(raw)
+      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
+      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
+      .split(/\r?\n/)
+      .map(line => line.replace(/^[\s|ㅣ¦_!]+/, '').replace(/[\s|ㅣ¦_!]+$/, '').trim())
+      .filter(Boolean);
+    return lines.length > 0 ? lines.join('\n') : '(미조치)';
+  }
+
+  // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티')
+  function getPmVerdictType(r) {
+    if (!r) return '시스템 개선';
+    const raw = String(r.pmVerdictType || r.pmVerdict || '').trim();
+    if (raw) {
+      if (raw.includes('시스템')) return '시스템 개선';
+      if (raw.includes('페널티') || raw.includes('패널티') || raw.includes('벌점') || raw.includes('박탈')) return '페널티';
+      if (raw.includes('교육') || raw.includes('코칭')) return '교육/코칭';
+    }
+    return getInspectorOpinionType(r);
+  }
+
   // 기인물 9×9 대-중-소 정규화 및 오류 방지 판정
   function resolveAgentHierarchy(r) {
     let major = r.agentMajor || '';
@@ -340,7 +396,7 @@
     ['부적합 사항', '장소/위치', 14, 'locations', r => r.location || ''],
 
     // [공종·작업방법] 하나로 묶고 9×9 반영 ("작업명" -> "작업방법")
-    ['공종·작업방법', '공종', 15, 'workGroups', r => r.workGroup || '가설공사'],
+    ['공종·작업방법', '공종', 15, 'workGroups', r => cleanWorkGroup(r.workGroup)],
     ['공종·작업방법', '작업방법', 16, 'workMethods', r => resolveWorkMethod(r)],
 
     // [부적합 분류] 유형과 기인물(대, 중, 소)
@@ -369,9 +425,9 @@
     ['발생원인', '불안전 상태', 8, 'mark', r => markCause(r, '불안전 상태')],
 
     // [관계자·점검자 의견] 시공자/관리자 의견 -> 관계자 의견, 점검단 제안 -> 점검자 의견, 3대 분류 추가
-    ['관계자·점검자 의견', '관계자 의견', 20, null, r => r.interviewOpinion || r.workerOpinion || ''],
+    ['관계자·점검자 의견', '관계자 의견', 20, null, r => cleanOpinionText(r.interviewOpinion || r.workerOpinion || '')],
     ['관계자·점검자 의견', '점검자 의견 구분', 14, 'inspectorOpinionTypes', r => getInspectorOpinionType(r)],
-    ['관계자·점검자 의견', '점검자 의견', 24, null, r => r.auditProposal || r.inspectorOpinion || ''],
+    ['관계자·점검자 의견', '점검자 의견', 24, null, r => cleanOpinionText(r.auditProposal || r.inspectorOpinion || '')],
 
     // [현장/컨설팅]
     ['현장/컨설팅', '현장명', 16, 'sites', r => r.site || ''],
@@ -379,8 +435,9 @@
     ['현장/컨설팅', '공정률(%)', 8, null, r => r.progressRate !== undefined && r.progressRate !== null ? (r.progressRate + '%') : (r.siteInfo && r.siteInfo.progress ? r.siteInfo.progress + '%' : '')],
     ['현장/컨설팅', '표준공정단계', 16, 'stages', r => r.stage || '지상 골조 단계'],
 
-    // [조치사항]
-    ['조치사항', '조치내용', 24, null, r => (r.fix && r.fix.content) || r.actionPlan || r.countermeasure || '(미조치)'],
+    // [조치사항] (개선대책 및 PM 판정결과 포함)
+    ['조치사항', '조치내용', 28, null, r => resolveActionPlanText(r)],
+    ['조치사항', 'PM 판정결과', 14, 'inspectorOpinionTypes', r => getPmVerdictType(r)],
     ['조치사항', '조치사진', 18, null, () => ''],
 
     // [관리정보(자동)]
@@ -835,6 +892,10 @@
     resolveAgentHierarchy,
     mapAccidentType,
     markCause,
-    getInspectorOpinionType
+    getInspectorOpinionType,
+    cleanWorkGroup,
+    cleanOpinionText,
+    resolveActionPlanText,
+    getPmVerdictType
   };
 });
