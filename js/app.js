@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261106_v6';
+import { store } from './store.js?v=20261106_v7';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v6';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v7';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -1697,7 +1697,7 @@ function bindEvents() {
         openSiteSelectModal();
       }
       if (viewId === 'viewList') renderRecordList();
-      if (viewId === 'viewEdu') populateEduOptions();
+      if (viewId === 'viewEdu') populateEduOptions(window._lastImportedRecordId || null);
     });
   });
 
@@ -3697,13 +3697,9 @@ async function deleteOneRecord(rec) {
 // ── 1페이지 교육자료 미리보기 갱신 ──
 // ── 사진 Base64 변환 헬퍼 (PptxGenJS 임베딩용 대용량 청크 안전 처리 + 구버전 잘린 사진 자동 치유) ──
 async function resolvePhotoBase64ForPPT(path, record = null, photoIndex = 0) {
-  // 1) 수평양중 / 보 거푸집 건은 하단 A, B 라벨 및 수평양중 문자가 100% 온전히 보존된 691px 사진 자동 우선 적용
-  const isHorizontalLifting = record && (
-    (record.content || '').includes('수평양중') || 
-    (record.content || '').includes('보 거푸집') || 
-    (record.content || '').includes('수평이 맞지 않음')
-  );
-  if (isHorizontalLifting) {
+  // 구버전 방화6 수평양중 샘플 레코드(20261017-131410-o404)에 한해서만 하단 라벨 복원본 우선 적용
+  const isLegacyHorizontalSample = record && record.id === '20261017-131410-o404';
+  if (isLegacyHorizontalSample) {
     const fixedPath = photoIndex === 0 ? 'samples/horizontal_photo1.jpg' : 'samples/horizontal_photo2.jpg';
     try {
       const res = await fetch(fixedPath);
@@ -3914,8 +3910,8 @@ async function updateEduPreview() {
 
   let photo1Url = '';
   let photo2Url = '';
-  const isHorizontalLifting = (rec.content || '').includes('수평양중') || (rec.content || '').includes('보 거푸집') || (rec.content || '').includes('수평이 맞지 않음');
-  if (isHorizontalLifting) {
+  const isLegacyHorizontalSample = rec.id === '20261017-131410-o404';
+  if (isLegacyHorizontalSample) {
     photo1Url = 'samples/horizontal_photo1.jpg';
     photo2Url = 'samples/horizontal_photo2.jpg';
   } else {
@@ -4783,9 +4779,9 @@ function renderImportedCards() {
             <label style="font-size: 0.72rem; color: #4338ca; font-weight: 700; display: block; margin-bottom: 2px;">📋 추출된 부적합 내용 (직접 수정 가능):</label>
             <textarea class="form-control txt-import-content" rows="2" style="font-size: 0.8rem; width: 100%; border: 1px solid #a5b4fc; border-radius: 4px; padding: 4px 6px; background: #f5f3ff; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
           </div>
-          ${rec.law && filterOnlyOccupationalSafetyLaw(rec.law) ? `
+          ${(rec.rawLaw || (rec.law && filterOnlyOccupationalSafetyLaw(rec.law))) ? `
           <div style="font-size: 0.74rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
-            📜 ${filterOnlyOccupationalSafetyLaw(rec.law)}
+            📜 ${rec.rawLaw ? `${rec.rawLaw}${rec.law && filterOnlyOccupationalSafetyLaw(rec.law) && rec.rawLaw !== filterOnlyOccupationalSafetyLaw(rec.law) ? ` (${filterOnlyOccupationalSafetyLaw(rec.law)})` : ''}` : filterOnlyOccupationalSafetyLaw(rec.law)}
           </div>` : ''}
           <div style="color: var(--gray-700); font-size: 0.74rem; line-height: 1.4;">
             <strong>공종:</strong> ${rec.workGroup || '-'} | <strong>장소:</strong> ${rec.location || '-'} | <strong>협력사:</strong> ${rec.subcontractor || '(미기재)'} | <strong>원인:</strong> <span style="color:#b91c1c;font-weight:700;">${causesStr}</span>
@@ -5025,8 +5021,8 @@ async function handleSaveImportedRecords() {
         severity: rec.severity || '중부적합',
         subcontractor: rec.subcontractor !== undefined ? rec.subcontractor : '',
         inspectRound: rec.inspectRound || '1차',
-        inspectUser: rec.inspectUser || '',
-        inspector: rec.inspectUser || (store.user && store.user.name) || '점검자',
+        inspectUser: rec.inspectUser !== undefined ? rec.inspectUser : '',
+        inspector: rec.inspectUser !== undefined ? rec.inspectUser : ((store.user && store.user.name) || '점검자'),
         siteInfo: {
           progress: progressRate + '%',
           scale: siteObj.scale || '',
@@ -5057,20 +5053,23 @@ async function handleSaveImportedRecords() {
         holdPoint: !!rec.holdPoint,
         interviewOpinion: rec.interviewOpinion || '',
         inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
+        inspectorOpinionSub: rec.inspectorOpinionSub || '',
         auditProposal: rec.auditProposal || '',
         actionPlan: rec.actionPlan || '',
-        countermeasure: rec.countermeasure || '',
+        countermeasure: rec.countermeasure || rec.actionPlan || '',
         pmVerdict: rec.pmVerdict || '',
         pmVerdictType: rec.pmVerdictType || '',
         pmVerdictSub: rec.pmVerdictSub || '',
         fix: rec.actionPlan ? { content: rec.actionPlan } : {},
         workPlan: '해당없음',
+        rawLaw: rec.rawLaw || '',
+        lawBody: rec.lawBody || '',
         basis: {
           ra: '반영',
           cp: '해당없음',
           st: '해당없음',
-          guide: '',
-          law: filterOnlyOccupationalSafetyLaw(rec.law),
+          guide: rec.rawLaw || '',
+          law: filterOnlyOccupationalSafetyLaw(rec.law, rec.content),
           점검영역9x9: matrixArea,
           점검대상9x9: matrixTarget,
           가시설세부사양: matrixSpec,
@@ -5078,7 +5077,7 @@ async function handleSaveImportedRecords() {
           근본원인_안전시스템: rootCauseSystem,
           관리책임주체: stakeholder
         },
-        law: filterOnlyOccupationalSafetyLaw(rec.law),
+        law: filterOnlyOccupationalSafetyLaw(rec.law, rec.content),
         causes: [...mgmtCauses],
         inspectedDate
       };
@@ -5096,6 +5095,7 @@ async function handleSaveImportedRecords() {
       }
 
       await store.saveRecord(finalRecord, { photos: mediaPhotos });
+      window._lastImportedRecordId = finalRecord.id;
     }
 
     toast(`🎉 총 ${importedRecords.length}건의 부적합 대장이 성공적으로 저장되었습니다!`, 'success');
@@ -5103,6 +5103,10 @@ async function handleSaveImportedRecords() {
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'none';
     if ($('#importProgressBox')) $('#importProgressBox').style.display = 'none';
     if ($('#filePptxImport')) $('#filePptxImport').value = '';
+
+    if (window._lastImportedRecordId) {
+      await populateEduOptions(window._lastImportedRecordId);
+    }
 
     // 대장 목록 뷰로 자동 전환
     const listNavBtn = document.querySelector('.bottom-nav .nav-item[data-view="viewList"]');
