@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261106_v4';
+import { store } from './store.js?v=20261106_v5';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261025_solid_v10';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw } from './pptx-importer-v2.js?v=20261106_v5';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -1818,7 +1818,9 @@ function bindEvents() {
   $('#btnClearImported')?.addEventListener('click', () => {
     importedRecords = [];
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'none';
+    if ($('#importProgressBox')) $('#importProgressBox').style.display = 'none';
     if ($('#importCardsContainer')) $('#importCardsContainer').innerHTML = '';
+    if ($('#filePptxImport')) $('#filePptxImport').value = '';
     toast('불러온 장표 목록이 초기화되었습니다.', 'info');
   });
 
@@ -4633,24 +4635,63 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
   syncTableTopScrollWidth();
 }
 
-// ── PPTX / 장표 파일 임포트 처리 ──
+// ── PDF / PPTX / 장표 파일 임포트 처리 ──
 async function handlePptxImportChange(e) {
   const files = Array.from(e.target.files || []);
   if (!files.length) return;
 
-  toast(`${files.length}개 파일 분석 중...`, 'info', 2000);
+  toast(`${files.length}개 파일 분석 중...`, 'info', 2500);
   importedRecords = [];
+  let totalSkippedPages = 0;
+
+  const progBox = $('#importProgressBox');
+  const progStatus = $('#importProgressStatus');
+  const progPct = $('#importProgressPercent');
+  const progBar = $('#importProgressBar');
+
+  if (progBox) progBox.style.display = 'block';
+  if (progStatus) progStatus.textContent = '📄 파일 분석 준비 중...';
+  if (progPct) progPct.textContent = '0%';
+  if (progBar) progBar.style.width = '0%';
 
   for (const f of files) {
     try {
-      if (f.name.toLowerCase().endsWith('.pptx')) {
+      const lowerName = f.name.toLowerCase();
+      if (lowerName.endsWith('.pdf') || f.type === 'application/pdf') {
+        const records = await parsePDF(f, (prog) => {
+          const pct = Math.min(100, Math.round(((prog.current || 1) / Math.max(1, prog.total || 1)) * 100));
+          if (progStatus) {
+            const phaseText = prog.phase === 'skip'
+              ? `페이지 ${prog.current}/${prog.total}: 일반 글씨/간지 페이지 생략`
+              : `페이지 ${prog.current}/${prog.total} 분석 중... (점검장표 ${prog.extracted || 0}건 추출 / 일반 글씨 ${prog.skipped || 0}장 생략)`;
+            progStatus.textContent = `📕 [${f.name}] ${phaseText}`;
+          }
+          if (progPct) progPct.textContent = `${pct}%`;
+          if (progBar) progBar.style.width = `${pct}%`;
+        });
+        totalSkippedPages += (records._skippedPages || 0);
+        records.forEach(r => {
+          r._sourceFile = r.pageNumber ? `${f.name} · P.${r.pageNumber}` : f.name;
+        });
+        importedRecords.push(...records);
+      } else if (lowerName.endsWith('.pptx')) {
+        if (progStatus) progStatus.textContent = `📑 [${f.name}] PPTX 장표 추출 중...`;
+        if (progPct) progPct.textContent = '50%';
+        if (progBar) progBar.style.width = '50%';
         const records = await parsePPTX(f);
         records.forEach(r => { r._sourceFile = f.name; });
         importedRecords.push(...records);
       } else if (f.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp)$/i.test(f.name)) {
+        if (progStatus) progStatus.textContent = `📸 [${f.name}] 장표 이미지 분석 중...`;
+        if (progPct) progPct.textContent = '50%';
+        if (progBar) progBar.style.width = '50%';
         const record = await parseImage(f);
-        record._sourceFile = f.name;
-        importedRecords.push(record);
+        if (record && !record._skipped) {
+          record._sourceFile = f.name;
+          importedRecords.push(record);
+        } else {
+          totalSkippedPages++;
+        }
       }
     } catch (err) {
       console.error('File parse error:', f.name, err);
@@ -4658,13 +4699,21 @@ async function handlePptxImportChange(e) {
     }
   }
 
+  if (progPct) progPct.textContent = '100%';
+  if (progBar) progBar.style.width = '100%';
+  if (progStatus) {
+    progStatus.textContent = `✅ 분석 완료: 점검장표 ${importedRecords.length}건 추출` +
+      (totalSkippedPages > 0 ? ` (일반 글씨/간지 ${totalSkippedPages}페이지 자동 생략)` : '');
+  }
+
   if (importedRecords.length > 0) {
-    toast(`총 ${importedRecords.length}건의 부적합 장표 데이터를 추출했습니다!`, 'success');
+    const skipMsg = totalSkippedPages > 0 ? ` (일반 글씨 ${totalSkippedPages}장 생략)` : '';
+    toast(`총 ${importedRecords.length}건의 점검장표 사진·내용을 추출했습니다!${skipMsg}`, 'success', 3500);
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'block';
     if ($('#importCount')) $('#importCount').textContent = importedRecords.length;
     renderImportedCards();
   } else {
-    toast('추출할 수 있는 부적합 슬라이드를 찾지 못했습니다.', 'warning');
+    toast('추출할 수 있는 부적합 점검장표를 찾지 못했습니다.', 'warning');
   }
 }
 
@@ -4688,27 +4737,32 @@ function renderImportedCards() {
       <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
         ${p1 ? `
           <div style="position: relative; display: inline-block;">
-            <img src="${p1}" style="width: 68px; height: 68px; object-fit: cover; border-radius: 6px; border: 2px solid #3b82f6; display: block;" title="사진 1: 현장 부적합">
+            <img src="${p1}" style="width: 76px; height: 76px; object-fit: cover; border-radius: 6px; border: 2px solid #3b82f6; display: block;" title="추출 사진 1">
             <span style="position: absolute; bottom: 2px; left: 2px; background: rgba(30,58,138,0.88); color: white; font-size: 0.60rem; font-weight: 700; padding: 1px 4px; border-radius: 3px;">사진1</span>
           </div>
         ` : ''}
         ${p2 ? `
           <div style="position: relative; display: inline-block;">
-            <img src="${p2}" style="width: 68px; height: 68px; object-fit: cover; border-radius: 6px; border: 2px solid #10b981; display: block;" title="사진 2: 세부 원인/위치">
+            <img src="${p2}" style="width: 76px; height: 76px; object-fit: cover; border-radius: 6px; border: 2px solid #10b981; display: block;" title="추출 사진 2">
             <span style="position: absolute; bottom: 2px; left: 2px; background: rgba(6,78,59,0.88); color: white; font-size: 0.60rem; font-weight: 700; padding: 1px 4px; border-radius: 3px;">사진2</span>
           </div>
         ` : ''}
-        ${!p1 && !p2 ? `<div style="width: 68px; height: 68px; background: #f1f5f9; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.72rem;">사진없음</div>` : ''}
+        ${!p1 && !p2 ? `<div style="width: 76px; height: 76px; background: #f1f5f9; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.72rem;">사진없음</div>` : ''}
       </div>
     `;
 
+    const causesStr = (rec.mgmtCauses && rec.mgmtCauses.length) ? rec.mgmtCauses.join(', ') : '-';
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
           <span style="background: ${isMajor ? '#fef2f2' : '#fffbeb'}; color: ${isMajor ? '#dc2626' : '#d97706'}; font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid ${isMajor ? '#fca5a5' : '#fde68a'}; font-size: 0.72rem;">
             ${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}
           </span>
           <span style="font-weight: 700; color: var(--gray-800);">${rec.type || '추락'}</span>
+          <span style="font-size: 0.71rem; background: #f1f5f9; color: #334155; padding: 1px 6px; border-radius: 4px; font-weight: 600;">
+            ${rec.agentMajor || '가시설'} &gt; ${rec.agentMid || '동바리'} &gt; ${rec.agentMinor || ''}
+          </span>
           <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
         </div>
         <button type="button" class="btn btn-outline btn-load-to-form" data-idx="${idx}" style="padding: 2px 8px; font-size: 0.72rem; border-color: var(--primary); color: var(--primary);">
@@ -4724,12 +4778,18 @@ function renderImportedCards() {
             <textarea class="form-control txt-import-content" rows="2" style="font-size: 0.8rem; width: 100%; border: 1px solid #a5b4fc; border-radius: 4px; padding: 4px 6px; background: #f5f3ff; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
           </div>
           ${rec.law && filterOnlyOccupationalSafetyLaw(rec.law) ? `
-          <div style="font-size: 0.75rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
+          <div style="font-size: 0.74rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
             📜 ${filterOnlyOccupationalSafetyLaw(rec.law)}
           </div>` : ''}
-          <div style="color: var(--gray-600); font-size: 0.75rem;">
-            협력사: ${rec.subcontractor || '-'} | 공종: ${rec.workGroup || '-'} | 장소: ${rec.location || '-'}
+          <div style="color: var(--gray-700); font-size: 0.74rem; line-height: 1.4;">
+            <strong>공종:</strong> ${rec.workGroup || '-'} | <strong>장소:</strong> ${rec.location || '-'} | <strong>협력사:</strong> ${rec.subcontractor || '(미기재)'} | <strong>원인:</strong> <span style="color:#b91c1c;font-weight:700;">${causesStr}</span>
           </div>
+          ${(rec.interviewOpinion || rec.auditProposal) ? `
+          <div style="color: var(--gray-600); font-size: 0.72rem; margin-top: 3px; background: #f8fafc; padding: 4px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">
+            ${rec.interviewOpinion ? `<div>💬 <strong>관계자 의견:</strong> ${rec.interviewOpinion}</div>` : ''}
+            ${rec.auditProposal ? `<div>💡 <strong>점검단 제안:</strong> ${rec.auditProposal}</div>` : ''}
+            ${rec.actionPlan ? `<div>🔧 <strong>조치계획:</strong> ${rec.actionPlan}</div>` : ''}
+          </div>` : ''}
         </div>
       </div>
     `;
@@ -4750,15 +4810,15 @@ function renderImportedCards() {
 function inferWorkMethod(text) {
   const t = String(text || '');
   if (t.includes('양중') || t.includes('크레인') || t.includes('슬링') || t.includes('샤클') || t.includes('인양') || t.includes('호이스트') || t.includes('유도로프')) return '양중작업';
+  if (t.includes('동바리') || t.includes('멍에') || t.includes('거푸집') || t.includes('서포트') || t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
   if (t.includes('비계') || t.includes('발판') || t.includes('고소') || t.includes('난간') || t.includes('개구부') || t.includes('추락') || t.includes('사다리') || t.includes('단부') || t.includes('달비계')) return '고소작업';
   if (t.includes('굴착') || t.includes('터파기') || t.includes('흙막이') || t.includes('사면')) return '굴착작업';
-  if (t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
   if (t.includes('해체') || t.includes('철거')) return '해체작업';
   if (t.includes('하역') || t.includes('운반') || t.includes('상차') || t.includes('하차') || t.includes('지게차')) return '하역운반작업';
   if (t.includes('중량물') || t.includes('인력운반')) return '중량물취급작업';
   if (t.includes('밀폐') || t.includes('산소') || t.includes('질식') || t.includes('유해가스') || t.includes('맨홀') || t.includes('탱크')) return '밀폐공간작업';
   if (t.includes('협소') || t.includes('피트') || t.includes('덕트')) return '협소공간작업';
-  return '양중작업';
+  return '설치조립작업';
 }
 
 // 표준 불안전한 상태 추론 함수 (계획미이행 등 발생원인 텍스트 원천 차단)
@@ -4768,6 +4828,9 @@ function inferCondition(text, mgmtCauses) {
   if (!hasCondition) return '해당없음';
 
   const t = String(text || '');
+  if (t.includes('동바리') || t.includes('멍에') || t.includes('이중') || t.includes('시공') || t.includes('조립')) {
+    return '작업방법·공정의 결함';
+  }
   if (t.includes('미설치') || t.includes('탈락') || t.includes('파손') || t.includes('난간') || t.includes('덮개')) {
     return '안전방호장치의 결함 (미설치·해체·불량)';
   }
@@ -4831,19 +4894,19 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = rec.photoBanner || '';
   if ($('#txtLaw')) $('#txtLaw').value = filterOnlyOccupationalSafetyLaw(rec.law);
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
-  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '가설공사';
+  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '거푸집동바리공사';
   if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
   const maj = rec.agentMajor || rec.kind || '가시설';
-  const mid = rec.agentMid || rec.item || '비계';
-  const min = rec.agentMinor || rec.agent || '';
+  const mid = rec.agentMid || rec.item || '동바리';
+  const min = rec.agentMinor || rec.agent || '파이프서포트';
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
   if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
   if ($('#txtAgentMinor')) $('#txtAgentMinor').value = min;
   if ($('#txtKind')) $('#txtKind').value = maj;
   if ($('#txtItem')) $('#txtItem').value = mid;
   if ($('#txtAgent')) $('#txtAgent').value = min;
-  if ($('#txtType')) $('#txtType').value = rec.type || '';
+  if ($('#txtType')) $('#txtType').value = rec.type || '붕괴';
   if ($('#txtCondition')) $('#txtCondition').value = determinedCondition;
   if ($('#txtAction')) $('#txtAction').value = determinedAction;
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
@@ -4853,7 +4916,7 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!rec.holdPoint;
 
   // 관리적 4대 발생원인 칩 동기화
-  const causes = rec.mgmtCauses || ['계획 미이행', '불안전 행동'];
+  const causes = rec.mgmtCauses || ['계획 미이행', '불안전 상태'];
   if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = causes.includes('계획 미수립');
   if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = causes.includes('계획 미이행');
   if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = causes.includes('불안전 행동');
@@ -4864,9 +4927,9 @@ function loadImportedRecordToManualForm(rec) {
 
   // 9×9 점검인자 및 근본원인 (기존 데이터 또는 AI 즉시 추론)
   const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-  if ($('#txtMatrixArea')) $('#txtMatrixArea').value = rec.matrixArea || (m9 && m9.점검영역9x9) || maj;
-  if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = rec.matrixTarget || (m9 && m9.점검대상9x9) || mid;
-  if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = rec.matrixSpec || (m9 && m9.가시설세부사양) || min;
+  if ($('#txtMatrixArea')) $('#txtMatrixArea').value = rec.matrixArea || rec.agentMajor || (m9 && m9.점검영역9x9) || maj;
+  if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = rec.matrixTarget || rec.agentMid || (m9 && m9.점검대상9x9) || mid;
+  if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = rec.matrixSpec || rec.agentMinor || (m9 && m9.가시설세부사양) || min;
   if ($('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '';
   if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '';
   if ($('#txtStakeholder')) $('#txtStakeholder').value = rec.stakeholder || (m9 && m9.관리책임주체) || '';
@@ -4932,15 +4995,15 @@ async function handleSaveImportedRecords() {
       btn.textContent = `저장 중 (${++savedCount}/${importedRecords.length})...`;
 
       const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-      const matrixArea = rec.matrixArea || (m9 && m9.점검영역9x9) || rec.agentMajor || rec.kind || '가시설';
-      const matrixTarget = rec.matrixTarget || (m9 && m9.점검대상9x9) || rec.agentMid || rec.item || '거푸집';
-      const matrixSpec = rec.matrixSpec || (m9 && m9.가시설세부사양) || rec.agentMinor || rec.agent || '';
-      const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '';
-      const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '';
-      const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '';
+      const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (m9 && m9.점검영역9x9) || '가시설';
+      const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (m9 && m9.점검대상9x9) || '동바리';
+      const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (m9 && m9.가시설세부사양) || '파이프서포트';
+      const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
+      const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
+      const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '시공담당';
 
       const workMethod = rec.workMethod || rec.workName || inferWorkMethod(rec.content);
-      const mgmtCauses = (rec.mgmtCauses && rec.mgmtCauses.length > 0) ? rec.mgmtCauses : ['계획 미이행', '불안전 행동'];
+      const mgmtCauses = (rec.mgmtCauses && rec.mgmtCauses.length > 0) ? rec.mgmtCauses : ['계획 미이행', '불안전 상태'];
       const condition = (rec.condition && !['계획 미이행', '불안전 상태'].includes(rec.condition))
         ? rec.condition
         : inferCondition(rec.content, mgmtCauses);
@@ -4954,15 +5017,18 @@ async function handleSaveImportedRecords() {
         progressRate,
         stage,
         severity: rec.severity || '중부적합',
-        subcontractor: rec.subcontractor || '원영건업(주)',
+        subcontractor: rec.subcontractor !== undefined ? rec.subcontractor : '',
         inspectRound: rec.inspectRound || '1차',
+        inspectUser: rec.inspectUser || '',
+        inspector: rec.inspectUser || (store.user && store.user.name) || '점검자',
         siteInfo: {
           progress: progressRate + '%',
           scale: siteObj.scale || '',
           amount: siteObj.amount || ''
         },
         content: rec.content || '부적합 사항 지적',
-        location: rec.location || '108동',
+        photoBanner: rec.photoBanner || '',
+        location: rec.location || '',
         workName: workMethod,
         workMethod: workMethod,
         workGroup: rec.workGroup || '거푸집동바리공사',
@@ -4972,7 +5038,7 @@ async function handleSaveImportedRecords() {
         agentMajor: matrixArea,
         agentMid: matrixTarget,
         agentMinor: matrixSpec,
-        type: rec.type || '충돌/협착',
+        type: rec.type || '붕괴',
         condition,
         action,
         matrixArea,
@@ -4984,8 +5050,14 @@ async function handleSaveImportedRecords() {
         mgmtCauses,
         holdPoint: !!rec.holdPoint,
         interviewOpinion: rec.interviewOpinion || '',
+        inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
         auditProposal: rec.auditProposal || '',
+        actionPlan: rec.actionPlan || '',
+        countermeasure: rec.countermeasure || '',
         pmVerdict: rec.pmVerdict || '',
+        pmVerdictType: rec.pmVerdictType || '',
+        pmVerdictSub: rec.pmVerdictSub || '',
+        fix: rec.actionPlan ? { content: rec.actionPlan } : {},
         workPlan: '해당없음',
         basis: {
           ra: '반영',
@@ -5023,6 +5095,7 @@ async function handleSaveImportedRecords() {
     toast(`🎉 총 ${importedRecords.length}건의 부적합 대장이 성공적으로 저장되었습니다!`, 'success');
     importedRecords = [];
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'none';
+    if ($('#importProgressBox')) $('#importProgressBox').style.display = 'none';
     if ($('#filePptxImport')) $('#filePptxImport').value = '';
 
     // 대장 목록 뷰로 자동 전환

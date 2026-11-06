@@ -761,7 +761,7 @@ export const store = {
       rec.id = makeId(rec.inspectedDate);
       rec.bucket = rec.inspectedDate.slice(0, 7);
       rec.createdAt = now;
-      rec.inspector = author;
+      rec.inspector = rec.inspector || rec.inspectUser || author;
     }
     rec.updatedAt = now;
     rec.updatedBy = author;
