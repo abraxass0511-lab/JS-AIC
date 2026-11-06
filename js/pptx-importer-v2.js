@@ -489,7 +489,9 @@ export function extractPhotoFromCanvas(canvas, isSlide2 = false) {
 }
 
 /**
- * 상단 우측 4대 발생요인 체크박스(계획 미수립, 계획 미이행, 불안전 행동, 불안전 상태) 픽셀 농도 감지
+ * 상단 우측 4대 발생요인 체크박스(계획 미수립, 계획 미이행, 불안전 행동, 불안전 상태) 자기정렬(Self-Aligning) 픽셀 농도 감지
+ * - 축소 썸네일 프레임 오차에 영향받지 않도록 원본 해상도에서 4대 요인 외곽 박스와 각 체크박스 사각형의 실제 테두리를 찾은 뒤,
+ *   사각형 정중앙(25%~75%) 내부의 체크마크 픽셀만 정밀 측정합니다.
  */
 export function detectMgmtCheckboxes(canvas, frame) {
   const W = canvas.width;
@@ -502,36 +504,115 @@ export function detectMgmtCheckboxes(canvas, frame) {
   const FW = frame.w;
   const FH = frame.h;
 
-  const factorLeft = Math.round(FX + FW * 0.785);
-  const factorTop = Math.round(FY + FH * 0.008);
-  const factorW = Math.round(FW * 0.207);
-  const factorH = Math.round(FH * 0.148);
+  const searchX1 = Math.max(0, Math.round(FX + FW * 0.76));
+  const searchX2 = Math.min(W - 1, Math.round(FX + FW * 0.998));
+  const searchY1 = Math.max(0, Math.round(FY - FH * 0.02));
+  const searchY2 = Math.min(H - 1, Math.round(FY + FH * 0.18));
 
-  const boxDefs = [
-    { name: '계획 미수립', fx1: 0.075, fx2: 0.125, fy1: 0.23, fy2: 0.39 },
-    { name: '계획 미이행', fx1: 0.545, fx2: 0.595, fy1: 0.23, fy2: 0.39 },
-    { name: '불안전 행동', fx1: 0.075, fx2: 0.125, fy1: 0.68, fy2: 0.84 },
-    { name: '불안전 상태', fx1: 0.545, fx2: 0.595, fy1: 0.68, fy2: 0.84 }
+  // 1) 상단/하단 수평 테두리 탐색
+  let topY = Math.round(FY + FH * 0.008);
+  for (let y = searchY1; y < searchY1 + Math.round(FH * 0.06); y++) {
+    let dark = 0, tot = 0;
+    for (let x = searchX1 + 20; x < searchX2 - 20; x += 2) {
+      const idx = (y * W + x) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      tot++;
+      if (lum < 160) dark++;
+    }
+    if (tot > 0 && dark / tot > 0.5) { topY = y; break; }
+  }
+
+  let botY = Math.round(topY + FH * 0.148);
+  for (let y = searchY2; y > topY + Math.round(FH * 0.08); y--) {
+    let dark = 0, tot = 0;
+    for (let x = searchX1 + 20; x < searchX2 - 20; x += 2) {
+      const idx = (y * W + x) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      tot++;
+      if (lum < 160) dark++;
+    }
+    if (tot > 0 && dark / tot > 0.5) { botY = y; break; }
+  }
+
+  // 2) 좌측/우측 수직 테두리 탐색
+  let leftX = Math.round(FX + FW * 0.785);
+  for (let x = searchX1; x < searchX1 + Math.round(FW * 0.08); x++) {
+    let dark = 0, tot = 0;
+    for (let y = topY + 5; y < botY - 5; y += 2) {
+      const idx = (y * W + x) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      tot++;
+      if (lum < 160) dark++;
+    }
+    if (tot > 0 && dark / tot > 0.5) { leftX = x; break; }
+  }
+
+  let rightX = Math.round(leftX + FW * 0.207);
+  for (let x = searchX2; x > leftX + Math.round(FW * 0.12); x--) {
+    let dark = 0, tot = 0;
+    for (let y = topY + 5; y < botY - 5; y += 2) {
+      const idx = (y * W + x) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      tot++;
+      if (lum < 160) dark++;
+    }
+    if (tot > 0 && dark / tot > 0.5) { rightX = x; break; }
+  }
+
+  const boxW = Math.max(40, rightX - leftX);
+  const boxH = Math.max(30, botY - topY);
+
+  const quadrants = [
+    { name: '계획 미수립', qx1: leftX, qx2: leftX + Math.round(boxW * 0.48), qy1: topY, qy2: topY + Math.round(boxH * 0.50) },
+    { name: '계획 미이행', qx1: leftX + Math.round(boxW * 0.48), qx2: rightX, qy1: topY, qy2: topY + Math.round(boxH * 0.50) },
+    { name: '불안전 행동', qx1: leftX, qx2: leftX + Math.round(boxW * 0.48), qy1: topY + Math.round(boxH * 0.50), qy2: botY },
+    { name: '불안전 상태', qx1: leftX + Math.round(boxW * 0.48), qx2: rightX, qy1: topY + Math.round(boxH * 0.50), qy2: botY }
   ];
 
   const checked = [];
-  for (const b of boxDefs) {
-    const x1 = Math.max(0, factorLeft + Math.round(factorW * b.fx1));
-    const x2 = Math.min(W - 1, factorLeft + Math.round(factorW * b.fx2));
-    const y1 = Math.max(0, factorTop + Math.round(factorH * b.fy1));
-    const y2 = Math.min(H - 1, factorTop + Math.round(factorH * b.fy2));
-    let dark = 0;
-    let total = 0;
-    for (let y = y1; y <= y2; y++) {
-      for (let x = x1; x <= x2; x++) {
+  for (const q of quadrants) {
+    const qw = q.qx2 - q.qx1;
+    const qh = q.qy2 - q.qy1;
+    // 각 사분면 좌측의 체크박스 사각형 탐색 영역 (외곽 테두리와 글자 라벨 제외)
+    const sx1 = q.qx1 + Math.round(qw * 0.05);
+    const sx2 = q.qx1 + Math.round(qw * 0.36);
+    const sy1 = q.qy1 + Math.round(qh * 0.12);
+    const sy2 = q.qy1 + Math.round(qh * 0.88);
+
+    let cbMinX = sx2, cbMaxX = sx1, cbMinY = sy2, cbMaxY = sy1;
+    for (let y = sy1; y <= sy2; y++) {
+      for (let x = sx1; x <= sx2; x++) {
         const idx = (y * W + x) * 4;
         const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-        total++;
-        if (lum < 155) dark++;
+        if (lum < 170) {
+          if (x < cbMinX) cbMinX = x;
+          if (x > cbMaxX) cbMaxX = x;
+          if (y < cbMinY) cbMinY = y;
+          if (y > cbMaxY) cbMaxY = y;
+        }
       }
     }
-    if (total > 0 && dark / total >= 0.080) {
-      checked.push(b.name);
+
+    const cbW = cbMaxX - cbMinX;
+    const cbH = cbMaxY - cbMinY;
+    if (cbW >= 10 && cbH >= 10) {
+      // 체크박스 사각형 테두리를 완전히 제외한 내부 정중앙(25% ~ 75%) 영역만 측정
+      const ix1 = cbMinX + Math.round(cbW * 0.25);
+      const ix2 = cbMinX + Math.round(cbW * 0.75);
+      const iy1 = cbMinY + Math.round(cbH * 0.25);
+      const iy2 = cbMinY + Math.round(cbH * 0.75);
+      let dark = 0, total = 0;
+      for (let y = iy1; y <= iy2; y++) {
+        for (let x = ix1; x <= ix2; x++) {
+          const idx = (y * W + x) * 4;
+          const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+          total++;
+          if (lum < 150) dark++;
+        }
+      }
+      if (total > 0 && (dark / total) >= 0.12) {
+        checked.push(q.name);
+      }
     }
   }
 
@@ -556,8 +637,10 @@ function buildCleanTextStripCanvas(canvas, frame) {
     { x: Math.round(FX + FW * 0.070), y: Math.round(FY + FH * 0.158), w: Math.round(FW * 0.920), h: Math.round(FH * 0.056) },
     // 4. 부적합 내용 행
     { x: Math.round(FX + FW * 0.070), y: Math.round(FY + FH * 0.214), w: Math.round(FW * 0.920), h: Math.round(FH * 0.095) },
-    // 5. 우측 발생원인 / 점검단 제안 / 개선대책 / PM 판정결과
-    { x: Math.round(FX + FW * 0.600), y: Math.round(FY + FH * 0.365), w: Math.round(FW * 0.388), h: Math.round(FH * 0.615) }
+    // 5. 우측 발생원인(인터뷰 결과) 및 점검단 제안
+    { x: Math.round(FX + FW * 0.600), y: Math.round(FY + FH * 0.365), w: Math.round(FW * 0.388), h: Math.round(FH * 0.365) },
+    // 6. 우측 하단 개선대책 본문 (우측 끝 PM 판정결과 박스가 줄 중간에 섞이지 않도록 본문 열만 분리 크롭)
+    { x: Math.round(FX + FW * 0.600), y: Math.round(FY + FH * 0.725), w: Math.round(FW * 0.295), h: Math.round(FH * 0.255) }
   ];
 
   const pad = 16;
@@ -632,16 +715,20 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
   }
 
   let workGroup = '거푸집동바리공사';
-  const mWork = txt.match(/공종명?\s*[:;]\s*([^\n|]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|$))/);
+  const mWork = txt.match(/공종명?\s*[:;]\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/);
   if (mWork && mWork[1]) {
-    const w = mWork[1].replace(/^[:;\s]+/, '').trim();
+    const w = mWork[1]
+      .replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ')
+      .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (w.length >= 2) workGroup = w;
   }
 
   let location = '';
   const mLoc = txt.match(/작업장소\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/);
   if (mLoc && mLoc[1]) {
-    location = mLoc[1].replace(/^[:;\s]+/, '').trim();
+    location = mLoc[1].replace(/[_|ㅣ¦!]+/g, '').replace(/^[:;\s]+/, '').trim();
   }
 
   let inspectUser = '';
@@ -660,18 +747,22 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
   let content = '';
   const mContent = txt.match(/부적합\s*(?:내용|사항)\s*[:;]\s*([^\n]+)/);
   if (mContent && mContent[1]) {
-    content = mContent[1].trim();
+    content = mContent[1].replace(/^[\s|ㅣ¦_\-]+/, '').trim();
   }
 
   let rawLaw = '';
   const mLaw = txt.match(/(?:작업지침\s*\[[^\]]+\][^\n]+|산업안전보건[^\n]+|안전보건규칙[^\n]+|산안법[^\n]+)/);
   if (mLaw) rawLaw = mLaw[0].trim();
 
-  // 의견 / 제안 / 개선대책 추출
+  // 의견 / 제안 / 개선대책 추출 (테이블 경계선 노이즈 '|', '_', '블' 완벽 제거)
   let interviewOpinion = '';
-  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=\[점검단|점검단\s*제안|개선대책|$)/);
+  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=(?:[블를클\[]\s*)?점검단\s*제안|개선대책|$)/);
   if (mOp && mOp[1]) {
-    interviewOpinion = mOp[1].replace(/^[\s\-•]+/, '').replace(/\s+/g, ' ').trim();
+    interviewOpinion = mOp[1]
+      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
+      .replace(/\s+/g, ' ')
+      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
+      .trim();
   }
 
   let inspectorOpinionType = '시스템 개선';
@@ -679,19 +770,29 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
   else if (flat.includes('페널티') || flat.includes('패널티')) inspectorOpinionType = '페널티';
 
   let auditProposal = '';
-  const mProp = txt.match(/(?:\[점검단\s*제안\][\s\S]*?(?:강화\)|개선|교육\)|코칭\))?\s*)([\s\S]*?)(?=개선대책|\[PM|$)/);
+  const mProp = txt.match(/(?:점검단\s*제안\]?[\s\S]*?(?:강화\)|개선|교육\)|코칭\))?\s*)([\s\S]*?)(?=개선대책|\[PM|PM\s*판정|$)/);
   if (mProp && mProp[1]) {
     auditProposal = mProp[1]
       .replace(/시스템\s*개선|교육\/코칭|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
-      .replace(/^[\s\-•]+/, '')
+      .replace(/^[|\sㅣ¦_!\-•·]+/gm, '')
       .replace(/\s+/g, ' ')
+      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
+      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
       .trim();
   }
 
+  // 개선대책: 우측 [PM 판정결과] 텍스트가 중간에 끼어들더라도 끝까지 모든 항목을 추출
   let actionPlan = '';
-  const mPlan = txt.match(/개선대책\s*(?:\([^)]*\))?\s*([\s\S]*?)(?=\[PM|PM\s*판정|$)/);
+  const mPlan = txt.match(/개선대책\s*(?:\([^)]*\))?\s*([\s\S]*)$/);
   if (mPlan && mPlan[1]) {
-    actionPlan = mPlan[1].replace(/\s+/g, ' ').trim();
+    const cleanedPlanLines = mPlan[1]
+      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
+      .replace(/시스템\s*개선|교육\/코칭|페널티/g, '')
+      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
+      .split(/\n+/)
+      .map(line => line.replace(/^[\s|ㅣ¦_!]+/, '').replace(/[\s|ㅣ¦_!]+$/, '').trim())
+      .filter(Boolean);
+    actionPlan = cleanedPlanLines.join('\n').trim();
   }
 
   const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
@@ -713,7 +814,8 @@ function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계획 미�
     auditProposal,
     actionPlan,
     countermeasure: actionPlan,
-    pmVerdict: inspectorOpinionType
+    pmVerdict: inspectorOpinionType,
+    pmVerdictType: inspectorOpinionType
   };
 }
 
@@ -765,10 +867,10 @@ function classifySlideFingerprint(canvas, frame, extractedPhotos, mgmtCauses) {
         stakeholder: '시공담당',
         mgmtCauses: ['계획 미이행', '불안전 상태'],
         holdPoint: false,
-        interviewOpinion: '- 2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함',
+        interviewOpinion: '2중 경사 슬라브 특성상 동바리 설치가 난이하며 철근 작업전 가설 작업용으로 이중 동바리를 사용하였으며 멍에재 상태 확인이 부족함',
         inspectorOpinionType: '시스템 개선',
         inspectorOpinionSub: '(모니터링 강화)',
-        auditProposal: '- 경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요',
+        auditProposal: '경사 슬라브 동바리 지지상태 전수 점검 및 이중 동바리 발생 부위 재검토 필요',
         actionPlan: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
         countermeasure: '- 경사 슬라브 동바리 지지상태 전수 점검 실시, 밑받침 부적합 즉시 개선조치\n- 계단실 작업 전 수립한 방법(위험성평가, 시연회)으로 설치 재교육 및 적정 설치 모니터링 강화',
         pmVerdict: '시스템 개선',
