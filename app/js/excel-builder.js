@@ -251,15 +251,37 @@
     return cleaned || '가설공사';
   }
 
-  // 관계자 의견 / 점검자 의견 앞뒤 노이즈('| -', '블', '_' 등) 정제 함수
+  // 관계자 의견 / 점검자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 함수
   function cleanOpinionText(raw) {
     if (!raw) return '';
     return String(raw)
+      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
       .replace(/^[\s|ㅣ¦_!\-•·~—]+/gm, '')
       .replace(/\s+/g, ' ')
       .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
       .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+      .replace(/\[=\]\s*oa/gi, '')
       .trim();
+  }
+
+  // 사진 요약(배너) 자동 복구 함수 (엑셀 공란 원천 배제)
+  function resolvePhotoBanner(r) {
+    if (r && r.photoBanner && String(r.photoBanner).trim()) return String(r.photoBanner).trim();
+    if (r && r.content) {
+      let c = String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
+      c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '').trim();
+      c = c.replace(/^\d+\)\s*/, '');
+      const firstLine = c.split('\n')[0].trim();
+      if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
+      if (firstLine.includes('버팀대')) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+      if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
+      if (firstLine.includes('가새')) return '비계 설치구간 가새 설치 누락';
+      if (firstLine.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
+      if (firstLine.length >= 6 && firstLine.length <= 26) return firstLine;
+      if (firstLine.length > 26) return firstLine.substring(0, 24) + '...';
+      return firstLine || '현장 부적합 작업 전경';
+    }
+    return '현장 부적합 작업 전경';
   }
 
   // 조치내용(개선대책) 다중 항목 보존 및 정제 함수
@@ -271,9 +293,9 @@
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
       .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/g, '')
       .split(/\r?\n/)
-      .map(line => line.replace(/^[\s|ㅣ¦_!~—\-]+/, '').replace(/[\s|ㅣ¦_!~—\-]+$/, '').trim())
-      .filter(Boolean);
-    return lines.length > 0 ? lines.join('\n') : '(미조치)';
+      .map(line => line.replace(/^[\s|ㅣ¦_!~—\-*•·]+/, '').replace(/[\s|ㅣ¦_!~—\-]+$/, '').trim())
+      .filter(line => line.length > 7 && !/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(line));
+    return lines.length > 0 ? lines.map(l => l.startsWith('- ') ? l : `- ${l}`).join('\n') : '(미조치)';
   }
 
   // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티' - 복수 지원)
@@ -394,7 +416,7 @@
     // [부적합 사항] 사진 1 & 사진 2 및 사진 요약(배너)
     ['부적합 사항', '사진 1', 18, null, () => ''],
     ['부적합 사항', '사진 2', 18, null, () => ''],
-    ['부적합 사항', '사진 요약(배너)', 22, null, r => r.photoBanner || ''],
+    ['부적합 사항', '사진 요약(배너)', 22, null, r => resolvePhotoBanner(r)],
     ['부적합 사항', '부적합 등급', 12, 'severities', r => r.severity || '중부적합'],
     ['부적합 사항', '내용', 28, null, r => r.content || ''],
     ['부적합 사항', '협력사', 14, null, r => r.subcontractor || ''],

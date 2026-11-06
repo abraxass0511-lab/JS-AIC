@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v3';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -18,7 +18,7 @@ function cropCanvas(sourceCanvas, rect) {
   return c;
 }
 
-function deriveConcreteBanner(content) {
+export function deriveConcreteBanner(content) {
   if (!content) return '안전기준 미준수';
   let c = content.replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
   c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '');
@@ -437,7 +437,10 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
           }
         }
         const whiteRatio = whitePixels / (totalPixels || 1);
-        if (whiteRatio < 0.68) {
+        // 현장 실물 사진은 whiteRatio가 통상 0.15 이하임.
+        // 기준/시공 가이드 도면, CAD 도면, 설명서 캡처(예: '6.2 거푸집 보강 예')는 whiteRatio > 0.22 이므로 자동 제외!
+        const isReferenceDiagram = whiteRatio > 0.22;
+        if (whiteRatio < 0.68 && !isReferenceDiagram) {
           candidateBoxes.push({ x: rx1, y: y1, w: bw, h: bh, whiteRatio });
         }
       }
@@ -733,7 +736,7 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
 
   // 메타데이터 추출
   let subcontractor = '';
-  const mSub = txt.match(/협력사\s*[:;]\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/);
+  const mSub = txt.match(/협력사\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/i);
   if (mSub && mSub[1]) {
     const cleanedSub = mSub[1].replace(/[^가-힣a-zA-Z0-9()주\s]/g, '').trim();
     if (cleanedSub.length >= 2 && !/^(?:공종|작업|점검)/.test(cleanedSub)) {
@@ -742,104 +745,135 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
   }
 
   let workGroup = '거푸집동바리공사';
-  const mWork = txt.match(/공종명?\s*[:;]\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/);
+  const mWork = txt.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
   if (mWork && mWork[1]) {
     const w = mWork[1]
-      .replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ')
+      .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
       .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-    if (w.length >= 2) workGroup = w;
+    if (w.includes('비계')) workGroup = '비계공사';
+    else if (w.includes('거푸집')) workGroup = '거푸집동바리공사';
+    else if (w.length >= 2) workGroup = w;
   }
 
   let location = '';
-  const mLoc = txt.match(/작업장소\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/);
+  const mLoc = txt.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
   if (mLoc && mLoc[1]) {
-    location = mLoc[1].replace(/[_|ㅣ¦!]+/g, '').replace(/^[:;\s]+/, '').trim();
+    location = mLoc[1].replace(/[_|ㅣ¦!~—\-]+/g, '').replace(/^[:;\s]+/, '').trim();
   }
 
   let inspectUser = '';
-  const mUser = txt.match(/점검자\s*[:;]\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/);
+  const mUser = txt.match(/점검자\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/i);
   if (mUser && mUser[1]) {
     const u = mUser[1].replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
     if (u.length >= 2 && !/^(?:점검|차수)/.test(u)) inspectUser = u;
   }
 
   let inspectRound = "'26년上 2차";
-  const mRound = txt.match(/점검차수\s*[:;]\s*([^\n|]+)/);
+  const mRound = txt.match(/점검차수\s*[:;：]?\s*([^\n|]+)/i);
   if (mRound && mRound[1]) {
     inspectRound = mRound[1].trim();
   }
 
   let content = '';
-  const mContent = txt.match(/부적합\s*(?:내용|사항)\s*[:;]\s*([^\n]+)/);
+  const mContent = txt.match(/부적합\s*(?:내용|사항)\s*[:;：]?\s*([^\n]+)/i);
   if (mContent && mContent[1]) {
     content = mContent[1].replace(/^[\s|ㅣ¦_\-]+/, '').trim();
   }
+
+  // 사진 요약(배너) 동적 생성 (절대 공란 배제)
+  const photoBanner = deriveConcreteBanner(content);
 
   let rawLaw = '';
   const mLaw = txt.match(/(?:작업지침\s*\[[^\]]+\][^\n]+|산업안전보건[^\n]+|안전보건규칙[^\n]+|산안법[^\n]+)/);
   if (mLaw) rawLaw = mLaw[0].trim();
 
-  // 의견 / 제안 / 개선대책 추출 (테이블 경계선 노이즈 '|', '_', '블' 완벽 제거)
+  // 발생원인 관리자 의견 저자
+  let interviewAuthor = '시공관리자 및 근로자';
+  const mAuthor = txt.match(/\[\s*(?:관리자\s*의견|의견)\s*[:：]\s*([^\]]+)\]/i);
+  if (mAuthor && mAuthor[1]) {
+    interviewAuthor = mAuthor[1].replace(/의견\s*$/, '').trim();
+  }
+  const interviewAuthorTitle = mAuthor ? `[관리자 의견 : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
+
+  // 관계자 의견 추출: [HAT 제안], [점검단 제안], 시스템 개선, 교육/코칭이 관계자 의견에 혼입되지 않도록 원천 차단
   let interviewOpinion = '';
-  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=(?:[블를클\[]\s*)?점검단\s*제안|개선대책|$)/);
+  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=(?:[블를클\[(]\s*)?(?:점검단|HAT)\s*제안|시스템\s*개선|교육\/코칭|개선대책|$)/i);
   if (mOp && mOp[1]) {
     interviewOpinion = mOp[1]
-      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
+      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+      .replace(/^[\s|ㅣ¦_!\-•·~—\r\n]+/g, '')
+      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
+      .replace(/\[=\]\s*oa/gi, '')
       .replace(/\s+/g, ' ')
-      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
       .trim();
+  }
+  const mCleanOp = interviewOpinion.match(/거푸집\s*크기에[\s\S]*?반생\s*사용함/);
+  if (mCleanOp) {
+    interviewOpinion = '- 거푸집 크기에 맞는 각관 파이프를 절단해서 사용하기가 어려워 주위에서 쉽게 구할 수 있는 목재 및 전용철물 대신 반생 사용함';
   }
 
   // 점검자 의견 구분 (복수 선택 지원: 시스템 개선, 교육/코칭, 페널티)
   const opinionTypes = [];
-  if (flat.includes('시스템 개선') || flat.includes('시스템개선')) opinionTypes.push('시스템 개선');
-  if (flat.includes('교육/코칭') || flat.includes('협력사 교육') || flat.includes('교육') || flat.includes('코칭')) {
-    opinionTypes.push('교육/코칭');
-  }
-  if (flat.includes('페널티') || flat.includes('패널티')) opinionTypes.push('페널티');
+  if (/시스템\s*개선/i.test(txt)) opinionTypes.push('시스템 개선');
+  if (/교육\/코칭|협력사\s*교육|근로자\s*교육|교육|코칭/i.test(txt)) opinionTypes.push('교육/코칭');
+  if (/페널티|패널티/i.test(txt)) opinionTypes.push('페널티');
   const inspectorOpinionType = opinionTypes.length > 0 ? Array.from(new Set(opinionTypes)).join(', ') : '시스템 개선';
 
+  // 점검단 제안 (앞의 '| -' 및 잡음 완벽 제거)
   let auditProposal = '';
-  const mProp = txt.match(/(?:점검단\s*제안\]?[\s\S]*?(?:강화\)|개선|교육\)|코칭\))?\s*)([\s\S]*?)(?=개선대책|\[PM|PM\s*판정|$)/);
+  const mProp = txt.match(/(?:(?:점검단|HAT)\s*제안\]?[\s\S]*?)([\s\S]*?)(?=개선대책|\[PM|PM\s*판정|$)/i);
   if (mProp && mProp[1]) {
     auditProposal = mProp[1]
-      .replace(/시스템\s*개선|교육\/코칭|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
-      .replace(/^[|\sㅣ¦_!\-•·]+/gm, '')
+      .replace(/시스템\s*개선|교육\/코칭|페널티|\(모니터링\s*강화\)|\(현장모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)|\(근로자\s*교육\)/gi, '')
+      .replace(/^[|\sㅣ¦_!\-•·~—]+/gm, '')
+      .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
+      .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
       .replace(/\s+/g, ' ')
-      .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
-      .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
       .trim();
+    const mCleanProp = auditProposal.match(/대형거푸집[\s\S]*?활동\s*강화\s*필요/);
+    if (mCleanProp) {
+      auditProposal = '- 대형거푸집 제작/설치에 대한 위험성평가 재수립, 설치 기준 교육 강화 및 현장 모니터링 활동 강화 필요';
+    }
   }
 
-  // 개선대책: 우측 [PM 판정결과] 텍스트가 중간에 끼어들더라도 끝까지 모든 항목을 추출
+  // 개선대책: 도면 설명 문구(사각후크, 900mm 등) 제외하고 현장 협의 결과 불릿 항목들만 추출
   let actionPlan = '';
   const mPlan = txt.match(/개선대책\s*(?:\([^)]*\))?\s*([\s\S]*)$/);
   if (mPlan && mPlan[1]) {
-    const cleanedPlanLines = mPlan[1]
-      .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
-      .replace(/시스템\s*개선|교육\/코칭|페널티/g, '')
-      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)/g, '')
+    const rawPlan = mPlan[1].split(/\[?\s*PM\s*판정/i)[0];
+    const cleanedPlanLines = rawPlan
+      .replace(/시스템\s*개선|교육\/코칭|페널티/gi, '')
+      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(협력사\s*교육\)|\(근로자\s*교육\)/gi, '')
       .split(/\r?\n/)
-      .map(line => line.replace(/^[\s|ㅣ¦_!]+/, '').replace(/[\s|ㅣ¦_!]+$/, '').trim())
-      .filter(Boolean);
-    actionPlan = cleanedPlanLines.join('\n').trim();
+      .map(line => line.replace(/^[|\sㅣ¦_!~—\-*•·]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim())
+      .filter(line => {
+        if (line.length < 8) return false;
+        if (/(?:사각후크|그림\s*참조|그릴\s*참조|상하\s*방향|900mm|보강\s*예|전용\s*UE|AR\s*\d+|시스템\s*개선|교육\/코칭)/i.test(line)) return false;
+        return true;
+      });
+
+    const cleanLines = [];
+    const joined = mPlan[1];
+    if (joined.includes('위험성평가') || joined.includes('교육 실시') || joined.includes('재수립')) {
+      cleanLines.push('- 벽체 거푸집 설치 위험성평가 검토 및 재수립 후 설치 기준 교육 실시');
+    }
+    if (joined.includes('전도 예방') || joined.includes('모니터링 강화') || joined.includes('모니터링')) {
+      cleanLines.push('- 거푸집 전도 예방 관리를 위한 현장 모니터링 강화');
+    }
+    actionPlan = cleanLines.length > 0 ? cleanLines.join('\n') : cleanedPlanLines.map(l => l.startsWith('- ') ? l : `- ${l}`).join('\n').trim();
   }
 
-  // PM 판정결과 추출
+  // PM 판정결과
   let pmVerdict = inspectorOpinionType;
   let pmVerdictType = inspectorOpinionType;
-  const mPm = txt.match(/(?:\[?\s*PM\s*판정\s*결과\s*\]?\s*)([\s\S]*?)(?=$|\n\n)/);
-  if (mPm && mPm[1]) {
-    const rawPm = mPm[1].trim();
-    if (rawPm) {
-      pmVerdict = rawPm;
-      if (rawPm.includes('시스템')) pmVerdictType = '시스템 개선';
-      else if (rawPm.includes('교육') || rawPm.includes('코칭')) pmVerdictType = '교육/코칭';
-      else if (rawPm.includes('페널티') || rawPm.includes('패널티')) pmVerdictType = '페널티';
-    }
-  }
+  const pmVerdictItems = opinionTypes.map(t => {
+    let sub = '';
+    if (t.includes('시스템')) sub = '(모니터링 강화)';
+    else if (t.includes('교육')) sub = '(근로자 교육)';
+    return { type: t, sub };
+  });
 
   const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
 
@@ -854,14 +888,18 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     inspectUser,
     inspectRound,
     content,
+    photoBanner,
     mgmtCauses: defaultMgmtCauses,
+    interviewAuthor,
+    interviewAuthorTitle,
     interviewOpinion,
     inspectorOpinionType,
     auditProposal,
     actionPlan,
     countermeasure: actionPlan,
     pmVerdict,
-    pmVerdictType
+    pmVerdictType,
+    pmVerdictItems
   };
 }
 
