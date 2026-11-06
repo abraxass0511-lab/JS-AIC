@@ -49,5 +49,7 @@
   ],
   "agentMajor": "건설장비",
   "agentMid": "생산장비",
-  "agentMinor": "펌프카"
+  "agentMinor": "펌프카",
+  "severity": "중부적합",
+  "holdPoint": true
 }

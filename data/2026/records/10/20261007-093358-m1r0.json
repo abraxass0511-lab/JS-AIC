@@ -49,5 +49,7 @@
   ],
   "agentMajor": "가시설",
   "agentMid": "동바리",
-  "agentMinor": "파이프서포트"
+  "agentMinor": "파이프서포트",
+  "severity": "중부적합",
+  "holdPoint": true
 }

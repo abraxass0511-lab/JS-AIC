@@ -50,5 +50,7 @@
   ],
   "agentMajor": "가시설",
   "agentMid": "안전시설",
-  "agentMinor": "추락방지시설(안전난간)"
+  "agentMinor": "추락방지시설(안전난간)",
+  "severity": "중부적합",
+  "holdPoint": true
 }

@@ -502,7 +502,26 @@ export const store = {
       }
     } catch (lse) {}
 
-    const list = Array.from(map.values()).sort((a, b) => (b.inspectedDate + (b.createdAt || '')).localeCompare(a.inspectedDate + (a.createdAt || '')));
+    const list = Array.from(map.values()).map(rec => {
+      if (!rec) return rec;
+      try {
+        const overrides = JSON.parse(localStorage.getItem('sp_severity_overrides') || '{}');
+        if (overrides[rec.id]) {
+          rec.severity = overrides[rec.id];
+        }
+      } catch (e) {}
+      if (rec.severity !== '중부적합' && rec.severity !== '경부적합') {
+        if (window.SafePPT && typeof window.SafePPT.inferRecordSeverity === 'function') {
+          rec.severity = window.SafePPT.inferRecordSeverity(rec);
+        } else {
+          rec.severity = rec.status !== '조치완료' ? '중부적합' : '경부적합';
+        }
+      }
+      if (rec.severity === '중부적합' && rec.holdPoint === undefined) {
+        rec.holdPoint = true;
+      }
+      return rec;
+    }).sort((a, b) => (b.inspectedDate + (b.createdAt || '')).localeCompare(a.inspectedDate + (a.createdAt || '')));
     this._monthCache.set(bucket, list);
     return list;
   },
@@ -835,6 +854,53 @@ export const store = {
     mergedList.unshift(rec);
     this._monthCache.set(rec.bucket, mergedList);
 
+    return rec;
+  },
+
+  async updateRecordSeverity(rec, newSeverity) {
+    if (!rec || !rec.id) return rec;
+    const sev = newSeverity === '중부적합' ? '중부적합' : '경부적합';
+    rec.severity = sev;
+    if (sev === '중부적합') rec.holdPoint = true;
+    rec.updatedAt = new Date().toISOString();
+    rec.updatedBy = (this.user && this.user.name) || '점검자';
+    const bucket = rec.bucket || (rec.inspectedDate ? rec.inspectedDate.slice(0, 7) : '2026-10');
+    rec.bucket = bucket;
+
+    try {
+      const overrides = JSON.parse(localStorage.getItem('sp_severity_overrides') || '{}');
+      overrides[rec.id] = sev;
+      localStorage.setItem('sp_severity_overrides', JSON.stringify(overrides));
+    } catch (e) {}
+
+    try {
+      const key = `sp_local_records_${bucket}`;
+      const curList = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = curList.filter(r => r.id !== rec.id);
+      filtered.push(rec);
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch (e) {}
+
+    const cachedList = this._monthCache.get(bucket) || [];
+    this._monthCache.set(bucket, cachedList.map(r => r.id === rec.id ? rec : r));
+
+    const msg = `[SafePatrol] 중/경부적합 양식 변경 (${sev}) ${rec.id}`;
+    if (this.localBackend) {
+      try {
+        await rmw(this.localBackend, recordPath(rec), () => rec, {}, msg);
+        await rmw(this.localBackend, indexPath(bucket), cur => {
+          cur.records = (cur.records || []).map(r => r.id === rec.id ? rec : r);
+          return cur;
+        }, { records: [] }, msg);
+      } catch (e) {}
+    }
+    if (this.backend && this.backend !== this.localBackend) {
+      rmw(this.backend, recordPath(rec), () => rec, {}, msg).catch(() => {});
+      rmw(this.backend, indexPath(bucket), cur => {
+        cur.records = (cur.records || []).map(r => r.id === rec.id ? rec : r);
+        return cur;
+      }, { records: [] }, msg).catch(() => {});
+    }
     return rec;
   },
 
