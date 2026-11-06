@@ -1,0 +1,65 @@
+{
+  "site": "방화6",
+  "productType": "공동주택",
+  "progressRate": 15,
+  "stage": "지하 골조 공사 단계",
+  "severity": "중부적합",
+  "subcontractor": "ㅇㅇ",
+  "inspectRound": "3차",
+  "siteInfo": {
+    "progress": "15%",
+    "scale": "",
+    "amount": ""
+  },
+  "content": "보 거푸집 양중 시 수평양중 미 실시",
+  "location": "본구조물",
+  "workName": "거푸집 양중작업",
+  "workGroup": "철근콘크리트공사",
+  "kind": "가시설",
+  "item": "거푸집",
+  "agent": "유로폼",
+  "type": "떨어짐(낙하/비래)/맞음",
+  "condition": "",
+  "action": "줄걸이 방법 미인지",
+  "mgmtCauses": [
+    "계획 미이행",
+    "불안전 행동",
+    "불안전 상태"
+  ],
+  "holdPoint": false,
+  "interviewOpinion": "",
+  "auditProposal": "",
+  "pmVerdict": "",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+  },
+  "law": "",
+  "causes": [
+    "인적"
+  ],
+  "inspectedDate": "2026-10-17",
+  "id": "20261017-131410-o404",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-17T04:14:10.222Z",
+  "inspector": "신이삭",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
+  "updatedBy": "신이삭",
+  "photos": [
+    "data/2026/photos/10/20261017-131410-o404_p1_mvbvtttc.jpg",
+    "data/2026/photos/10/20261017-131410-o404_p2_mvbvtvaz.jpg"
+  ],
+  "fix": {
+    "photo": null
+  },
+  "status": "미조치",
+  "locationDetail": "108동",
+  "workMethod": "양중작업",
+  "agentMajor": "가시설",
+  "agentMid": "거푸집",
+  "agentMinor": "유로폼"
+}

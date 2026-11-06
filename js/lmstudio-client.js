@@ -593,33 +593,49 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   async function cleanOcrRecord(rawOcrText, fallbackRecord) {
     if (!rawOcrText || rawOcrText.trim().length < 10) return fallbackRecord;
 
-    const systemPrompt = `너는 건설현장 패트롤 안전점검 장표 OCR 텍스트 정제 전문가 AI이다.
-주어진 OCR 원문 텍스트에서 안전점검 항목을 정확히 추출하여 오직 유효한 JSON 하나만 반환하라.
-반드시 아래 JSON 키를 포함해야 한다:
+    const systemPrompt = `너는 대한민국 건설현장 패트롤 안전점검 장표 분석 및 구조화 전문가 AI이다.
+주어진 장표 텍스트가 [지적사항 부적합 점검장표]인지, 아니면 [참고사항 / 시공가이드 / 표준작업지침 / 샘플 안내문]인지 정밀 판별하라.
+절대로 임의의 가짜 데이터나 하드코딩된 예시를 넣지 말고, 주어진 텍스트에 있는 내용만 정확히 추출하라.
+
+[판별 기준 1: 참고사항/시공예시/표준작업 가이드/매뉴얼인 경우]
+- 텍스트에 [거푸집 보강 예], [시공 예], [설치 양호/불량], 표준작업지침, 매뉴얼 등 시공 가이드 문구가 있고, '부적합 개요', '점검차수', '개선대책' 등 실제 지적사항 양식 표가 없는 경우
+반드시 아래 JSON만 반환:
 {
-  "subcontractor": "협력사명 (예: 원영건업(주), 미기재 시 빈 문자열)",
-  "workGroup": "공종명 (예: 거푸집동바리공사, 가설공사 등)",
-  "location": "작업장소 (예: 105동 지하1층, 108동 등)",
-  "inspectUser": "점검자 (예: 신우석 프로, 미기재 시 빈 문자열)",
-  "inspectRound": "점검차수 (예: '26년 下 3차)",
+  "sheetType": "참고사항",
+  "_skipped": true,
+  "skipReason": "시공 가이드 및 예시 참고자료"
+}
+
+[판별 기준 2: 지적사항 부적합 점검장표인 경우]
+- 실제 점검장표인 경우 아래 JSON으로 실제 텍스트의 내용을 누락 없이 추출:
+{
+  "sheetType": "지적사항",
+  "_skipped": false,
+  "subcontractor": "협력사명 (기재된 내용만, 미기재 시 빈 문자열)",
+  "workGroup": "공종명 (예: 거푸집동바리공사, _ | 등 불필요 기호 제거)",
+  "location": "작업장소 (예: 지하 2층 ~, 105동 지하1층 등 실물 장표 그대로)",
+  "inspectUser": "점검자 (기재된 내용만, 미기재 시 빈 문자열)",
+  "inspectRound": "점검차수 (예: '26년上 2차)",
   "content": "부적합 지적내용 전문",
   "photoBanner": "핵심 부적합 요약 배너 (35자 이내)",
   "severity": "중부적합 또는 경부적합",
-  "type": "추락 또는 낙하 또는 붕괴 또는 충돌/협착 등",
+  "type": "붕괴 또는 추락 또는 낙하 또는 협착 또는 충돌 등",
   "law": "관련 산업안전보건기준에 관한 규칙 조항",
-  "mgmtCauses": ["계획 미이행", "불안전 상태" 등],
-  "interviewOpinion": "시공자/관리자 의견",
-  "auditProposal": "점검단 제안",
-  "actionPlan": "향후 조치계획",
-  "countermeasure": "재발방지대책",
-  "pmVerdict": "PM 판정결과"
-}`;
+  "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 실제 체크된 것만],
+  "interviewOpinion": "관계자 의견 전문 (끝의 '블' 등 오타 및 불필요 기호 제거)",
+  "inspectorOpinionType": "점검자 의견 구분 (시스템 개선, 교육/코칭, 페널티 중 2개 이상일 경우 콤마로 연결, 예: '시스템 개선, 교육/코칭')",
+  "auditProposal": "점검자 의견 (앞의 '| -' 등 잡음 제거)",
+  "actionPlan": "개선대책에 적힌 모든 조치내용 항목들 전부 (여러 줄일 경우 모든 항목 유지, 줄바꿈으로 구분)",
+  "countermeasure": "개선대책 모든 내용",
+  "pmVerdict": "PM 판정결과 (예: 시스템 개선)"
+}
+생각 과정(<think>)은 2~3문장 이내로 짧게 작성하고 반드시 위 JSON 형식으로 최종 답을 출력하라.`;
 
     // 1. LM Studio 로컬 서버 연결 시도
     for (const ep of [currentEndpoint, ...DEFAULT_ENDPOINTS]) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 3500);
+        const timeout = setTimeout(() => ctrl.abort(), 4000);
         const res = await fetch(`${ep}/chat/completions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -630,17 +646,23 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               { role: 'user', content: `[OCR 텍스트 원문]:\n${rawOcrText}` }
             ],
             temperature: 0.1,
-            max_tokens: 800
+            max_tokens: 1500
           }),
           signal: ctrl.signal
         });
         clearTimeout(timeout);
         if (res.ok) {
           const data = await res.json();
-          let text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content || '';
-          const parsed = extractJSON(text);
-          if (parsed && (parsed.content || parsed.subcontractor || parsed.location)) {
-            return { ...fallbackRecord, ...parsed };
+          const msg = data.choices?.[0]?.message;
+          const text = msg?.content || msg?.reasoning_content || '';
+          const parsed = extractJSON(msg?.content) || extractJSON(msg?.reasoning_content) || extractJSON(text);
+          if (parsed) {
+            if (parsed.sheetType === '참고사항' || parsed._skipped) {
+              return { ...fallbackRecord, _skipped: true, skipReason: parsed.skipReason || '시공 가이드 참고사항' };
+            }
+            if (parsed.content || parsed.subcontractor || parsed.location || parsed.workGroup) {
+              return { ...fallbackRecord, ...parsed, _skipped: false };
+            }
           }
         }
       } catch (e) {}
@@ -651,7 +673,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       const workerUrl = root.SAFE_CONFIG && root.SAFE_CONFIG.workerUrl;
       if (workerUrl) {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 4500);
+        const timeout = setTimeout(() => ctrl.abort(), 5000);
         const res = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -667,8 +689,13 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         if (res.ok) {
           const data = await res.json();
           const parsed = data.result || extractJSON(data.content || data.text || '');
-          if (parsed && (parsed.content || parsed.location)) {
-            return { ...fallbackRecord, ...parsed };
+          if (parsed) {
+            if (parsed.sheetType === '참고사항' || parsed._skipped) {
+              return { ...fallbackRecord, _skipped: true, skipReason: parsed.skipReason || '시공 가이드 참고사항' };
+            }
+            if (parsed.content || parsed.location || parsed.workGroup) {
+              return { ...fallbackRecord, ...parsed, _skipped: false };
+            }
           }
         }
       }

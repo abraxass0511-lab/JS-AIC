@@ -1061,10 +1061,13 @@
     });
 
     // 7) 개선대책 좌측 본문 셀 (SHAPE #11: x = 8.2448, y = 5.9064, w = 3.3858, h = 1.3959)
-    // 기본 12pt 유지, 칸에 실제로 다 들어가지 않을 때만 축소
-    const counterMargin = [6, 8, 4, 6];
-    const counterLineSpacing = 1.15;
-    const counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 9, counterLineSpacing, counterMargin);
+    // 사용자 표준 기본값 12pt 유지 (장문 극단 초과 시에만 최소 10pt까지 점진 조절)
+    const counterMargin = [4, 6, 2, 4];
+    const counterLineSpacing = 1.10;
+    let counterSz = 12;
+    if ((data.countermeasureContent || '').length > 140) {
+      counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 10, counterLineSpacing, counterMargin);
+    }
     slide.addText(data.countermeasureContent || '', {
       x: 8.2448, y: 5.9064, w: 3.3858, h: 1.3959,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
@@ -1361,9 +1364,12 @@
       propLineSpacing = 1.20;
     }
 
-    // 개선대책: 기본 12pt 유지, 칸에 실제로 다 들어가지 않을 때만 축소 (PPT 생성 로직과 동일)
-    const counterLineSpacing = 1.25;
-    const counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 9, 1.15, [6, 8, 4, 6]);
+    // 개선대책: 사용자 표준 기본값 12pt 유지, 장문 극단 초과 시에만 최소 10pt까지 점진 조절
+    const counterLineSpacing = 1.15;
+    let counterSz = 12;
+    if ((data.countermeasureContent || '').length > 140) {
+      counterSz = calcFitMultilineFontSize(data.countermeasureContent, 3.3858, 1.3959, 12, 10, counterLineSpacing, [4, 6, 2, 4]);
+    }
 
     const hasPhoto2 = Boolean(photo2Url);
     const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);

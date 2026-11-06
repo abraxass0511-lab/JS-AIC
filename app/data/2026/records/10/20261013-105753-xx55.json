@@ -1,0 +1,63 @@
+{
+  "site": "송도1",
+  "productType": "공동주택",
+  "progressRate": 35,
+  "stage": "지하 골조 공사 단계",
+  "severity": "경부적합",
+  "subcontractor": "",
+  "inspectRound": "2차",
+  "siteInfo": {
+    "progress": "35%",
+    "scale": "",
+    "amount": ""
+  },
+  "content": "계단실 조도 불량(전등 미작동)",
+  "location": "계단·복도",
+  "workName": "가설전기 설치작업",
+  "workGroup": "가설공사",
+  "kind": "전기시설",
+  "item": "전등시설",
+  "agent": "투광등",
+  "type": "넘어짐(전도: 사람)",
+  "condition": "",
+  "action": "",
+  "mgmtCauses": [
+    "계획 미이행",
+    "불안전 상태"
+  ],
+  "holdPoint": false,
+  "interviewOpinion": "",
+  "auditProposal": "",
+  "pmVerdict": "",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "안전규칙 제21조"
+  },
+  "law": "안전규칙 제21조",
+  "causes": [
+    "인적"
+  ],
+  "inspectedDate": "2026-10-13",
+  "id": "20261013-105753-xx55",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-13T01:57:53.286Z",
+  "inspector": "신이삭",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
+  "updatedBy": "신이삭",
+  "photos": [
+    "data/2026/photos/10/20261013-105753-xx55_p1_mv6175s7.jpg"
+  ],
+  "fix": {
+    "photo": null
+  },
+  "status": "미조치",
+  "locationDetail": "106동, 지하1층 계단실",
+  "workMethod": "설치조립작업",
+  "agentMajor": "전기시설",
+  "agentMid": "전등시설",
+  "agentMinor": "투광등"
+}

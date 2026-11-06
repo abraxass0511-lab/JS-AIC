@@ -1,0 +1,64 @@
+{
+  "site": "송도1",
+  "productType": "공동주택",
+  "progressRate": 35,
+  "stage": "지하 골조 공사 단계",
+  "severity": "중부적합",
+  "subcontractor": "백광도시개발",
+  "inspectRound": "2차",
+  "siteInfo": {
+    "progress": "35%",
+    "scale": "",
+    "amount": ""
+  },
+  "content": "워킹타워 자재 운반 중 낙하물방지시설 미설치",
+  "location": "가설물",
+  "workName": "자재 운반작업",
+  "workGroup": "가설공사",
+  "kind": "가시설",
+  "item": "안전시설",
+  "agent": "낙하방지시설",
+  "type": "떨어짐(낙하/비래)/맞음",
+  "condition": "안전방호장치의 결함 (미설치·해체·불량)",
+  "action": "불안전한 상태 방치",
+  "mgmtCauses": [
+    "계획 미수립",
+    "불안전 상태"
+  ],
+  "holdPoint": false,
+  "interviewOpinion": "통로구간으로 자재를 운반하는 것에 대한 위함성을 인지하지 못했다. 즉시 설치하겠다.",
+  "auditProposal": "통로구간에는 상부 방호선반이나 낙하물방지시설을 설치해야 함",
+  "pmVerdict": "",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": ""
+  },
+  "law": "",
+  "causes": [
+    "인적"
+  ],
+  "inspectedDate": "2026-10-13",
+  "id": "20261013-052922-wct9",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-12T20:29:22.044Z",
+  "inspector": "신이삭",
+  "updatedAt": "2026-10-24T07:38:46.320Z",
+  "updatedBy": "신이삭",
+  "photos": [
+    "data/2026/photos/10/20261013-052922-wct9_p1_mv5pgoho.jpg",
+    "data/2026/photos/10/20261013-052922-wct9_p2_mv5pgq8t.jpg"
+  ],
+  "fix": {
+    "photo": null
+  },
+  "status": "미조치",
+  "locationDetail": "106동 워킹타워",
+  "workMethod": "하역운반작업",
+  "agentMajor": "가시설",
+  "agentMid": "안전시설",
+  "agentMinor": "낙하방지시설(방호선반)"
+}

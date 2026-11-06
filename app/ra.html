@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Workplace RA - 줌인 시각화 작업장 위험성평가</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    :root {
+      --ra-bg: #0f172a;
+      --ra-panel: #1e293b;
+      --ra-panel-border: #334155;
+      --ra-text: #f8fafc;
+      --ra-accent: #38bdf8;
+      --ra-amber: #f59e0b;
+      --ra-red: #ef4444;
+      --ra-green: #10b981;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--ra-bg);
+      color: var(--ra-text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      user-select: none;
+    }
+
+    /* Top Navigation & Breadcrumbs */
+    header.ra-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--ra-panel-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      z-index: 1000;
+    }
+
+    .ra-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 1.05rem;
+      letter-spacing: -0.5px;
+    }
+    .ra-badge {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .ra-breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .ra-breadcrumb-item {
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .ra-breadcrumb-item:hover, .ra-breadcrumb-item.active {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--ra-accent);
+      color: #38bdf8;
+      font-weight: 700;
+    }
+
+    /* Viewport / Zooming Canvas Container */
+    #viewport {
+      position: absolute;
+      top: 60px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+      cursor: grab;
+    }
+    #viewport:active { cursor: grabbing; }
+
+    /* The Infinite Canvas that transforms (Pan & Zoom) */
+    #zoomWorld {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4000px;
+      height: 3000px;
+      transform-origin: 0 0;
+      transition: transform 0.85s cubic-bezier(0.25, 1, 0.3, 1);
+      background-image: 
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* Floating Side Panel (RA Detail & Hold Point) */
+    #raDetailPanel {
+      position: fixed;
+      top: 70px;
+      right: -480px;
+      width: 440px;
+      bottom: 20px;
+      background: rgba(30, 41, 59, 0.94);
+      backdrop-filter: blur(16px);
+      border: 1px solid #475569;
+      border-radius: 14px;
+      box-shadow: -10px 10px 30px rgba(0,0,0,0.5);
+      z-index: 990;
+      display: flex;
+      flex-direction: column;
+      transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+    #raDetailPanel.open { right: 20px; }
+
+    .panel-header {
+      padding: 16px 20px;
+      background: rgba(15, 23, 42, 0.7);
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-content {
+      padding: 18px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Cards inside Side Panel */
+    .hazard-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .hazard-card.spatial { border-left: 4px solid #38bdf8; }
+    .hazard-card.method { border-left: 4px solid var(--ra-amber); }
+    .hazard-card.patrol { border-left: 4px solid var(--ra-red); }
+    .hazard-card.holdpoint { border-left: 4px solid #10b981; background: rgba(16, 185, 129, 0.05); }
+
+    .card-title-sm {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Floating Zoom Controls */
+    .zoom-controls {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      display: flex;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid #334155;
+      padding: 6px 10px;
+      border-radius: 30px;
+      z-index: 800;
+    }
+    .btn-zoom {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: white;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+    .btn-zoom:hover {
+      background: #38bdf8;
+      color: #0f172a;
+      border-color: #38bdf8;
+    }
+
+    /* Interactive SVG Styles */
+    .site-zone {
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .site-zone:hover {
+      filter: brightness(1.25) drop-shadow(0 0 15px rgba(56, 189, 248, 0.6));
+    }
+
+    .pulse-danger {
+      animation: pulseAlert 2s infinite ease-in-out;
+    }
+    @keyframes pulseAlert {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+
+    /* Checklist */
+    .hold-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .hold-item:hover { background: rgba(255,255,255,0.08); }
+    .hold-item input[type="checkbox"] {
+      margin-top: 3px;
+      width: 17px;
+      height: 17px;
+      accent-color: #10b981;
+      cursor: pointer;
+    }
+
+    /* Signature Modal / Area */
+    .sign-box {
+      border: 1.5px dashed #475569;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 8px;
+      height: 90px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748b;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .sign-box.signed {
+      border-style: solid;
+      border-color: #10b981;
+      background: rgba(16, 185, 129, 0.1);
+      color: #34d399;
+      font-weight: 700;
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+      #raDetailPanel {
+        left: 10px;
+        right: 10px;
+        width: auto;
+        bottom: 10px;
+        top: auto;
+        height: 65vh;
+        transform: translateY(110%);
+        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      #raDetailPanel.open {
+        transform: translateY(0);
+        right: 10px;
+      }
+      .ra-breadcrumbs { font-size: 0.72rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header class="ra-header">
+    <div class="ra-brand">
+      <span style="font-size: 1.3rem;">🏗️</span>
+      <span>Workplace RA</span>
+      <span class="ra-badge">Zoom-In</span>
+    </div>
+
+    <!-- Prezi-style Dynamic Breadcrumb Path -->
+    <nav class="ra-breadcrumbs" id="breadcrumbNav">
+      <div class="ra-breadcrumb-item active" onclick="zoomToLevel(1)">
+        <span>🗺️</span> <span>현장 전체 배치도</span>
+      </div>
+      <span style="color:#475569;">›</span>
+      <div class="ra-breadcrumb-item" id="bcZone" style="display:none;" onclick="zoomToLevel(2)">
+        <span>🏢</span> <span id="bcZoneText">104동</span>
+      </div>
+      <span style="color:#475569;" id="bcSep1" style="display:none;">›</span>
+      <div class="ra-breadcrumb-item" id="bcFloor" style="display:none;" onclick="zoomToLevel(3)">
+        <span>📍</span> <span id="bcFloorText">3층 외부비계</span>
+      </div>
+      <span style="color:#475569;" id="bcSep2" style="display:none;">›</span>
+      <div class="ra-breadcrumb-item" id="bcWork" style="display:none;">
+        <span>⚙️</span> <span id="bcWorkText">비계 해체작업</span>
+      </div>
+    </nav>
+
+    <div>
+      <a href="index.html" style="color: #94a3b8; text-decoration: none; font-size: 0.8rem; padding: 6px 12px; border: 1px solid #334155; border-radius: 6px;">
+        ← SafePatrol 패트롤 대장 복귀
+      </a>
+    </div>
+  </header>
+
+  <!-- Viewport for Infinite Canvas -->
+  <div id="viewport">
+    <div id="zoomWorld">
+      <!-- SVG Vector Layout for Seamless Infinite Zoom -->
+      <svg id="siteSvg" viewBox="0 0 2400 1600" width="2400" height="1600" style="display:block;">
+        
+        <!-- Definitions for Patterns and Gradients -->
+        <defs>
+          <linearGradient id="groundGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#1e293b"/>
+            <stop offset="100%" stop-color="#0f172a"/>
+          </linearGradient>
+          <linearGradient id="bldgGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#334155"/>
+            <stop offset="100%" stop-color="#1e293b"/>
+          </linearGradient>
+          <linearGradient id="dangerZone" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ef4444" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#991b1b" stop-opacity="0.6"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Level 1: Site Master Plan Outline -->
+        <rect x="100" y="80" width="2200" height="1440" rx="20" fill="url(#groundGrad)" stroke="#334155" stroke-width="4"/>
+        
+        <!-- Site Roads & Pathways -->
+        <path d="M 100 800 L 2300 800" stroke="#475569" stroke-width="60" stroke-dasharray="20,15"/>
+        <path d="M 1200 80 L 1200 1520" stroke="#475569" stroke-width="60" stroke-dasharray="20,15"/>
+        <text x="140" y="810" fill="#94a3b8" font-size="20" font-weight="bold">현장 주 진입도로 (Main Gate)</text>
+
+        <!-- Building 101 -->
+        <g class="site-zone" onclick="selectBuilding('101동', 400, 380, 2.2)">
+          <rect x="250" y="220" width="300" height="320" rx="12" fill="url(#bldgGrad)" stroke="#38bdf8" stroke-width="2"/>
+          <text x="400" y="380" fill="#f8fafc" font-size="26" font-weight="bold" text-anchor="middle">101동 (지상 25F)</text>
+          <text x="400" y="415" fill="#94a3b8" font-size="16" text-anchor="middle">골조 공사 (공정률 55%)</text>
+        </g>
+
+        <!-- Building 102 -->
+        <g class="site-zone" onclick="selectBuilding('102동', 850, 380, 2.2)">
+          <rect x="700" y="220" width="300" height="320" rx="12" fill="url(#bldgGrad)" stroke="#38bdf8" stroke-width="2"/>
+          <text x="850" y="380" fill="#f8fafc" font-size="26" font-weight="bold" text-anchor="middle">102동 (지상 25F)</text>
+          <text x="850" y="415" fill="#94a3b8" font-size="16" text-anchor="middle">마감 공사 (공정률 72%)</text>
+        </g>
+
+        <!-- Building 103 -->
+        <g class="site-zone" onclick="selectBuilding('103동', 1550, 380, 2.2)">
+          <rect x="1400" y="220" width="300" height="320" rx="12" fill="url(#bldgGrad)" stroke="#38bdf8" stroke-width="2"/>
+          <text x="1550" y="380" fill="#f8fafc" font-size="26" font-weight="bold" text-anchor="middle">103동 (지상 23F)</text>
+          <text x="1550" y="415" fill="#94a3b8" font-size="16" text-anchor="middle">골조 공사 (공정률 42%)</text>
+        </g>
+
+        <!-- Building 104 (⭐ Highlighted Hotspot with Real Defect Data) -->
+        <g class="site-zone" id="zone104" onclick="selectBuilding('104동', 600, 1150, 2.2)">
+          <!-- Pulse alert ring -->
+          <circle cx="600" cy="1150" r="230" fill="url(#dangerZone)" class="pulse-danger"/>
+          <rect x="420" y="980" width="360" height="340" rx="12" fill="#1e293b" stroke="#ef4444" stroke-width="4"/>
+          <text x="600" y="1120" fill="#f8fafc" font-size="28" font-weight="bold" text-anchor="middle">104동 (지상 25F)</text>
+          <text x="600" y="1155" fill="#fca5a5" font-size="16" font-weight="bold" text-anchor="middle">🚨 패트롤 지적 다발구역 (3건)</text>
+          <text x="600" y="1185" fill="#94a3b8" font-size="15" text-anchor="middle">외벽 비계 해체 및 마감공사</text>
+          <circle cx="760" cy="990" r="16" fill="#ef4444"/>
+          <text x="760" y="996" fill="white" font-size="13" font-weight="bold" text-anchor="middle">3</text>
+        </g>
+
+        <!-- Building 105 -->
+        <g class="site-zone" onclick="selectBuilding('105동', 1550, 1150, 2.2)">
+          <rect x="1400" y="980" width="300" height="340" rx="12" fill="url(#bldgGrad)" stroke="#38bdf8" stroke-width="2"/>
+          <text x="1550" y="1140" fill="#f8fafc" font-size="26" font-weight="bold" text-anchor="middle">105동 (지상 20F)</text>
+          <text x="1550" y="1175" fill="#94a3b8" font-size="16" text-anchor="middle">토공사 완료 / 기초타설</text>
+        </g>
+
+        <!-- Underground Parking & Logistics Yard -->
+        <g class="site-zone" onclick="selectBuilding('지하주차장', 1050, 1150, 2.0)">
+          <rect x="900" y="1000" width="380" height="300" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2" stroke-dasharray="8,6"/>
+          <text x="1090" y="1140" fill="#fde68a" font-size="22" font-weight="bold" text-anchor="middle">지하주차장 (밀폐구역)</text>
+          <text x="1090" y="1170" fill="#94a3b8" font-size="15" text-anchor="middle">설비 배관 및 전기 분전반 작업</text>
+        </g>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             LEVEL 2 & 3: 104동 고배율 상세 단면 (평소엔 축소되어 보이지 않다가 줌인 시 선명해짐)
+             ════════════════════════════════════════════════════════════════ -->
+        <g id="detail104" style="opacity: 0; pointer-events: none; transition: opacity 0.4s;">
+          <!-- 104동 고해상도 단면도 배경 -->
+          <rect x="300" y="850" width="600" height="600" fill="#0f172a" stroke="#60a5fa" stroke-width="3" rx="10"/>
+          <text x="600" y="890" fill="#93c5fd" font-size="22" font-weight="bold" text-anchor="middle">104동 단면 층별 상세도</text>
+
+          <!-- 층별 블록들 -->
+          <!-- 25F Roof -->
+          <rect x="350" y="910" width="500" height="40" fill="#1e293b" stroke="#334155" class="site-zone" onclick="selectFloor('25층 옥상')"/>
+          <text x="600" y="935" fill="#cbd5e1" font-size="14" text-anchor="middle">25F 옥상 헬리포트</text>
+
+          <!-- 10F~24F 생략 구간 -->
+          <rect x="350" y="955" width="500" height="35" fill="#0f172a" stroke="#1e293b"/>
+          <text x="600" y="977" fill="#64748b" font-size="13" text-anchor="middle">· · · 10층 ~ 24층 (기준층 마감공사) · · ·</text>
+
+          <!-- 5F -->
+          <rect x="350" y="995" width="500" height="40" fill="#1e293b" stroke="#334155" class="site-zone" onclick="selectFloor('5층 세대')"/>
+          <text x="600" y="1020" fill="#cbd5e1" font-size="14" text-anchor="middle">5F 세대 내부 조적/미장</text>
+
+          <!-- 4F -->
+          <rect x="350" y="1040" width="500" height="40" fill="#1e293b" stroke="#334155" class="site-zone" onclick="selectFloor('4층 슬래브')"/>
+          <text x="600" y="1065" fill="#cbd5e1" font-size="14" text-anchor="middle">4F 슬래브 거푸집 조립</text>
+
+          <!-- ⭐ 3F 외부비계 (패트롤 지적 및 오늘 작업 대상) -->
+          <g class="site-zone" onclick="selectFloor('3층 외부비계', 600, 1100, 4.5)">
+            <rect x="350" y="1085" width="500" height="50" fill="rgba(239, 68, 68, 0.25)" stroke="#ef4444" stroke-width="3"/>
+            <text x="440" y="1115" fill="#fca5a5" font-size="15" font-weight="bold">3F 외부비계</text>
+            <text x="650" y="1115" fill="#fef08a" font-size="13">🚨 비계 해체작업 (Hold Point 관리구역)</text>
+          </g>
+
+          <!-- 2F -->
+          <rect x="350" y="1140" width="500" height="40" fill="#1e293b" stroke="#334155" class="site-zone" onclick="selectFloor('2층')"/>
+          <text x="600" y="1165" fill="#cbd5e1" font-size="14" text-anchor="middle">2F 골조 양생</text>
+
+          <!-- 1F 로비 -->
+          <rect x="350" y="1185" width="500" height="45" fill="#1e293b" stroke="#475569" class="site-zone" onclick="selectFloor('1층 필로티')"/>
+          <text x="600" y="1212" fill="#e2e8f0" font-size="14" text-anchor="middle">1F 필로티 및 주출입구 (보행자 통로 간섭구역)</text>
+
+          <!-- 지하층 -->
+          <rect x="350" y="1235" width="500" height="45" fill="#1e293b" stroke="#334155" class="site-zone" onclick="selectFloor('지하1층 피트실')"/>
+          <text x="600" y="1262" fill="#94a3b8" font-size="13" text-anchor="middle">B1F 전기/통신 인입실</text>
+        </g>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             LEVEL 4: 3층 외부비계 작업방법 및 가시설 초고배율 줌인
+             ════════════════════════════════════════════════════════════════ -->
+        <g id="microScaffold" style="opacity: 0; pointer-events: none; transition: opacity 0.4s;">
+          <rect x="450" y="1020" width="300" height="180" fill="#020617" stroke="#f59e0b" stroke-width="2" rx="8"/>
+          <!-- 비계 파이프 & 발판 도식화 -->
+          <line x1="480" y1="1040" x2="480" y2="1180" stroke="#94a3b8" stroke-width="4"/>
+          <line x1="720" y1="1040" x2="720" y2="1180" stroke="#94a3b8" stroke-width="4"/>
+          <line x1="480" y1="1120" x2="720" y2="1120" stroke="#38bdf8" stroke-width="6"/> <!-- 작업발판 -->
+          
+          <!-- 안전난간 결함 지점 붉은 마커 -->
+          <line x1="480" y1="1070" x2="620" y2="1070" stroke="#22c55e" stroke-width="4"/> <!-- 일부 설치된 난간 -->
+          <line x1="620" y1="1070" x2="720" y2="1070" stroke="#ef4444" stroke-width="4" stroke-dasharray="6,4"/> <!-- 미설치 구간 -->
+          
+          <circle cx="670" cy="1070" r="10" fill="#ef4444" class="pulse-danger"/>
+          <text x="670" y="1050" fill="#fca5a5" font-size="12" font-weight="bold" text-anchor="middle">지적: 난간대 미설치</text>
+          
+          <text x="600" y="1170" fill="#f8fafc" font-size="13" font-weight="bold" text-anchor="middle">시스템비계 3단 해체 작업구간</text>
+        </g>
+
+      </svg>
+    </div>
+  </div>
+
+  <!-- Floating Navigation Controls -->
+  <div class="zoom-controls">
+    <button type="button" class="btn-zoom" onclick="zoomIn()" title="확대">+</button>
+    <button type="button" class="btn-zoom" onclick="zoomOut()" title="축소">-</button>
+    <button type="button" class="btn-zoom" onclick="zoomToLevel(1)" style="font-size:0.75rem; width:auto; padding:0 14px; border-radius:18px;" title="전체 배치도 리셋">
+      전체보기
+    </button>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       Right Side Panel: Workplace Risk Assessment & Hold Point
+       ════════════════════════════════════════════════════════════════ -->
+  <aside id="raDetailPanel">
+    <div class="panel-header">
+      <div>
+        <div style="font-size:0.72rem; color:#38bdf8; font-weight:700;">WORKPLACE RA</div>
+        <h3 id="panelTitle" style="font-size:1.1rem; color:#f8fafc; margin-top:2px;">104동 3층 외부비계</h3>
+      </div>
+      <button type="button" onclick="closePanel()" style="background:none; border:none; color:#94a3b8; font-size:1.2rem; cursor:pointer;">✕</button>
+    </div>
+
+    <div class="panel-content">
+      <!-- 1. 장소적 위험성 (Spatial Hazard) -->
+      <div class="hazard-card spatial">
+        <div class="card-title-sm" style="color:#38bdf8;">
+          <span>📍</span> <span>1. 장소적 위험성 (Spatial Hazards)</span>
+        </div>
+        <ul style="font-size:0.84rem; line-height:1.5; padding-left:18px; color:#cbd5e1;">
+          <li><strong>하부 보행통로 간섭:</strong> 1층 주출입구 상부로 자재 낙하 시 중대재해 위험.</li>
+          <li><strong>외벽 개구부 노출:</strong> 3층 창호 주변 단부 추락 방호조치 필요.</li>
+          <li><strong>상하동시작업 금지:</strong> 4층 골조 거푸집 작업과 겹침 (공정 분리 필수).</li>
+        </ul>
+      </div>
+
+      <!-- 2. 방법적 위험성 (Method Hazards - 9×9 매트릭스) -->
+      <div class="hazard-card method">
+        <div class="card-title-sm" style="color:var(--ra-amber);">
+          <span>⚙️</span> <span>2. 방법적 위험성 (Method Hazards)</span>
+        </div>
+        <div style="font-size:0.8rem; background:rgba(245,158,11,0.1); border:1px solid rgba(245,158,11,0.25); border-radius:6px; padding:6px 10px; margin-bottom:8px; color:#fde68a;">
+          🎯 <strong>9×9 인자:</strong> 가시설 › 비계 (시스템비계) | 공종: 비계해체
+        </div>
+        <ul style="font-size:0.84rem; line-height:1.5; padding-left:18px; color:#cbd5e1;">
+          <li><strong>해체 순서 미준수:</strong> 벽이음철물 임의 선해체 시 비계 전체 좌굴/붕괴 위험.</li>
+          <li><strong>자재 투하 행위 금지:</strong> 파이프/발판을 하부로 던지는 행위 절대 금지.</li>
+          <li><strong>필수 보호구:</strong> 안전대(2개소 걸이), 턱끈 조인 안전모, 추락방지대.</li>
+        </ul>
+      </div>
+
+      <!-- 3. SafePatrol 실제 패트롤 점검결과 연동 -->
+      <div class="hazard-card patrol">
+        <div class="card-title-sm" style="color:var(--ra-red);">
+          <span>📸</span> <span>3. SafePatrol 최근 패트롤 지적 사례</span>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:6px;">
+          <!-- 점검 사진 썸네일 -->
+          <div style="width:72px; height:72px; background:#334155; border-radius:6px; overflow:hidden; border:1px solid #ef4444; flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+            <span style="font-size:1.8rem;">🚨</span>
+          </div>
+          <div style="flex:1; min-width:0; font-size:0.82rem;">
+            <div style="color:#fca5a5; font-weight:700; margin-bottom:2px;">[2026-10-14 패트롤 지적]</div>
+            <div style="color:#e2e8f0; line-height:1.4;">"시스템비계 3단 작업발판 단부 안전난간대 미설치 및 발판 틈새 방치"</div>
+            <div style="color:#94a3b8; font-size:0.75rem; margin-top:4px;">
+              근본원인: 안전시설 미설치 | 책임주체: 시공담당
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 회사의 Hold Point (작업 착수 필수 중단점) -->
+      <div class="hazard-card holdpoint">
+        <div class="card-title-sm" style="color:#10b981;">
+          <span>🛑</span> <span>4. 작업 착수 필수 Hold Point (3대 확인)</span>
+        </div>
+        <p style="font-size:0.76rem; color:#94a3b8; margin-bottom:8px;">
+          ※ 아래 3개 항목이 모두 체크되어야 작업장 RA가 승인됩니다.
+        </p>
+
+        <label class="hold-item">
+          <input type="checkbox" id="hp1" onchange="checkHoldPoints()">
+          <span style="font-size:0.82rem; color:#e2e8f0;">
+            <strong>Hold Point 1:</strong> 하부 20m 반경 출입통제선 설치 및 전담 신호수 배치 확인
+          </span>
+        </label>
+
+        <label class="hold-item">
+          <input type="checkbox" id="hp2" onchange="checkHoldPoints()">
+          <span style="font-size:0.82rem; color:#e2e8f0;">
+            <strong>Hold Point 2:</strong> 비계 해체 자재 운반용 2인 1조 달줄/달포대 구비 확인
+          </span>
+        </label>
+
+        <label class="hold-item">
+          <input type="checkbox" id="hp3" onchange="checkHoldPoints()">
+          <span style="font-size:0.82rem; color:#e2e8f0;">
+            <strong>Hold Point 3:</strong> 전 근로자 안전대 2개소 걸이시설 체결 및 관리감독자 입회 확인
+          </span>
+        </label>
+
+        <!-- 근로자 / 관리감독자 디지털 서명 박스 -->
+        <div style="margin-top:12px;">
+          <div style="font-size:0.78rem; color:#94a3b8; margin-bottom:4px;">작업팀장 / 관리감독자 확인 서명:</div>
+          <div class="sign-box" id="signBox" onclick="signHoldPoint()">
+            ✍️ 터치하여 안전 확인 서명
+          </div>
+        </div>
+
+        <button type="button" id="btnApproveRA" disabled class="btn btn-primary" style="width:100%; margin-top:14px; padding:12px; font-weight:700; background:#334155; border:none; cursor:not-allowed;" onclick="approveRA()">
+          🛡️ 작업장 RA 승인 및 작업 착수 허가
+        </button>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- Interactive Logic (Prezi-like Zooming & Camera Controller) -->
+  <script>
+    let currentLevel = 1;
+    let camera = { x: 0, y: 0, scale: 1 };
+    let isSigned = false;
+
+    const zoomWorld = document.getElementById('zoomWorld');
+    const viewport = document.getElementById('viewport');
+    const panel = document.getElementById('raDetailPanel');
+
+    // Pan & Drag Handlers
+    let isPanning = false;
+    let startX = 0, startY = 0;
+    let initialCamX = 0, initialCamY = 0;
+
+    viewport.addEventListener('mousedown', (e) => {
+      if (e.target.closest('#raDetailPanel') || e.target.closest('.zoom-controls') || e.target.closest('.ra-header')) return;
+      isPanning = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      initialCamX = camera.x;
+      initialCamY = camera.y;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      camera.x = initialCamX + dx;
+      camera.y = initialCamY + dy;
+      applyTransform(false);
+    });
+
+    window.addEventListener('mouseup', () => { isPanning = false; });
+
+    // Wheel Zoom
+    viewport.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      const newScale = Math.min(Math.max(camera.scale * zoomFactor, 0.4), 6.0);
+      
+      const rect = viewport.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      camera.x = mouseX - (mouseX - camera.x) * (newScale / camera.scale);
+      camera.y = mouseY - (mouseY - camera.y) * (newScale / camera.scale);
+      camera.scale = newScale;
+
+      applyTransform(false);
+    }, { passive: false });
+
+    function applyTransform(animate = true) {
+      zoomWorld.style.transition = animate ? 'transform 0.85s cubic-bezier(0.25, 1, 0.3, 1)' : 'none';
+      zoomWorld.style.transform = `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`;
+    }
+
+    // Camera Focus on Target Coordinate (Prezi Zoom effect)
+    function flyTo(targetX, targetY, targetScale) {
+      const vWidth = viewport.clientWidth;
+      const vHeight = viewport.clientHeight;
+      // Center the target coordinate in the viewport
+      camera.scale = targetScale;
+      camera.x = (vWidth / 2) - (targetX * targetScale);
+      camera.y = (vHeight / 2) - (targetY * targetScale);
+      applyTransform(true);
+    }
+
+    // Zoom Levels Definition
+    function zoomToLevel(level) {
+      currentLevel = level;
+      if (level === 1) {
+        // Level 1: Site Master Plan
+        const vW = viewport.clientWidth;
+        const vH = viewport.clientHeight;
+        const baseScale = Math.min(vW / 2400, vH / 1600) * 0.95;
+        camera.scale = baseScale;
+        camera.x = (vW - 2400 * baseScale) / 2;
+        camera.y = (vH - 1600 * baseScale) / 2;
+        applyTransform(true);
+
+        // Hide Details
+        document.getElementById('detail104').style.opacity = '0';
+        document.getElementById('detail104').style.pointerEvents = 'none';
+        document.getElementById('microScaffold').style.opacity = '0';
+        document.getElementById('microScaffold').style.pointerEvents = 'none';
+
+        // Update Breadcrumb
+        document.getElementById('bcZone').style.display = 'none';
+        document.getElementById('bcSep1').style.display = 'none';
+        document.getElementById('bcFloor').style.display = 'none';
+        document.getElementById('bcSep2').style.display = 'none';
+        document.getElementById('bcWork').style.display = 'none';
+        closePanel();
+      } else if (level === 2) {
+        selectBuilding('104동', 600, 1150, 2.2);
+      } else if (level === 3) {
+        selectFloor('3층 외부비계', 600, 1100, 4.5);
+      }
+    }
+
+    // Select Building
+    function selectBuilding(name, x, y, scale) {
+      currentLevel = 2;
+      flyTo(x, y, scale);
+
+      document.getElementById('bcZone').style.display = 'inline-flex';
+      document.getElementById('bcZoneText').textContent = name;
+      document.getElementById('bcSep1').style.display = 'inline';
+
+      if (name === '104동') {
+        setTimeout(() => {
+          document.getElementById('detail104').style.opacity = '1';
+          document.getElementById('detail104').style.pointerEvents = 'auto';
+        }, 350);
+      }
+    }
+
+    // Select Floor / Zone (Level 3 & 4)
+    function selectFloor(floorName, x = 600, y = 1100, scale = 4.2) {
+      currentLevel = 3;
+      flyTo(x, y, scale);
+
+      document.getElementById('bcFloor').style.display = 'inline-flex';
+      document.getElementById('bcFloorText').textContent = floorName;
+      document.getElementById('bcSep2').style.display = 'inline';
+      document.getElementById('bcWork').style.display = 'inline-flex';
+
+      setTimeout(() => {
+        document.getElementById('microScaffold').style.opacity = '1';
+        document.getElementById('microScaffold').style.pointerEvents = 'auto';
+        openPanel(floorName);
+      }, 400);
+    }
+
+    function openPanel(title) {
+      document.getElementById('panelTitle').textContent = `104동 ${title}`;
+      panel.classList.add('open');
+    }
+
+    function closePanel() {
+      panel.classList.remove('open');
+    }
+
+    function zoomIn() {
+      camera.scale = Math.min(camera.scale * 1.3, 6.0);
+      applyTransform(true);
+    }
+
+    function zoomOut() {
+      camera.scale = Math.max(camera.scale * 0.7, 0.4);
+      applyTransform(true);
+    }
+
+    // Hold Point Verification Logic
+    function checkHoldPoints() {
+      const h1 = document.getElementById('hp1').checked;
+      const h2 = document.getElementById('hp2').checked;
+      const h3 = document.getElementById('hp3').checked;
+      const btn = document.getElementById('btnApproveRA');
+
+      if (h1 && h2 && h3 && isSigned) {
+        btn.disabled = false;
+        btn.style.background = '#10b981';
+        btn.style.cursor = 'pointer';
+      } else {
+        btn.disabled = true;
+        btn.style.background = '#334155';
+        btn.style.cursor = 'not-allowed';
+      }
+    }
+
+    function signHoldPoint() {
+      const box = document.getElementById('signBox');
+      isSigned = true;
+      box.classList.add('signed');
+      box.innerHTML = '✅ 서명완료: 홍길동 (시공담당 / 07:30)';
+      checkHoldPoints();
+    }
+
+    function approveRA() {
+      alert('🎉 [Workplace RA 승인 완료]\n\n104동 3층 외부 시스템비계 해체작업의 장소·방법 위험성 평가 및 3대 Hold Point 검증이 완료되었습니다.\n안전작업 착수가 승인되었습니다!');
+      closePanel();
+    }
+
+    // Initial Launch Fit
+    window.addEventListener('load', () => {
+      zoomToLevel(1);
+    });
+    window.addEventListener('resize', () => {
+      if (currentLevel === 1) zoomToLevel(1);
+    });
+  </script>
+</body>
+</html>

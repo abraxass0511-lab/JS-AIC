@@ -1,0 +1,73 @@
+{
+  "site": "아파트1",
+  "productType": "공동주택",
+  "progressRate": 15,
+  "stage": "지하 골조 공사 단계",
+  "severity": "경부적합",
+  "subcontractor": "",
+  "inspectRound": "3차",
+  "siteInfo": {
+    "progress": "15%",
+    "scale": "",
+    "amount": ""
+  },
+  "content": "구획된 바닥 안전통로에 거푸집 자재를 방치함",
+  "location": "계단·복도",
+  "workName": "거푸집설치작업",
+  "workGroup": "철근콘크리트공사",
+  "kind": "가시설",
+  "item": "거푸집",
+  "agent": "유로폼",
+  "type": "넘어짐(전도: 사람)",
+  "condition": "",
+  "action": "",
+  "matrixArea": "",
+  "matrixTarget": "",
+  "matrixSpec": "",
+  "rootCauseMgmt": "",
+  "rootCauseSystem": "",
+  "stakeholder": "",
+  "mgmtCauses": [
+    "불안전 상태",
+    "계획 미이행"
+  ],
+  "holdPoint": false,
+  "interviewOpinion": "",
+  "auditProposal": "",
+  "pmVerdict": "",
+  "workPlan": "해당없음",
+  "basis": {
+    "ra": "반영",
+    "cp": "해당없음",
+    "st": "해당없음",
+    "guide": "",
+    "law": "",
+    "점검영역9x9": "",
+    "점검대상9x9": "",
+    "가시설세부사양": "",
+    "근본원인_관리감독": "",
+    "근본원인_안전시스템": "",
+    "관리책임주체": ""
+  },
+  "law": "",
+  "causes": [],
+  "inspectedDate": "2026-10-19",
+  "id": "20261019-143126-yrnw",
+  "bucket": "2026-10",
+  "createdAt": "2026-10-19T05:31:26.787Z",
+  "inspector": "신이삭",
+  "updatedAt": "2026-10-24T07:38:46.319Z",
+  "updatedBy": "신이삭",
+  "photos": [
+    "data/2026/photos/10/20261019-143126-yrnw_p1_mvetgwqr.jpg"
+  ],
+  "fix": {
+    "photo": null
+  },
+  "status": "미조치",
+  "locationDetail": "103동 지하1층 바닥 안전통로",
+  "workMethod": "설치조립작업",
+  "agentMajor": "가시설",
+  "agentMid": "거푸집",
+  "agentMinor": "유로폼"
+}

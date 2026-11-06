@@ -1,0 +1,16 @@
+{
+ "users": {
+  "111111": {
+   "name": "신이삭",
+   "role": "inspector"
+  },
+  "222222": {
+   "name": "점검자2",
+   "role": "inspector"
+  },
+  "000000": {
+   "name": "관리자",
+   "role": "admin"
+  }
+ }
+}
