@@ -13,7 +13,7 @@ function lumAt(d, k) {
 
 function isYellow(d, k) {
   const r = d[k], g = d[k + 1], b = d[k + 2];
-  return r > 190 && g > 160 && b < 150 && r - b > 60;
+  return r > 175 && g > 145 && b < 165 && (r - b) > 35 && (g - b) > 20;
 }
 
 function isRedBanner(d, k) {
@@ -100,7 +100,7 @@ export function analyzeSheetLayout(img) {
   const yBands = bands(H, y => {
     let c = 0;
     for (let x = rx0; x < rx1; x += 2) if (isYellow(data, (y * W + x) * 4)) c++;
-    return c > ((rx1 - rx0) / 2) * 0.4;
+    return c > ((rx1 - rx0) / 2) * 0.22;
   }, Math.max(8, Math.round(H * 0.015)));
   if (yBands.length < 2) return { ok: false, reason: 'yellow-headers-not-found' };
   const band1 = yBands[0];
@@ -312,7 +312,7 @@ export function findPhotoBoxes(img, area, banners = []) {
       }
     }
     const whiteRatio = white / Math.max(1, tot);
-    return { ...r, whiteRatio, isReference: whiteRatio > 0.3 };
+    return { ...r, whiteRatio, isReference: whiteRatio > 0.22 };
   }).sort((p, q) => (Math.abs(p.y - q.y) < 40 ? p.x - q.x : p.y - q.y));
 }
 
