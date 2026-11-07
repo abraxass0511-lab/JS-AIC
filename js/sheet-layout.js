@@ -26,53 +26,46 @@ function trimRedBannerFromBox(data, W, box) {
   let y0 = y;
   let y1 = y + h - 1;
 
-  // Trim from bottom up (적색 배너 및 흰 글씨 띠 제거)
-  for (let cy = y1; cy >= y0 + Math.round(h * 0.4); cy--) {
-    let redCount = 0;
-    for (let cx = x; cx < x + w; cx += 2) {
-      const idx = (cy * W + cx) * 4;
-      if (isRedBanner(data, idx)) redCount++;
-    }
-    const ratio = redCount / (w / 2);
-    if (ratio > 0.22) {
-      y1 = cy - 1;
-    } else if (y1 < y + h - 10) {
-      let isInside = false;
-      for (let lookback = 1; lookback <= 8; lookback++) {
-        let prevRed = 0;
-        for (let cx = x; cx < x + w; cx += 2) {
-          const idx = ((cy - lookback) * W + cx) * 4;
-          if (isRedBanner(data, idx)) prevRed++;
-        }
-        if (prevRed / (w / 2) > 0.22) { isInside = true; break; }
+  const isBannerBand = (startY, endY) => {
+    let bandRows = 0;
+    let peakRatio = 0;
+    for (let cy = startY; cy <= endY; cy++) {
+      let redCount = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        if (isRedBanner(data, (cy * W + cx) * 4)) redCount++;
       }
-      if (isInside) y1 = cy - 1;
-      else break;
+      const r = redCount / Math.max(1, w / 2);
+      if (r > peakRatio) peakRatio = r;
+      if (r > 0.25) bandRows++;
+    }
+    return bandRows >= 12 && peakRatio > 0.42;
+  };
+
+  // 1) 하단 적색 배너 바 제거 (하단 25% 영역에 실제 배너 띠가 존재하는 경우에만 제거)
+  const botLimit = y1 - Math.min(80, Math.round(h * 0.24));
+  if (isBannerBand(botLimit, y1)) {
+    for (let cy = y1; cy >= botLimit; cy--) {
+      let redCount = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        if (isRedBanner(data, (cy * W + cx) * 4)) redCount++;
+      }
+      if (redCount / Math.max(1, w / 2) > 0.20) {
+        y1 = cy - 1;
+      }
     }
   }
 
-  // Trim from top down
-  for (let cy = y0; cy <= y1 - Math.round(h * 0.4); cy++) {
-    let redCount = 0;
-    for (let cx = x; cx < x + w; cx += 2) {
-      const idx = (cy * W + cx) * 4;
-      if (isRedBanner(data, idx)) redCount++;
-    }
-    const ratio = redCount / (w / 2);
-    if (ratio > 0.22) {
-      y0 = cy + 1;
-    } else if (y0 > y + 5) {
-      let isInside = false;
-      for (let lookahead = 1; lookahead <= 8; lookahead++) {
-        let nextRed = 0;
-        for (let cx = x; cx < x + w; cx += 2) {
-          const idx = ((cy + lookahead) * W + cx) * 4;
-          if (isRedBanner(data, idx)) nextRed++;
-        }
-        if (nextRed / (w / 2) > 0.22) { isInside = true; break; }
+  // 2) 상단 적색 배너 바 제거 (상단 25% 영역에 실제 배너 띠가 존재하는 경우에만 제거)
+  const topLimit = y0 + Math.min(80, Math.round(h * 0.24));
+  if (isBannerBand(y0, topLimit)) {
+    for (let cy = y0; cy <= topLimit; cy++) {
+      let redCount = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        if (isRedBanner(data, (cy * W + cx) * 4)) redCount++;
       }
-      if (isInside) y0 = cy + 1;
-      else break;
+      if (redCount / Math.max(1, w / 2) > 0.20) {
+        y0 = cy + 1;
+      }
     }
   }
 
@@ -313,57 +306,73 @@ export function findPhotoBoxes(img, area, banners = []) {
   const { data, width: W } = img;
   const inBanner = (x, y) => banners.some(b => x >= b.x - 3 && x <= b.x + b.w + 3 && y >= b.y - 3 && y <= b.y + b.h + 3);
   const mw = area.w, mh = area.h;
-  const mask = new Uint8Array(mw * mh);
-  for (let y = 0; y < mh; y++) {
-    for (let x = 0; x < mw; x++) {
+  const minSide = Math.round(Math.min(mw, mh) * 0.14);
+
+  const colCount = x => {
+    let c = 0;
+    for (let y = 0; y < mh; y++) {
       const gx = area.x + x, gy = area.y + y;
-      if (inBanner(gx, gy)) continue;
-      if (isNonWhite(data, (gy * W + gx) * 4)) mask[y * mw + x] = 1;
+      if (!inBanner(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
+    }
+    return c;
+  };
+  const colEmpty = x => colCount(x) <= Math.max(2, mh * 0.01);
+
+  // 1) X축 기준 1차 컬럼 분리 (좌/우 2장 배치 또는 우측 참고도면 분리)
+  const xSegs = [];
+  let s = 0, gap = 0;
+  for (let x = 0; x < mw; x++) {
+    if (colEmpty(x)) gap++;
+    else {
+      if (gap >= 6 && x - gap > s) {
+        xSegs.push([s, x - gap - 1]);
+        s = x;
+      }
+      gap = 0;
     }
   }
-  const boxes = [];
-  const minSide = Math.round(Math.min(mw, mh) * 0.12);
+  xSegs.push([s, mw - 1]);
 
-  function cut(bx0, by0, bx1, by1, depth) {
-    // 가장자리 공백 제거
-    const rowCount = y => { let c = 0; for (let x = bx0; x <= bx1; x++) c += mask[y * mw + x]; return c; };
-    const colCount = x => { let c = 0; for (let y = by0; y <= by1; y++) c += mask[y * mw + x]; return c; };
-    const rowEmpty = y => rowCount(y) <= Math.max(2, (bx1 - bx0 + 1) * 0.004);
-    const colEmpty = x => colCount(x) <= Math.max(2, (by1 - by0 + 1) * 0.004);
-    while (by0 < by1 && rowEmpty(by0)) by0++;
-    while (by1 > by0 && rowEmpty(by1)) by1--;
-    while (bx0 < bx1 && colEmpty(bx0)) bx0++;
-    while (bx1 > bx0 && colEmpty(bx1)) bx1--;
-    if (bx1 - bx0 < minSide || by1 - by0 < minSide) return;
-    if (depth > 8) { boxes.push([bx0, by0, bx1, by1]); return; }
+  const results = [];
+  for (const [xa0, xb0] of xSegs) {
+    let xa = xa0, xb = xb0;
+    while (xa < xb && colEmpty(xa)) xa++;
+    while (xb > xa && colEmpty(xb)) xb--;
+    if (xb - xa + 1 < minSide) continue;
 
-    const tryAxis = (lo, hi, empty) => {
-      const segs = [];
-      let s = lo, gap = 0;
-      for (let i = lo; i <= hi; i++) {
-        if (empty(i)) gap++;
-        else {
-          if (gap >= 4 && i - gap > s) { segs.push([s, i - gap - 1]); s = i; }
-          gap = 0;
-        }
+    const rowCount = y => {
+      let c = 0;
+      for (let x = xa; x <= xb; x++) {
+        const gx = area.x + x, gy = area.y + y;
+        if (!inBanner(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
       }
-      segs.push([s, hi]);
-      return segs.length > 1 ? segs : null;
+      return c;
     };
-    const ys = tryAxis(by0, by1, rowEmpty);
-    if (ys) { ys.forEach(([a, b]) => cut(bx0, a, bx1, b, depth + 1)); return; }
-    const xs = tryAxis(bx0, bx1, colEmpty);
-    if (xs) { xs.forEach(([a, b]) => cut(a, by0, b, by1, depth + 1)); return; }
-    boxes.push([bx0, by0, bx1, by1]);
-  }
-  cut(0, 0, mw - 1, mh - 1, 0);
+    const rowEmpty = y => rowCount(y) <= Math.max(2, (xb - xa + 1) * 0.01);
 
-  return boxes.map(([a, b, c, e]) => {
-    let r = rect(area.x + a, area.y + b, area.x + c + 1, area.y + e + 1);
-    // 상/하단 적색 배너 바를 사진 영역에서 완전히 제거
+    let y0 = 0, y1 = mh - 1;
+    while (y0 < y1 && rowEmpty(y0)) y0++;
+    while (y1 > y0 && rowEmpty(y1)) y1--;
+    if (y1 - y0 + 1 < minSide) continue;
+
+    let r = rect(area.x + xa, area.y + y0, area.x + xb + 1, area.y + y1 + 1);
     r = trimRedBannerFromBox(data, W, r);
+    if (r.w < minSide || r.h < minSide) continue;
 
-    // 박스 내부 백색 비율 / 어두운 글자 비율 → 기준 문서 캡처 판별
+    // 상/하단 공백 재정밀 트림 (적색 배너 제거 후 남은 여백 정리)
+    let ty0 = r.y, ty1 = r.y + r.h - 1;
+    const isRowBlank = gy => {
+      let c = 0;
+      for (let gx = r.x; gx < r.x + r.w; gx++) {
+        if (!inBanner(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
+      }
+      return c <= Math.max(2, r.w * 0.01);
+    };
+    while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
+    while (ty1 > ty0 && isRowBlank(ty1)) ty1--;
+    r = rect(r.x, ty0, r.x + r.w, ty1 + 1);
+
+    // 박스 내부 백색 비율 계산 → 기준 문서/시공 가이드 캡처(예: 6.2 거푸집 보강, 900mm 이내 등) 판별
     let white = 0, tot = 0;
     for (let y = r.y; y < r.y + r.h; y += 2) {
       for (let x = r.x; x < r.x + r.w; x += 2) {
@@ -373,11 +382,14 @@ export function findPhotoBoxes(img, area, banners = []) {
       }
     }
     const whiteRatio = white / Math.max(1, tot);
-    // 우측 절반에 위치하면서 백색 비율이 높거나 가이드 도면인 경우 reference 처리
     const isRightHalf = r.x > area.x + Math.round(area.w * 0.45);
-    const isReference = whiteRatio > 0.22 || (isRightHalf && whiteRatio > 0.18);
-    return { ...r, whiteRatio, isReference };
-  }).filter(b => b.w >= minSide && b.h >= minSide).sort((p, q) => (Math.abs(p.y - q.y) < 40 ? p.x - q.x : p.y - q.y));
+    // 참고 도면(예: Page 0 우측 '6.2 거푸집 보강')은 전체 컬럼 백색 비율이 ~0.39로 높고,
+    // 실제 4분할 현장사진 콜라주(예: Page 1 우측 '② 잭베이스 설치불량')는 ~0.217 수준임
+    const isReference = whiteRatio > 0.28 || (isRightHalf && whiteRatio > 0.25);
+    results.push({ ...r, whiteRatio, isReference });
+  }
+
+  return results.sort((p, q) => p.x - q.x);
 }
 
 /**
@@ -388,7 +400,7 @@ export function detectCheckboxesFromLayout(img, checkCell) {
   const { data, width: W } = img;
   const box = checkCell;
   const midX = box.x + Math.round(box.w * 0.48);
-  const midY = box.y + Math.round(box.h * 0.50);
+  const midY = box.y + Math.round(box.h * 0.48);
 
   const quads = [
     { name: '계획 미수립', x0: box.x, x1: midX, y0: box.y, y1: midY },
@@ -401,16 +413,16 @@ export function detectCheckboxesFromLayout(img, checkCell) {
   for (const q of quads) {
     const qw = q.x1 - q.x0;
     const qh = q.y1 - q.y0;
-    const sx1 = q.x0 + Math.round(qw * 0.05);
+    const sx1 = q.x0 + Math.round(qw * 0.09);
     const sx2 = q.x0 + Math.round(qw * 0.36);
-    const sy1 = q.y0 + Math.round(qh * 0.12);
-    const sy2 = q.y0 + Math.round(qh * 0.88);
+    const sy1 = q.y0 + Math.round(qh * 0.08);
+    const sy2 = q.y0 + Math.round(qh * 0.80);
     let minX = sx2, maxX = sx1, minY = sy2, maxY = sy1;
     for (let y = sy1; y <= sy2; y++) {
       for (let x = sx1; x <= sx2; x++) {
         const k = (y * W + x) * 4;
         const lum = data[k] * 0.299 + data[k + 1] * 0.587 + data[k + 2] * 0.114;
-        if (lum < 165) {
+        if (lum < 155) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;
@@ -420,10 +432,10 @@ export function detectCheckboxesFromLayout(img, checkCell) {
     }
     if (maxX - minX >= 8 && maxY - minY >= 8) {
       let dark = 0, tot = 0;
-      const ix0 = minX + Math.round((maxX - minX) * 0.28);
-      const ix1 = minX + Math.round((maxX - minX) * 0.72);
-      const iy0 = minY + Math.round((maxY - minY) * 0.28);
-      const iy1 = minY + Math.round((maxY - minY) * 0.72);
+      const ix0 = minX + Math.round((maxX - minX) * 0.25);
+      const ix1 = minX + Math.round((maxX - minX) * 0.75);
+      const iy0 = minY + Math.round((maxY - minY) * 0.25);
+      const iy1 = minY + Math.round((maxY - minY) * 0.75);
       for (let y = iy0; y <= iy1; y++) {
         for (let x = ix0; x <= ix1; x++) {
           tot++;

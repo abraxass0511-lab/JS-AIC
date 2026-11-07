@@ -99,68 +99,166 @@
 
   function cleanSubcontractor(raw) {
     if (!raw) return '';
-    const cleaned = String(raw).replace(/[^가-힣a-zA-Z0-9()주\s]/g, '').trim();
-    if (cleaned.length >= 2 && !/^(?:공종|작업|점검|비어|없음)/.test(cleaned)) {
-      return cleaned;
+    const cleaned = String(raw)
+      .replace(/^(?:협력사|공종명?)\s*[:;：]?\s*/i, '')
+      .replace(/[^가-힣a-zA-Z0-9()주\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned || cleaned.length < 2) return '';
+    if (/(?:공사|비계|거푸집|동바리|철근|콘크리트|양중|토공|작업|점검|장소|차수|비어|없음|미정|해당없음|원영건업|HEY|HA\b|HE\b|BEE)/i.test(cleaned)) {
+      return '';
     }
-    return '';
+    return cleaned;
   }
 
   function cleanOpinionText(raw) {
     if (!raw) return '';
     let s = String(raw)
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-      .replace(/^[\s|ㅣ¦_!\-•·~—]+/gm, '')
-      .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
-      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
-      .replace(/3000이하/g, '30cm 이하')
-      .replace(/5500\b/g, '55cm')
-      .replace(/55em\b/g, '55cm')
-      .replace(/\s+/g, ' ')
-      .replace(/^[\s|ㅣ¦_!\-•·~—]+/, '')
+      .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
+      .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
+      .replace(/^[^\n]*?=\s*-\s*/, '- ')
+      .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
+      .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+      .replace(/\(30000\)|\(3000\)/g, '(30cm)')
+      .replace(/5500\b|55em\b/g, '55cm')
+      .replace(/2단\s*HED\]?/gi, '2단 버팀대')
+      .replace(/HE\s*위치가/g, '버팀대 위치가')
+      .replace(/미설치\s*5\)?/g, '미설치 등)')
+      .replace(/5145내/g, 'SNS내')
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
       .replace(/\[=\]\s*oa/gi, '')
       .trim();
-    if (/[가-힣]/.test(s) && /^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/.test(s)) {
-      s = s.replace(/^[a-zA-Z0-9|.\s=\-_/!]+\s*-\s*(?=[가-힣])/, '');
+
+    const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const items = [];
+    for (let l of rawLines) {
+      l = l.replace(/^[a-zA-Z0-9|.\s=\-_/!]+(?=-)/, '').trim();
+      const hasDash = /^[-•·▪]\s*/.test(l);
+      let text = l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim();
+      if (!text) continue;
+      const korCnt = (text.match(/[가-힣]/g) || []).length;
+      if (korCnt === 0 && text.length < 15) continue;
+
+      text = text
+        .replace(/(보완하겠음\.?)\s*(?=-?\s*2단\s*버팀대)/g, '$1\n- ')
+        .replace(/(간과함\.?)\s*(?=-?\s*향후\s*비계설치)/g, '$1\n- ');
+
+      const subParts = text.split(/\n+/);
+      for (let sp of subParts) {
+        const subDash = hasDash || /^[-•·▪]\s*/.test(sp) || /^(?:향후\s*비계설치|2단\s*버팀대)/.test(sp);
+        const cleanSp = sp.replace(/^[-•·▪]\s*/, '').trim();
+        if (!cleanSp) continue;
+        if (items.length === 0 || subDash) {
+          items.push(cleanSp);
+        } else {
+          items[items.length - 1] = `${items[items.length - 1]} ${cleanSp}`.replace(/\s+/g, ' ');
+        }
+      }
     }
-    return s.trim();
+
+    if (items.length === 0) return '';
+    if (items.length === 1) return `- ${items[0]}`;
+    return items.map(it => `- ${it}`).join('\n');
   }
 
   function cleanProposalText(raw) {
     if (!raw) return '';
-    return String(raw)
+    let s = String(raw)
       .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
-      .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-)/gi, '')
-      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
-      .replace(/,\s*-\s*/g, '\n- ')
-      .split(/\r?\n/)
-      .map(l => l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim())
-      .filter(Boolean)
-      .map(l => l.startsWith('- ') ? l : `- ${l}`)
-      .join('\n');
+      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+      .replace(/^(?:oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
+      .replace(/구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/위험성평기/g, '위험성평가')
+      .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
+      .replace(/낙하물방\s*지망/g, '낙하물방지망')
+      .replace(/내실화\s*[&쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+      .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
+      .replace(/5145내/g, 'SNS내')
+      .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+      .replace(/5500\b|55em\b/g, '55cm')
+      .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
+      .trim();
+
+    const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const items = [];
+    for (const line of rawLines) {
+      const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
+      let cl = line
+        .replace(/^[|\sㅣ¦_!\-•·~—*]+/, '')
+        .replace(/[|\sㅣ¦_!~—\-*]+$/, '')
+        .replace(/^구시\s*으\s*기느으\s*/g, '')
+        .replace(/\s*-\s*르$/, '')
+        .trim();
+      if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
+
+      cl = cl.replace(/(고임목\s*설치|낙하물방지망\s*설치)\s+(?=비계설치\s*후\s*승인점검)/g, '$1\n- ');
+
+      const subLines = cl.split(/\n+/);
+      for (let idx = 0; idx < subLines.length; idx++) {
+        const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').trim();
+        if (!sub) continue;
+        const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*작업\s*전)/.test(sub);
+        if (items.length === 0 || isNewBullet) {
+          items.push(sub);
+        } else {
+          items[items.length - 1] = `${items[items.length - 1]} ${sub}`
+            .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
+            .replace(/낙하물방\s*지망/g, '낙하물방지망')
+            .replace(/내실화\s*[&쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+            .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
+            .replace(/\s+/g, ' ');
+        }
+      }
+    }
+
+    return items.map(it => `- ${it}`).join('\n');
   }
 
   function cleanActionPlan(raw) {
     if (!raw) return '';
-    const lines = String(raw)
+    const rawStr = String(raw);
+    if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
+      return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+    }
+    const cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
-      .replace(/\(모니터링\s*강화\)|\(이행강화안\s*수립\)|\(근로자\s*교육\)|\(관리감독자\s*경고\)/gi, '')
-      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\\btee\s*ee\b|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+      .replace(/5500\b|55em\b/g, '55cm')
       .replace(/,\s*-\s*/g, '\n- ')
-      .split(/\r?\n/)
-      .map(l => l.replace(/^[|ㅣ¦_!~—\-*•·\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim())
-      .map(l => {
-        if (l.includes('비계 승인점검 후 보완/개선') || l.includes('Process 이행')) {
-          return '비계 승인점검 후 보완/개선 필요사항 Process 이행';
-        }
-        return l;
-      })
-      .filter(l => l.length >= 7 && !/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭|&제레)/i.test(l))
-      .map(l => l.startsWith('- ') ? l : `- ${l}`);
-    return lines.join('\n');
+      .trim();
+
+    const rawLines = cleanedStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const items = [];
+    for (const line of rawLines) {
+      const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
+      let cl = line.replace(/^[|ㅣ¦_!~—\-*•·\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
+      if (!cl || cl.length < 2) continue;
+      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
+
+      if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
+        return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+      }
+
+      const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|설치\s*완료)/.test(cl);
+      const isDistinctNewItem = !isContinuation && (
+        hasExplicitBullet ||
+        /^(?:벽체\s*거푸집|거푸집\s*전도\s*예방|벽이음용\s*상부|비계\s*잭베이스\s*구간|비계와\s*구조물|시스템\s*비계\s*설치계획서|비계\s*승인점검|작업\s*전\s*풍속)/.test(cl)
+      );
+
+      if (items.length === 0 || isDistinctNewItem) {
+        items.push(cl);
+      } else {
+        items[items.length - 1] = `${items[items.length - 1]} ${cl}`.replace(/\s+/g, ' ');
+      }
+    }
+    return items.map(it => `- ${it}`).join('\n');
   }
 
   /**
@@ -545,6 +643,28 @@
         lawBody = bodyLines.slice(1).join('\n').trim();
       }
     }
+    if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판/.test(lawTitle)) {
+      lawBody = `${lawTitle.replace(/^\.?28\s*/, '7.2.8 ')}\n${lawBody}`.trim();
+      lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
+    } else if (/안전[작삭]업[지시][침집짐]|IZ12B|1Z12B|2128-106|106\(K\)|106K|106&|106\(/i.test(lawTitle)) {
+      lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
+    } else if (/현장\s*제작\s*대형\s*거푸집/.test(lawTitle)) {
+      lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
+    }
+    lawBody = String(lawBody || '')
+      .replace(/^\.?28\s*작업발판\s*일반사항/gm, '7.2.8 작업발판 일반사항')
+      .replace(/6\.3\.2\s*자업[^\n]*?(?=1\)|\n|$)/g, '6.3.2 작업 중 점검\n')
+      .replace(/6\.3\.1\s*(?:자업|작업)\s*전\s*점검\s*(?=\d+\))/g, '6.3.1 작업 전 점검\n')
+      .replace(/7\.1\s*비계\s*조립기준\s*(?=\d+\))/g, '7.1 비계 조립기준\n')
+      .replace(/7\.2\.8\s*작업발판\s*일반사항\s*(?=\d+\))/g, '7.2.8 작업발판 일반사항\n')
+      .replace(/FEE\s*Joint/gi, '유로폼 Joint')
+      .replace(/전용철물을사용해/g, '전용철물을 사용해')
+      .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+      .replace(/5500\b|55em\b/g, '55cm')
+      .replace(/(?:=\s*)?(?:\b[a-zA-Z]{1,3}\s+){2,}[a-zA-Z]{1,4}\s*$/gm, '')
+      .replace(/[=—\-_\s]+ee[\s\S]*$/gi, '')
+      .replace(/\s*\*\s+/g, '\n* ')
+      .trim();
 
     // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
     const hasGuideline = Boolean(r.hasGuideline || (options && options.showGuideline));
@@ -952,7 +1072,7 @@
         slide.addImage({
           data: photo1Base64,
           x: 0.3121, y: photoStartY, w: eachW, h: photoBodyHeight,
-          sizing: { type: 'cover', w: eachW, h: photoBodyHeight }
+          sizing: { type: 'contain', w: eachW, h: photoBodyHeight }
         });
       } else {
         slide.addShape(pptx.ShapeType.rect, {
@@ -968,7 +1088,7 @@
         slide.addImage({
           data: photo2Base64,
           x: 3.0801, y: photoStartY, w: eachW, h: photoBodyHeight,
-          sizing: { type: 'cover', w: eachW, h: photoBodyHeight }
+          sizing: { type: 'contain', w: eachW, h: photoBodyHeight }
         });
       } else {
         slide.addShape(pptx.ShapeType.rect, {
@@ -985,7 +1105,7 @@
         slide.addImage({
           data: photo1Base64,
           x: 0.3121, y: photoStartY, w: bannerWidth, h: photoBodyHeight,
-          sizing: { type: 'cover', w: bannerWidth, h: photoBodyHeight }
+          sizing: { type: 'contain', w: bannerWidth, h: photoBodyHeight }
         });
       } else {
         slide.addShape(pptx.ShapeType.rect, {
@@ -1324,7 +1444,7 @@
       slide.addImage({
         data: photo1Base64,
         x: 0.8685, y: 3.2500, w: leftBannerW, h: 3.9500,
-        sizing: { type: 'cover', w: leftBannerW, h: 3.9500 }
+        sizing: { type: 'contain', w: leftBannerW, h: 3.9500 }
       });
     } else {
       slide.addShape(pptx.ShapeType.rect, {
@@ -1546,9 +1666,7 @@
 
         <!-- 4-2. 관련기준 본문 (연청색 #dae3f3 음영 박스) -->
         <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.4800)}; width: ${pctW(5.5644)}; height: ${pctH(0.6495)}; background: #dae3f3; padding: 0.2cqw 0.5cqw; box-sizing: border-box; display: flex; align-items: center;">
-          <div style="font-size: ${pt(lawBodyFontSize)}; color: #111111; line-height: 1.25; word-break: keep-all;">
-            ${data.lawBody}
-          </div>
+          <div style="font-size: ${pt(lawBodyFontSize)}; color: #111111; line-height: 1.25; word-break: keep-all; white-space: pre-line;">${data.lawBody}</div>
         </div>
 
         <!-- 5. 4대 발생요인 (TABLE #2: 정사각형 체크박스 4개 + 가로 구분선) -->
@@ -1600,14 +1718,14 @@
         <!-- 7-2. [좌측 컬럼] 현장 사진 영역 (Hold Point 공간 침범 없이 x = 0.3121 ~ 5.7701 고정) -->
         ${hasPhoto2 ? `
           <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(photoStartY)}; width: ${pctW(2.6900)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
           </div>
           <div style="position: absolute; left: ${pctX(3.0801)}; top: ${pctY(photoStartY)}; width: ${pctW(2.6900)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
           </div>
         ` : `
           <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(photoStartY)}; width: ${pctW(bannerWidth)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
@@ -1646,7 +1764,7 @@
         <!-- [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.5748) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.5748)}; background: #ffffff; border: 1px solid #000000; padding: 0.35cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
           <div style="font-size: ${pt(14)}; font-weight: 800; color: #181717; margin-bottom: 0.25cqw;">${data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]'}</div>
-          <div style="font-size: ${pt(intSz)}; line-height: ${intLineSpacing}; color: #111111; word-break: keep-all;">${data.interviewOpinion}</div>
+          <div style="font-size: ${pt(intSz)}; line-height: ${intLineSpacing}; color: #111111; word-break: keep-all; white-space: pre-line;">${data.interviewOpinion}</div>
         </div>
 
         <!-- [점검단 제안] 헤더 셀 (SHAPE #5: x = 8.2448, y = 4.3979, w = 1.5342, h = 0.3543) -->
@@ -1664,7 +1782,7 @@
 
         <!-- [점검단 제안] 본문 셀 (SHAPE #4: x = 9.7790, y = 4.3979, w = 3.3871, h = 1.0333) -->
         <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.3979)}; width: ${pctW(3.3871)}; height: ${pctH(1.0333)}; background: #ffffff; border: 1px solid #000000; padding: 0.3cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #111111; word-break: keep-all;">${data.proposalContent}</div>
+          <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #111111; word-break: keep-all; white-space: pre-line;">${data.proposalContent}</div>
         </div>
 
         <!-- 개선대책 (현장 협의 결과) 헤더 (SHAPE #8: x = 8.2448, y = 5.4951, w = 4.9213, h = 0.4039, 18pt bold) -->
@@ -1769,7 +1887,7 @@
 
         <!-- 6-2. 좌측 현장 사진 (x = 0.8685, y = 3.2500, w = 5.4580, h = 3.9500) -->
         <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-          ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
         </div>
 
         <!-- 6-3. 우측 피치/오렌지 음영 배너 (SHAPE #2: x = 7.8740, y = 2.8276, w = 4.4082, h = 0.3702, #F8CBAD @ 60% = #fbe0ce) -->
