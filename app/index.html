@@ -591,6 +591,7 @@
             <span style="font-size: 0.74rem; color: var(--gray-500); font-weight: normal;">(상·하단 스크롤바 또는 버튼으로 즉시 가로 이동)</span>
           </div>
           <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" id="btnTableBatchDelete" class="btn btn-outline" style="padding: 4px 12px; font-size: 0.78rem; color: #dc2626; border-color: #fca5a5; background: #fff1f2; font-weight: 700; display: none; align-items: center; gap: 4px;" title="선택 항목 영구 삭제">🗑️ 선택 삭제 (<span id="tableSelectedCount">0</span>건)</button>
             <button type="button" id="btnTableBatchJangpyo" class="btn btn-primary" style="padding: 4px 10px; font-size: 0.76rem; background: #1e40af; border-color: #1d4ed8;" title="선택 항목 점검장표 PPT 다운로드">📑 점검장표 PPT 생성</button>
             <button type="button" id="btnScrollTableLeft" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.76rem; background: #ffffff;" title="왼쪽으로 스크롤">◀ 좌로 이동</button>
             <button type="button" id="btnScrollTableRight" class="btn btn-outline" style="padding: 4px 10px; font-size: 0.76rem; background: #ffffff;" title="오른쪽으로 스크롤">▶ 우로 이동</button>
@@ -608,7 +609,7 @@
             <thead style="position: sticky; top: 0; z-index: 10; background: #fef08a; color: #713f12; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
               <!-- 1행: 그룹 헤더 (엑셀 대장 상단 그룹과 100% 일치) -->
               <tr style="background: #fde047; font-size: 0.78rem;">
-                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">선택/No</th>
+                <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308; position: sticky; left: 0; z-index: 20; background: #fde047;">선택/No</th>
                 <th colspan="6" style="padding: 6px 4px; border: 1px solid #eab308;">부적합 사항</th>
                 <th colspan="2" style="padding: 6px 4px; border: 1px solid #eab308;">공종·작업방법</th>
                 <th colspan="4" style="padding: 6px 4px; border: 1px solid #eab308;">부적합 분류</th>
@@ -624,8 +625,8 @@
               </tr>
               <!-- 2행: 세부 항목 헤더 (총 36개 열) -->
               <tr style="background: #fef08a;">
-                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 34px;"><input type="checkbox" id="chkAllRecords" title="전체 선택"></th>
-                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 40px;">No</th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 44px; position: sticky; left: 0; z-index: 20; background: #fef08a;"><input type="checkbox" id="chkAllRecords" title="전체 선택/해제" style="width: 20px; height: 20px; cursor: pointer; accent-color: #ef4444; vertical-align: middle;"></th>
+                <th style="padding: 8px 4px; border: 1px solid #fde047; width: 62px; position: sticky; left: 44px; z-index: 20; background: #fef08a;">No</th>
                 <th style="padding: 8px 4px; border: 1px solid #fde047; width: 60px;">사진 1</th>
                 <th style="padding: 8px 4px; border: 1px solid #fde047; width: 60px;">사진 2</th>
                 <th style="padding: 8px 6px; border: 1px solid #fde047; width: 85px;">부적합 등급</th>
@@ -1164,6 +1165,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261108_v12"></script>
+  <script type="module" src="js/app.js?v=20261108_v13"></script>
 </body>
 </html>

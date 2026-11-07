@@ -2647,6 +2647,14 @@ function bindEvents() {
     });
   }
 
+  // 테이블 툴바의 선택 일괄 삭제 버튼 연동
+  const btnTableBatchDel = $('#btnTableBatchDelete');
+  if (btnTableBatchDel && btnDelSelected) {
+    btnTableBatchDel.addEventListener('click', () => {
+      btnDelSelected.click();
+    });
+  }
+
   // 현재 조회된 목록 일괄 삭제 (카드 뷰 / 표 뷰 모두에서 원클릭 0.02초 일괄 삭제 지원)
   const btnDelAllFiltered = $('#btnDeleteAllFiltered');
   if (btnDelAllFiltered) {
@@ -2694,13 +2702,33 @@ function bindEvents() {
 }
 
 function updateSelectedCount() {
-  const checked = document.querySelectorAll('.chk-record-item:checked').length;
+  const checkedBoxes = document.querySelectorAll('.chk-record-item:checked');
+  const checked = checkedBoxes.length;
   const cntSpan = $('#selectedCount');
   const btnDel = $('#btnDeleteSelected');
   if (cntSpan) cntSpan.textContent = checked;
   if (btnDel) {
     btnDel.style.display = checked > 0 ? 'inline-block' : 'none';
   }
+
+  const tableCntSpan = $('#tableSelectedCount');
+  const tableBtnDel = $('#btnTableBatchDelete');
+  if (tableCntSpan) tableCntSpan.textContent = checked;
+  if (tableBtnDel) {
+    tableBtnDel.style.display = checked > 0 ? 'inline-flex' : 'none';
+  }
+
+  // 선택된 행 강조 표시 및 sticky 셀 배경 동기화
+  document.querySelectorAll('#tblRecordsBody tr').forEach(tr => {
+    const cb = tr.querySelector('.chk-record-item');
+    const isRowChecked = cb && cb.checked;
+    const origBg = tr.dataset.origBg || '#ffffff';
+    const rowBg = isRowChecked ? '#fee2e2' : origBg;
+    tr.style.background = rowBg;
+    tr.querySelectorAll('td.cell-chk, td.cell-no').forEach(td => {
+      td.style.background = rowBg;
+    });
+  });
 }
 
 // ── 음성 입력 (Web Speech API - 100% 무료 브라우저 내장 STT) ──
@@ -4596,10 +4624,19 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
 
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e2e8f0';
-      tr.style.background = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      const origBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      tr.style.background = origBg;
+      tr.dataset.origBg = origBg;
       tr.innerHTML = `
-        <td style="padding:6px 4px;"><input type="checkbox" class="chk-record-item" data-id="${r.id}"></td>
-        <td style="padding:8px 4px; font-weight:600; color:var(--gray-700);">${idx + 1}</td>
+        <td style="padding:6px 2px; position:sticky; left:0; z-index:5; background:${origBg}; cursor:pointer; width:44px; text-align:center;" class="cell-chk" title="클릭하여 선택/해제">
+          <input type="checkbox" class="chk-record-item" data-id="${r.id}" style="width:20px; height:20px; cursor:pointer; accent-color:#ef4444; vertical-align:middle;">
+        </td>
+        <td style="padding:6px 4px; font-weight:600; color:var(--gray-700); position:sticky; left:44px; z-index:5; background:${origBg}; width:62px; white-space:nowrap; text-align:center; border-right:1px solid #e2e8f0;" class="cell-no">
+          <div style="display:flex; align-items:center; justify-content:center; gap:3px;">
+            <span>${idx + 1}</span>
+            <button type="button" class="btn-quick-row-del" title="이 항목 즉시 삭제" style="border:none; background:transparent; color:#ef4444; cursor:pointer; font-size:1.05rem; padding:1px 3px; border-radius:4px; opacity:0.75; transition:all 0.15s;" onmouseover="this.style.opacity='1'; this.style.transform='scale(1.2)';" onmouseout="this.style.opacity='0.75'; this.style.transform='scale(1)';">🗑️</button>
+          </div>
+        </td>
         <td style="padding:4px;">${p1Thumb}</td>
         <td style="padding:4px;">${p2Thumb}</td>
         <td style="padding:6px; font-weight:700; color:${isMajor ? '#dc2626' : '#d97706'}; font-size:0.75rem;">${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}</td>
@@ -4644,7 +4681,24 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       `;
 
       const chkBox = tr.querySelector('.chk-record-item');
-      if (chkBox) chkBox.addEventListener('change', updateSelectedCount);
+      const cellChk = tr.querySelector('.cell-chk');
+      if (cellChk && chkBox) {
+        cellChk.addEventListener('click', (e) => {
+          if (e.target !== chkBox) {
+            chkBox.checked = !chkBox.checked;
+            updateSelectedCount();
+          }
+        });
+        chkBox.addEventListener('change', updateSelectedCount);
+      }
+
+      const quickDelBtn = tr.querySelector('.btn-quick-row-del');
+      if (quickDelBtn) {
+        quickDelBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteOneRecord(r);
+        });
+      }
 
       const jangpyoBtn = tr.querySelector('.btn-table-jangpyo');
       if (jangpyoBtn) jangpyoBtn.addEventListener('click', () => openJangpyoForRecord(r.id));
