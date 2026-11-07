@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261108_v16';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261108_v18';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4466,7 +4466,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
   const getOpType = se.getInspectorOpinionType || (r => r.inspectorOpinionType || '시스템 개선');
   const getPmType = se.getPmVerdictType || (r => r.pmVerdictType || getOpType(r));
   const cleanWorkGroupFn = se.cleanWorkGroup || (w => String(w || '가설공사').replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ').trim() || '가설공사');
-  const cleanOpinionFn = se.cleanOpinionText || (t => String(t || '').replace(/^[\s|ㅣ¦_!\-•·]+/gm, '').replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '').trim());
+  const cleanOpinionFn = se.cleanOpinionText || (t => String(t || '').trim());
   const cleanProposalFn = se.cleanProposalText || cleanOpinionFn;
   const cleanContentFn = se.cleanContent || (t => String(t || '').trim());
   const cleanLocationFn = se.cleanLocation || ((loc) => String(loc || '').trim());
@@ -4658,9 +4658,9 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:8px 4px; font-weight:700; color:${cause2 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause2}</td>
         <td style="padding:8px 4px; font-weight:700; color:${cause3 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause3}</td>
         <td style="padding:8px 4px; font-weight:700; color:${cause4 === '●' ? '#dc2626' : 'var(--gray-400)'};">${cause4}</td>
-        <td style="padding:8px 6px; color:var(--gray-700); text-align:left;">${cleanedInterviewOp || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700); text-align:left; white-space:pre-line;">${cleanedInterviewOp || '-'}</td>
         <td style="padding:8px 6px;"><span class="badge" style="font-size:0.72rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">${opType}</span></td>
-        <td style="padding:8px 10px; color:var(--gray-700); text-align:left; min-width:150px;">${cleanedAuditProp || '-'}</td>
+        <td style="padding:8px 10px; color:var(--gray-700); text-align:left; min-width:150px; white-space:pre-line;">${cleanedAuditProp || '-'}</td>
         <td style="padding:8px 6px; font-weight:600; color:var(--gray-800);">${r.site || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.productType || '공동주택'}</td>
         <td style="padding:8px 4px; color:var(--gray-700);">${r.progressRate !== undefined && r.progressRate !== null ? (r.progressRate + '%') : '-'}</td>
