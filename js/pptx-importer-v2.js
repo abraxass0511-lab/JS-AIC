@@ -1489,14 +1489,14 @@ async function ocrCellsSinglePass(canvas, cellSpecs) {
   const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.88);
 
   if (window.Tesseract) {
-    // 3-Worker 병렬 풀을 사용하여 각 셀을 원본 1.0x 해상도로 독립 인식 (셀 간 폭/폰트 차이 간섭 0%)
+    // 초고속 병렬 풀을 사용하여 각 셀을 원본 1.0x 해상도로 정밀 인식 (고속 JPEG 인코딩 적용)
     await Promise.all(validSpecs.map(async (s) => {
       try {
         const rect = { x: s.sx, y: s.sy, w: s.sw, h: s.sh };
         const c = s.key === 'banner'
           ? preprocessBannerCanvas(canvas, rect)
           : cropCanvas(canvas, rect);
-        const ret = await recognizeWithWorkerPool(c.toDataURL('image/png'));
+        const ret = await recognizeWithWorkerPool(c.toDataURL('image/jpeg', 0.88));
         result[s.key] = (ret && ret.data && ret.data.text) ? ret.data.text.trim() : '';
       } catch (e) {}
     }));
@@ -1543,11 +1543,8 @@ export async function parseSheetCanvas(canvas, options = {}) {
       { key: 'type', box: layout.typeCell },
       { key: 'law', box: layout.lawCell },
       { key: 'meta', box: layout.metaRow },
-      { key: 'work', box: layout.workCell },
-      { key: 'loc', box: layout.locCell },
       { key: 'content', box: layout.contentRow },
       { key: 'interview', box: layout.interview },
-      { key: 'propType', box: layout.proposalType },
       { key: 'propText', box: layout.proposalText },
       { key: 'cm', box: layout.countermeasure },
       { key: 'pm', box: layout.pmCell },
@@ -1952,7 +1949,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
   if (hasFullBinaryJpegs) {
     totalPages = binaryResult.jpegPages.length;
-    const BATCH_SIZE = 2;
+    const BATCH_SIZE = 1;
     let processedCount = 0;
 
     for (let i = 0; i < binaryResult.jpegPages.length; i += BATCH_SIZE) {
