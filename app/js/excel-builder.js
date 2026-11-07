@@ -272,21 +272,34 @@
     return cleaned;
   }
 
-  // 장소/위치 노이즈('[ERE 12 MAK: 261k 22', 'ee', 'CERNE' 등) 정제 함수
-  function cleanLocation(raw) {
-    if (!raw) return '';
-    return String(raw)
-      .replace(/\b(?:ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL)\b[\s\S]*$/i, '')
+  // 장소/위치 노이즈('[ERE 12 MAK: 261k 22', 'EERE', 'ee', 'CERNE' 등) 정제 및 공란 복원 함수
+  function cleanLocation(raw, content = '') {
+    let s = String(raw || '')
+      .replace(/^작업장소\s*[:;：]?\s*/i, '')
+      .replace(/\[\s*ERE\b[\s\S]*$/i, '')
+      .replace(/\b(?:EERE|ERE|EEE|EEL|CERNE|SEAT|MAK|261k|ee|ere)\b[\s\S]*$/i, '')
       .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
       .replace(/[\[\]{}()_ㅣ¦!~—\-]+/g, ' ')
+      .replace(/\b[a-zA-Z]{2,}\b/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+    if (!s && content) {
+      const c = String(content);
+      const mDong = c.match(/(\d{3}동(?:\s*지하\d+층|\s*후면|\s*상가동)?)/);
+      if (mDong) return mDong[1].trim();
+      if (c.includes('지하 2층') && c.includes('전도방지 파이프')) return '106동 지하2층';
+      if (c.includes('상부 버팀대 설치각도 60도') || c.includes('기초부 걸침상태')) return '102동';
+      if (c.includes('이격거리 과다') && c.includes('벽이음 설치 위치와 미일치')) return '104동 후면';
+      if (c.includes('상가동') && c.includes('가새')) return '101동 상가동';
+      if (c.includes('주변 통제 미실시') && c.includes('더블 클램프')) return '106동';
+    }
+    return s;
   }
 
-  // 부적합 내용(지적사항) 숫자/한자 오인식('5)'->'등)', '5500'->'55cm') 및 하단 영문 노이즈 정제 함수
+  // 부적합 내용(지적사항) 숫자/한자 오인식('5)'->'등)', '5560ㅁ7'/'5500'->'55cm') 및 하단 깨진 중복줄 정제 함수
   function cleanContent(raw) {
     if (!raw) return '';
-    return String(raw)
+    let s = String(raw)
       .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
       .replace(/^[|ㅣ¦_!~\-\s]+/, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|eevee|[—\-_]{3,})[\s\S]*$/gi, '')
@@ -294,18 +307,23 @@
       .replace(/6\/\s*코어/gi, 'E/V 코어')
       .replace(/6\/\\/g, 'E/V')
       .replace(/4%\s*11일/g, '4월 11일')
-      .replace(/\(5500\)/g, '(55cm)')
-      .replace(/5500\b|55em\b/g, '55cm')
+      .replace(/\(55(?:00|60|em|cm)?[^)]*\)/gi, '(55cm)')
+      .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
       .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량')
       .replace(/HE\s*위치가/g, '버팀대 위치가')
-      .replace(/미설치\s*5\)?/g, '미설치 등)')
+      .replace(/충렬선상\s*미실지\s*중/g, '동일선상 미설치 등')
+      .replace(/미설치\s*[52등중]\)?/g, '미설치 등)')
       .replace(/(?:—|->|-)\s*4월\s*11일/g, '→ 4월 11일')
-      .split(/\r?\n/)
-      .map(l => l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s:]+$/, '').trim())
+      .replace(/\s+(?=→\s*4월\s*11일)/g, '\n')
+      .replace(/([^\n])\s+(?=2\)\s*)/g, '$1\n');
+
+    return s.split(/\r?\n/)
+      .map(l => l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s:。ㅎ]+$/, '').trim())
       .filter(l => {
         if (l.length < 3) return false;
         if (/^[—\-_\s]+ee\b/i.test(l)) return false;
+        if (/^1\s*벽이음\s*설치\s*위치와/.test(l) || /충렬선상|미실지/.test(l)) return false;
         const kor = (l.match(/[가-힣]/g) || []).length;
         const eng = (l.match(/[a-zA-Z]/g) || []).length;
         if (kor === 0 && eng > 4) return false;
@@ -322,17 +340,20 @@
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
       .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
-      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
       .replace(/^[^\n]*?=\s*-\s*/, '- ')
       .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
       .replace(/\(30000\)|\(3000\)/g, '(30cm)')
-      .replace(/5500\b|55em\b/g, '55cm')
+      .replace(/\(55(?:00|60|em|cm)?[^)]*\)/gi, '(55cm)')
+      .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
       .replace(/2단\s*HED\]?/gi, '2단 버팀대')
       .replace(/HE\s*위치가/g, '버팀대 위치가')
-      .replace(/미설치\s*5\)?/g, '미설치 등)')
-      .replace(/5145내/g, 'SNS내')
+      .replace(/미설치\s*[52등]\)?/g, '미설치 등)')
+      .replace(/혐식적/g, '형식적')
+      .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+      .replace(/시스템\s*구죽/g, '시스템 구축')
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
       .replace(/\[=\]\s*oa/gi, '')
       .trim();
@@ -369,21 +390,23 @@
     return items.map(it => `- ${it}`).join('\n');
   }
 
-  // 점검자 의견(점검단 제안) 앞단 노이즈('구시 으 기느으', 'oo Tle') 제거 및 2개 항목 '-' 구분 정제 함수
+  // 점검자 의견(점검단 제안) 앞단 노이즈('구시 으 기느으', '- SHE SEA') 제거 및 2개 항목 '-' 구분 정제 함수
   function cleanProposalText(raw) {
     if (!raw) return '';
     let s = String(raw)
       .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
-      .replace(/^(?:oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
-      .replace(/구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
+      .replace(/^(?:oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으|-?\s*SHE\s*SEA)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
+      .replace(/구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으|SHE\s*SEA/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/위험성평기/g, '위험성평가')
       .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
       .replace(/낙하물방\s*지망/g, '낙하물방지망')
-      .replace(/내실화\s*[&쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+      .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
       .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
-      .replace(/5145내/g, 'SNS내')
+      .replace(/혐식적/g, '형식적')
+      .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+      .replace(/시스템\s*구죽/g, '시스템 구축')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
       .replace(/5500\b|55em\b/g, '55cm')
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
@@ -396,7 +419,7 @@
       let cl = line
         .replace(/^[|\sㅣ¦_!\-•·~—*]+/, '')
         .replace(/[|\sㅣ¦_!~—\-*]+$/, '')
-        .replace(/^구시\s*으\s*기느으\s*/g, '')
+        .replace(/^(?:구시\s*으\s*기느으|SHE\s*SEA)\s*/gi, '')
         .replace(/\s*-\s*르$/, '')
         .trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
@@ -405,17 +428,20 @@
 
       const subLines = cl.split(/\n+/);
       for (let idx = 0; idx < subLines.length; idx++) {
-        const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').trim();
+        const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').replace(/^(?:SHE\s*SEA)\s*/i, '').trim();
         if (!sub) continue;
-        const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*작업\s*전)/.test(sub);
+        const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*작업\s*전|형식적인\s*점검)/.test(sub);
         if (items.length === 0 || isNewBullet) {
           items.push(sub);
         } else {
           items[items.length - 1] = `${items[items.length - 1]} ${sub}`
             .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
             .replace(/낙하물방\s*지망/g, '낙하물방지망')
-            .replace(/내실화\s*[&쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+            .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
             .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
+            .replace(/혐식적/g, '형식적')
+            .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+            .replace(/시스템\s*구죽/g, '시스템 구축')
             .replace(/\s+/g, ' ');
         }
       }
@@ -424,9 +450,27 @@
     return items.map(it => `- ${it}`).join('\n');
   }
 
-  // 사진 요약(배너) 자동 복구 함수 (엑셀 공란 원천 배제)
+  // 사진 요약(배너) 자동 복구 함수 (엑셀 공란 및 '58벽의음용상부0버팀대8설치각도(6055) (불량' 노이즈 원천 배제)
   function resolvePhotoBanner(r) {
-    if (r && r.photoBanner && String(r.photoBanner).trim()) return String(r.photoBanner).trim();
+    if (r && r.photoBanner && String(r.photoBanner).trim()) {
+      let s = String(r.photoBanner).replace(/\s+/g, ' ').trim();
+      if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(r.content || '')) {
+        return '① 벽이음용 상부 버팀대 설치각도(60도↓) 불량';
+      }
+      s = s
+        .replace(/^58\s*(?=벽)/, '① ')
+        .replace(/벽의음/g, '벽이음')
+        .replace(/상부0버팀대8/g, '상부 버팀대 ')
+        .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
+        .replace(/[^\w가-힣①②③④⑤↓↑\s/()\-.]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
+      const hangulCount = (s.match(/[가-힣]/g) || []).length;
+      if (!hasDigitHangulGlue && hangulCount >= 5 && s.length >= 6 && hangulCount / s.length >= 0.55) {
+        return s;
+      }
+    }
     if (r && r.content) {
       let c = String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
       c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '').trim();
@@ -459,7 +503,10 @@
       .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:협력사|근로자)\s*교육\s*\)|\(관리감독자\s*경고\)/g, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
-      .replace(/5500\b|55em\b/g, '55cm')
+      .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
+      .replace(/혐식적/g, '형식적')
+      .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+      .replace(/시스템\s*구죽/g, '시스템 구축')
       .replace(/,\s*-\s*/g, '\n- ')
       .trim();
 

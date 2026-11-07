@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261107_v8';
+import { store } from './store.js?v=20261107_v9';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261107_v8';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261107_v9';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4439,6 +4439,9 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
   const getPmType = se.getPmVerdictType || (r => r.pmVerdictType || getOpType(r));
   const cleanWorkGroupFn = se.cleanWorkGroup || (w => String(w || '가설공사').replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ').trim() || '가설공사');
   const cleanOpinionFn = se.cleanOpinionText || (t => String(t || '').replace(/^[\s|ㅣ¦_!\-•·]+/gm, '').replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '').trim());
+  const cleanProposalFn = se.cleanProposalText || cleanOpinionFn;
+  const cleanContentFn = se.cleanContent || (t => String(t || '').trim());
+  const cleanLocationFn = se.cleanLocation || ((loc) => String(loc || '').trim());
   const resolveActionPlanFn = se.resolveActionPlanText || (r => (r.fix && r.fix.content) || r.actionPlan || r.countermeasure || '(미조치)');
 
   const cardElements = [];
@@ -4457,8 +4460,10 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
     const opType = getOpType(r);
     const pmType = getPmType(r);
     const cleanedWorkGroup = cleanWorkGroupFn(r.workGroup);
+    const cleanedContent = cleanContentFn(r.content || '');
+    const cleanedLocation = cleanLocationFn(r.location || '', cleanedContent || r.content || '');
     const cleanedInterviewOp = cleanOpinionFn(r.interviewOpinion || r.workerOpinion || '');
-    const cleanedAuditProp = cleanOpinionFn(r.auditProposal || r.inspectorOpinion || '');
+    const cleanedAuditProp = cleanProposalFn(r.auditProposal || r.inspectorOpinion || '');
     const actionPlanText = resolveActionPlanFn(r);
     const hasActionText = actionPlanText && actionPlanText !== '(미조치)';
 
@@ -4531,7 +4536,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       if (photoBox.children.length > 0) cardBody.append(photoBox);
 
       cardBody.append(h('div', { style: { flex: '1', minWidth: '0' } },
-        h('div', { style: { fontSize: '0.92rem', marginBottom: '4px', color: 'var(--gray-900)', fontWeight: '500' } }, r.content),
+        h('div', { style: { fontSize: '0.92rem', marginBottom: '4px', color: 'var(--gray-900)', fontWeight: '500', whiteSpace: 'pre-line' } }, cleanedContent),
         h('div', { style: { fontSize: '0.8rem', color: 'var(--gray-600)' } },
           `[${agent.major}] ${agent.mid} › ${agent.minor} · ${r.inspectedDate} (${r.inspector})`
         )
@@ -4553,7 +4558,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
             sevBadge,
-            h('strong', { style: { fontSize: '0.95rem', minWidth: '0', wordBreak: 'keep-all' } }, `[${r.site}] ${r.location}`)
+            h('strong', { style: { fontSize: '0.95rem', minWidth: '0', wordBreak: 'keep-all' } }, `[${r.site}] ${cleanedLocation || '-'}`)
           ),
           h('span.badge', { class: isFixed ? 'success' : 'danger', style: { flexShrink: '0', whiteSpace: 'nowrap' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
         ),
@@ -4598,9 +4603,9 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:4px;">${p1Thumb}</td>
         <td style="padding:4px;">${p2Thumb}</td>
         <td style="padding:6px; font-weight:700; color:${isMajor ? '#dc2626' : '#d97706'}; font-size:0.75rem;">${isMajor ? '🚨 중부적합' : '⚠️ 경부적합'}</td>
-        <td style="padding:8px 10px; text-align:left; font-weight:500; color:var(--gray-900); min-width:220px;">${r.content || ''}</td>
+        <td style="padding:8px 10px; text-align:left; white-space:pre-line; font-weight:500; color:var(--gray-900); min-width:220px;">${cleanedContent || ''}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.subcontractor || '-'}</td>
-        <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${r.location || '-'}</td>
+        <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${cleanedLocation || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${cleanedWorkGroup}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${resolveDisplayWorkMethod(r)}</td>
         <td style="padding:8px 6px;"><span class="badge" style="font-size:0.74rem;">${accType}</span></td>
