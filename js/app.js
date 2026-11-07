@@ -5125,7 +5125,7 @@ async function handleSaveImportedRecords() {
         },
         content: rec.content || '부적합 사항 지적',
         photoBanner: (rec.photoBanner && rec.photoBanner.trim()) ? rec.photoBanner.trim() : (typeof deriveConcreteBanner === 'function' ? deriveConcreteBanner(rec.content || '') : '현장 부적합 작업 전경'),
-        location: (rec.location || '').replace(/[_|ㅣ¦!~—\-]+/g, '').trim(),
+        location: (window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '')),
         workName: workMethod,
         workMethod: workMethod,
         workGroup: (rec.workGroup || '거푸집동바리공사').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/\s+/g, ' ').trim(),
@@ -5148,21 +5148,13 @@ async function handleSaveImportedRecords() {
         holdPoint: !!rec.holdPoint,
         interviewAuthor: rec.interviewAuthor || '협력사 시공관리자',
         interviewAuthorTitle: rec.interviewAuthorTitle || (rec.interviewAuthor ? `[관리자 의견 : ${rec.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]'),
-        interviewOpinion: (rec.interviewOpinion || '')
-          .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-          .replace(/^[\s|ㅣ¦_!\-•·~—\r\n]+/g, '')
-          .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
-          .replace(/\[=\]\s*oa/gi, '')
-          .trim(),
+        interviewOpinion: (window.SafeExcel?.cleanOpinionText ? window.SafeExcel.cleanOpinionText(rec.interviewOpinion || rec.workerOpinion || '') : (rec.interviewOpinion || '')),
         proposalItems: rec.proposalItems || [],
         inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
         inspectorOpinionSub: rec.inspectorOpinionSub || '',
-        auditProposal: (rec.auditProposal || '')
-          .replace(/^[|\sㅣ¦_!\-•·~—]+/gm, '')
-          .replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '')
-          .trim(),
-        actionPlan: rec.actionPlan || '',
-        countermeasure: rec.countermeasure || rec.actionPlan || '',
+        auditProposal: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.auditProposal || rec.inspectorOpinion || '') : (rec.auditProposal || '')),
+        actionPlan: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.actionPlan || '') : (rec.actionPlan || '')),
+        countermeasure: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.countermeasure || rec.actionPlan || '') : (rec.countermeasure || rec.actionPlan || '')),
         pmVerdict: rec.pmVerdict || rec.inspectorOpinionType || '시스템 개선',
         pmVerdictType: rec.pmVerdictType || rec.inspectorOpinionType || '시스템 개선',
         pmVerdictSub: rec.pmVerdictSub || '',
