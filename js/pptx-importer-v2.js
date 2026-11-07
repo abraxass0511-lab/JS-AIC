@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v8';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v9';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -382,14 +382,49 @@ export function cleanSubcontractor(mSubText) {
   return cleaned;
 }
 
-export function cleanLocation(rawLoc) {
-  if (!rawLoc) return '';
-  return String(rawLoc)
-    .replace(/\b(?:ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL)\b[\s\S]*$/i, '')
-    .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
-    .replace(/[\[\]{}()_ㅣ¦!~—\-]+/g, ' ')
+export function cleanLocation(rawLoc, fallbackLocText = '') {
+  const extractClean = (str) => {
+    if (!str) return '';
+    return String(str)
+      .replace(/^(?:작업\s*장소|작[업엄]장소|장\s*소)\s*[:;：.]?\s*/i, '')
+      .replace(/\b(?:EERE|ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL|드로|리로)\b[\s\S]*$/i, '')
+      .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
+      .replace(/[\[\]{}()_ㅣ¦!~—\-:;]+/g, ' ')
+      .replace(/[^가-힣0-9a-zA-Z\s,]/g, ' ')
+      .replace(/\s+(?:리|로|드|트|르)\s*$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+  let loc = extractClean(rawLoc);
+  if (!loc && fallbackLocText) {
+    loc = extractClean(fallbackLocText);
+  }
+  if (loc) {
+    const mBuilding = loc.match(/(\d+\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?|지하\s*\d+\s*층|상가동)/);
+    if (mBuilding && loc.length > mBuilding[0].length + 6) {
+      return mBuilding[0].replace(/\s+/g, ' ').trim();
+    }
+  }
+  return loc;
+}
+
+export function cleanBannerText(rawBanner, content = '') {
+  const derived = deriveConcreteBanner(content);
+  if (!rawBanner) return derived;
+  let b = String(rawBanner)
+    .replace(/^[①②③④123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
+    .replace(/벽의음/g, '벽이음')
+    .replace(/6055/g, '60도↓')
+    .replace(/\(\s*불량/g, '불량')
+    .replace(/[^\w가-힣\s/()\-↓↑.]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+  const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
+  const hangulCount = (b.match(/[가-힣]/g) || []).length;
+  if (hasDigitHangulCorruption || hangulCount < 4 || b.length < 5 || hangulCount / b.length < 0.55) {
+    return derived;
+  }
+  return b;
 }
 
 export function cleanWorkGroup(rawWork, contentText = '') {
@@ -437,10 +472,10 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
   let rawTitle = (rawLines[titleIdx] || fallbackTitle).replace(/^[0-9I=;:\s]+/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim();
   let sliceStart = titleIdx + 1;
 
-  // 비계 안전작업지침 제목 OCR 오인식 완벽 복원 ('안전삭업시집', '[[2128-106', '.28작업발판' 등)
-  if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판/.test(rawTitle)) {
+  // 비계 안전작업지침 제목 OCR 오인식 완벽 복원 ('안전삭업시집', '[[2128-106', '.28작업발판', '1 비계 조립기준' 등)
+  if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^(?:7\.)?1\s*비계\s*조립기준/.test(rawTitle)) {
     rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
-    sliceStart = titleIdx; // .28작업발판 줄은 본문 첫 줄로 보존
+    sliceStart = titleIdx; // 본문 첫 줄로 보존
   } else if (/안전[작삭]업[지시][침집짐]|IZ12B|1Z12B|2128-106|106\(K\)|106K|106&|106\(/i.test(rawTitle)) {
     rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
   } else if (/현장\s*제작\s*대형\s*거푸집/.test(rawTitle)) {
@@ -449,14 +484,18 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
 
   const rawBodyJoined = rawLines.slice(sliceStart).join('\n')
     .replace(/^\.?28\s*작업발판\s*일반사항/gm, '7.2.8 작업발판 일반사항')
+    .replace(/^(?:7\.)?1\s*비계\s*조립기준/gm, '7.1 비계 조립기준')
     .replace(/6\.3\.2\s*자업[^\n]*?(?=1\)|\n|$)/g, '6.3.2 작업 중 점검\n')
     .replace(/6\.3\.1\s*(?:자업|작업)\s*전\s*점검\s*(?=\d+\))/g, '6.3.1 작업 전 점검\n')
-    .replace(/7\.1\s*비계\s*조립기준\s*(?=\d+\))/g, '7.1 비계 조립기준\n')
+    .replace(/7\.1\s*비계\s*조립기준\s*(?=\d+[\)|]?|\n|$)/g, '7.1 비계 조립기준\n')
     .replace(/7\.2\.8\s*작업발판\s*일반사항\s*(?=\d+\))/g, '7.2.8 작업발판 일반사항\n')
+    .replace(/(^|\n)\s*9\s*\)?\s*벽이음의/g, '$19) 벽이음의')
+    .replace(/(?<!7\.1\.1\s*비계\s*조립기준\s*)\b10\s*[|ㅣ1l)]\s*비계\s*설치\s*계획/g, '\n10) 비계 설치 계획')
+    .replace(/7\.1\.1\s*비계\s*조립기준\s*10\s*[|ㅣ1l)]?\s*비계\s*설치\s*계획/g, '\n7.1.1 비계 조립기준 10) 비계 설치 계획')
     .replace(/FEE\s*Joint/gi, '유로폼 Joint')
     .replace(/전용철물을사용해/g, '전용철물을 사용해')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
-    .replace(/5500\b|55em\b/g, '55cm')
+    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
     .replace(/(?:=\s*)?(?:\b[a-zA-Z]{1,3}\s+){2,}[a-zA-Z]{1,4}\s*$/gm, '')
     .replace(/[=—\-_\s]+ee[\s\S]*$/gi, '')
     .replace(/\s*\*\s+/g, '\n* ')
@@ -467,6 +506,7 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
     const cl = line.replace(/^[|ㅣ¦!~—\-_=\[\]]+\s*/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim();
     if (!cl || cl.length < 2) continue;
     if (/^(?:[=—\-_\s]+ee|[a-zA-Z\s=]{5,})$/i.test(cl)) continue;
+    if (/(?:협력사|공종명|작업장소|점검자|점검차수)\s*[:;：]/.test(cl)) continue;
     // 이전 줄이 문장 중간에서 줄바꿈된 경우('*'나 번호로 시작하지 않는 이어짐 줄) 병합
     if (bodyLines.length > 0 && !/^(\*|\d+\)|\d+\.\d+|•|-)/.test(cl) && !/(?:기준|사항|점검|절차)$/.test(bodyLines[bodyLines.length - 1])) {
       bodyLines[bodyLines.length - 1] = `${bodyLines[bodyLines.length - 1]} ${cl}`.replace(/\s+/g, ' ');
@@ -488,13 +528,13 @@ export function cleanOpinionText(raw) {
     .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
     .replace(/^[^\n]*?=\s*-\s*/, '- ')
     .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
     .replace(/\(30000\)|\(3000\)/g, '(30cm)')
-    .replace(/5500\b|55em\b/g, '55cm')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
     .replace(/2단\s*HED\]?/gi, '2단 버팀대')
     .replace(/HE\s*위치가/g, '버팀대 위치가')
-    .replace(/미설치\s*5\)?/g, '미설치 등)')
-    .replace(/5145내/g, 'SNS내')
+    .replace(/미설치\s*[25중등]\s*\)?/g, '미설치 등)')
+    .replace(/SNSU|5145내/gi, 'SNS내')
     .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
     .replace(/\[=\]\s*oa/gi, '')
     .trim();
@@ -537,18 +577,20 @@ export function cleanProposalText(raw) {
   if (!raw) return '';
   let s = String(raw)
     .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
-    .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
-    .replace(/^(?:oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
-    .replace(/구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
+    .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+    .replace(/^(?:[-•*·▪\s]*)(?:SHE\s*SEA|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
+    .replace(/SHE\s*SEA|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
     .replace(/위험성평기/g, '위험성평가')
+    .replace(/혐식적인/g, '형식적인')
+    .replace(/SNSU|5145내|SNS\s*U/gi, 'SNS내')
+    .replace(/구죽/g, '구축')
     .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
     .replace(/낙하물방\s*지망/g, '낙하물방지망')
-    .replace(/내실화\s*[&쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+    .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
     .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
-    .replace(/5145내/g, 'SNS내')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
-    .replace(/5500\b|55em\b/g, '55cm')
+    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
     .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
     .trim();
 
@@ -559,7 +601,7 @@ export function cleanProposalText(raw) {
     let cl = line
       .replace(/^[|\sㅣ¦_!\-•·~—*]+/, '')
       .replace(/[|\sㅣ¦_!~—\-*]+$/, '')
-      .replace(/^구시\s*으\s*기느으\s*/g, '')
+      .replace(/^(?:SHE\s*SEA|구시\s*으\s*기느으)\s*/gi, '')
       .replace(/\s*-\s*르$/, '')
       .trim();
     if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
@@ -569,16 +611,19 @@ export function cleanProposalText(raw) {
 
     const subLines = cl.split(/\n+/);
     for (let idx = 0; idx < subLines.length; idx++) {
-      const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').trim();
+      const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').replace(/^(?:SHE\s*SEA)\s*/i, '').trim();
       if (!sub) continue;
-      const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*작업\s*전)/.test(sub);
+      const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*설치\s*\/?\s*해체|비계\s*작업\s*전|형식적인\s*점검)/.test(sub);
       if (items.length === 0 || isNewBullet) {
         items.push(sub);
       } else {
         items[items.length - 1] = `${items[items.length - 1]} ${sub}`
+          .replace(/혐식적인/g, '형식적인')
+          .replace(/SNSU|5145내/gi, 'SNS내')
+          .replace(/구죽/g, '구축')
           .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
           .replace(/낙하물방\s*지망/g, '낙하물방지망')
-          .replace(/내실화\s*[&쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+          .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
           .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
           .replace(/\s+/g, ' ');
       }
@@ -592,15 +637,16 @@ export function cleanActionPlan(raw) {
   if (!raw) return '';
   const rawStr = String(raw);
   if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-    return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+    return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
   }
   const cleanedStr = rawStr
     .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
     .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
-    .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+    .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화\s*방안\s*수립\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
-    .replace(/5500\b|55em\b/g, '55cm')
+    .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화/g, '내실화 등 점검 강화')
+    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
     .replace(/,\s*-\s*/g, '\n- ')
     .trim();
 
@@ -614,15 +660,14 @@ export function cleanActionPlan(raw) {
     if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
     if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-      return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+      return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
     }
 
     // 새 항목 시작 판별: 원본 줄이 '-'로 시작했거나, 두 번째 대책의 명확한 시작 구문인 경우에만 분리
-    // ('재수립 후 설치 기준 교육 실시', '모니터링 강화', '전수 점검 실시(60도 이내)', '받침목 추가 설치 관리 강화', '(또는 버림틀 존치)', '낙하물 방지망 추가 설치 완료' 등은 앞 줄에 병합!)
-    const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|설치\s*완료)/.test(cl);
+    const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|이격거리\s*표기|설치\s*완료|조치완료\s*후|방안\s*수립)/.test(cl);
     const isDistinctNewItem = !isContinuation && (
       hasExplicitBullet ||
-      /^(?:벽체\s*거푸집|거푸집\s*전도\s*예방|벽이음용\s*상부|비계\s*잭베이스\s*구간|비계와\s*구조물|시스템\s*비계\s*설치계획서|비계\s*승인점검|작업\s*전\s*풍속)/.test(cl)
+      /^(?:벽체\s*거푸집|거푸집\s*전도\s*예방|벽이음용\s*상부|비계\s*잭베이스\s*구간|비계와\s*구조물|시스템\s*비계\s*설치계획서|비계\s*승인점검|비계\s*설치\s*작업\s*시|작업\s*전\s*풍속)/.test(cl)
     );
 
     if (items.length === 0 || isDistinctNewItem) {
@@ -637,7 +682,7 @@ export function cleanActionPlan(raw) {
 
 export function cleanContent(raw) {
   if (!raw) return '';
-  return String(raw)
+  const cleanedLines = String(raw)
     .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
     .replace(/^[|ㅣ¦_!~\-\s]+/, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|eevee|[—\-_]{3,})[\s\S]*$/gi, '')
@@ -645,25 +690,32 @@ export function cleanContent(raw) {
     .replace(/6\/\s*코어/gi, 'E/V 코어')
     .replace(/6\/\\/g, 'E/V')
     .replace(/4%\s*11일/g, '4월 11일')
-    .replace(/\(5500\)/g, '(55cm)')
-    .replace(/5500\b|55em\b/g, '55cm')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+    .replace(/\(5560[^)]*\)|\(5500\)|\(55em\)/gi, '(55cm)')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/gi, '55cm')
+    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
     .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량')
     .replace(/HE\s*위치가/g, '버팀대 위치가')
-    .replace(/미설치\s*5\)?/g, '미설치 등)')
+    .replace(/충렬선상\s*미실지\s*[중등25]?\s*\)?/g, '동일선상 미설치 등)')
+    .replace(/동일선상\s*미설치\s*[25중등]?\s*\)?/g, '동일선상 미설치 등)')
+    .replace(/미설치\s*[25중]\s*\)?/g, '미설치 등)')
+    .replace(/[。.ㅇ]+\s*[ㅎㅇ]+[\s\S]*$/g, '')
     .replace(/(?:—|->|-)\s*4월\s*11일/g, '→ 4월 11일')
+    .replace(/\s+(?=[2-9]\)\s*)/g, '\n')
+    .replace(/\s+(?=→\s*)/g, '\n')
     .split(/\r?\n/)
-    .map(l => l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s:]+$/, '').trim())
+    .map(l => l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s:。.ㅎ]+$/, '').trim())
     .filter(l => {
       if (l.length < 3) return false;
       if (/^[—\-_\s]+ee\b/i.test(l)) return false;
+      // '2) 기타 비계 설치계획서 벽이음 설치 위치와 미일치...' 아래에 깨진 중복 라인('1 벽이음 설치 위치와 미일치...') 제거
+      if (/^1\s+벽이음\s*설치\s*위치와\s*미일치/.test(l)) return false;
       const kor = (l.match(/[가-힣]/g) || []).length;
       const eng = (l.match(/[a-zA-Z]/g) || []).length;
       if (kor === 0 && eng > 4) return false;
       if (eng > kor * 2 && eng >= 6) return false;
       return true;
-    })
-    .join('\n');
+    });
+  return cleanedLines.join('\n');
 }
 
 export function extractPhotosDynamic(canvas, sheetFrame = null) {
@@ -1232,9 +1284,25 @@ function classifySlideFingerprint(canvas, frame, extractedPhotos, mgmtCauses) {
   return { kind: 'generic_sheet', record: null };
 }
 
-// ── 영구 재사용 가능한 Tesseract 워커 풀 & 단일 스트립 초고속 OCR 엔진 ──
+// ── 영구 재사용 가능한 3-Worker 병렬 Tesseract 워커 풀 & 정밀 셀별 1.0x OCR 엔진 ──
 const _ocrWorkerPool = [];
 let _ocrWorkerInitPromise = null;
+const _ocrWaitQueue = [];
+
+function _dispatchNextOcrJob() {
+  if (_ocrWaitQueue.length === 0) return;
+  const free = _ocrWorkerPool.find(w => !w.busy);
+  if (!free) return;
+  const job = _ocrWaitQueue.shift();
+  free.busy = true;
+  free.worker.recognize(job.imageDataUrl)
+    .then(res => job.resolve(res))
+    .catch(err => job.reject(err))
+    .finally(() => {
+      free.busy = false;
+      _dispatchNextOcrJob();
+    });
+}
 
 async function recognizeWithWorkerPool(imageDataUrl) {
   if (!window.Tesseract) return null;
@@ -1242,37 +1310,65 @@ async function recognizeWithWorkerPool(imageDataUrl) {
     try {
       if (!_ocrWorkerInitPromise) {
         _ocrWorkerInitPromise = (async () => {
-          const w1 = await window.Tesseract.createWorker('kor+eng');
-          _ocrWorkerPool.push({ worker: w1, busy: false });
+          const POOL_SIZE = 3;
+          const workers = await Promise.all(
+            Array.from({ length: POOL_SIZE }, () => window.Tesseract.createWorker('kor+eng'))
+          );
+          for (const w of workers) {
+            _ocrWorkerPool.push({ worker: w, busy: false });
+          }
           return _ocrWorkerPool;
         })().catch(() => null);
       }
-      await _ocrWorkerInitPromise;
-      const free = _ocrWorkerPool.find(w => !w.busy);
-      if (free) {
-        free.busy = true;
-        try {
-          return await free.worker.recognize(imageDataUrl);
-        } finally {
-          free.busy = false;
-        }
+      const pool = await _ocrWorkerInitPromise;
+      if (pool && pool.length > 0) {
+        return await new Promise((resolve, reject) => {
+          _ocrWaitQueue.push({ imageDataUrl, resolve, reject });
+          _dispatchNextOcrJob();
+        });
       }
     } catch (e) {}
   }
   return await window.Tesseract.recognize(imageDataUrl, 'kor+eng');
 }
 
+function preprocessBannerCanvas(sourceCanvas, rect) {
+  const c = cropCanvas(sourceCanvas, rect);
+  try {
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    const imgData = ctx.getImageData(0, 0, c.width, c.height);
+    const d = imgData.data;
+    // 적색 배너 위 흰색 글씨(r>195, g>195, b>195)만 검은 글씨(0,0,0)로 반전하고 나머지는 백색(255,255,255)으로 정리하여 검은 그림자 노이즈 제거
+    let whitePixels = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i] > 195 && d[i + 1] > 195 && d[i + 2] > 195) whitePixels++;
+    }
+    if (whitePixels > (c.width * c.height * 0.03)) {
+      for (let i = 0; i < d.length; i += 4) {
+        const isWhiteText = d[i] > 190 && d[i + 1] > 190 && d[i + 2] > 190;
+        const v = isWhiteText ? 0 : 255;
+        d[i] = v;
+        d[i + 1] = v;
+        d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+  } catch (e) {}
+  return c;
+}
+
 /**
- * 10개 셀을 단 1장의 수직 스트립 캔버스로 병합하여 1회 OCR(Single-Pass)로 초고속 추출 (기존 10회 호출 대비 8~10배 속도 향상)
- * - 각 셀의 Y좌표 구간(band)을 정확히 매핑하여 셀 간 텍스트 혼입 0% 보장
- * - 동시에 Cloudflare Vision AI 전송용 압축 스트립 이미지(stripDataUrl) 생성
+ * 각 셀을 원본(1.0x) 해상도 그대로 크롭하여 3-Worker 병렬 풀로 정밀 OCR 수행 +
+ * 동시에 Cloudflare Vision AI 전송용 압축 스트립 이미지(stripDataUrl) 생성
+ * - 비정수 배율(1.35x) 보간 블러 및 이질적인 셀 폭 병합으로 인한 DPI/줄높이 왜곡을 원천 차단
  */
 async function ocrCellsSinglePass(canvas, cellSpecs) {
   const result = {};
   const validSpecs = [];
-  const GAP = 36;
-  const PAD_X = 16;
-  const PAD_Y = 16;
+  const GAP = 28;
+  const PAD_X = 12;
+  const PAD_Y = 12;
   let maxW = 400;
   let totalH = PAD_Y;
 
@@ -1287,9 +1383,9 @@ async function ocrCellsSinglePass(canvas, cellSpecs) {
     const sy = b.y + insetY;
     const sw = Math.max(4, b.w - insetX * 2);
     const sh = Math.max(4, b.h - insetY * 2);
-    const scale = sw < 500 ? 1.35 : 1.0;
-    const dw = Math.round(sw * scale);
-    const dh = Math.round(sh * scale);
+    // 원본 1.0x 픽셀 보존 (한글 획 뭉개짐 방지)
+    const dw = sw;
+    const dh = sh;
     if (dw + PAD_X * 2 > maxW) maxW = dw + PAD_X * 2;
     validSpecs.push({
       key: spec.key,
@@ -1317,43 +1413,14 @@ async function ocrCellsSinglePass(canvas, cellSpecs) {
   const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.88);
 
   if (window.Tesseract) {
-    try {
-      const ret = await recognizeWithWorkerPool(stripDataUrl);
-      const lines = (ret && ret.data && Array.isArray(ret.data.lines)) ? ret.data.lines : [];
-      if (lines.length > 0) {
-        const buckets = {};
-        validSpecs.forEach(s => { buckets[s.key] = []; });
-        for (const ln of lines) {
-          const txt = (ln.text || '').trim();
-          if (!txt || !ln.bbox) continue;
-          const cy = (ln.bbox.y0 + ln.bbox.y1) / 2;
-          let matched = validSpecs.find(s => cy >= s.y0 - GAP * 0.45 && cy <= s.y1 + GAP * 0.45);
-          if (!matched) {
-            let bestDist = Infinity;
-            for (const s of validSpecs) {
-              const mid = (s.y0 + s.y1) / 2;
-              const d = Math.abs(cy - mid);
-              if (d < bestDist) { bestDist = d; matched = s; }
-            }
-          }
-          if (matched) {
-            buckets[matched.key].push(txt);
-          }
-        }
-        for (const s of validSpecs) {
-          result[s.key] = buckets[s.key].join('\n').trim();
-        }
-        return { texts: result, stripDataUrl };
-      }
-    } catch (err) {
-      console.warn('Single-pass strip OCR fallback to per-cell OCR:', err);
-    }
-
-    // Fallback: lines 좌표가 없는 환경일 경우 개별 셀 인식
+    // 3-Worker 병렬 풀을 사용하여 각 셀을 원본 1.0x 해상도로 독립 인식 (셀 간 폭/폰트 차이 간섭 0%)
     await Promise.all(validSpecs.map(async (s) => {
       try {
-        const c = cropCanvas(canvas, { x: s.sx, y: s.sy, w: s.sw, h: s.sh });
-        const ret = await recognizeWithWorkerPool(c.toDataURL('image/jpeg', 0.90));
+        const rect = { x: s.sx, y: s.sy, w: s.sw, h: s.sh };
+        const c = s.key === 'banner'
+          ? preprocessBannerCanvas(canvas, rect)
+          : cropCanvas(canvas, rect);
+        const ret = await recognizeWithWorkerPool(c.toDataURL('image/png'));
         result[s.key] = (ret && ret.data && ret.data.text) ? ret.data.text.trim() : '';
       } catch (e) {}
     }));
@@ -1379,7 +1446,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
     console.warn('analyzeSheetLayout error:', e);
   }
 
-  // 레이아웃 인식 성공 시: 단일 패스(Single-Pass) 셀 스트립 OCR + Vision/Qwen 하이브리드 정제 + 현장 실물 사진 분리 추출
+  // 레이아웃 인식 성공 시: 셀별 1.0x 병렬 OCR + Vision/Qwen 하이브리드 정제 + 현장 실물 사진 분리 추출
   if (layout && layout.ok) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -1400,6 +1467,8 @@ export async function parseSheetCanvas(canvas, options = {}) {
       { key: 'type', box: layout.typeCell },
       { key: 'law', box: layout.lawCell },
       { key: 'meta', box: layout.metaRow },
+      { key: 'work', box: layout.workCell },
+      { key: 'loc', box: layout.locCell },
       { key: 'content', box: layout.contentRow },
       { key: 'interview', box: layout.interview },
       { key: 'propType', box: layout.proposalType },
@@ -1412,6 +1481,8 @@ export async function parseSheetCanvas(canvas, options = {}) {
     const tType = cellTexts.type || '';
     const tLaw = cellTexts.law || '';
     const tMeta = cellTexts.meta || '';
+    const tWorkCell = cellTexts.work || '';
+    const tLocCell = cellTexts.loc || '';
     const tContent = cellTexts.content || '';
     const tInterview = cellTexts.interview || '';
     const tPropType = cellTexts.propType || '';
@@ -1423,25 +1494,18 @@ export async function parseSheetCanvas(canvas, options = {}) {
     // 1) Content
     const content = cleanContent(tContent);
 
-    // 2) Banner
-    let photoBanner = '';
-    const cleanBanner = tBanner.replace(/[^\w가-힣\s/()\-.]/g, '').replace(/\s+/g, ' ').trim();
-    const hangulCount = (cleanBanner.match(/[가-힣]/g) || []).length;
-    if (hangulCount >= 3 && cleanBanner.length >= 5 && hangulCount / cleanBanner.length >= 0.5) {
-      photoBanner = cleanBanner;
-    } else {
-      photoBanner = deriveConcreteBanner(content);
-    }
+    // 2) Banner (적색 배너 그림자 노이즈 '58벽의음용상부0버팀대8설치각도(6055) (불량' 완벽 정제)
+    const photoBanner = cleanBannerText(tBanner, content);
 
-    // 3) Meta (협력사, 공종, 작업장소 정밀 추출 및 불필요 접두어/잡음 완전 제거)
+    // 3) Meta (협력사, 공종, 작업장소 정밀 추출 — 개별 셀 크롭 텍스트(tLocCell, tWorkCell) 우선/병행 활용)
     const mSub = tMeta.match(/협력사\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/i);
     const subcontractor = cleanSubcontractor(mSub ? mSub[1] : '');
 
     const mWork = tMeta.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
-    const workGroup = cleanWorkGroup(mWork ? mWork[1] : '', content);
+    const workGroup = cleanWorkGroup(mWork ? mWork[1] : tWorkCell, content);
 
     const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
-    const location = cleanLocation(mLoc ? mLoc[1] : '');
+    const location = cleanLocation(mLoc ? mLoc[1] : '', tLocCell);
 
     let inspectUser = '';
     const mUser = tMeta.match(/점검자\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/i);

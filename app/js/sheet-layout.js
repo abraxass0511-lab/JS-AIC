@@ -168,14 +168,26 @@ export function analyzeSheetLayout(img) {
   }
   const pw = px2 - px1;
 
-  // 2) 좌측 '부적합 개요' 황색 셀 (가장 높은 띠)
+  // 2) 좌측 '부적합 개요' 황색 셀 (내부 '부적합' 검은 글자로 인해 끊어진 황색 띠 자동 병합)
   const lxEnd = Math.floor(W * 0.09);
-  const lBands = bands(H, y => {
+  const rawLBands = bands(H, y => {
     let c = 0;
     for (let x = 0; x < lxEnd; x++) if (isYellow(data, (y * W + x) * 4)) c++;
-    return c > W * 0.02;
-  }, 10).filter(b => b[1] < band1[1]);
-  if (!lBands.length) return { ok: false, reason: 'overview-cell-not-found' };
+    return c > W * 0.012;
+  }, 6).filter(b => b[1] < band1[1]);
+  if (!rawLBands.length) return { ok: false, reason: 'overview-cell-not-found' };
+  const lBands = [];
+  for (const b of rawLBands) {
+    if (
+      lBands.length > 0 &&
+      b[0] - lBands[lBands.length - 1][1] <= 24 &&
+      (b[1] - lBands[lBands.length - 1][0]) <= Math.round(H * 0.12)
+    ) {
+      lBands[lBands.length - 1][1] = b[1];
+    } else {
+      lBands.push([...b]);
+    }
+  }
   const lb = lBands.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a));
   const ly0 = lb[0], ly1 = lb[1];
   const lmid = Math.round((ly0 + ly1) / 2);
@@ -241,13 +253,33 @@ export function analyzeSheetLayout(img) {
   if (cmSplit < 0) cmSplit = px1 + Math.round(pw * 0.69);
 
   const pad = 5;
+  const mRow = rect(metaX0, ly0 + 2, x1 - pad, metaSplit);
+  // 메타행 내부 5개 컬럼 수직 구분선 정밀 탐색 (협력사 | 공종명 | 작업장소 | 점검자 | 점검차수)
+  const mw = mRow.w;
+  const my0 = mRow.y + 3, my1 = Math.max(mRow.y + 4, mRow.y + mRow.h - 3);
+  let mv1 = findVLine(img, mRow.x + Math.round(mw * 0.15), mRow.x + Math.round(mw * 0.23), my0, my1, 0.60);
+  if (mv1 < 0) mv1 = mRow.x + Math.round(mw * 0.190);
+  let mv2 = findVLine(img, mRow.x + Math.round(mw * 0.38), mRow.x + Math.round(mw * 0.46), my0, my1, 0.60);
+  if (mp2Invalid(mv2)) mv2 = mRow.x + Math.round(mw * 0.418);
+  let mv3 = findVLine(img, mRow.x + Math.round(mw * 0.63), mRow.x + Math.round(mw * 0.73), my0, my1, 0.60);
+  if (mv3 < 0) mv3 = mRow.x + Math.round(mw * 0.680);
+  let mv4 = findVLine(img, mRow.x + Math.round(mw * 0.80), mRow.x + Math.round(mw * 0.88), my0, my1, 0.60);
+  if (mv4 < 0) mv4 = mRow.x + Math.round(mw * 0.840);
+
+  function mp2Invalid(v) { return v < 0; }
+
   return {
     ok: true,
     frame: rect(x0, hy0, x1, cmBot),
     typeCell: rect(x0 + fw * 0.152, hy0 + pad, x0 + fw * 0.29, hy1),
     lawCell: rect(x0 + fw * 0.365, hy0 + pad, x0 + fw * 0.797, hy1),
     checkCell: rect(x0 + fw * 0.805, hy0 + pad, x1, hy1),
-    metaRow: rect(metaX0, ly0 + 2, x1 - pad, metaSplit),
+    metaRow: mRow,
+    subCell: rect(mRow.x + 3, mRow.y + 2, mv1 - 4, metaSplit - 2),
+    workCell: rect(mv1 + 4, mRow.y + 2, mv2 - 4, metaSplit - 2),
+    locCell: rect(mv2 + 4, mRow.y + 2, mv3 - 4, metaSplit - 2),
+    userCell: rect(mv3 + 4, mRow.y + 2, mv4 - 4, metaSplit - 2),
+    roundCell: rect(mv4 + 4, mRow.y + 2, x1 - pad, metaSplit - 2),
     contentRow: rect(metaX0, metaSplit + 2, x1 - pad, ly1),
     photoArea: rect(x0 + 8, ly1 + 10, px1 - 8, cmBot - 6),
     interview: rect(px1 + pad, spanTop + pad, px2 - pad, interviewBottom),
