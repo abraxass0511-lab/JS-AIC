@@ -242,10 +242,9 @@ function healSafetyKoreanLexicon(str) {
 }
 
 function cleanLocationWorker(loc, content = '') {
-    let s = String(rawLoc || raw || '').trim();
-    if (!s && (fallbackLocText || content)) s = String(fallbackLocText || '').trim();
-    if (!s && (contentText || content)) {
-      const mDong = String(contentText || content).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
+    let s = String(loc || '').trim();
+    if (!s && content) {
+      const mDong = String(content).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
       if (mDong) s = mDong[1];
     }
     if (!s) return '';
