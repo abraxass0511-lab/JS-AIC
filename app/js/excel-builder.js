@@ -335,10 +335,9 @@
 
   // 장소/위치 노이즈('[ERE 12 MAK: 261k 22', 'EERE', 'ee', 'CERNE' 등) 정제 및 공란 복원 함수
   function cleanLocation(raw, content = '') {
-    let s = String(rawLoc || raw || '').trim();
-    if (!s && (fallbackLocText || content)) s = String(fallbackLocText || '').trim();
-    if (!s && (contentText || content)) {
-      const mDong = String(contentText || content).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
+    let s = String(raw || '').trim();
+    if (!s && content) {
+      const mDong = String(content).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
       if (mDong) s = mDong[1];
     }
     if (!s) return '';
