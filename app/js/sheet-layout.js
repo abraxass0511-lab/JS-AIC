@@ -13,7 +13,8 @@ function lumAt(d, k) {
 
 function isYellow(d, k) {
   const r = d[k], g = d[k + 1], b = d[k + 2];
-  return r > 175 && g > 145 && b < 165 && (r - b) > 35 && (g - b) > 20;
+  // 노란색: 빨강/초록이 높고, 파랑이 확연히 낮음 (밝은 파스텔 노랑 #FFF2CC, #FFE599, 골드 #FFD966 모두 포용)
+  return r > 160 && g > 135 && (r - b) > 22 && (g - b) > 15 && b < 218;
 }
 
 function isRedBanner(d, k) {

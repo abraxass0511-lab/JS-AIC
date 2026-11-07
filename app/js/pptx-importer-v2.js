@@ -450,27 +450,55 @@ export function cleanSubcontractor(mSubText) {
 export function healSafetyKoreanLexicon(str) {
   if (!str) return '';
   return String(str)
-    // 1. 위험성평가 전 변종 복원 (위험성평ㅇ, 위험성평기, 위혐성평가, 위험성평 등)
-    .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
+    // 0. Gang Form / 갱폼 및 선해체방지커버
+    .replace(/Gang\s*Form/gi, 'Gang Form')
+    .replace(/GangForm/gi, 'Gang Form')
+    .replace(/선해[세체]\s*방지\s*커버|선해세방지커버/g, '선해체방지커버')
+    .replace(/선해[세체]방지/g, '선해체방지')
+    .replace(/선해[세체]\s*방지/g, '선해체 방지')
+    // 1. ㅠ AF AYA 등 OCR 영문 노이즈 -> 인양 시 간섭사항 미고려
+    .replace(/ㅠ\s*AF\s*AYA\s*(?:간섭\s*사항\s*미고려)?/g, '인양 시 간섭사항 미고려')
+    .replace(/ㅠ\s*AF\s*AYA/g, '인양 시')
+    // 2. 밑둥잡이 복원
+    .replace(/드\s*브\s*느\s*밑[둥등]잡이|드\s*브\s*느\s*밀등잡이/g, '외부비계 밑둥잡이')
+    .replace(/드\s*브\s*느/g, '외부비계')
+    .replace(/밀등잡이|밑등잡이/g, '밑둥잡이')
+    // 3. ee — 등 말단 영문 노이즈 제거
+    .replace(/[=—\-_\s]+ee[\s—\-_]*$/gi, '')
+    .replace(/\s+ee\s*—\s*$/g, '')
+    // 4. 말줄임표 동바... 복원
+    .replace(/동바\.\.\./g, '동바리')
+    // 5. 반영 i) -> 반영
+    .replace(/반영\s*[iI!ㅣ1]\)/g, '반영')
+    // 6. 당사 유관부서 / 기술혁신그룹 등
+    .replace(/LEA\s*유관부서/gi, '당사 유관부서')
+    .replace(/기술혁신그룹\s*[%％]/g, '기술혁신그룹 등')
+    // 7. 타설 힐 동바리 -> 타설 전 동바리
+    .replace(/타설\s*힐\s*동바리/g, '타설 전 동바리')
+    .replace(/타설\s*힐/g, '타설 전')
+    .replace(/미복구\s*힌\s*걸\s*로\s*추정\s*함/g, '미복구한 것으로 추정함')
+    // 8. 위험성평가 전 변종 복원 (위험성평ㅇ, 위험성평기, 위혐성평가, 위험성평 등)
+    .replace(/위[험험협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
     .replace(/위험성\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
-    .replace(/위[험혐협형횸]성평\b/g, '위험성평가')
+    .replace(/위[험험협형횸]성평\b/g, '위험성평가')
     .replace(/위험성\s*(?=재수립|검토|수립|교육)/g, '위험성평가 ')
     .replace(/위[험협]성\s*평가/g, '위험성평가')
-    // 2. 모니터링 / 내실화 / 형식적인 점검 / SNS내 등록
+    // 9. 모니터링 / 내실화 / 형식적인 점검 / SNS내 등록
     .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
     .replace(/모니터링\s*활\s*동\s*강화/g, '모니터링 활동 강화')
     .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+    .replace(/내실화\s*&\s*점검/g, '내실화 등 점검')
     .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
     .replace(/혐식적[인으로]?/g, '형식적인')
     .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
     .replace(/SNSU|5145내|5045내|SNS\s*U\b/gi, 'SNS내')
     .replace(/시스템\s*구죽/g, '시스템 구축')
-    // 3. 치수 및 단위 (5560ㅁ7 -> 55cm, 30000 -> 30cm)
+    // 10. 치수 및 단위 (5560ㅁ7 -> 55cm, 30000 -> 30cm)
     .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
     .replace(/\(30000\)|\(3000\)/g, '(30cm)')
     .replace(/\(55(?:00|60|em|cm)?[^)]*\)/gi, '(55cm)')
     .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/gi, '55cm')
-    // 4. 낙하물방지망 / 버팀대 / 동일선상
+    // 11. 낙하물방지망 / 버팀대 / 동일선상
     .replace(/낙하물방\s*지망/g, '낙하물방지망')
     .replace(/2단\s*HED\]?/gi, '2단 버팀대')
     .replace(/HE\s*위치가/g, '버팀대 위치가')
@@ -481,75 +509,43 @@ export function healSafetyKoreanLexicon(str) {
 }
 
 export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
-  const rawStr = String(rawLoc || '');
-  
-  // 0) 원문에 이미 유효한 건물/동/층 명칭이 포함되어 있는 경우 최우선 추출
-  const mDirect = rawStr.match(/(\d{3}\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?|지하\s*\d+\s*층|상가동)/);
-  if (mDirect) {
-    return mDirect[1].replace(/\s+/g, ' ').trim();
-  }
+    let s = String(rawLoc || raw || '').trim();
+    if (!s && (fallbackLocText || content)) s = String(fallbackLocText || '').trim();
+    if (!s && (contentText || content)) {
+      const mDong = String(contentText || content).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
+      if (mDong) s = mDong[1];
+    }
+    if (!s) return '';
 
-  const extractClean = (str) => {
-    if (!str) return '';
-    return String(str)
+    s = s
       .replace(/^(?:작업\s*장소|작[업엄]장소|장\s*소)\s*[:;：.]?\s*/i, '')
       .replace(/\[\s*ERE\b[^\n]*$/i, '')
       .replace(/\b(?:EERE|ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL|드로|리로)\b(?:\s*[:;=]?\s*[a-zA-Z0-9]+)*/gi, ' ')
       .replace(/(?:점검자?|점검차수|점검\s*[a-zA-Z0-9]?|차수|부적합)[\s\S]*$/i, '')
       .replace(/\b[a-zA-Z]\b/g, ' ')
-      .replace(/[\[\]{}()_ㅣ¦!~—\-:;]+/g, ' ')
-      .replace(/[^가-힣0-9a-zA-Z\s,]/g, ' ')
+      .replace(/[\[\]{}()_ㅣ¦!~—:;]+/g, ' ')
       .replace(/\s+(?:리|로|드|트|르|점|검)\s*$/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-  };
-  let loc = extractClean(rawLoc);
-  if (!loc && fallbackLocText) {
-    loc = extractClean(fallbackLocText);
-  }
 
-  // 1) 11023, 1023, 1028 등 숫자로만 오인식된 건물/동 패턴 자동 치유
-  // Tesseract에서 '|' 세로선이 1로, '동'이 3이나 8로 오인식된 경우 (예: 11023 -> 102동, 1023 -> 102동)
-  if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(loc)) {
-    const mMatch = loc.match(/1?(10[1-9]|1[1-9]\d)[385]?/);
-    if (mMatch && mMatch[1]) {
-      loc = `${mMatch[1]}동`;
-    }
-  }
-
-  // 2) 정상적인 '동' 명칭이 포함되어 있는 경우 정규화
-  if (loc) {
-    const mBuilding = loc.match(/(\d+\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?|지하\s*\d+\s*층|상가동)/);
-    if (mBuilding) {
-      if (loc.length > mBuilding[0].length + 4) {
-        return mBuilding[0].replace(/\s+/g, ' ').trim();
+    // 11023, 1023 등 숫자로만 오인식된 건물/동 패턴 자동 치유
+    if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
+      const mMatch = s.match(/1?(10[1-9]|1[1-9]\d)[385]?/);
+      if (mMatch && mMatch[1]) {
+        return `${mMatch[1]}동`;
       }
-      return loc;
     }
-  }
 
-  // 3) 만약 loc이 순수 숫자이거나, 없거나, 엉뚱한 노이즈인 경우 contentText(부적합 내용)에서 건물/동 위치 복원
-  const context = `${contentText || ''} ${fallbackLocText || ''}`;
-  if (context) {
-    const mDong = context.match(/(\d{3}\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?)/);
-    if (mDong) return mDong[1].replace(/\s+/g, ' ').trim();
-    if (context.includes('지하 2층') && context.includes('전도방지 파이프')) return '106동 지하2층';
-    if (context.includes('상부 버팀대 설치각도 60도') || context.includes('기초부 걸침상태') || /102/i.test(loc)) return '102동';
-    if (context.includes('이격거리 과다') && context.includes('벽이음 설치 위치와 미일치')) return '104동 후면';
-    if (context.includes('상가동') && context.includes('가새')) return '101동 상가동';
-    if (context.includes('주변 통제 미실시') && context.includes('더블 클램프')) return '106동';
-  }
+    s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385]\b(?=\s*(?:동|층|코어))/g, '$1동');
 
-  // 4) 만약 숫자로만 이루어져 있으면(예: 11023 등) 절대 그대로 반환하지 않고 정제
-  if (/^\d+$/.test(loc)) {
-    if (loc.includes('102')) return '102동';
-    if (loc.includes('104')) return '104동';
-    if (loc.includes('106')) return '106동';
-    if (loc.includes('101')) return '101동';
-    return '';
-  }
+    // 107동 3층 1코어 등 온전한 건물/동/층/코어/구간 명칭 보존
+    const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|복도|주차장|상가동|후면|전면|측면|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장|[0-9가-힣]+))+/i);
+    if (mFull && mFull[0] && mFull[0].trim().length >= 2) {
+      const candidate = mFull[0].replace(/\s+/g, ' ').trim();
+      if (!/^[a-zA-Z\s,]+$/.test(candidate)) return candidate;
+    }
 
-  return loc;
+    return s;
 }
 
 export function cleanBannerText(rawBanner, content = '') {
@@ -670,53 +666,22 @@ export function cleanOpinionText(raw) {
     .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
     .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
-    .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
     .replace(/^[^\n]*?=\s*-\s*/, '- ')
-    .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
-    .replace(/\(30000\)|\(3000\)/g, '(30cm)')
-    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
-    .replace(/2단\s*HED\]?/gi, '2단 버팀대')
-    .replace(/HE\s*위치가/g, '버팀대 위치가')
-    .replace(/미설치\s*[25중등]\s*\)?/g, '미설치 등)')
-    .replace(/(?:5045|5145|SNS)[내U]/gi, 'SNS내')
-    .replace(/위[혐협]성평가/g, '위험성평가')
-    .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
-    .replace(/\[=\]\s*oa/gi, '')
     .trim();
 
-  // 줄 단위 분석: 원본에 '-' 불릿으로 구분된 여러 문장이 있으면 각각 '- ' 불릿 줄바꿈으로 보존하고, 단순 줄바꿈은 앞 문장에 이어붙임
+  // 문장 종결 후 새 항목 분리 (예: 못함 갱폼 인양팀 -> 못함\n- 갱폼 인양팀)
+  s = s.replace(/(?<=(?:못함|했음|하였음|설치함|확인함|판단됨|간과함|발생함|요청함|부족함|미흡함|않음|보완하겠음))\s*[-•·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|작업팀|시공사|협력사|향후|사전|2단|상부|하부|점검))/g, '\n- ');
+  s = s.replace(/(?<=[가-힣.!?])\s*[-•·▪]\s*(?=[가-힣0-9])/g, '\n- ');
+
   const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const items = [];
   for (let l of rawLines) {
-    l = l.replace(/^[a-zA-Z0-9|.\s=\-_/!]+(?=-)/, '').trim();
-    const hasDash = /^[-•·▪]\s*/.test(l);
-    let text = l.replace(/^[|\sㅣ¦_!\-•·~—]+/, '').replace(/[|\sㅣ¦_!~—\-]+$/, '').trim();
-    if (!text) continue;
-    const korCnt = (text.match(/[가-힣]/g) || []).length;
-    if (korCnt === 0 && text.length < 15) continue;
-
-    // 한 줄 안에 ' - ' 또는 문장 끝 후 새 항목이 이어진 경우 분리
-    text = text
-      .replace(/(보완하겠음\.?)\s*(?=-?\s*2단\s*버팀대)/g, '$1\n- ')
-      .replace(/(간과함\.?)\s*(?=-?\s*향후\s*비계설치)/g, '$1\n- ');
-
-    const subParts = text.split(/\n+/);
-    for (let sp of subParts) {
-      const subDash = hasDash || /^[-•·▪]\s*/.test(sp) || /^(?:향후\s*비계설치|2단\s*버팀대)/.test(sp);
-      const cleanSp = sp.replace(/^[-•·▪]\s*/, '').trim();
-      if (!cleanSp) continue;
-      if (items.length === 0 || subDash) {
-        items.push(cleanSp);
-      } else {
-        items[items.length - 1] = `${items[items.length - 1]} ${cleanSp}`.replace(/\s+/g, ' ');
-      }
-    }
+    let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+    if (!text || text.length < 2) continue;
+    items.push(text);
   }
-
   if (items.length === 0) return '';
-  if (items.length === 1) return `- ${healSafetyKoreanLexicon(items[0])}`;
-  return items.map(it => `- ${healSafetyKoreanLexicon(it)}`).join('\n');
+  return items.map(it => `- ${it}`).join('\n');
 }
 
 export function cleanProposalText(raw) {
@@ -725,62 +690,23 @@ export function cleanProposalText(raw) {
     .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
     .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
     .replace(/^(?:[-•*·▪\s]*)(?:De\s*T=?\s*©?|SHE\s*SEA|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
-    .replace(/De\s*T=?\s*©?|SHE\s*SEA|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
-    .replace(/^[\s\S]*?(?=1차적으로\s*(?:오설치된|이격거리))/, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
-    .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
-    .replace(/혐식적인/g, '형식적인')
-    .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
-    .replace(/SNSU|5145내|5045내|SNS\s*U/gi, 'SNS내')
-    .replace(/구죽/g, '구축')
-    .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
-    .replace(/낙하물방\s*지망/g, '낙하물방지망')
-    .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
-    .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
-    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
-    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
-    .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
     .trim();
+
+  // 분리 규칙:
+  // 1) 명시적 불릿 기호
+  s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ');
+  // 2) 문장 종결 후 새 항목 시작
+  s = s.replace(/(?<=(?:개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립|점검\s*실시|교육\s*실시|내실화|구축|적용|설치|존치|수렴))\s*[-•*·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|점검단|유관부서|당사|본사|1차|2차|향후|사전|정기|수시|형식적|비계설치|상가동|외벽))/g, '\n- ');
 
   const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const items = [];
   for (const line of rawLines) {
-    const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
-    let cl = line
-      .replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '')
-      .replace(/[|\sㅣ¦_!~—\-*]+$/, '')
-      .replace(/^(?:De\s*T=?\s*©?|SHE\s*SEA|구시\s*으\s*기느으)\s*/gi, '')
-      .replace(/\s*-\s*르$/, '')
-      .trim();
+    let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
     if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
-
-    // 한 문장 안에 2개 항목이 붙어있는 경우('...설치 비계설치 후 승인점검 내실화 등 점검 강화 필요') 분리
-    cl = cl.replace(/(고임목\s*설치|낙하물방지망\s*설치)\s+(?=비계설치\s*후\s*승인점검)/g, '$1\n- ');
-
-    const subLines = cl.split(/\n+/);
-    for (let idx = 0; idx < subLines.length; idx++) {
-      const sub = subLines[idx].replace(/^[-•*·▪.©=]+\s*/, '').replace(/^(?:De\s*T=?\s*©?|SHE\s*SEA)\s*/i, '').trim();
-      if (!sub) continue;
-      const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*설치\s*\/?\s*해체|비계\s*작업\s*전|형식적인\s*점검)/.test(sub);
-      if (items.length === 0 || isNewBullet) {
-        items.push(sub);
-      } else {
-        items[items.length - 1] = `${items[items.length - 1]} ${sub}`
-          .replace(/위[험혐협]성평[가기]/g, '위험성평가')
-          .replace(/혐식적인/g, '형식적인')
-          .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
-          .replace(/SNSU|5145내|5045내/gi, 'SNS내')
-          .replace(/구죽/g, '구축')
-          .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
-          .replace(/낙하물방\s*지망/g, '낙하물방지망')
-          .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
-          .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
-          .replace(/\s+/g, ' ');
-      }
-    }
+    items.push(cl);
   }
-
-  return items.map(it => `- ${healSafetyKoreanLexicon(it)}`).join('\n');
+  return items.map(it => `- ${it}`).join('\n');
 }
 
 export function cleanActionPlan(raw) {
@@ -1885,6 +1811,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
   if (window.Tesseract) {
     try {
       const stripCanvas = buildCleanTextStripCanvas(canvas, frame);
+      record._stripImageBase64 = stripCanvas.toDataURL('image/jpeg', 0.90);
       const ret = await window.Tesseract.recognize(stripCanvas.toDataURL('image/jpeg', 0.90), 'kor+eng');
       const ocrText = (ret && ret.data && ret.data.text) || '';
 
