@@ -183,11 +183,40 @@ function analyzeRuleFallback(content) {
 function healSafetyKoreanLexicon(str) {
   if (!str) return '';
   return String(str)
-    .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
+    // 0. Gang Form / 갱폼 및 선해체방지커버
+    .replace(/Gang\s*Form/gi, 'Gang Form')
+    .replace(/GangForm/gi, 'Gang Form')
+    .replace(/선해[세체]\s*방지\s*커버|선해세방지커버/g, '선해체방지커버')
+    .replace(/선해[세체]방지/g, '선해체방지')
+    .replace(/선해[세체]\s*방지/g, '선해체 방지')
+    // 1. ㅠ AF AYA 등 OCR 영문 노이즈 -> 인양 시 간섭사항 미고려
+    .replace(/ㅠ\s*AF\s*AYA\s*(?:간섭\s*사항\s*미고려)?/g, '인양 시 간섭사항 미고려')
+    .replace(/ㅠ\s*AF\s*AYA/g, '인양 시')
+    // 2. 밑둥잡이 복원
+    .replace(/드\s*브\s*느\s*밑[둥등]잡이|드\s*브\s*느\s*밀등잡이/g, '외부비계 밑둥잡이')
+    .replace(/드\s*브\s*느/g, '외부비계')
+    .replace(/밀등잡이|밑등잡이/g, '밑둥잡이')
+    // 3. ee — 등 말단 영문 노이즈 제거
+    .replace(/[=—\-_\s]+ee[\s—\-_]*$/gi, '')
+    .replace(/\s+ee\s*—\s*$/g, '')
+    // 4. 말줄임표 동바... 복원
+    .replace(/동바\.\.\./g, '동바리')
+    // 5. 반영 i) -> 반영
+    .replace(/반영\s*[iI!ㅣ1]\)/g, '반영')
+    // 6. 당사 유관부서 / 기술혁신그룹 등
+    .replace(/LEA\s*유관부서/gi, '당사 유관부서')
+    .replace(/기술혁신그룹\s*[%％]/g, '기술혁신그룹 등')
+    // 7. 타설 힐 동바리 -> 타설 전 동바리
+    .replace(/타설\s*힐\s*동바리/g, '타설 전 동바리')
+    .replace(/타설\s*힐/g, '타설 전')
+    .replace(/미복구\s*힌\s*걸\s*로\s*추정\s*함/g, '미복구한 것으로 추정함')
+    // 8. 위험성평가 전 변종 복원 (위험성평ㅇ, 위험성평기, 위혐성평가, 위험성평 등)
+    .replace(/위[험험협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
     .replace(/위험성\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
-    .replace(/위[험혐협형횸]성평\b/g, '위험성평가')
+    .replace(/위[험험협형횸]성평\b/g, '위험성평가')
     .replace(/위험성\s*(?=재수립|검토|수립|교육)/g, '위험성평가 ')
     .replace(/위[험협]성\s*평가/g, '위험성평가')
+    // 9. 모니터링 / 내실화 / 형식적인 점검 / SNS내 등록
     .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
     .replace(/모니터링\s*활\s*동\s*강화/g, '모니터링 활동 강화')
     .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
@@ -197,10 +226,12 @@ function healSafetyKoreanLexicon(str) {
     .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
     .replace(/SNSU|5145내|5045내|SNS\s*U\b/gi, 'SNS내')
     .replace(/시스템\s*구죽/g, '시스템 구축')
+    // 10. 치수 및 단위 (5560ㅁ7 -> 55cm, 30000 -> 30cm)
     .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
     .replace(/\(30000\)|\(3000\)/g, '(30cm)')
     .replace(/\(55(?:00|60|em|cm)?[^)]*\)/gi, '(55cm)')
     .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/gi, '55cm')
+    // 11. 낙하물방지망 / 버팀대 / 동일선상
     .replace(/낙하물방\s*지망/g, '낙하물방지망')
     .replace(/2단\s*HED\]?/gi, '2단 버팀대')
     .replace(/HE\s*위치가/g, '버팀대 위치가')
@@ -211,22 +242,43 @@ function healSafetyKoreanLexicon(str) {
 }
 
 function cleanLocationWorker(loc, content = '') {
-  const rawStr = String(loc || '');
-  const mDirect = rawStr.match(/(\d{3}\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?|지하\s*\d+\s*층|상가동)/);
-  if (mDirect) {
-    return mDirect[1].replace(/\s+/g, ' ').trim();
-  }
-  let s = rawStr.replace(/^작업장소\s*[:;：]?\s*/i, '').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').trim();
-  const mMatch = s.match(/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/);
-  if (mMatch) {
-    const dMatch = s.match(/(10[1-9]|1[1-9]\d)/);
-    if (dMatch) return `${dMatch[1]}동`;
-  }
-  if (content) {
-    const cMatch = String(content).match(/(\d{3}\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*상가동)?)/);
-    if (cMatch) return cMatch[1].replace(/\s+/g, ' ').trim();
-  }
-  return s;
+    let s = String(rawLoc || raw || '').trim();
+    if (!s && (fallbackLocText || content)) s = String(fallbackLocText || '').trim();
+    if (!s && (contentText || content)) {
+      const mDong = String(contentText || content).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
+      if (mDong) s = mDong[1];
+    }
+    if (!s) return '';
+
+    s = s
+      .replace(/^(?:작업\s*장소|작[업엄]장소|장\s*소)\s*[:;：.]?\s*/i, '')
+      .replace(/\[\s*ERE\b[^\n]*$/i, '')
+      .replace(/\b(?:EERE|ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL|드로|리로)\b(?:\s*[:;=]?\s*[a-zA-Z0-9]+)*/gi, ' ')
+      .replace(/(?:점검자?|점검차수|점검\s*[a-zA-Z0-9]?|차수|부적합)[\s\S]*$/i, '')
+      .replace(/\b[a-zA-Z]\b/g, ' ')
+      .replace(/[\[\]{}()_ㅣ¦!~—:;]+/g, ' ')
+      .replace(/\s+(?:리|로|드|트|르|점|검)\s*$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // 11023, 1023 등 숫자로만 오인식된 건물/동 패턴 자동 치유
+    if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
+      const mMatch = s.match(/1?(10[1-9]|1[1-9]\d)[385]?/);
+      if (mMatch && mMatch[1]) {
+        return `${mMatch[1]}동`;
+      }
+    }
+
+    s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385]\b(?=\s*(?:동|층|코어))/g, '$1동');
+
+    // 107동 3층 1코어 등 온전한 건물/동/층/코어/구간 명칭 보존
+    const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|복도|주차장|상가동|후면|전면|측면|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장|[0-9가-힣]+))+/i);
+    if (mFull && mFull[0] && mFull[0].trim().length >= 2) {
+      const candidate = mFull[0].replace(/\s+/g, ' ').trim();
+      if (!/^[a-zA-Z\s,]+$/.test(candidate)) return candidate;
+    }
+
+    return s;
 }
 
 function buildFallbackCleanedFields(rawOcr, fb) {
