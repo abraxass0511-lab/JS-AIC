@@ -949,11 +949,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const pin = storage.getItem('sp_pin') || '111111';
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
 
-    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen AI 연동 (노트북/로컬 서버 무관 24시간 실시간 동작) ──
+    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen AI 연동 (빠른 응답 최우선, 타임아웃 3.5초) ──
     if (!forceLocal && workerUrl) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 12000);
+        const timeout = setTimeout(() => ctrl.abort(), 3500);
         const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -983,6 +983,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         if (cfRes.ok) {
           const cfData = await cfRes.json();
           if (cfData) {
+            fallbackRecord._aiCleaned = true;
             if (cfData.rightPhotoIsReference === true && Array.isArray(fallbackRecord.photos) && fallbackRecord.photos.length > 1) {
               fallbackRecord.photos = [fallbackRecord.photos[0]];
               fallbackRecord.photo2 = null;
@@ -1008,18 +1009,21 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               if (cf.rawLaw) fallbackRecord.rawLaw = cf.rawLaw;
               if (cf.lawBody) fallbackRecord.lawBody = cf.lawBody;
             }
+            delete fallbackRecord._stripImageBase64;
+            delete fallbackRecord._rightPhotoBase64;
           }
         }
       } catch (cfErr) {
-        console.warn('Cloudflare 24시간 Qwen AI 호출 안내 (로컬/룰엔진 자동 폴백):', cfErr);
+        console.warn('Cloudflare 24시간 Qwen AI 호출 안내 (로컬 룰엔진 즉시 동작):', cfErr);
       }
     }
-    if (!fallbackRecord.cleanedFields && (forceLocal || !workerUrl || true)) {
-      // ── [2순위] 사용자가 명시적으로 로컬 LM Studio를 선택한 경우에만 실행 ──
+
+    // ── [2순위] 사용자가 설정에서 '로컬 AI(LM Studio)'를 명시적으로 선택한 경우에만 2초 타임아웃으로 실행 ──
+    if (forceLocal && !fallbackRecord._aiCleaned) {
       for (const ep of [currentEndpoint, ...DEFAULT_ENDPOINTS]) {
         try {
           const ctrl = new AbortController();
-          const timeout = setTimeout(() => ctrl.abort(), 60000);
+          const timeout = setTimeout(() => ctrl.abort(), 2000);
           const res = await fetch(`${ep}/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
