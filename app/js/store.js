@@ -496,20 +496,22 @@ export const store = {
           .trim() || '가설공사';
       }
       if (rec.interviewOpinion) {
-        rec.interviewOpinion = String(rec.interviewOpinion)
-          .replace(/^[\s|ㅣ¦_!\-•·]+/gm, '')
-          .replace(/\s+/g, ' ')
-          .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
-          .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
-          .trim();
+        const cleanOp = window.SafeExcel?.cleanOpinionText;
+        rec.interviewOpinion = typeof cleanOp === 'function'
+          ? cleanOp(rec.interviewOpinion)
+          : String(rec.interviewOpinion).replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '').trim();
       }
       if (rec.auditProposal) {
-        rec.auditProposal = String(rec.auditProposal)
-          .replace(/^[\s|ㅣ¦_!\-•·]+/gm, '')
-          .replace(/\s+/g, ' ')
-          .replace(/^[\s|ㅣ¦_!\-•·]+/, '')
-          .replace(/\s+[블를클|ㅣ¦_!]+\s*$/g, '')
-          .trim();
+        const cleanProp = window.SafeExcel?.cleanProposalText;
+        rec.auditProposal = typeof cleanProp === 'function'
+          ? cleanProp(rec.auditProposal)
+          : String(rec.auditProposal).replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '').trim();
+      }
+      if (rec.actionPlan) {
+        const cleanPlan = window.SafeExcel?.cleanProposalText;
+        rec.actionPlan = typeof cleanPlan === 'function'
+          ? cleanPlan(rec.actionPlan)
+          : String(rec.actionPlan).replace(/\s+[블를클|ㅣ¦_!~—\-]+\s*$/g, '').trim();
       }
       // 모든 레코드 공통: 건설안전 9×9 표준 기인물(중) '거푸집/동바리' 통일 (기존 '동바리'/'거푸집동바리' 표기 자동 보정)
       const FORM_SHORING_ALIASES = ['동바리', '거푸집동바리', '거푸집 동바리'];
