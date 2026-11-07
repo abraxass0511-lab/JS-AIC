@@ -683,12 +683,12 @@
    * - 기본값(baseSize, 12pt)을 유지하고, 칸(너비×높이)에 실제로 다 들어가지 않을 때만 0.5pt씩 축소
    * - 글자수 기준 일괄 축소(예: 70자 초과 시 10pt)로 인해 충분히 들어가는데도 작아지는 문제 방지
    */
-  function calcFitMultilineFontSize(text, widthInch, heightInch, baseSize = 12, minSize = 9, lineSpacing = 1.15, marginPt = [6, 8, 4, 6]) {
+  function calcFitMultilineFontSize(text, widthInch, heightInch, baseSize = 12, minSize = 7.5, lineSpacing = 1.12, marginPt = [3, 6, 3, 6]) {
     const str = String(text || '').trim();
     if (!str) return baseSize;
     const [mTop, mRight, mBottom, mLeft] = marginPt;
-    const availW = widthInch * 72 - mLeft - mRight;
-    const availH = heightInch * 72 - mTop - mBottom;
+    const availW = Math.max(10, widthInch * 72 - mLeft - mRight);
+    const availH = Math.max(10, heightInch * 72 - mTop - mBottom);
     const paragraphs = str.split(/\r?\n/);
     let sz = baseSize;
     while (sz >= minSize) {
@@ -697,14 +697,15 @@
         let w = 0;
         for (let i = 0; i < p.length; i++) {
           const code = p.charCodeAt(i);
-          if (code === 32) w += sz * 0.32;
-          else if (code > 127) w += sz * 0.95;
-          else w += sz * 0.56;
+          if (code === 32) w += sz * 0.35;
+          else if (code > 127) w += sz * 1.02;
+          else w += sz * 0.60;
         }
-        // 단어 단위 줄바꿈 여유분 6% 반영
-        lines += Math.max(1, Math.ceil((w * 1.06) / availW));
+        // 한국어 맑은고딕 단어 단위 줄바꿈 여유분 16% 반영
+        lines += Math.max(1, Math.ceil((w * 1.16) / availW));
       }
-      const neededH = lines * sz * 1.2 * lineSpacing;
+      // 한국어 맑은고딕 폰트의 실제 행간(1.35배) 정밀 반영
+      const neededH = lines * sz * 1.35 * lineSpacing;
       if (neededH <= availH) return sz;
       sz -= 0.5;
     }
@@ -1148,11 +1149,11 @@
       x: 4.8865, y: 0.4800, w: 5.5644, h: 0.6495,
       fill: { color: C_STD_CONTENT_BG }, line: { color: C_STD_CONTENT_BG, width: 0 }
     });
-    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 11, 6.8, 1.08, [1, 4, 1, 4]);
+    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 11, 6.8, 1.08, [2, 5, 2, 5]);
     slide.addText(data.lawBody, {
       x: 4.8865, y: 0.4800, w: 5.5644, h: 0.6495,
       fontFace: FONT_MALGUN, fontSize: lawBodyFontSize, color: '111111',
-      align: 'left', valign: 'middle', margin: [1, 4, 1, 4], lineSpacingMultiple: 1.08
+      align: 'left', valign: 'top', margin: [2, 5, 2, 5], lineSpacingMultiple: 1.08
     });
 
     // 5) 4대 발생요인 (TABLE #2: x = 10.6557, y = 0.1257, w = 2.5748, h = 1.0455)
@@ -1850,7 +1851,7 @@
         </div>
 
         <!-- 4-2. 관련기준 본문 (연청색 #dae3f3 음영 박스, 넘침 방지 동적 폰트 및 내어쓰기 적용) -->
-        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.4800)}; width: ${pctW(5.5644)}; height: ${pctH(0.6495)}; background: #dae3f3; padding: 0.15cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: center; overflow: hidden;">
+        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.4800)}; width: ${pctW(5.5644)}; height: ${pctH(0.6495)}; background: #dae3f3; padding: 0.2cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: flex-start; overflow: hidden;">
           <div style="width: 100%; font-size: ${pt(lawBodyFontSize)}; color: #111111; line-height: 1.15; word-break: keep-all;">${renderHangingLinesHTML(data.lawBody)}</div>
         </div>
 
