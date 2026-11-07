@@ -30,7 +30,7 @@ function trimRedBannerFromBox(data, W, box) {
   let { x, y, w, h } = box;
   let y0 = y;
   let y1 = y + h - 1;
-  const minBandRows = Math.max(8, Math.round(h * 0.025));
+  const minBandRows = Math.max(5, Math.round(h * 0.018));
 
   const isBannerBand = (startY, endY) => {
     let bandRows = 0;
@@ -42,9 +42,9 @@ function trimRedBannerFromBox(data, W, box) {
       }
       const r = redCount / Math.max(1, w / 2);
       if (r > peakRatio) peakRatio = r;
-      if (r > 0.30) bandRows++;
+      if (r > 0.18) bandRows++;
     }
-    return bandRows >= minBandRows && peakRatio > 0.52;
+    return bandRows >= minBandRows && peakRatio > 0.32;
   };
 
   // 1) 하단 적색 배너 바 및 안티앨리어싱 적색 잔영(Fringe) 완전 제거 (해상도 무관 26% 탐색)
@@ -57,7 +57,7 @@ function trimRedBannerFromBox(data, W, box) {
       for (let cx = x; cx < x + w; cx += 2) {
         if (isRedBanner(data, (cy * W + cx) * 4)) redCount++;
       }
-      if (redCount / Math.max(1, w / 2) > 0.16) {
+      if (redCount / Math.max(1, w / 2) > 0.14) {
         y1 = cy - 1;
         seenBanner = true;
         nonRedStreak = 0;
@@ -67,17 +67,17 @@ function trimRedBannerFromBox(data, W, box) {
       }
     }
     // 배너 상단 경계의 붉은 그림자/잔영(Fringe) 추가 제거
-    const fringeLimit = Math.max(botLimit, y1 - Math.max(6, Math.round(h * 0.025)));
+    const fringeLimit = Math.max(botLimit, y1 - Math.max(8, Math.round(h * 0.030)));
     while (y1 >= fringeLimit) {
       let fringeCount = 0;
       for (let cx = x; cx < x + w; cx += 2) {
         if (isReddishFringe(data, (y1 * W + cx) * 4)) fringeCount++;
       }
-      if (fringeCount / Math.max(1, w / 2) > 0.05) y1--;
+      if (fringeCount / Math.max(1, w / 2) > 0.04) y1--;
       else break;
     }
-    // 안전 여백 2px 추가 확보
-    y1 = Math.max(y0 + 20, y1 - Math.max(2, Math.round(h * 0.005)));
+    // 안전 여백 4px 추가 확보하여 하단 잔영 원천 차단
+    y1 = Math.max(y0 + 20, y1 - Math.max(4, Math.round(h * 0.010)));
   }
 
   // 2) 상단 적색 배너 바 및 하단 잔영 완전 제거 (해상도 무관 26% 탐색)

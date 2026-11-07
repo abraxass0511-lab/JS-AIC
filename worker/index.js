@@ -180,6 +180,69 @@ function analyzeRuleFallback(content) {
   return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner };
 }
 
+function healSafetyKoreanLexicon(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
+    .replace(/위험성\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
+    .replace(/위[험혐협형횸]성평\b/g, '위험성평가')
+    .replace(/위험성\s*(?=재수립|검토|수립|교육)/g, '위험성평가 ')
+    .replace(/위[험협]성\s*평가/g, '위험성평가')
+    .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
+    .replace(/모니터링\s*활\s*동\s*강화/g, '모니터링 활동 강화')
+    .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
+    .replace(/내실화\s*&\s*점검/g, '내실화 등 점검')
+    .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
+    .replace(/혐식적[인으로]?/g, '형식적인')
+    .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+    .replace(/SNSU|5145내|5045내|SNS\s*U\b/gi, 'SNS내')
+    .replace(/시스템\s*구죽/g, '시스템 구축')
+    .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
+    .replace(/\(30000\)|\(3000\)/g, '(30cm)')
+    .replace(/\(55(?:00|60|em|cm)?[^)]*\)/gi, '(55cm)')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/gi, '55cm')
+    .replace(/낙하물방\s*지망/g, '낙하물방지망')
+    .replace(/2단\s*HED\]?/gi, '2단 버팀대')
+    .replace(/HE\s*위치가/g, '버팀대 위치가')
+    .replace(/충렬선상\s*미실지\s*[중등25]?\s*\)?/g, '동일선상 미설치 등)')
+    .replace(/동일선상\s*미설치\s*[25중등]?\s*\)?/g, '동일선상 미설치 등)')
+    .replace(/미설치\s*[25중등]\s*\)?/g, '미설치 등)')
+    .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량');
+}
+
+function cleanLocationWorker(loc, content = '') {
+  const rawStr = String(loc || '');
+  const mDirect = rawStr.match(/(\d{3}\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?|지하\s*\d+\s*층|상가동)/);
+  if (mDirect) {
+    return mDirect[1].replace(/\s+/g, ' ').trim();
+  }
+  let s = rawStr.replace(/^작업장소\s*[:;：]?\s*/i, '').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').trim();
+  const mMatch = s.match(/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/);
+  if (mMatch) {
+    const dMatch = s.match(/(10[1-9]|1[1-9]\d)/);
+    if (dMatch) return `${dMatch[1]}동`;
+  }
+  if (content) {
+    const cMatch = String(content).match(/(\d{3}\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*상가동)?)/);
+    if (cMatch) return cMatch[1].replace(/\s+/g, ' ').trim();
+  }
+  return s;
+}
+
+function buildFallbackCleanedFields(rawOcr, fb) {
+  const f = fb || {};
+  return {
+    subcontractor: f.subcontractor ? healSafetyKoreanLexicon(f.subcontractor) : '',
+    location: cleanLocationWorker(f.location, f.content || rawOcr),
+    content: healSafetyKoreanLexicon(f.content || rawOcr),
+    photoBanner: healSafetyKoreanLexicon(f.photoBanner || ''),
+    interviewOpinion: healSafetyKoreanLexicon(f.interviewOpinion || ''),
+    auditProposal: healSafetyKoreanLexicon(f.auditProposal || ''),
+    actionPlan: healSafetyKoreanLexicon(f.actionPlan || ''),
+    law: f.law || ''
+  };
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -428,6 +491,16 @@ JSON 형식:
             const endIdx = cleaned.lastIndexOf('}');
             if (startIdx !== -1 && endIdx !== -1) {
               const parsed = JSON.parse(cleaned.slice(startIdx, endIdx + 1));
+              if (parsed.cleanedFields && typeof parsed.cleanedFields === 'object') {
+                for (const k of Object.keys(parsed.cleanedFields)) {
+                  if (typeof parsed.cleanedFields[k] === 'string') {
+                    parsed.cleanedFields[k] = healSafetyKoreanLexicon(parsed.cleanedFields[k]);
+                  }
+                }
+                if (parsed.cleanedFields.location) {
+                  parsed.cleanedFields.location = cleanLocationWorker(parsed.cleanedFields.location, parsed.cleanedFields.content || content);
+                }
+              }
               return new Response(JSON.stringify({
                 ok: true,
                 source: visionText ? 'cloudflare_vision_qwen_hybrid' : 'cloudflare_workers_ai',
@@ -448,11 +521,13 @@ JSON 형식:
         }
 
         // Workers AI 연동 전이거나 대기 시에도 산안법 룰 기반 즉시 고품질 결과 반환
+        const fallbackCleaned = buildFallbackCleanedFields(content, body.fallbackRecord);
         return new Response(JSON.stringify({
           ok: true,
           source: 'cloudflare_rule_engine',
           model: 'SanAn Rule Engine (Cloudflare Cloud)',
-          ...quickFallback
+          ...quickFallback,
+          cleanedFields: fallbackCleaned
         }), {
           status: 200,
           headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
