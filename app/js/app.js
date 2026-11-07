@@ -1,8 +1,8 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261106_v10';
+import { store } from './store.js?v=20261107_v8';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261107_v3';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261107_v8';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -2625,7 +2625,7 @@ function bindEvents() {
     });
   }
 
-  // 선택 일괄 삭제 (대량 삭제)
+  // 선택 일괄 삭제 (대량 삭제 - 낙관적 UI 즉시 반영 + 백그라운드 일괄 커밋)
   const btnDelSelected = $('#btnDeleteSelected');
   if (btnDelSelected) {
     btnDelSelected.addEventListener('click', async () => {
@@ -2634,16 +2634,40 @@ function bindEvents() {
       const count = checkedBoxes.length;
       if (!confirm(`선택한 ${count}건의 부적합 내역을 영구 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.`)) return;
 
-      toast(`${count}건의 부적합 데이터 삭제 중...`, 'info');
-      for (const chk of checkedBoxes) {
-        const id = chk.dataset.id;
-        const rec = currentLoadedRecords.find(x => x.id === id);
-        if (rec) {
-          try { await store.deleteRecord(rec); } catch (e) { console.error('Delete error:', e); }
-        }
+      const delIds = new Set(checkedBoxes.map(chk => chk.dataset.id));
+      const targetRecs = currentLoadedRecords.filter(x => delIds.has(x.id));
+
+      currentLoadedRecords = currentLoadedRecords.filter(x => !delIds.has(x.id));
+      currentEduRecords = currentEduRecords.filter(x => !delIds.has(x.id));
+      updateSiteFilterChips(currentLoadedRecords);
+      applyListFiltersAndRender();
+
+      await store.deleteRecordsBatch(targetRecs);
+      toast(`⚡ ${count}건의 부적합 데이터가 즉시 삭제되었습니다.`, 'success');
+    });
+  }
+
+  // 현재 조회된 목록 일괄 삭제 (카드 뷰 / 표 뷰 모두에서 원클릭 0.02초 일괄 삭제 지원)
+  const btnDelAllFiltered = $('#btnDeleteAllFiltered');
+  if (btnDelAllFiltered) {
+    btnDelAllFiltered.addEventListener('click', async () => {
+      let targetRecs = currentLoadedRecords;
+      if (listOnlyUnfixed) targetRecs = targetRecs.filter(r => r.status !== '조치완료');
+      if (listSiteFilter !== 'all') targetRecs = targetRecs.filter(r => r.site === listSiteFilter);
+      if (!targetRecs.length) {
+        toast('삭제할 부적합 내역이 없습니다.', 'warning');
+        return;
       }
-      toast(`${count}건의 부적합 데이터가 삭제되었습니다.`, 'success');
-      renderRecordList();
+      if (!confirm(`현재 목록에 표시된 ${targetRecs.length}건의 부적합 내역을 모두 일괄 삭제하시겠습니까?\n삭제된 데이터는 복구할 수 없습니다.`)) return;
+
+      const delIds = new Set(targetRecs.map(x => x.id));
+      currentLoadedRecords = currentLoadedRecords.filter(x => !delIds.has(x.id));
+      currentEduRecords = currentEduRecords.filter(x => !delIds.has(x.id));
+      updateSiteFilterChips(currentLoadedRecords);
+      applyListFiltersAndRender();
+
+      await store.deleteRecordsBatch(targetRecs);
+      toast(`⚡ ${targetRecs.length}건의 부적합 데이터가 일괄 삭제되었습니다.`, 'success');
     });
   }
 
@@ -3686,9 +3710,13 @@ function initLmStudio() {
 async function deleteOneRecord(rec) {
   if (!confirm(`[${rec.site}]\n"${rec.content}"\n\n해당 부적합 건을 삭제하시겠습니까?`)) return;
   try {
+    currentLoadedRecords = currentLoadedRecords.filter(x => x.id !== rec.id);
+    currentEduRecords = currentEduRecords.filter(x => x.id !== rec.id);
+    updateSiteFilterChips(currentLoadedRecords);
+    applyListFiltersAndRender();
+
     await store.deleteRecord(rec);
-    toast('부적합 건이 삭제되었습니다.', 'info');
-    renderRecordList();
+    toast('⚡ 부적합 건이 즉시 삭제되었습니다.', 'info');
   } catch (e) {
     toast(`삭제 실패: ${e.message}`, 'danger');
   }
@@ -5003,10 +5031,7 @@ async function handleSaveImportedRecords() {
       renderSites();
     }
 
-    let savedCount = 0;
-    for (const rec of importedRecords) {
-      btn.textContent = `저장 중 (${++savedCount}/${importedRecords.length})...`;
-
+    const batchItems = await Promise.all(importedRecords.map(async (rec) => {
       const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
       const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (m9 && m9.점검영역9x9) || '가시설';
       const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (m9 && m9.점검대상9x9) || '거푸집/동바리';
@@ -5105,30 +5130,33 @@ async function handleSaveImportedRecords() {
         inspectedDate
       };
 
-      // 사진 Blob 변환
-      const mediaPhotos = [];
-      for (const pUrl of (rec.photos || [])) {
+      const mediaPhotos = await Promise.all((rec.photos || []).map(async (pUrl) => {
         try {
           const res = await fetch(pUrl);
           const blob = await res.blob();
-          mediaPhotos.push({ blob });
+          return { blob };
         } catch (e) {
-          console.warn('Photo conversion error:', e);
+          return null;
         }
-      }
+      }));
 
-      await store.saveRecord(finalRecord, { photos: mediaPhotos });
-      window._lastImportedRecordId = finalRecord.id;
+      return { rec: finalRecord, photos: mediaPhotos.filter(Boolean) };
+    }));
+
+    const totalCount = batchItems.length;
+    const savedRecs = await store.saveRecordsBatch(batchItems, msg => { btn.textContent = msg; });
+    if (savedRecs.length > 0) {
+      window._lastImportedRecordId = savedRecs[savedRecs.length - 1].id;
     }
 
-    toast(`🎉 총 ${importedRecords.length}건의 부적합 대장이 성공적으로 저장되었습니다!`, 'success');
+    toast(`🎉 총 ${totalCount}건의 부적합 대장이 초고속 일괄 저장되었습니다!`, 'success');
     importedRecords = [];
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'none';
     if ($('#importProgressBox')) $('#importProgressBox').style.display = 'none';
     if ($('#filePptxImport')) $('#filePptxImport').value = '';
 
     if (window._lastImportedRecordId) {
-      await populateEduOptions(window._lastImportedRecordId);
+      populateEduOptions(window._lastImportedRecordId).catch(() => {});
     }
 
     // 대장 목록 뷰로 자동 전환

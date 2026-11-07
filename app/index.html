@@ -18,10 +18,10 @@
   <script src="js/config.js?v=20261004_2"></script>
   <!-- App logic & Modules -->
   <script src="js/classifier.js?v=20261018_1"></script>
-  <script src="js/excel-builder.js?v=20261107_v6"></script>
+  <script src="js/excel-builder.js?v=20261107_v8"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-generator.js?v=20261107_v6"></script>
-  <script src="js/lmstudio-client.js?v=20261107_v6"></script>
+  <script src="js/ppt-generator.js?v=20261107_v8"></script>
+  <script src="js/lmstudio-client.js?v=20261107_v8"></script>
 </head>
 <body>
 
@@ -569,9 +569,12 @@
             <div id="boxDynamicSiteChips" style="display: flex; gap: 8px; flex-shrink: 0;"></div>
             <button type="button" id="btnFilterUnfixed" class="chip filter-status" data-status="unfixed">⚠️ 미조치만 보기</button>
           </div>
-          <div style="display: flex; justify-content: flex-end; margin-top: 2px;">
+          <div style="display: flex; justify-content: flex-end; gap: 6px; margin-top: 2px;">
             <button type="button" id="btnDeleteSelected" class="btn btn-outline" style="padding: 5px 12px; font-size: 0.8rem; color: var(--danger); border-color: #fca5a5; display: none;">
               🗑️ 선택 삭제 (<span id="selectedCount">0</span>건)
+            </button>
+            <button type="button" id="btnDeleteAllFiltered" class="btn btn-outline" style="padding: 5px 12px; font-size: 0.8rem; color: var(--danger); border-color: #fca5a5;">
+              🗑️ 현재 목록 일괄 삭제
             </button>
           </div>
         </div>
@@ -1161,6 +1164,6 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261107_v6"></script>
+  <script type="module" src="js/app.js?v=20261107_v8"></script>
 </body>
 </html>

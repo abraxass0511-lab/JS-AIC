@@ -156,15 +156,16 @@ function analyzeRuleFallback(content) {
     holdPoint = false;
     analysis = '임시 분전함 외함 접지 미시행 또는 누전차단기 불량';
     pmVerdict = '해당 차단기 전원 즉시 차단 및 외함 접지선 체결 완료 후 통전';
-  } else if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집')) {
+  } else if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집') || text.includes('벽체') || text.includes('전도방지')) {
     item = '거푸집동바리';
     law = '산안규칙 제332조(거푸집동바리등의 안전조치)';
     hazardType = '붕괴·도괴';
     severity = '중부적합';
     mgmtCauses = ['계획 미이행', '불안전 상태'];
     holdPoint = true;
-    analysis = '파이프서포트 수평연결재 미체결 또는 2본 이상 연결 사용';
-    pmVerdict = '타설작업 중지, 구조검토서 기준 수평연결재 2방향 보강 완료 후 타설 승인';
+    photoBanner = text.includes('전도방지') ? '대형 벽체 조립 설치 시 전도방지 파이프 미사용' : '거푸집동바리 안전조치 기준 미준수';
+    analysis = '대형 벽체 거푸집 조립·설치 시 전도방지 파이프 또는 전용철물 미사용으로 전도·붕괴 위험';
+    pmVerdict = '구조검토서 및 작업절차서 기준 전도방지 파이프/전용철물 보강 완료 후 작업 진행';
   } else if (text.includes('사다리') || text.includes('우마')) {
     item = '사다리';
     law = '산안규칙 제24조(사다리식 통로 등의 구조)';
@@ -235,13 +236,13 @@ export default {
       }
     }
 
-    // ── 🤖 AI 자동 분석 엔드포인트 (Cloudflare Workers AI 24시간 연동) ──
-    if (url.pathname === '/api/ai-analyze') {
+    // ── 🤖 AI 자동 분석 엔드포인트 (Cloudflare Vision AI + Qwen 32B 하이브리드 24시간 연동) ──
+    if (url.pathname === '/api/ai-analyze' || url.pathname === '/api/vision-ocr') {
       try {
         const body = await request.json().catch(() => ({}));
-        const content = body.content || '';
-        if (!content) {
-          return new Response(JSON.stringify({ error: '지적 내용(content)이 필요합니다.' }), {
+        const content = body.content || body.rawOcrText || '';
+        if (!content && !body.stripImageBase64) {
+          return new Response(JSON.stringify({ error: '지적 내용(content) 또는 이미지(stripImageBase64)가 필요합니다.' }), {
             status: 400,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
@@ -253,7 +254,107 @@ export default {
         // Cloudflare Workers AI 인스턴스가 바인딩되어 있는 경우 실행
         if (env.AI) {
           try {
-            const systemPrompt = `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
+            let visionText = '';
+            let rightPhotoIsReference = null;
+
+            // 1) Vision AI 이미지 직접 판독 (텍스트 스트립 이미지 또는 우측 참고도면 판별)
+            if (body.stripImageBase64) {
+              try {
+                const cleanB64 = String(body.stripImageBase64).replace(/^data:image\/\w+;base64,/, '');
+                const visionPrompt = `이 이미지는 건설현장 안전점검 장표의 텍스트 셀들을 위에서 아래로 모아놓은 이미지입니다.
+각 셀의 한국어, 한자(等, 上, 中), 영문 코드([IZ12B-106(K)]), 단위(cm, mm, 도), 불릿 기호(-, *, 1), 2))를 보이는 그대로 정확히 읽어서 텍스트로 출력하세요.
+절대 임의로 단어를 생략하거나 지어내지 마세요.`;
+                const vRes = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+                  messages: [
+                    {
+                      role: 'user',
+                      content: [
+                        { type: 'text', text: visionPrompt },
+                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${cleanB64}` } }
+                      ]
+                    }
+                  ],
+                  max_tokens: 700,
+                  temperature: 0.05
+                }).catch(async () => {
+                  const binStr = atob(cleanB64);
+                  const bytes = new Uint8Array(binStr.length);
+                  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+                  return await env.AI.run('@cf/llava-1.5-7b-hf', {
+                    image: [...bytes],
+                    prompt: visionPrompt,
+                    max_tokens: 500
+                  });
+                });
+                if (vRes) {
+                  visionText = vRes.response || vRes.description || (vRes.choices && vRes.choices[0]?.message?.content) || '';
+                }
+              } catch (vErr) {
+                console.warn('Vision strip OCR fallback to Qwen text clean:', vErr);
+              }
+            }
+
+            if (body.rightPhotoBase64) {
+              try {
+                const cleanPhotoB64 = String(body.rightPhotoBase64).replace(/^data:image\/\w+;base64,/, '');
+                const refPrompt = `이 이미지가 (A) 실제 건설현장을 카메라로 촬영한 현장 사진(여러 장을 묶은 콜라주 사진 포함)인지, 아니면 (B) 매뉴얼/작업절차서/시공상세도/도면/표 캡처 이미지(예: '6.2 거푸집 보강', '[거푸집 보강 예]', 'O/X 예시')인지 판별하세요. 매뉴얼/도면/표 캡처이면 "REFERENCE", 실제 현장 촬영 사진이면 "REAL_PHOTO"라고만 답하세요.`;
+                const pRes = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+                  messages: [
+                    {
+                      role: 'user',
+                      content: [
+                        { type: 'text', text: refPrompt },
+                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${cleanPhotoB64}` } }
+                      ]
+                    }
+                  ],
+                  max_tokens: 30,
+                  temperature: 0.0
+                }).catch(() => null);
+                const pTxt = (pRes && (pRes.response || (pRes.choices && pRes.choices[0]?.message?.content))) || '';
+                if (/REFERENCE/i.test(pTxt) && !/REAL_PHOTO/i.test(pTxt)) {
+                  rightPhotoIsReference = true;
+                } else if (/REAL_PHOTO/i.test(pTxt)) {
+                  rightPhotoIsReference = false;
+                }
+              } catch (pErr) {}
+            }
+
+            const isOcrClean = (body.mode === 'ocr_clean' || url.pathname === '/api/vision-ocr') && (body.rawOcrText || visionText);
+            const systemPrompt = isOcrClean
+              ? `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이자 Vision+OCR 문맥 교정 전문가이다.
+주어진 점검장표 Vision 판독 결과와 OCR 추출 텍스트의 오탈자(예: cm가 00으로 오인식, 한자 等이 5/&/쪽/종으로 오인식, 안전작업지침 제목 깨짐, 영문/기호 노이즈 등)를 문맥에 맞게 완벽히 교정하고, 법령 위반 및 사진 상단 배너를 JSON으로만 출력하라.
+
+[OCR 문맥 교정 절대 규칙]
+- 협력사가 빈칸이면 절대 임의로 넣지 말고 ""로 둘 것 (공종명 '비계공사', 'HEY' 등을 협력사에 넣지 말 것)
+- 작업장소에 '[ERE 12', 'ee' 같은 테두리 노이즈가 있으면 완벽히 제거할 것 (예: '106동 지하2층', '106동 서측', '101동, 상가동')
+- 여러 항목이 '-'로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우(예: '검토 및 / 재수립 후', '현장 / 모니터링 강화', '적정여부 / 전수 점검 실시', '해체 시 / 받침목 추가 / (또는 버림틀 존치)')는 한 문장으로 자연스럽게 이어붙일 것
+- 관련기준의 '*' 항목이 3개인 경우 각각 줄바꿈(\\n* )으로 구분할 것
+
+JSON 형식:
+{
+  "severity": "중부적합" 또는 "경부적합",
+  "law": "산안규칙 제OO조(조항명)",
+  "hazardType": "추락" 또는 "낙하" 또는 "붕괴" 또는 "도괴" 또는 "협착" 또는 "전도" 또는 "화재" 또는 "감전",
+  "item": "기인물/작업 명칭",
+  "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 미준수 문구",
+  "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 미준수 문구 (단일 지적이면 '')",
+  "holdPoint": true 또는 false,
+  "analysis": "법적 위반 판단 이유 1~2문장",
+  "pmVerdict": "시스템 개선" 또는 "교육/코칭" 또는 "페널티",
+  "cleanedFields": {
+    "content": "교정된 부적합 내용",
+    "location": "교정된 작업장소",
+    "workGroup": "교정된 공종명",
+    "subcontractor": "교정된 협력사명 (공란이면 반드시 '')",
+    "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 유지)",
+    "auditProposal": "교정된 점검단 제안 ('- ' 불릿 구분)",
+    "actionPlan": "교정된 개선대책 ('- ' 불릿 구분, 단순 줄바꿈은 병합)",
+    "rawLaw": "교정된 관련기준 제목 (예: 안전작업지침 [IZ12B-106(K)] 비계 작업)",
+    "lawBody": "교정된 관련기준 본문 ('*' 항목 줄바꿈 유지)"
+  }
+}`
+              : `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
 주어진 부적합 지적내용과 사진 상황을 엄밀히 분석하여, 사진 상단 배너(photoBanner, photo2Banner)와 법령 위반을 JSON으로만 출력하라.
 
 [작성 원칙 - 사진 상단 배너 photoBanner/photo2Banner]
@@ -276,21 +377,35 @@ JSON 형식:
   "pmVerdict": "현장 PM 조치 권고 문장"
 }`;
 
+            const userPrompt = isOcrClean
+              ? `${visionText ? `[Vision AI 직접 판독 원문]:\n${visionText}\n\n` : ''}[장표 OCR 원문]:\n${body.rawOcrText || ''}\n\n[1차 추출 필드]:\n${JSON.stringify({
+                  content: body.content,
+                  location: body.location,
+                  workGroup: body.workGroup,
+                  subcontractor: body.subcontractor,
+                  interviewOpinion: body.interviewOpinion,
+                  auditProposal: body.auditProposal,
+                  actionPlan: body.actionPlan,
+                  rawLaw: body.rawLaw,
+                  lawBody: body.lawBody
+                })}`
+              : `[현장 지적사항]: "${content.trim()}"`;
+
             const aiRes = await env.AI.run('@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', {
               messages: [
                 { role: 'system', content: systemPrompt },
-                { role: 'user', content: `[현장 지적사항]: "${content.trim()}"` }
+                { role: 'user', content: userPrompt }
               ],
-              max_tokens: 500,
+              max_tokens: isOcrClean ? 950 : 500,
               temperature: 0.1
             }).catch(async () => {
               // 32B 모델 초과 시 Qwen 7B 모델로 즉시 자동 2차 재시도
               return await env.AI.run('@cf/qwen/qwen1.5-7b-chat', {
                 messages: [
                   { role: 'system', content: systemPrompt },
-                  { role: 'user', content: `[현장 지적사항]: "${content.trim()}"` }
+                  { role: 'user', content: userPrompt }
                 ],
-                max_tokens: 500,
+                max_tokens: isOcrClean ? 950 : 500,
                 temperature: 0.1
               });
             });
@@ -306,8 +421,10 @@ JSON 형식:
               const parsed = JSON.parse(cleaned.slice(startIdx, endIdx + 1));
               return new Response(JSON.stringify({
                 ok: true,
-                source: 'cloudflare_workers_ai',
-                model: 'Qwen-32B/7B (Cloudflare Cloud)',
+                source: visionText ? 'cloudflare_vision_qwen_hybrid' : 'cloudflare_workers_ai',
+                model: visionText ? 'Llama-3.2-11B-Vision + Qwen-32B (Cloudflare Cloud)' : 'Qwen-32B/7B (Cloudflare Cloud)',
+                visionText: visionText || undefined,
+                rightPhotoIsReference,
                 ...quickFallback,
                 ...parsed,
                 severity: parsed.severity?.includes('중부적합') ? '중부적합' : (parsed.severity?.includes('경부적합') ? '경부적합' : quickFallback.severity)
@@ -359,102 +476,6 @@ JSON 형식:
         status: 401,
         headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
       });
-    }
-
-    // ── 🤖 AI 자동 분석 엔드포인트 (Cloudflare Workers AI 24시간 연동) ──
-    if (url.pathname === '/api/ai-analyze') {
-      try {
-        const body = await request.json().catch(() => ({}));
-        const content = body.content || '';
-        if (!content) {
-          return new Response(JSON.stringify({ error: '지적 내용(content)이 필요합니다.' }), {
-            status: 400,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // 산안법 룰 기반 즉시 백업 판정 데이터 생성
-        const quickFallback = analyzeRuleFallback(content);
-
-        // Cloudflare Workers AI 인스턴스가 바인딩되어 있는 경우 실행
-        if (env.AI) {
-          try {
-            const systemPrompt = `너는 대한민국 산업안전보건법 및 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 전문 안전감사관 AI이다.
-주어진 부적합 지적내용을 엄밀히 분석하여 가장 부합하는 현행 법령 조항과 재해형태를 도출하고, 오직 유효한 JSON 문자열 하나만 출력하라.
-
-JSON 형식:
-{
-  "severity": "🚨 중부적합" 또는 "⚠️ 경부적합",
-  "law": "산안규칙 제OO조(조항명 전문)",
-  "hazardType": "추락" 또는 "낙하·비래" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식" 또는 "온열질환" 또는 "직업병",
-  "item": "해당 작업 또는 기인물 명칭(예: 밀폐공간, 비계, 안전난간, 거푸집, 가설전기, 크레인, 굴착기 등)",
-  "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
-  "holdPoint": true 또는 false,
-  "analysis": "법적 위반 판단 이유 1~2문장",
-  "pmVerdict": "현장 PM 조치 권고 문장"
-}`;
-
-            const aiRes = await env.AI.run('@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', {
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `[현장 지적사항]: "${content.trim()}"` }
-              ],
-              max_tokens: 500,
-              temperature: 0.1
-            }).catch(async () => {
-              // 32B 모델 초과 시 Qwen 7B 모델로 즉시 자동 2차 재시도
-              return await env.AI.run('@cf/qwen/qwen1.5-7b-chat', {
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: `[현장 지적사항]: "${content.trim()}"` }
-                ],
-                max_tokens: 500,
-                temperature: 0.1
-              });
-            });
-
-            let text = '';
-            if (aiRes && aiRes.response) text = aiRes.response;
-            else if (aiRes && aiRes.choices && aiRes.choices[0]) text = aiRes.choices[0].message?.content || '';
-
-            const cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json/g, '').replace(/```/g, '').trim();
-            const startIdx = cleaned.indexOf('{');
-            const endIdx = cleaned.lastIndexOf('}');
-            if (startIdx !== -1 && endIdx !== -1) {
-              const parsed = JSON.parse(cleaned.slice(startIdx, endIdx + 1));
-              return new Response(JSON.stringify({
-                ok: true,
-                source: 'cloudflare_workers_ai',
-                model: 'Qwen-32B/7B (Cloudflare Cloud)',
-                ...quickFallback,
-                ...parsed,
-                severity: parsed.severity?.includes('중부적합') ? '중부적합' : (parsed.severity?.includes('경부적합') ? '경부적합' : quickFallback.severity)
-              }), {
-                status: 200,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-              });
-            }
-          } catch (aiErr) {
-            console.warn('Workers AI run error:', aiErr);
-          }
-        }
-
-        // Workers AI 연동 전이거나 대기 시에도 산안법 룰 기반 즉시 고품질 결과 반환
-        return new Response(JSON.stringify({
-          ok: true,
-          source: 'cloudflare_rule_engine',
-          model: 'SanAn Rule Engine (Cloudflare Cloud)',
-          ...quickFallback
-        }), {
-          status: 200,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-        });
-      } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), {
-          status: 500,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-        });
-      }
     }
 
     // GitHub Repo Relay endpoint
