@@ -1870,14 +1870,14 @@
         <!-- 7-2. [좌측 컬럼] 현장 사진 영역 (Hold Point 공간 침범 없이 x = 0.3121 ~ 5.7701 고정) -->
         ${hasPhoto2 ? `
           <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(photoStartY)}; width: ${pctW(2.6900)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
           </div>
           <div style="position: absolute; left: ${pctX(3.0801)}; top: ${pctY(photoStartY)}; width: ${pctW(2.6900)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
           </div>
         ` : `
           <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(photoStartY)}; width: ${pctW(bannerWidth)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
@@ -1899,7 +1899,7 @@
 
         <!-- Hold Point 그림 영역 공간 확보 (x = 5.9202, y = 2.7584, w = 2.2712, h = 2.7348) -->
         <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.7584)}; width: ${pctW(2.2712)}; height: ${pctH(2.7348)}; box-sizing: border-box; overflow: hidden;">
-          ${record.holdPointImage ? `<img src="${record.holdPointImage}" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : ''}
+          ${record.holdPointImage ? `<img src="${record.holdPointImage}" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : ''}
         </div>
 
         <!-- 초록색 음영 박스 (SHAPE #13: x = 5.9320, y = 5.5054, w = 2.2594, h = 0.3702, #A9D18E @ 60% = #cbe3bb) -->
@@ -2039,7 +2039,7 @@
 
         <!-- 6-2. 좌측 현장 사진 (x = 0.8685, y = 3.2500, w = 5.4580, h = 3.9500) -->
         <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-          ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
         </div>
 
         <!-- 6-3. 우측 피치/오렌지 음영 배너 (SHAPE #2: x = 7.8740, y = 2.8276, w = 4.4082, h = 0.3702, #F8CBAD @ 60% = #fbe0ce) -->
@@ -2049,7 +2049,7 @@
 
         <!-- 6-4. 우측 위험성평가표 영역 (x = 7.8740, y = 3.2500, w = 4.4082, h = 3.9500) -->
         <div style="position: absolute; left: ${pctX(7.8740)}; top: ${pctY(3.2500)}; width: ${pctW(rightBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: transparent;">
-          ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : ''}
+          ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : ''}
         </div>
       </div>
     `;
