@@ -21,10 +21,16 @@ function isRedBanner(d, k) {
   return r > 135 && g < 135 && b < 135 && (r - g) > 30 && (r - b) > 30;
 }
 
+function isReddishFringe(d, k) {
+  const r = d[k], g = d[k + 1], b = d[k + 2];
+  return r > 120 && g < 165 && b < 165 && (r - g) > 18 && (r - b) > 18;
+}
+
 function trimRedBannerFromBox(data, W, box) {
   let { x, y, w, h } = box;
   let y0 = y;
   let y1 = y + h - 1;
+  const minBandRows = Math.max(8, Math.round(h * 0.025));
 
   const isBannerBand = (startY, endY) => {
     let bandRows = 0;
@@ -36,37 +42,73 @@ function trimRedBannerFromBox(data, W, box) {
       }
       const r = redCount / Math.max(1, w / 2);
       if (r > peakRatio) peakRatio = r;
-      if (r > 0.25) bandRows++;
+      if (r > 0.30) bandRows++;
     }
-    return bandRows >= 12 && peakRatio > 0.42;
+    return bandRows >= minBandRows && peakRatio > 0.52;
   };
 
-  // 1) 하단 적색 배너 바 제거 (하단 25% 영역에 실제 배너 띠가 존재하는 경우에만 제거)
-  const botLimit = y1 - Math.min(80, Math.round(h * 0.24));
+  // 1) 하단 적색 배너 바 및 안티앨리어싱 적색 잔영(Fringe) 완전 제거 (해상도 무관 26% 탐색)
+  const botLimit = Math.max(y0 + 20, y1 - Math.round(h * 0.26));
   if (isBannerBand(botLimit, y1)) {
+    let seenBanner = false;
+    let nonRedStreak = 0;
     for (let cy = y1; cy >= botLimit; cy--) {
       let redCount = 0;
       for (let cx = x; cx < x + w; cx += 2) {
         if (isRedBanner(data, (cy * W + cx) * 4)) redCount++;
       }
-      if (redCount / Math.max(1, w / 2) > 0.20) {
+      if (redCount / Math.max(1, w / 2) > 0.16) {
         y1 = cy - 1;
+        seenBanner = true;
+        nonRedStreak = 0;
+      } else if (seenBanner) {
+        nonRedStreak++;
+        if (nonRedStreak >= 4) break;
       }
     }
+    // 배너 상단 경계의 붉은 그림자/잔영(Fringe) 추가 제거
+    const fringeLimit = Math.max(botLimit, y1 - Math.max(6, Math.round(h * 0.025)));
+    while (y1 >= fringeLimit) {
+      let fringeCount = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        if (isReddishFringe(data, (y1 * W + cx) * 4)) fringeCount++;
+      }
+      if (fringeCount / Math.max(1, w / 2) > 0.05) y1--;
+      else break;
+    }
+    // 안전 여백 2px 추가 확보
+    y1 = Math.max(y0 + 20, y1 - Math.max(2, Math.round(h * 0.005)));
   }
 
-  // 2) 상단 적색 배너 바 제거 (상단 25% 영역에 실제 배너 띠가 존재하는 경우에만 제거)
-  const topLimit = y0 + Math.min(80, Math.round(h * 0.24));
+  // 2) 상단 적색 배너 바 및 하단 잔영 완전 제거 (해상도 무관 26% 탐색)
+  const topLimit = Math.min(y1 - 20, y0 + Math.round(h * 0.26));
   if (isBannerBand(y0, topLimit)) {
+    let seenBanner = false;
+    let nonRedStreak = 0;
     for (let cy = y0; cy <= topLimit; cy++) {
       let redCount = 0;
       for (let cx = x; cx < x + w; cx += 2) {
         if (isRedBanner(data, (cy * W + cx) * 4)) redCount++;
       }
-      if (redCount / Math.max(1, w / 2) > 0.20) {
+      if (redCount / Math.max(1, w / 2) > 0.16) {
         y0 = cy + 1;
+        seenBanner = true;
+        nonRedStreak = 0;
+      } else if (seenBanner) {
+        nonRedStreak++;
+        if (nonRedStreak >= 4) break;
       }
     }
+    const fringeLimit = Math.min(topLimit, y0 + Math.max(6, Math.round(h * 0.025)));
+    while (y0 <= fringeLimit) {
+      let fringeCount = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        if (isReddishFringe(data, (y0 * W + cx) * 4)) fringeCount++;
+      }
+      if (fringeCount / Math.max(1, w / 2) > 0.05) y0++;
+      else break;
+    }
+    y0 = Math.min(y1 - 20, y0 + Math.max(2, Math.round(h * 0.005)));
   }
 
   return rect(x, y0, x + w, Math.max(y0 + 10, y1 + 1));
@@ -94,16 +136,26 @@ function bands(len, test, minLen) {
 }
 
 function rowDarkFrac(img, y, x0, x1) {
-  const { data, width } = img;
+  const { data, width, height } = img;
+  const yNext = Math.min((height || y + 1) - 1, y + 1);
   let c = 0;
-  for (let x = x0; x <= x1; x++) if (lumAt(data, (y * width + x) * 4) < 120) c++;
+  for (let x = x0; x <= x1; x++) {
+    const l0 = lumAt(data, (y * width + x) * 4);
+    const l1 = lumAt(data, (yNext * width + x) * 4);
+    if (Math.min(l0, l1) < 185) c++;
+  }
   return c / Math.max(1, x1 - x0 + 1);
 }
 
 function colDarkFrac(img, x, y0, y1) {
   const { data, width } = img;
+  const xNext = Math.min(width - 1, x + 1);
   let c = 0;
-  for (let y = y0; y <= y1; y++) if (lumAt(data, (y * width + x) * 4) < 120) c++;
+  for (let y = y0; y <= y1; y++) {
+    const l0 = lumAt(data, (y * width + x) * 4);
+    const l1 = lumAt(data, (y * width + xNext) * 4);
+    if (Math.min(l0, l1) < 185) c++;
+  }
   return c / Math.max(1, y1 - y0 + 1);
 }
 
@@ -168,20 +220,21 @@ export function analyzeSheetLayout(img) {
   }
   const pw = px2 - px1;
 
-  // 2) 좌측 '부적합 개요' 황색 셀 (내부 '부적합' 검은 글자로 인해 끊어진 황색 띠 자동 병합)
+  // 2) 좌측 '부적합 개요' 황색 셀 (내부 '부적합' 검은 글자로 인해 끊어진 황색 띠 자동 병합 — 해상도 비례 임계값 적용)
   const lxEnd = Math.floor(W * 0.09);
   const rawLBands = bands(H, y => {
     let c = 0;
     for (let x = 0; x < lxEnd; x++) if (isYellow(data, (y * W + x) * 4)) c++;
     return c > W * 0.012;
-  }, 6).filter(b => b[1] < band1[1]);
+  }, Math.max(5, Math.round(H * 0.005))).filter(b => b[1] < band1[1]);
   if (!rawLBands.length) return { ok: false, reason: 'overview-cell-not-found' };
+  const maxMergeGap = Math.max(24, Math.round(H * 0.032));
   const lBands = [];
   for (const b of rawLBands) {
     if (
       lBands.length > 0 &&
-      b[0] - lBands[lBands.length - 1][1] <= 24 &&
-      (b[1] - lBands[lBands.length - 1][0]) <= Math.round(H * 0.12)
+      b[0] - lBands[lBands.length - 1][1] <= maxMergeGap &&
+      (b[1] - lBands[lBands.length - 1][0]) <= Math.round(H * 0.13)
     ) {
       lBands[lBands.length - 1][1] = b[1];
     } else {
@@ -201,7 +254,7 @@ export function analyzeSheetLayout(img) {
   const x0 = lx0, x1 = px2;
   const fw = x1 - x0;
 
-  // 3) 상단 헤더 행 (재해유형/관련기준/발생요인) 상단 경계: '시설물/법규' 청회색 셀
+  // 3) 상단 헤더 행 (재해유형/관련기준/발생요인) 상단 경계: '시설물/법규' 청회색 셀 및 관련기준 상단 여백 정밀 탐색
   let hy0 = Math.max(0, ly0 - Math.round(H * 0.14));
   const blueBands = bands(ly0, y => {
     let c = 0;
@@ -212,68 +265,82 @@ export function analyzeSheetLayout(img) {
       if (b > r + 20 && b > 160 && r < 210 && g > r) c++;
     }
     return c > fw * 0.12 * 0.4;
-  }, 10);
+  }, Math.max(8, Math.round(H * 0.009)));
   if (blueBands.length) hy0 = blueBands[blueBands.length - 1][0];
-  const hy1 = ly0 - 4;
+  const hy1 = ly0 - Math.max(3, Math.round(H * 0.004));
+
+  // 관련기준(lawCell) 상단 제목('안전작업지침...' 등) 윗부분이 잘리지 않도록 상단 테두리 직하단 순백 여백 행 탐색
+  const lawX0 = Math.round(x0 + fw * 0.365);
+  const lawX1 = Math.round(x0 + fw * 0.797);
+  let lawTopY = Math.max(0, hy0 - Math.round(H * 0.003));
+  for (let y = Math.max(0, hy0 - Math.round(H * 0.015)); y <= hy0 + Math.round(H * 0.012); y++) {
+    let darkCnt = 0;
+    for (let x = lawX0 + 10; x < lawX1 - 10; x += 2) {
+      if (lumAt(data, (y * W + x) * 4) < 170) darkCnt++;
+    }
+    // 상단 외곽선(dark 비율 높음)을 지나 첫 순백 여백 행을 찾으면 그 지점을 시작점으로 고정
+    if (darkCnt > ((lawX1 - lawX0 - 20) / 2) * 0.45) {
+      lawTopY = y + Math.max(2, Math.round(H * 0.002));
+    }
+  }
 
   // 4) 개요: 메타행(협력사/공종명/작업장소/점검자/점검차수) vs 부적합 내용 행 구분선
-  const metaX0 = lx1 + 4;
+  const metaX0 = lx1 + Math.max(4, Math.round(W * 0.003));
   let metaSplit = ly0 + Math.round((ly1 - ly0) * 0.36);
-  const mLines = findHLines(img, ly0 + Math.round((ly1 - ly0) * 0.15), ly0 + Math.round((ly1 - ly0) * 0.65), metaX0, x1, 0.5);
+  const mLines = findHLines(img, ly0 + Math.round((ly1 - ly0) * 0.18), ly0 + Math.round((ly1 - ly0) * 0.58), metaX0, x1, 0.72);
   if (mLines.length) metaSplit = mLines[0][1];
 
   // 5) 우측 패널 내부: 관계자 의견 박스 / 점검단 제안 행
   const spanTop = band1[1] + 1, spanBot = band2[0] - 1;
   const span = spanBot - spanTop;
-  const inner = findHLines(img, spanTop + Math.round(span * 0.2), spanBot - 6, px1 + 4, px2 - 4, 0.5);
-  let propTop = spanTop + Math.round(span * 0.55);
+  const inner = findHLines(img, spanTop + Math.round(span * 0.35), spanBot - Math.round(span * 0.15), px1 + 10, px2 - 10, 0.74);
+  let propTop = spanTop + Math.round(span * 0.60);
   let propTopLine = null;
   if (inner.length) {
     propTopLine = inner[0];
     // 근접한 이중선은 하나로 병합
     let last = inner[0];
+    const mergeDist = Math.max(14, Math.round(H * 0.018));
     for (const l of inner.slice(1)) {
-      if (l[0] - last[1] < 18) last = l;
+      if (l[0] - last[1] < mergeDist) last = l;
       else break;
     }
     propTop = last[1] + 1;
   }
   const interviewBottom = propTopLine ? propTopLine[0] - 1 : propTop - 1;
   // 점검단 제안 행 하단 = 개선대책 헤더 직전 구분선
-  const propLinesBelow = findHLines(img, propTop + 10, spanBot, px1 + 4, px2 - 4, 0.5);
+  const propLinesBelow = findHLines(img, propTop + Math.round(H * 0.04), spanBot, px1 + 10, px2 - 10, 0.74);
   const propBot = propLinesBelow.length ? propLinesBelow[0][0] - 1 : spanBot;
-  let propSplit = findVLine(img, px1 + Math.round(pw * 0.15), px1 + Math.round(pw * 0.48), propTop + 6, propBot - 6, 0.65);
+  let propSplit = findVLine(img, px1 + Math.round(pw * 0.15), px1 + Math.round(pw * 0.48), propTop + 6, propBot - 6, 0.72);
   if (propSplit < 0) propSplit = px1 + Math.round(pw * 0.31);
 
   // 6) 개선대책 본문 / PM 판정결과
   const cmTop = band2[1] + 1;
-  const cmLines = findHLines(img, cmTop + Math.round(H * 0.05), Math.min(H - 1, cmTop + Math.round(H * 0.3)), px1 + 4, px2 - 4, 0.5);
+  const cmLines = findHLines(img, cmTop + Math.round(H * 0.08), Math.min(H - 1, cmTop + Math.round(H * 0.3)), px1 + 10, px2 - 10, 0.74);
   const cmBot = cmLines.length ? cmLines[0][0] - 1 : Math.min(H - 1, cmTop + Math.round(H * 0.17));
-  let cmSplit = findVLine(img, px1 + Math.round(pw * 0.5), px1 + Math.round(pw * 0.9), cmTop + 6, cmBot - 6, 0.65);
+  let cmSplit = findVLine(img, px1 + Math.round(pw * 0.5), px1 + Math.round(pw * 0.9), cmTop + 6, cmBot - 6, 0.72);
   if (cmSplit < 0) cmSplit = px1 + Math.round(pw * 0.69);
 
-  const pad = 5;
+  const pad = Math.max(4, Math.round(W * 0.0035));
   const mRow = rect(metaX0, ly0 + 2, x1 - pad, metaSplit);
   // 메타행 내부 5개 컬럼 수직 구분선 정밀 탐색 (협력사 | 공종명 | 작업장소 | 점검자 | 점검차수)
   const mw = mRow.w;
   const my0 = mRow.y + 3, my1 = Math.max(mRow.y + 4, mRow.y + mRow.h - 3);
-  let mv1 = findVLine(img, mRow.x + Math.round(mw * 0.15), mRow.x + Math.round(mw * 0.23), my0, my1, 0.60);
+  let mv1 = findVLine(img, mRow.x + Math.round(mw * 0.15), mRow.x + Math.round(mw * 0.23), my0, my1, 0.65);
   if (mv1 < 0) mv1 = mRow.x + Math.round(mw * 0.190);
-  let mv2 = findVLine(img, mRow.x + Math.round(mw * 0.38), mRow.x + Math.round(mw * 0.46), my0, my1, 0.60);
-  if (mp2Invalid(mv2)) mv2 = mRow.x + Math.round(mw * 0.418);
-  let mv3 = findVLine(img, mRow.x + Math.round(mw * 0.63), mRow.x + Math.round(mw * 0.73), my0, my1, 0.60);
+  let mv2 = findVLine(img, mRow.x + Math.round(mw * 0.38), mRow.x + Math.round(mw * 0.46), my0, my1, 0.65);
+  if (mv2 < 0) mv2 = mRow.x + Math.round(mw * 0.418);
+  let mv3 = findVLine(img, mRow.x + Math.round(mw * 0.63), mRow.x + Math.round(mw * 0.72), my0, my1, 0.65);
   if (mv3 < 0) mv3 = mRow.x + Math.round(mw * 0.680);
-  let mv4 = findVLine(img, mRow.x + Math.round(mw * 0.80), mRow.x + Math.round(mw * 0.88), my0, my1, 0.60);
+  let mv4 = findVLine(img, mRow.x + Math.round(mw * 0.80), mRow.x + Math.round(mw * 0.88), my0, my1, 0.65);
   if (mv4 < 0) mv4 = mRow.x + Math.round(mw * 0.840);
-
-  function mp2Invalid(v) { return v < 0; }
 
   return {
     ok: true,
     frame: rect(x0, hy0, x1, cmBot),
-    typeCell: rect(x0 + fw * 0.152, hy0 + pad, x0 + fw * 0.29, hy1),
-    lawCell: rect(x0 + fw * 0.365, hy0 + pad, x0 + fw * 0.797, hy1),
-    checkCell: rect(x0 + fw * 0.805, hy0 + pad, x1, hy1),
+    typeCell: rect(x0 + fw * 0.152, lawTopY, x0 + fw * 0.29, hy1),
+    lawCell: rect(lawX0, lawTopY, lawX1, hy1),
+    checkCell: rect(x0 + fw * 0.805, lawTopY, x1, hy1),
     metaRow: mRow,
     subCell: rect(mRow.x + 3, mRow.y + 2, mv1 - 4, metaSplit - 2),
     workCell: rect(mv1 + 4, mRow.y + 2, mv2 - 4, metaSplit - 2),
@@ -294,27 +361,39 @@ export function analyzeSheetLayout(img) {
 export function findRedBanners(img, area) {
   const { data, width: W } = img;
   const out = [];
+  const minBannerH = Math.max(12, Math.round(area.h * 0.025));
   const rows = bands(area.h, dy => {
     const y = area.y + dy;
     let c = 0;
     for (let x = area.x; x < area.x + area.w; x += 2) if (isRedBanner(data, (y * W + x) * 4)) c++;
     return c > (area.w / 2) * 0.12;
-  }, 14);
+  }, minBannerH);
   for (const [a, b] of rows) {
     const h = b - a + 1;
-    if (h > img.height * 0.07) continue;
-    const ym = area.y + Math.round((a + b) / 2);
+    if (h > img.height * 0.08) continue;
+    const isTopBanner = a <= area.h * 0.16;
+    const isBottomBanner = b >= area.h * 0.80;
+    if (!isTopBanner && !isBottomBanner) continue;
     // 같은 행 안에 배너가 여러 개일 수 있으므로 x 방향 구간 분리
     const xs = bands(area.w, dx => {
       let c = 0;
       for (let y = area.y + a; y <= area.y + b; y += 2) if (isRedBanner(data, (y * W + area.x + dx) * 4)) c++;
-      return c > (h / 2) * 0.3;
-    }, Math.round(area.w * 0.12));
-    for (const [xa, xb] of xs) {
-      // 배너 안 흰 글씨 사이 틈 보정
-      out.push(rect(area.x + xa, area.y + a, area.x + xb, area.y + b));
+      return c > (h / 2) * 0.25;
+    }, Math.round(area.w * 0.10));
+    if (isBottomBanner && xs.length >= 1) {
+      const minXa = xs[0][0];
+      const maxXb = xs[xs.length - 1][1];
+      if (maxXb - minXa >= area.w * 0.45) {
+        // 하단 배너는 가운데 흰 글씨 때문에 좌/우로 갈라지므로 전체 폭으로 병합하여 사진 하단 잔영 원천 차단
+        out.push(rect(area.x + minXa, area.y + a, area.x + maxXb, area.y + b));
+      }
+    } else {
+      for (const [xa, xb] of xs) {
+        if (xb - xa >= area.w * 0.25) {
+          out.push(rect(area.x + xa, area.y + a, area.x + xb, area.y + b));
+        }
+      }
     }
-    void ym;
   }
   // 근접 배너 병합 (두 줄 배너)
   out.sort((p, q) => p.y - q.y || p.x - q.x);
@@ -336,7 +415,8 @@ export function findRedBanners(img, area) {
  */
 export function findPhotoBoxes(img, area, banners = []) {
   const { data, width: W } = img;
-  const inBanner = (x, y) => banners.some(b => x >= b.x - 3 && x <= b.x + b.w + 3 && y >= b.y - 3 && y <= b.y + b.h + 3);
+  const padB = Math.max(5, Math.round(area.h * 0.012));
+  const inBanner = (x, y) => banners.some(b => x >= b.x - padB && x <= b.x + b.w + padB && y >= b.y - padB && y <= b.y + b.h + padB);
   const mw = area.w, mh = area.h;
   const minSide = Math.round(Math.min(mw, mh) * 0.14);
 

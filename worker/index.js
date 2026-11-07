@@ -391,22 +391,31 @@ JSON 형식:
                 })}`
               : `[현장 지적사항]: "${content.trim()}"`;
 
-            const aiRes = await env.AI.run('@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', {
+            // <think> 추론 지연 없이 1~2초 내 즉시 JSON을 반환하는 Non-Thinking Instruct 모델 최우선 호출
+            const aiRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
               messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
               ],
               max_tokens: isOcrClean ? 950 : 500,
-              temperature: 0.1
+              temperature: 0.05
             }).catch(async () => {
-              // 32B 모델 초과 시 Qwen 7B 모델로 즉시 자동 2차 재시도
-              return await env.AI.run('@cf/qwen/qwen1.5-7b-chat', {
+              return await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt }
                 ],
                 max_tokens: isOcrClean ? 950 : 500,
-                temperature: 0.1
+                temperature: 0.05
+              });
+            }).catch(async () => {
+              return await env.AI.run('@cf/qwen/qwen1.5-14b-chat-awq', {
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt }
+                ],
+                max_tokens: isOcrClean ? 950 : 500,
+                temperature: 0.05
               });
             });
 

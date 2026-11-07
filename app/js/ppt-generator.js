@@ -92,9 +92,10 @@
       .replace(/^작업장소\s*[:;：]?\s*/i, '')
       .replace(/\[\s*ERE\b[\s\S]*$/i, '')
       .replace(/\b(?:EERE|ERE|EEE|EEL|CERNE|SEAT|MAK|261k|ee|ere)\b[\s\S]*$/i, '')
-      .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
+      .replace(/(?:점검자?|점검차수|점검\s*[a-zA-Z0-9]?|차수|부적합)[\s\S]*$/i, '')
+      .replace(/\b[a-zA-Z]+\b/g, ' ')
       .replace(/[\[\]{}()_ㅣ¦!~—\-]+/g, ' ')
-      .replace(/\b[a-zA-Z]{2,}\b/g, ' ')
+      .replace(/\s+(?:리|로|드|트|르|점|검)\s*$/g, '')
       .replace(/\s+/g, ' ')
       .trim();
     if (!s) {
@@ -178,8 +179,10 @@
       .replace(/2단\s*HED\]?/gi, '2단 버팀대')
       .replace(/HE\s*위치가/g, '버팀대 위치가')
       .replace(/미설치\s*[52등]\)?/g, '미설치 등)')
+      .replace(/위[험혐협]성평[가기]/g, '위험성평가')
       .replace(/혐식적/g, '형식적')
-      .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+      .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+      .replace(/5045내|5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
       .replace(/시스템\s*구죽/g, '시스템 구축')
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
       .replace(/\[=\]\s*oa/gi, '')
@@ -222,16 +225,18 @@
     let s = String(raw)
       .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
-      .replace(/^(?:oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으|-?\s*SHE\s*SEA)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
-      .replace(/구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으|SHE\s*SEA/gi, '')
+      .replace(/^(?:[-•*·▪\s]*)(?:De\s*T=?\s*©?|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으|-?\s*SHE\s*SEA)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
+      .replace(/De\s*T=?\s*©?|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으|SHE\s*SEA/gi, '')
+      .replace(/^[\s\S]*?(?=1차적으로\s*(?:오설치된|이격거리))/, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
-      .replace(/위험성평기/g, '위험성평가')
+      .replace(/위[험혐협]성평[가기]/g, '위험성평가')
       .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
       .replace(/낙하물방\s*지망/g, '낙하물방지망')
       .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
       .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
       .replace(/혐식적/g, '형식적')
-      .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+      .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+      .replace(/5045내|5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
       .replace(/시스템\s*구죽/g, '시스템 구축')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
       .replace(/5500\b|55em\b/g, '55cm')
@@ -241,11 +246,11 @@
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
+      const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
       let cl = line
-        .replace(/^[|\sㅣ¦_!\-•·~—*]+/, '')
+        .replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '')
         .replace(/[|\sㅣ¦_!~—\-*]+$/, '')
-        .replace(/^(?:구시\s*으\s*기느으|SHE\s*SEA)\s*/gi, '')
+        .replace(/^(?:De\s*T=?\s*©?|구시\s*으\s*기느으|SHE\s*SEA)\s*/gi, '')
         .replace(/\s*-\s*르$/, '')
         .trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
@@ -254,19 +259,21 @@
 
       const subLines = cl.split(/\n+/);
       for (let idx = 0; idx < subLines.length; idx++) {
-        const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').replace(/^(?:SHE\s*SEA)\s*/i, '').trim();
+        const sub = subLines[idx].replace(/^[-•*·▪.©=]+\s*/, '').replace(/^(?:De\s*T=?\s*©?|SHE\s*SEA)\s*/i, '').trim();
         if (!sub) continue;
-        const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*작업\s*전|형식적인\s*점검)/.test(sub);
+        const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*설치\s*\/?\s*해체|비계\s*작업\s*전|형식적인\s*점검)/.test(sub);
         if (items.length === 0 || isNewBullet) {
           items.push(sub);
         } else {
           items[items.length - 1] = `${items[items.length - 1]} ${sub}`
+            .replace(/위[험혐협]성평[가기]/g, '위험성평가')
             .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
             .replace(/낙하물방\s*지망/g, '낙하물방지망')
             .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화\s*필요/g, '내실화 등 점검 강화 필요')
             .replace(/점검\s*강\s*화\s*필요/g, '점검 강화 필요')
             .replace(/혐식적/g, '형식적')
-            .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+            .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+            .replace(/5045내|5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
             .replace(/시스템\s*구죽/g, '시스템 구축')
             .replace(/\s+/g, ' ');
         }
@@ -280,37 +287,40 @@
     if (!raw) return '';
     const rawStr = String(raw);
     if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-      return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+      return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
     }
     const cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
       .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/위[험혐협]성평[가기]/g, '위험성평가')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
       .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
       .replace(/혐식적/g, '형식적')
-      .replace(/5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
+      .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+      .replace(/5045내|5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
       .replace(/시스템\s*구죽/g, '시스템 구축')
+      .replace(/(교육\s*실시|점검\s*실시\s*\([^)]+\)|존치\)|추가\s*설치)\s*[.,·•-]?\s*(?=거푸집\s*전도|비계\s*잭베이스|시스템\s*비계\s*설치계획서)/g, '$1\n- ')
       .replace(/,\s*-\s*/g, '\n- ')
       .trim();
 
     const rawLines = cleanedStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
-      let cl = line.replace(/^[|ㅣ¦_!~—\-*•·\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
+      const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
+      let cl = line.replace(/^[|ㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
       if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return '- 비계 승인점검 후 보완/개선 필요사항 Process 이행';
+        return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
       }
 
-      const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|설치\s*완료)/.test(cl);
+      const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|이격거리\s*표기|설치\s*완료|조치완료\s*후|방안\s*수립)/.test(cl);
       const isDistinctNewItem = !isContinuation && (
         hasExplicitBullet ||
-        /^(?:벽체\s*거푸집|거푸집\s*전도\s*예방|벽이음용\s*상부|비계\s*잭베이스\s*구간|비계와\s*구조물|시스템\s*비계\s*설치계획서|비계\s*승인점검|작업\s*전\s*풍속)/.test(cl)
+        /^(?:벽체\s*거푸집|거푸집\s*전도\s*예방|벽이음용\s*상부|비계\s*잭베이스\s*구간|비계와\s*구조물|시스템\s*비계\s*설치계획서|비계\s*승인점검|비계\s*설치\s*작업\s*시|작업\s*전\s*풍속)/.test(cl)
       );
 
       if (items.length === 0 || isDistinctNewItem) {
@@ -379,20 +389,21 @@
   function cleanBannerText(rawBanner, content) {
     let s = String(rawBanner || '').replace(/\s+/g, ' ').trim();
     if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(content || '')) {
-      return '① 벽이음용 상부 버팀대 설치각도(60도↓) 불량';
+      return '벽이음용 상부 버팀대 설치각도(60도↓) 불량';
     }
     s = s
-      .replace(/^58\s*(?=벽)/, '① ')
+      .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
+      .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
       .replace(/벽의음/g, '벽이음')
       .replace(/상부0버팀대8/g, '상부 버팀대 ')
       .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
-      .replace(/[^\w가-힣①②③④⑤↓↑\s/()\-.]/g, ' ')
+      .replace(/[^\w가-힣↓↑\s/()\-.]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
     const hangulCount = (s.match(/[가-힣]/g) || []).length;
     if (!hasDigitHangulGlue && hangulCount >= 5 && s.length >= 6 && hangulCount / s.length >= 0.55) {
-      return s;
+      return s.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
     }
     return '';
   }
@@ -747,10 +758,10 @@
         lawBody = bodyLines.slice(1).join('\n').trim();
       }
     }
-    if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판/.test(lawTitle)) {
+    if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^6\.3\.[12]\s*작업/.test(lawTitle)) {
       lawBody = `${lawTitle.replace(/^\.?28\s*/, '7.2.8 ')}\n${lawBody}`.trim();
       lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
-    } else if (/안전[작삭]업[지시][침집짐]|IZ12B|1Z12B|2128-106|106\(K\)|106K|106&|106\(/i.test(lawTitle)) {
+    } else if (/(?:안전[작삭]업|[TErea\s]*EAM|IZ12B|1Z12B|1£Z12B|2128|10606|100K|106\(K\)|106K|106&|106\(|[비미]계\s*(?:작업|삭보|식보|&))/i.test(lawTitle)) {
       lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
     } else if (/현장\s*제작\s*대형\s*거푸집/.test(lawTitle)) {
       lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
@@ -1311,16 +1322,9 @@
       align: 'center', valign: 'middle'
     });
 
-    // 2) [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.5748)
-    let intSz = 12;
-    let intLineSpacing = 1.15;
-    if (data.interviewOpinion.length > 130) {
-      intSz = 10;
-      intLineSpacing = 1.10;
-    } else if (data.interviewOpinion.length > 80) {
-      intSz = 11;
-      intLineSpacing = 1.12;
-    }
+    // 2) [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.3773)
+    const intLineSpacing = (data.interviewOpinion || '').length > 110 ? 1.08 : 1.14;
+    const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213, 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 4]);
     slide.addText([
       {
         text: data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]',
@@ -1330,7 +1334,7 @@
           color: C_SUBHEADER_TEXT,
           fontFace: FONT_MALGUN,
           breakLine: true,
-          paraSpaceAfter: 6
+          paraSpaceAfter: 5
         }
       },
       {
@@ -1342,55 +1346,47 @@
         }
       }
     ], {
-      x: 8.2448, y: 2.8227, w: 4.9213, h: 1.5748,
+      x: 8.2448, y: 2.8227, w: 4.9213, h: 1.3773,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      margin: [6, 8, 4, 4], valign: 'top', lineSpacingMultiple: intLineSpacing
+      margin: [5, 8, 4, 4], valign: 'top', lineSpacingMultiple: intLineSpacing
     });
 
-    // 3) [점검단 제안] 좌측 상단 셀 (SHAPE #5: x = 8.2448, y = 4.3979, w = 1.5342, h = 0.3543)
+    // 3) [점검단 제안] 좌측 상단 셀 (SHAPE #5: x = 8.2448, y = 4.2000, w = 1.5342, h = 0.3100)
     slide.addText('[점검단 제안]', {
-      x: 8.2448, y: 4.3979, w: 1.5342, h: 0.3543,
+      x: 8.2448, y: 4.2000, w: 1.5342, h: 0.3100,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      fontFace: FONT_MALGUN, fontSize: 14, bold: true, color: C_SUBHEADER_TEXT,
+      fontFace: FONT_MALGUN, fontSize: 13.5, bold: true, color: C_SUBHEADER_TEXT,
       align: 'center', valign: 'middle'
     });
 
-    // 4) [점검단 제안] 좌측 하단 셀 (SHAPE #6: x = 8.2448, y = 4.7522, w = 1.5342, h = 0.6790)
+    // 4) [점검단 제안] 좌측 하단 셀 (SHAPE #6: x = 8.2448, y = 4.5100, w = 1.5342, h = 0.9350 - 높이 확대로 2개 분류도 끊김 없이 여유 있게 표시)
     const propRuns = [];
+    const isMultiProp = Boolean(data.proposalItems && data.proposalItems.length > 1);
     (data.proposalItems || [{ type: data.proposalType, sub: data.proposalSub }]).forEach((it, idx) => {
-      if (idx > 0) propRuns.push({ text: '\n', options: { fontSize: 4 } });
+      if (idx > 0) propRuns.push({ text: '\n', options: { fontSize: 3 } });
       propRuns.push({
         text: `${it.type}\n`,
-        options: { fontSize: (data.proposalItems && data.proposalItems.length > 1) ? 11 : 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN }
+        options: { fontSize: isMultiProp ? 10.5 : 14, bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN }
       });
       if (it.sub) {
         propRuns.push({
           text: it.sub,
-          options: { fontSize: (data.proposalItems && data.proposalItems.length > 1) ? 9 : 11, bold: true, color: '000000', fontFace: FONT_MALGUN }
+          options: { fontSize: isMultiProp ? 8.5 : 11, bold: true, color: '000000', fontFace: FONT_MALGUN }
         });
       }
     });
     slide.addText(propRuns, {
-      x: 8.2448, y: 4.7522, w: 1.5342, h: 0.6790,
+      x: 8.2448, y: 4.5100, w: 1.5342, h: 0.9350,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      align: 'center', valign: 'middle', lineSpacingMultiple: 1.10
+      align: 'center', valign: 'middle', lineSpacingMultiple: isMultiProp ? 1.04 : 1.10, margin: [2, 2, 2, 2]
     });
 
-    // 5) [점검단 제안] 우측 본문 셀 (SHAPE #4: x = 9.7790, y = 4.3979, w = 3.3871, h = 1.0333)
-    let propSz = 12;
-    let propLineSpacing = 1.15;
-    let propMargin = [6, 8, 4, 6];
-    if (data.proposalContent.length > 70) {
-      propSz = 10;
-      propLineSpacing = 1.08;
-      propMargin = [4, 6, 2, 4];
-    } else if (data.proposalContent.length > 45) {
-      propSz = 11;
-      propLineSpacing = 1.12;
-      propMargin = [4, 6, 3, 5];
-    }
+    // 5) [점검단 제안] 우측 본문 셀 (SHAPE #4: x = 9.7790, y = 4.2000, w = 3.3871, h = 1.2450 - 높이 확대 및 자동 폰트 맞춤)
+    const propMargin = [4, 6, 4, 6];
+    const propLineSpacing = (data.proposalContent || '').length > 65 ? 1.08 : 1.14;
+    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.2450, 12, 8.5, propLineSpacing, propMargin);
     slide.addText(data.proposalContent, {
-      x: 9.7790, y: 4.3979, w: 3.3871, h: 1.0333,
+      x: 9.7790, y: 4.2000, w: 3.3871, h: 1.2450,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
       fontFace: FONT_MALGUN, fontSize: propSz, color: '111111',
       margin: propMargin, valign: 'top', lineSpacingMultiple: propLineSpacing
@@ -1698,25 +1694,11 @@
     const longestMainLine = mainLines.reduce((a, b) => (a.length >= b.length ? a : b), '');
     const mainSz = calcSingleLineFontSize(longestMainLine, 11.05, 14, 12);
 
-    let intSz = 12;
-    let intLineSpacing = 1.25;
-    if (data.interviewOpinion.length > 130) {
-      intSz = 10;
-      intLineSpacing = 1.15;
-    } else if (data.interviewOpinion.length > 80) {
-      intSz = 11;
-      intLineSpacing = 1.20;
-    }
+    const intLineSpacing = (data.interviewOpinion || '').length > 110 ? 1.12 : 1.20;
+    const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213, 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 4]);
 
-    let propSz = 12;
-    let propLineSpacing = 1.25;
-    if (data.proposalContent.length > 70) {
-      propSz = 10;
-      propLineSpacing = 1.15;
-    } else if (data.proposalContent.length > 45) {
-      propSz = 11;
-      propLineSpacing = 1.20;
-    }
+    const propLineSpacing = (data.proposalContent || '').length > 65 ? 1.10 : 1.18;
+    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.2450, 12, 8.5, propLineSpacing, [4, 6, 4, 6]);
 
     // 개선대책: 사용자 표준 기본값 12pt 유지, 장문 극단 초과 시에만 최소 10pt까지 점진 조절
     const counterLineSpacing = 1.15;
@@ -1878,27 +1860,27 @@
           발생원인 (인터뷰 결과)
         </div>
 
-        <!-- [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.5748) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.5748)}; background: #ffffff; border: 1px solid #000000; padding: 0.35cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(14)}; font-weight: 800; color: #181717; margin-bottom: 0.25cqw;">${data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]'}</div>
+        <!-- [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.3773) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.3773)}; background: #ffffff; border: 1px solid #000000; padding: 0.30cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
+          <div style="font-size: ${pt(14)}; font-weight: 800; color: #181717; margin-bottom: 0.20cqw;">${data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]'}</div>
           <div style="font-size: ${pt(intSz)}; line-height: ${intLineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(data.interviewOpinion)}</div>
         </div>
 
-        <!-- [점검단 제안] 헤더 셀 (SHAPE #5: x = 8.2448, y = 4.3979, w = 1.5342, h = 0.3543) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.3979)}; width: ${pctW(1.5342)}; height: ${pctH(0.3543)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; color: #181717; box-sizing: border-box;">
+        <!-- [점검단 제안] 헤더 셀 (SHAPE #5: x = 8.2448, y = 4.2000, w = 1.5342, h = 0.3100) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.2000)}; width: ${pctW(1.5342)}; height: ${pctH(0.3100)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(13.5)}; font-weight: 800; color: #181717; box-sizing: border-box;">
           [점검단 제안]
         </div>
 
-        <!-- [점검단 제안] 분류 셀 (SHAPE #6: x = 8.2448, y = 4.7522, w = 1.5342, h = 0.6790) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.7522)}; width: ${pctW(1.5342)}; height: ${pctH(0.6790)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px;">
+        <!-- [점검단 제안] 분류 셀 (SHAPE #6: x = 8.2448, y = 4.5100, w = 1.5342, h = 0.9350 - 높이 확대로 2개 분류도 끊김 없이 표시) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.5100)}; width: ${pctW(1.5342)}; height: ${pctH(0.9350)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px; overflow: hidden;">
           ${(data.proposalItems || [{ type: data.proposalType, sub: data.proposalSub }]).map(it => `
-            <div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 11 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.15;">${it.type}</div>
-            ${it.sub ? `<div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 9 : 11)}; font-weight: 800; color: #000000; margin-bottom: 2px;">${it.sub}</div>` : ''}
+            <div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 10.5 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.08;">${it.type}</div>
+            ${it.sub ? `<div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 8.5 : 11)}; font-weight: 800; color: #000000; line-height: 1.08; margin-bottom: 1px;">${it.sub}</div>` : ''}
           `).join('')}
         </div>
 
-        <!-- [점검단 제안] 본문 셀 (SHAPE #4: x = 9.7790, y = 4.3979, w = 3.3871, h = 1.0333) -->
-        <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.3979)}; width: ${pctW(3.3871)}; height: ${pctH(1.0333)}; background: #ffffff; border: 1px solid #000000; padding: 0.3cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
+        <!-- [점검단 제안] 본문 셀 (SHAPE #4: x = 9.7790, y = 4.2000, w = 3.3871, h = 1.2450 - 높이 확대 및 자동 폰트 맞춤) -->
+        <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.2000)}; width: ${pctW(3.3871)}; height: ${pctH(1.2450)}; background: #ffffff; border: 1px solid #000000; padding: 0.28cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
           <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(data.proposalContent)}</div>
         </div>
 

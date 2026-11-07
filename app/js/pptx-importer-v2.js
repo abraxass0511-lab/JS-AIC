@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v9';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v10';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -309,60 +309,121 @@ function find1DSegments(len, densityFn, threshold, minGap, minSpan) {
  * @returns {object} { photos: [dataUrl, ...], croppedPhoto, fullCrop }
  */
 function isRedBannerPixel(r, g, b) {
-  return (r > 135 && g < 135 && b < 135 && (r - g) > 30 && (r - b) > 30);
+  return (r > 130 && g < 145 && b < 145 && (r - g) > 25 && (r - b) > 25);
+}
+
+function isReddishFringe(r, g, b) {
+  return (r > 110 && (r - g) > 16 && (r - b) > 16 && g < 185 && b < 185);
 }
 
 function trimRedBannerFromBox(imgData, W, box) {
   let { x, y, w, h } = box;
   let y0 = y;
   let y1 = y + h - 1;
+  const maxBannerStrip = Math.max(85, Math.round(h * 0.26));
 
-  for (let cy = y1; cy >= y0 + Math.round(h * 0.4); cy--) {
+  let seenBottomBanner = false;
+  let nonRedBottomStreak = 0;
+  for (let cy = y1; cy >= Math.max(y0 + Math.round(h * 0.45), y1 - maxBannerStrip); cy--) {
     let redCount = 0;
+    let tot = 0;
     for (let cx = x; cx < x + w; cx += 2) {
+      tot++;
       const idx = (cy * W + cx) * 4;
       if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) redCount++;
     }
-    const ratio = redCount / (w / 2);
+    const ratio = redCount / (tot || 1);
     if (ratio > 0.22) {
+      seenBottomBanner = true;
+      nonRedBottomStreak = 0;
       y1 = cy - 1;
-    } else if (y1 < y + h - 10) {
+    } else if (seenBottomBanner) {
       let isInside = false;
-      for (let lookback = 1; lookback <= 8; lookback++) {
-        let prevRed = 0;
+      for (let lookback = 1; lookback <= 12; lookback++) {
+        if (cy - lookback < y0) break;
+        let prevRed = 0, pTot = 0;
         for (let cx = x; cx < x + w; cx += 2) {
+          pTot++;
           const idx = ((cy - lookback) * W + cx) * 4;
           if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) prevRed++;
         }
-        if (prevRed / (w / 2) > 0.22) { isInside = true; break; }
+        if (prevRed / (pTot || 1) > 0.22) { isInside = true; break; }
       }
-      if (isInside) y1 = cy - 1;
-      else break;
+      if (isInside) {
+        y1 = cy - 1;
+      } else {
+        nonRedBottomStreak++;
+        if (nonRedBottomStreak >= 4) break;
+      }
+    } else {
+      nonRedBottomStreak++;
+      if (nonRedBottomStreak >= 5) break;
     }
   }
+  if (y1 < y + h - 4) {
+    for (let k = 0; k < 10 && y1 > y0 + 20; k++) {
+      let fringeCnt = 0, tot = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        tot++;
+        const idx = (y1 * W + cx) * 4;
+        if (isReddishFringe(imgData[idx], imgData[idx+1], imgData[idx+2])) fringeCnt++;
+      }
+      if (fringeCnt / (tot || 1) > 0.08) y1--;
+      else break;
+    }
+    y1 = Math.max(y0 + 20, y1 - 2);
+  }
 
-  for (let cy = y0; cy <= y1 - Math.round(h * 0.4); cy++) {
+  let seenTopBanner = false;
+  let nonRedTopStreak = 0;
+  for (let cy = y0; cy <= Math.min(y1 - Math.round(h * 0.45), y0 + maxBannerStrip); cy++) {
     let redCount = 0;
+    let tot = 0;
     for (let cx = x; cx < x + w; cx += 2) {
+      tot++;
       const idx = (cy * W + cx) * 4;
       if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) redCount++;
     }
-    const ratio = redCount / (w / 2);
+    const ratio = redCount / (tot || 1);
     if (ratio > 0.22) {
+      seenTopBanner = true;
+      nonRedTopStreak = 0;
       y0 = cy + 1;
-    } else if (y0 > y + 5) {
+    } else if (seenTopBanner) {
       let isInside = false;
-      for (let lookahead = 1; lookahead <= 8; lookahead++) {
-        let nextRed = 0;
+      for (let lookahead = 1; lookahead <= 12; lookahead++) {
+        if (cy + lookahead > y1) break;
+        let nextRed = 0, nTot = 0;
         for (let cx = x; cx < x + w; cx += 2) {
+          nTot++;
           const idx = ((cy + lookahead) * W + cx) * 4;
           if (isRedBannerPixel(imgData[idx], imgData[idx+1], imgData[idx+2])) nextRed++;
         }
-        if (nextRed / (w / 2) > 0.22) { isInside = true; break; }
+        if (nextRed / (nTot || 1) > 0.22) { isInside = true; break; }
       }
-      if (isInside) y0 = cy + 1;
+      if (isInside) {
+        y0 = cy + 1;
+      } else {
+        nonRedTopStreak++;
+        if (nonRedTopStreak >= 4) break;
+      }
+    } else {
+      nonRedTopStreak++;
+      if (nonRedTopStreak >= 5) break;
+    }
+  }
+  if (y0 > y + 4) {
+    for (let k = 0; k < 10 && y0 < y1 - 20; k++) {
+      let fringeCnt = 0, tot = 0;
+      for (let cx = x; cx < x + w; cx += 2) {
+        tot++;
+        const idx = (y0 * W + cx) * 4;
+        if (isReddishFringe(imgData[idx], imgData[idx+1], imgData[idx+2])) fringeCnt++;
+      }
+      if (fringeCnt / (tot || 1) > 0.08) y0++;
       else break;
     }
+    y0 = Math.min(y1 - 20, y0 + 2);
   }
 
   return { x, y: y0, w, h: Math.max(10, y1 - y0 + 1) };
@@ -388,10 +449,11 @@ export function cleanLocation(rawLoc, fallbackLocText = '') {
     return String(str)
       .replace(/^(?:작업\s*장소|작[업엄]장소|장\s*소)\s*[:;：.]?\s*/i, '')
       .replace(/\b(?:EERE|ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL|드로|리로)\b[\s\S]*$/i, '')
-      .replace(/(?:점검자|점검차수|부적합)[\s\S]*$/i, '')
+      .replace(/(?:점검자?|점검차수|점검\s*[a-zA-Z0-9]?|차수|부적합)[\s\S]*$/i, '')
+      .replace(/\b[a-zA-Z]\b/g, ' ')
       .replace(/[\[\]{}()_ㅣ¦!~—\-:;]+/g, ' ')
       .replace(/[^가-힣0-9a-zA-Z\s,]/g, ' ')
-      .replace(/\s+(?:리|로|드|트|르)\s*$/g, '')
+      .replace(/\s+(?:리|로|드|트|르|점|검)\s*$/g, '')
       .replace(/\s+/g, ' ')
       .trim();
   };
@@ -401,7 +463,7 @@ export function cleanLocation(rawLoc, fallbackLocText = '') {
   }
   if (loc) {
     const mBuilding = loc.match(/(\d+\s*동(?:\s*지하\s*\d+\s*층|\s*지상\s*\d+\s*층|\s*후면|\s*전면|\s*측면|\s*상가동)?|지하\s*\d+\s*층|상가동)/);
-    if (mBuilding && loc.length > mBuilding[0].length + 6) {
+    if (mBuilding && loc.length > mBuilding[0].length + 4) {
       return mBuilding[0].replace(/\s+/g, ' ').trim();
     }
   }
@@ -412,7 +474,8 @@ export function cleanBannerText(rawBanner, content = '') {
   const derived = deriveConcreteBanner(content);
   if (!rawBanner) return derived;
   let b = String(rawBanner)
-    .replace(/^[①②③④123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
     .replace(/벽의음/g, '벽이음')
     .replace(/6055/g, '60도↓')
     .replace(/\(\s*불량/g, '불량')
@@ -422,9 +485,9 @@ export function cleanBannerText(rawBanner, content = '') {
   const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
   const hangulCount = (b.match(/[가-힣]/g) || []).length;
   if (hasDigitHangulCorruption || hangulCount < 4 || b.length < 5 || hangulCount / b.length < 0.55) {
-    return derived;
+    return derived.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
   }
-  return b;
+  return b.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
 }
 
 export function cleanWorkGroup(rawWork, contentText = '') {
@@ -472,11 +535,11 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
   let rawTitle = (rawLines[titleIdx] || fallbackTitle).replace(/^[0-9I=;:\s]+/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim();
   let sliceStart = titleIdx + 1;
 
-  // 비계 안전작업지침 제목 OCR 오인식 완벽 복원 ('안전삭업시집', '[[2128-106', '.28작업발판', '1 비계 조립기준' 등)
-  if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^(?:7\.)?1\s*비계\s*조립기준/.test(rawTitle)) {
+  // 비계 안전작업지침 제목 OCR 오인식 완벽 복원 ('TE EAM [[21286-10606)] 미계', 'rea EAM [1£Z12B-100K] 미계 식보', '안전삭업시집' 등)
+  if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^(?:7\.)?1\s*비계\s*조립기준|^6\.3\.[12]\s*작업/.test(rawTitle)) {
     rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
     sliceStart = titleIdx; // 본문 첫 줄로 보존
-  } else if (/안전[작삭]업[지시][침집짐]|IZ12B|1Z12B|2128-106|106\(K\)|106K|106&|106\(/i.test(rawTitle)) {
+  } else if (/(?:안전[작삭]업|[TErea\s]*EAM|IZ12B|1Z12B|1£Z12B|2128|10606|100K|106\(K\)|106K|106&|106\(|[비미]계\s*(?:작업|삭보|식보|&))/i.test(rawTitle)) {
     rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
   } else if (/현장\s*제작\s*대형\s*거푸집/.test(rawTitle)) {
     rawTitle = '현장 제작 대형 거푸집공사 작업 절차';
@@ -534,7 +597,8 @@ export function cleanOpinionText(raw) {
     .replace(/2단\s*HED\]?/gi, '2단 버팀대')
     .replace(/HE\s*위치가/g, '버팀대 위치가')
     .replace(/미설치\s*[25중등]\s*\)?/g, '미설치 등)')
-    .replace(/SNSU|5145내/gi, 'SNS내')
+    .replace(/(?:5045|5145|SNS)[내U]/gi, 'SNS내')
+    .replace(/위[혐협]성평가/g, '위험성평가')
     .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
     .replace(/\[=\]\s*oa/gi, '')
     .trim();
@@ -578,12 +642,14 @@ export function cleanProposalText(raw) {
   let s = String(raw)
     .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
     .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
-    .replace(/^(?:[-•*·▪\s]*)(?:SHE\s*SEA|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
-    .replace(/SHE\s*SEA|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
+    .replace(/^(?:[-•*·▪\s]*)(?:De\s*T=?\s*©?|SHE\s*SEA|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
+    .replace(/De\s*T=?\s*©?|SHE\s*SEA|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으/gi, '')
+    .replace(/^[\s\S]*?(?=1차적으로\s*(?:오설치된|이격거리))/, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
-    .replace(/위험성평기/g, '위험성평가')
+    .replace(/위[험혐협]성평[가기]/g, '위험성평가')
     .replace(/혐식적인/g, '형식적인')
-    .replace(/SNSU|5145내|SNS\s*U/gi, 'SNS내')
+    .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+    .replace(/SNSU|5145내|5045내|SNS\s*U/gi, 'SNS내')
     .replace(/구죽/g, '구축')
     .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
     .replace(/낙하물방\s*지망/g, '낙하물방지망')
@@ -597,11 +663,11 @@ export function cleanProposalText(raw) {
   const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const items = [];
   for (const line of rawLines) {
-    const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
+    const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
     let cl = line
-      .replace(/^[|\sㅣ¦_!\-•·~—*]+/, '')
+      .replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '')
       .replace(/[|\sㅣ¦_!~—\-*]+$/, '')
-      .replace(/^(?:SHE\s*SEA|구시\s*으\s*기느으)\s*/gi, '')
+      .replace(/^(?:De\s*T=?\s*©?|SHE\s*SEA|구시\s*으\s*기느으)\s*/gi, '')
       .replace(/\s*-\s*르$/, '')
       .trim();
     if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
@@ -611,15 +677,17 @@ export function cleanProposalText(raw) {
 
     const subLines = cl.split(/\n+/);
     for (let idx = 0; idx < subLines.length; idx++) {
-      const sub = subLines[idx].replace(/^[-•*·▪]\s*/, '').replace(/^(?:SHE\s*SEA)\s*/i, '').trim();
+      const sub = subLines[idx].replace(/^[-•*·▪.©=]+\s*/, '').replace(/^(?:De\s*T=?\s*©?|SHE\s*SEA)\s*/i, '').trim();
       if (!sub) continue;
       const isNewBullet = (idx === 0 && hasExplicitBullet) || idx > 0 || /^(?:1차적으로|비계설치\s*후\s*승인점검|대형거푸집|비계\s*설치\s*및\s*해체|비계\s*설치\s*\/?\s*해체|비계\s*작업\s*전|형식적인\s*점검)/.test(sub);
       if (items.length === 0 || isNewBullet) {
         items.push(sub);
       } else {
         items[items.length - 1] = `${items[items.length - 1]} ${sub}`
+          .replace(/위[험혐협]성평[가기]/g, '위험성평가')
           .replace(/혐식적인/g, '형식적인')
-          .replace(/SNSU|5145내/gi, 'SNS내')
+          .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
+          .replace(/SNSU|5145내|5045내/gi, 'SNS내')
           .replace(/구죽/g, '구축')
           .replace(/현장\s*모\s*니터링/g, '현장 모니터링')
           .replace(/낙하물방\s*지망/g, '낙하물방지망')
@@ -644,9 +712,11 @@ export function cleanActionPlan(raw) {
     .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
     .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화\s*방안\s*수립\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+    .replace(/위[험혐협]성평[가기]/g, '위험성평가')
     .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화/g, '내실화 등 점검 강화')
     .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
     .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
+    .replace(/(교육\s*실시|점검\s*실시\s*\([^)]+\)|존치\)|추가\s*설치)\s*[.,·•-]?\s*(?=거푸집\s*전도|비계\s*잭베이스|시스템\s*비계\s*설치계획서)/g, '$1\n- ')
     .replace(/,\s*-\s*/g, '\n- ')
     .trim();
 
@@ -654,8 +724,8 @@ export function cleanActionPlan(raw) {
   const items = [];
 
   for (const line of rawLines) {
-    const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
-    let cl = line.replace(/^[|ㅣ¦_!~—\-*•·\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
+    const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
+    let cl = line.replace(/^[|ㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
     if (!cl || cl.length < 2) continue;
     if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
@@ -663,7 +733,7 @@ export function cleanActionPlan(raw) {
       return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
     }
 
-    // 새 항목 시작 판별: 원본 줄이 '-'로 시작했거나, 두 번째 대책의 명확한 시작 구문인 경우에만 분리
+    // 새 항목 시작 판별: 원본 줄이 '-' 또는 '.'으로 시작했거나, 두 번째 대책의 명확한 시작 구문인 경우에만 분리
     const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|이격거리\s*표기|설치\s*완료|조치완료\s*후|방안\s*수립)/.test(cl);
     const isDistinctNewItem = !isContinuation && (
       hasExplicitBullet ||
@@ -1376,13 +1446,11 @@ async function ocrCellsSinglePass(canvas, cellSpecs) {
     result[spec.key] = '';
     const b = spec.box;
     if (!b || b.w < 5 || b.h < 5) continue;
-    // 셀 테두리 검은 선 노이즈 제거를 위해 안쪽 2px 인셋 적용
-    const insetX = Math.min(2, Math.floor(b.w * 0.02));
-    const insetY = Math.min(2, Math.floor(b.h * 0.04));
-    const sx = b.x + insetX;
-    const sy = b.y + insetY;
-    const sw = Math.max(4, b.w - insetX * 2);
-    const sh = Math.max(4, b.h - insetY * 2);
+    // sheet-layout.js에서 이미 테두리 안쪽으로 정밀 크롭되었으므로 추가 inset 없이 상단 획 보존
+    const sx = b.x;
+    const sy = b.y;
+    const sw = Math.max(4, b.w);
+    const sh = Math.max(4, b.h);
     // 원본 1.0x 픽셀 보존 (한글 획 뭉개짐 방지)
     const dw = sw;
     const dh = sh;
