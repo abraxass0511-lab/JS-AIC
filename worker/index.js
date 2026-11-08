@@ -187,7 +187,9 @@ function healSafetyKoreanLexicon(str) {
     .replace(/Gang\s*Form/gi, 'Gang Form')
     .replace(/GangForm/gi, 'Gang Form')
     .replace(/AL\s*Form/gi, 'AL Form')
-    .replace(/선해[세체]\s*방지\s*커버|선해세방지커버/g, '선해체방지커버')
+    .replace(/선해[세체]\s*방지\s*커[바버]|선해세방지커[바버]|방지커바/g, '선해체방지커버')
+      .replace(/방지\s*커[바버]/g, '방지커버')
+      .replace(/커바\b/g, '커버')
     .replace(/선해[세체]방지/g, '선해체방지')
     .replace(/선해[세체]\s*방지/g, '선해체 방지')
     // 1. ㅠ AF AYA 등 OCR 영문 노이즈 -> 인양 시 간섭사항 미고려
@@ -326,8 +328,8 @@ const TAXONOMY_STANDARD_PROMPT = `
    - 양중·줄걸이 하위: ["줄걸이용구"]
    - 개인보호구 하위: ["보호구"]
 5. 기인물 소분류 (agentMinor):
-   - 특수거푸집: ["갱폼", "Gang Form", "ACS", "RCS", "슬립폼"] (갱폼, 선해체방지커버는 반드시 "특수거푸집" > "갱폼")
-   - 거푸집/동바리: ["알폼", "AL Form", "유로폼", "파이프서포트", "시스템동바리", "잭서포트"]
+   - 특수거푸집: ["갱폼", "Gang Form", "알폼", "AL Form", "ACS", "RCS", "슬립폼"] (갱폼, 선해체방지커버, 알폼, AL Form은 반드시 "특수거푸집" > "갱폼" 또는 "알폼")
+   - 거푸집/동바리: ["유로폼", "파이프서포트", "시스템동바리", "잭서포트"]
    - 비계: ["시스템비계", "강관비계", "틀비계", "외부비계", "달비계"]
    - 안전시설: ["안전난간", "개구부덮개", "낙하물방지망", "방호선반", "수직보호망", "안전대걸이시설"]
    - 전기시설: ["누전차단기", "가설전선/이동릴선", "분전함", "접지시설", "투광등"]
@@ -409,6 +411,27 @@ export default {
             status: 400,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
+        }
+
+        // 알폼(AL Form) 특수거푸집 우선 판정
+        if (/알폼|al\s*form|alform|알루미늄\s*거푸집/i.test(content)) {
+          return {
+            severity: '중부적합',
+            law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
+            hazardType: '추락',
+            item: '알폼',
+            photoBanner: '알폼 해체 구간 슬래브 단부 추락방지 미조치',
+            photo2Banner: '',
+            mgmtCauses: ['계획 미이행', '불안전 상태'],
+            holdPoint: true,
+            analysis: '알폼 해체 작업 시 슬래브 단부 안전난간 미설치로 추락 위험',
+            pmVerdict: '시스템 개선',
+            workGroup: '거푸집동바리공사',
+            workMethod: '해체작업',
+            agentMajor: '가시설',
+            agentMid: '특수거푸집',
+            agentMinor: '알폼'
+          };
         }
 
         // 산안법 룰 기반 즉시 백업 판정 데이터 생성
