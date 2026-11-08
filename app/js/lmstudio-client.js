@@ -921,7 +921,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!forceLocal && workerUrl) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 3500);
+        const timeout = setTimeout(() => ctrl.abort(), 15000);
         const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -956,6 +956,20 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               fallbackRecord.photos = [fallbackRecord.photos[0]];
               fallbackRecord.photo2 = null;
             }
+            if (cfData.agentMajor) fallbackRecord.agentMajor = cfData.agentMajor;
+            if (cfData.agentMid) fallbackRecord.agentMid = cfData.agentMid;
+            if (cfData.agentMinor) {
+              fallbackRecord.agentMinor = cfData.agentMinor;
+              fallbackRecord.agent = cfData.agentMinor;
+              fallbackRecord.item = cfData.agentMid || cfData.agentMinor;
+            }
+            if (cfData.workGroup) fallbackRecord.workGroup = cfData.workGroup;
+            if (cfData.workMethod) fallbackRecord.workMethod = cfData.workMethod;
+            if (cfData.condition) fallbackRecord.condition = cfData.condition;
+            if (cfData.action) fallbackRecord.action = cfData.action;
+            if (cfData.rootCauseMgmt) fallbackRecord.rootCauseMgmt = cfData.rootCauseMgmt;
+            if (cfData.rootCauseSystem) fallbackRecord.rootCauseSystem = cfData.rootCauseSystem;
+            if (cfData.stakeholder) fallbackRecord.stakeholder = cfData.stakeholder;
             if (cfData.severity && !fallbackRecord.severity) fallbackRecord.severity = cfData.severity.includes('중부적합') ? '중부적합' : '경부적합';
             if (cfData.law && !fallbackRecord.law) fallbackRecord.law = cfData.law;
             if (cfData.hazardType && !fallbackRecord.type) fallbackRecord.type = cfData.hazardType;

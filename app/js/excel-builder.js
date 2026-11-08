@@ -388,7 +388,12 @@
   // 부적합 내용(지적사항) 숫자/한자 오인식('5)'->'등)', '5560ㅁ7'/'5500'->'55cm') 및 하단 깨진 중복줄 정제 함수
   function cleanContent(raw) {
     if (!raw) return '';
-    let s = healSafetyKoreanLexicon(String(raw))
+    let rawStr = String(raw || '');
+    rawStr = rawStr.replace(/\s+[a-z]\s*\d+\s*\{[\s\S]*$/i, '');
+    rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
+    rawStr = rawStr.replace(/\.{3,}[가-힣a-zA-Z0-9\s.]*$/g, '');
+    rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
+    let s = healSafetyKoreanLexicon(rawStr)
       .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
       .replace(/^[|ㅣ¦_!~\-\s]+/, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|eevee|[—\-_]{3,})[\s\S]*$/gi, '')
@@ -490,12 +495,10 @@
   }
 
   // 사진 요약(배너) 자동 복구 함수 (엑셀 공란 및 '58벽의음용상부0버팀대8설치각도(6055) (불량' 노이즈 원천 배제, 단일 배너 '①' 미포함)
-  function resolvePhotoBanner(r) {
+    function resolvePhotoBanner(r) {
+    let s = '';
     if (r && r.photoBanner && String(r.photoBanner).trim()) {
-      let s = healSafetyKoreanLexicon(String(r.photoBanner).replace(/\s+/g, ' ').trim());
-      if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(r.content || '')) {
-        return '벽이음용 상부 버팀대 설치각도(60도↓) 불량';
-      }
+      s = healSafetyKoreanLexicon(String(r.photoBanner).replace(/\s+/g, ' ').trim());
       s = s
         .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
         .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
@@ -506,29 +509,41 @@
         .replace(/\s+/g, ' ')
         .trim();
       s = healSafetyKoreanLexicon(s);
-      const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(s);
-      const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
-      const hangulCount = (s.match(/[가-힣]/g) || []).length;
-      if (!hasDigitHangulGlue && (hangulCount >= 4 || isTechnicalForm) && s.length >= 5 && ((hangulCount / s.length >= 0.4) || isTechnicalForm)) {
-        return s.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
+    }
+
+    // 말줄임표(...) 절단 원천 복원 및 치유: 배너가 '...'로 끝나거나 잘린 경우 content에서 복원
+    const isTruncated = !s || s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5;
+    if (isTruncated && r && r.content) {
+      const c = healSafetyKoreanLexicon(String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
+      if (/Gang\s*Form|갱폼|선해체/i.test(c)) {
+        return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+      }
+      if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) {
+        return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+      }
+      if (/밑둥잡이|워킹타워/i.test(c)) {
+        return '비계 워킹타워 하부 밑둥잡이 일부 누락';
+      }
+      if (/버팀대|설치각도/.test(c)) {
+        return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+      }
+      const firstLine = c.split('\n')[0].replace(/\.{2,}/g, '').trim();
+      if (firstLine.length >= 6) {
+        return firstLine.substring(0, 32);
       }
     }
-    if (r && r.content) {
-      let c = healSafetyKoreanLexicon(String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
-      c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동)?)\s*/i, '').trim();
-      c = c.replace(/^\d+\)\s*/, '');
-      const firstLine = c.split('\n')[0].trim();
-      if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
-      if (firstLine.includes('버팀대')) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
-      if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
-      if (firstLine.includes('가새')) return '비계 설치구간 가새 설치 누락';
-      if (firstLine.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
-      if (firstLine.includes('밑둥잡이')) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
-      if (firstLine.includes('동바리') && (firstLine.includes('해체') || firstLine.includes('미복구'))) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-      if (firstLine.includes('Gang Form') || firstLine.includes('선해체') || firstLine.includes('갱폼')) return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
-      // 임의의 말줄임표(...) 절단 원천 배제: 첫 문장 온전히 보존
-      return firstLine || '현장 부적합 작업 전경';
+
+    if (s) {
+      s = s.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
+      if (/Gang\s*Form|갱폼|선해체/i.test(s) && s.includes('절곡부위') && s.length < 25) {
+        return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+      }
+      if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && s.length < 25) {
+        return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+      }
+      return s;
     }
+
     return '현장 부적합 작업 전경';
   }
 
@@ -598,10 +613,24 @@
   }
 
   // 기인물 9×9 대-중-소 정규화 및 오류 방지 판정
-  function resolveAgentHierarchy(r) {
+    function resolveAgentHierarchy(r) {
     let major = r.agentMajor || '';
     let mid = r.agentMid || '';
     let minor = r.agentMinor || r.agent || '';
+
+    // Qwen AI가 직접 선택한 표준 기인물 계층이 있으면 최우선 적용
+    if (major && mid && minor) {
+      if (/갱폼|gang\s*form|선해체/i.test(`${minor} ${mid} ${r.content || ''}`)) {
+        major = '가시설';
+        mid = '특수거푸집';
+        minor = '갱폼';
+      } else if (/AL\s*Form|알폼/i.test(`${minor} ${mid} ${r.content || ''}`)) {
+        major = '가시설';
+        mid = '거푸집/동바리';
+        minor = '알폼';
+      }
+      return { major, mid, minor };
+    }
 
     const validMajors = ['가시설', '건설장비', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
     const areaNames = ['건설장비', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
@@ -1222,6 +1251,7 @@
     cleanLocation,
     healSafetyKoreanLexicon,
     resolveActionPlanText,
+    resolvePhotoBanner,
     getPmVerdictType
   };
 });

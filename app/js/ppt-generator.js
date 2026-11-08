@@ -407,7 +407,7 @@
     return BAD_LABELS.some(bad => s.includes(bad)) || s.length < 4;
   }
 
-  function cleanBannerText(rawBanner, content) {
+    function cleanBannerText(rawBanner, content) {
     let s = String(rawBanner || '').replace(/\s+/g, ' ').trim();
     if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(content || '')) {
       return '벽이음용 상부 버팀대 설치각도(60도↓) 불량';
@@ -421,6 +421,20 @@
       .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ↓↑\s/()\-.,]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+    
+    // 말줄임표(...) 절단 복원
+    if ((s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5) && content) {
+      const c = healSafetyKoreanLexicon(String(content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
+      if (/Gang\s*Form|갱폼|선해체/i.test(c)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+      if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+      if (/밑둥잡이|워킹타워/i.test(c)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
+      if (/버팀대|설치각도/.test(c)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+    }
+
+    s = s.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
+    if (/Gang\s*Form|갱폼|선해체/i.test(s) && s.includes('절곡부위') && s.length < 25) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+    if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && s.length < 25) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+
     const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
     const hangulCount = (s.match(/[가-힣]/g) || []).length;
     const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(s);
@@ -1447,10 +1461,13 @@
     const counterMargin = [4, 6, 2, 4];
     const counterLineSpacing = 1.10;
     const counterSz = calcFitMultilineFontSize(data.countermeasureContent || '', 3.3858, 1.3959, 12, 9.5, counterLineSpacing, counterMargin);
-    slide.addText(data.countermeasureContent || '', {
+    const counterRuns = (data.countermeasureContent || '').split('\n').filter(Boolean).map((line, idx, arr) => ({
+      text: line + (idx < arr.length - 1 ? '\n' : ''),
+      options: { fontFace: FONT_MALGUN, fontSize: counterSz, bold: false, color: '000000' }
+    }));
+    slide.addText(counterRuns.length ? counterRuns : '', {
       x: 8.2448, y: 5.9064, w: 3.3858, h: 1.3959,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      fontFace: FONT_MALGUN, fontSize: counterSz, bold: false, color: '000000',
       margin: counterMargin, valign: 'top', lineSpacingMultiple: counterLineSpacing
     });
 

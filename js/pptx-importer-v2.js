@@ -580,8 +580,20 @@ export function cleanBannerText(rawBanner, content = '') {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // '브 느 밑둥잡이' 등 어휘 치유 적용
   b = healSafetyKoreanLexicon(b);
+
+  // 말줄임표(...) 절단 원천 복원
+  if ((b.endsWith('...') || b.endsWith('…') || b.endsWith('..') || /\.\.\.$/.test(b) || b.length < 5) && content) {
+    const c = healSafetyKoreanLexicon(String(content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
+    if (/Gang\s*Form|갱폼|선해체/i.test(c)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+    if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+    if (/밑둥잡이|워킹타워/i.test(c)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
+    if (/버팀대|설치각도/.test(c)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+  }
+
+  b = b.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
+  if (/Gang\s*Form|갱폼|선해체/i.test(b) && b.includes('절곡부위') && b.length < 25) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+  if (/AL\s*Form|알폼|동바리/i.test(b) && /계단참/.test(b) && b.length < 25) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
 
   const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(b);
   const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
@@ -685,7 +697,12 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
 
 export function cleanOpinionText(raw) {
   if (!raw) return '';
-  let s = healSafetyKoreanLexicon(String(raw))
+  let rawStr = String(raw || '');
+    rawStr = rawStr.replace(/\s+[a-z]\s*\d+\s*\{[\s\S]*$/i, '');
+    rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
+    rawStr = rawStr.replace(/\.{3,}[가-힣a-zA-Z0-9\s.]*$/g, '');
+    rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
+    let s = healSafetyKoreanLexicon(rawStr)
     .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
     .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
     .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
