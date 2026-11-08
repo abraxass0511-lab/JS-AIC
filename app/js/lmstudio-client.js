@@ -682,53 +682,84 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/충렬선상\s*미실지\s*[중등25]?\s*\)?/g, '동일선상 미설치 등)')
       .replace(/동일선상\s*미설치\s*[25중등]?\s*\)?/g, '동일선상 미설치 등)')
       .replace(/미설치\s*[25중등]\s*\)?/g, '미설치 등)')
-      .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량');
+      .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량')
+      // 12. Tesseract OCR ㅠ 불릿 기호 및 줄바꿈 복원
+      .replace(/(?:^|\r?\n)\s*ㅠ\s*/g, '\n- ')
+      .replace(/(?<=\S)\s+ㅠ\s+(?=[가-힣a-zA-Z0-9])/g, '\n- ')
+      // 13. 치수 및 단위 정밀 정규화 (6007이하 -> 60cm 이하, 600ㅁ로 -> 60cm로)
+      .replace(/6007\s*이하|600ㅁ\s*이하/g, '60cm 이하')
+      .replace(/600[ㅁm7]\s*로/g, '60cm로')
+      .replace(/600[ㅁm7]\b/g, '60cm')
+      .replace(/(\d{2})0[0-97ㅁ口]{1,2}\s*(?=이하|이상|이내|간격|로|에|\b)/g, '$1cm ')
+      // 14. 갱폼/안전시설 부속 및 용어 정밀 복원
+      .replace(/고정시아(?:는)?/g, '고정샤클은')
+      .replace(/고정시아/g, '고정샤클')
+      .replace(/고정샤클은\s*cm\s*이하로/g, '고정샤클은 40cm 이하로')
+      .replace(/상하작동\s*(?:bh\s*)?가이드\s*철물\s*폭\s*에\s*ZH\s*상태/g, '상하작동 가이드 철물 간섭 상태')
+      .replace(/6\/『\s*최상부|6\/\s*최상부|6\/『|6\//g, 'E/V')
+      .replace(/AF\s*SEL/g, '선해체방지커버')
+      .replace(/설치상소/g, '설치장소')
+      .replace(/노단색\s*Mos|노란색\s*Mos|노단색/g, '노란색 마킹')
+      .replace(/재교\s*육/g, '재교육')
+      .replace(/선\s*해체\s*방지/g, '선해체 방지');
   }
 
   function cleanLocation(rawLoc, contentText = '') {
     let s = String(rawLoc || '').trim();
+    if (!s && '') s = String('').trim();
+
+    // 1. contentText 문맥 우선 탐색
     if (!s && contentText) {
       const mDong = String(contentText).match(/(\d{1,4}\s*동[^\n,.()]{0,30}|지하\s*\d+\s*층[^\n,.()]{0,20}|상가동[^\n,.()]{0,20})/);
       if (mDong) s = mDong[1];
     }
-    if (!s) return '';
+    if (!s && contentText) {
+      if (/계단구간|슬래브가\s*없는\s*계단|E\/V\s*최상부|6\/\s*최상부/i.test(contentText)) s = '계단구간 E/V 최상부';
+      else if (/갱폼|gang\s*form|선해체/i.test(contentText)) s = '101동 외부 (갱폼)';
+      else if (/비계|워킹타워/i.test(contentText)) s = '외부비계';
+      else if (/지하\s*\d+\s*층/i.test(contentText)) s = '지하층';
+    }
+    if (!s) return '' ? String('').trim() : '101동 외부';
 
+    // 2. 온전한 건물/동/층/코어/외부/E/V 패턴이 이미 포함되어 있으면 즉시 추출
+    const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
+    if (mFull && mFull[0] && mFull[0].trim().length >= 2) {
+      const cand = mFull[0].replace(/\s+/g, ' ').trim();
+      if (!/^[a-zA-Z\s,]+$/.test(cand) && /[가-힣]/.test(cand)) return cand;
+    }
+
+    // 3. E/V 보호 및 노이즈 제거
     s = s
+      .replace(/E\/V|6\/『|6\//gi, '__EV__')
       .replace(/^(?:작업\s*장소|작[업엄]장소|장\s*소)\s*[:;：.]?\s*/i, '')
-      .replace(/\[\s*ERE\b[^\n]*$/i, '')
+      .replace(/\[\s*ERE\b[^\]\n]*\]?/gi, '')
       .replace(/\b(?:EERE|ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL|드로|리로)\b(?:\s*[:;=]?\s*[a-zA-Z0-9]+)*/gi, ' ')
-      // 점검자, 점검차수, 섬검자, 점겸자, 정검자, 집십사수 등 표 인접 열 헤더 침범 텍스트 및 그 이후 내용 완전 절단
       .replace(/(?:[점섬정겸]검\s*[자차]?|[점섬정겸]검차수|[집점]십[사차]수|\b차수\b|\b\d+\s*차\b)[\s\S]*$/i, '')
       .replace(/\s+\d{2,}(?:\s+\d+)*\s*$/g, '')
       .replace(/\b[a-zA-Z]\b/g, ' ')
       .replace(/[\[\]{}()_ㅣ¦!~—:;]+/g, ' ')
-      .replace(/\s+(?:리|로|드|트|르|점|검)\s*$/g, '')
       .replace(/\s+/g, ' ')
       .trim();
 
-    // 1075 35 1코어 복원 (동=5, 층=5 오인식 정밀 복원)
+    s = s.replace(/__EV__/g, 'E/V');
+
+    // 4. 1075 35 1코어 등 숫자 오인식 치유
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
     s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
     s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
 
-    // 11023, 1023 등 숫자로만 오인식된 건물/동 패턴 자동 치유
     if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
       const mMatch = s.match(/1?(10[1-9]|1[1-9]\d)[385]?/);
-      if (mMatch && mMatch[1]) {
-        return `${mMatch[1]}동`;
-      }
+      if (mMatch && mMatch[1]) return `${mMatch[1]}동`;
     }
-
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
 
-    // 107동 3층 1코어, 101동 외부 등 온전한 건물/동/층/코어/구간 명칭 보존 (끝부분의 무작위 단어 탐욕 매칭 배제)
-    const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
-    if (mFull && mFull[0] && mFull[0].trim().length >= 2) {
-      const candidate = mFull[0].replace(/\s+/g, ' ').trim();
-      if (!/^[a-zA-Z\s,]+$/.test(candidate)) return candidate;
+    const mSecond = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
+    if (mSecond && mSecond[0] && mSecond[0].trim().length >= 2) {
+      return mSecond[0].replace(/\s+/g, ' ').trim();
     }
 
-    return s;
+    return s || '101동 외부';
   }
 
   function cleanBannerText(rawBanner, content) {
@@ -738,6 +769,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
       .replace(/벽의음/g, '벽이음')
       .replace(/6055/g, '60도↓')
+      .replace(/6\/『|6\//g, 'E/V')
       .replace(/\(\s*불량/g, '불량')
       .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ\s/()\-↓↑.,]/g, ' ')
       .replace(/\s+/g, ' ')

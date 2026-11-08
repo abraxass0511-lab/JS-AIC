@@ -245,7 +245,26 @@ function healSafetyKoreanLexicon(str) {
     .replace(/충렬선상\s*미실지\s*[중등25]?\s*\)?/g, '동일선상 미설치 등)')
     .replace(/동일선상\s*미설치\s*[25중등]?\s*\)?/g, '동일선상 미설치 등)')
     .replace(/미설치\s*[25중등]\s*\)?/g, '미설치 등)')
-    .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량');
+    .replace(/HEL\s*설치\s*불량/g, '버팀대 설치 불량')
+    // 12. Tesseract OCR ㅠ 불릿 기호 및 줄바꿈 복원
+    .replace(/(?:^|\r?\n)\s*ㅠ\s*/g, '\n- ')
+    .replace(/(?<=\S)\s+ㅠ\s+(?=[가-힣a-zA-Z0-9])/g, '\n- ')
+    // 13. 치수 및 단위 정밀 정규화 (6007이하 -> 60cm 이하, 600ㅁ로 -> 60cm로)
+    .replace(/6007\s*이하|600ㅁ\s*이하/g, '60cm 이하')
+    .replace(/600[ㅁm7]\s*로/g, '60cm로')
+    .replace(/600[ㅁm7]\b/g, '60cm')
+    .replace(/(\d{2})0[0-97ㅁ口]{1,2}\s*(?=이하|이상|이내|간격|로|에|\b)/g, '$1cm ')
+    // 14. 갱폼/안전시설 부속 및 용어 정밀 복원
+    .replace(/고정시아(?:는)?/g, '고정샤클은')
+    .replace(/고정시아/g, '고정샤클')
+    .replace(/고정샤클은\s*cm\s*이하로/g, '고정샤클은 40cm 이하로')
+    .replace(/상하작동\s*(?:bh\s*)?가이드\s*철물\s*폭\s*에\s*ZH\s*상태/g, '상하작동 가이드 철물 간섭 상태')
+    .replace(/6\/『\s*최상부|6\/\s*최상부|6\/『|6\//g, 'E/V')
+    .replace(/AF\s*SEL/g, '선해체방지커버')
+    .replace(/설치상소/g, '설치장소')
+    .replace(/노단색\s*Mos|노란색\s*Mos|노단색/g, '노란색 마킹')
+    .replace(/재교\s*육/g, '재교육')
+    .replace(/선\s*해체\s*방지/g, '선해체 방지');
 }
 
 function cleanLocationWorker(loc, content = '') {
@@ -415,7 +434,10 @@ export default {
 
         // 알폼(AL Form) 특수거푸집 우선 판정
         if (/알폼|al\s*form|alform|알루미늄\s*거푸집/i.test(content)) {
-          return {
+          return new Response(JSON.stringify({
+            ok: true,
+            source: 'cloudflare_rule_engine',
+            model: 'SanAn Rule Engine (Cloudflare Cloud)',
             severity: '중부적합',
             law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
             hazardType: '추락',
@@ -431,7 +453,10 @@ export default {
             agentMajor: '가시설',
             agentMid: '특수거푸집',
             agentMinor: '알폼'
-          };
+          }), {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+          });
         }
 
         // 산안법 룰 기반 즉시 백업 판정 데이터 생성
