@@ -17,3 +17,4 @@ if (hasError) {
 } else {
   console.log('All script tags are correct!');
 }
+

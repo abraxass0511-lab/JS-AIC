@@ -4853,6 +4853,12 @@ function renderImportedCards() {
 
     const causesStr = (rec.mgmtCauses && rec.mgmtCauses.length) ? rec.mgmtCauses.join(', ') : '-';
 
+    const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+    const isSpecialForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+    const displayMajor = rec.agentMajor || '가시설';
+    const displayMid = isAlForm ? '특수거푸집' : (rec.agentMid || (isSpecialForm ? '특수거푸집' : '거푸집/동바리'));
+    const displayMinor = isAlForm ? '알폼' : (rec.agentMinor || (isSpecialForm ? '갱폼' : ''));
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -4861,7 +4867,7 @@ function renderImportedCards() {
           </span>
           <span style="font-weight: 700; color: var(--gray-800);">${rec.type || '추락'}</span>
           <span style="font-size: 0.71rem; background: #f1f5f9; color: #334155; padding: 1px 6px; border-radius: 4px; font-weight: 600;">
-            ${rec.agentMajor || '가시설'} &gt; ${rec.agentMid || '거푸집/동바리'} &gt; ${rec.agentMinor || ''}
+            ${displayMajor} &gt; ${displayMid}${displayMinor ? ` &gt; ${displayMinor}` : ''}
           </span>
           <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
         </div>
@@ -4998,10 +5004,10 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
   const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
-      const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+  const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
   const maj = rec.agentMajor || rec.kind || (isGangForm ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
-  const mid = rec.agentMid || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리');
-  const min = rec.agentMinor || rec.agent || (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (mid === '특수거푸집' ? '갱폼' : '시스템비계'));
+  const mid = isAlForm ? '특수거푸집' : (rec.agentMid || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리'));
+  const min = rec.agentMinor || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (mid === '특수거푸집' ? '갱폼' : '시스템비계')));
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
   if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
   if ($('#txtAgentMinor')) $('#txtAgentMinor').value = min;
@@ -5094,9 +5100,10 @@ async function handleSaveImportedRecords() {
 
     const batchItems = await Promise.all(importedRecords.map(async (rec) => {
       const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-      const isGangForm = /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+      const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+      const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
       const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (isGangForm ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
-      const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리');
+      const matrixTarget = isAlForm ? '특수거푸집' : (rec.agentMid || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리'));
       const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : '시스템비계')));
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
