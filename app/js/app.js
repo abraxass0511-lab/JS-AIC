@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261108_v18';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261108_v20';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4997,9 +4997,10 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '거푸집동바리공사';
   if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
-  const maj = rec.agentMajor || rec.kind || '가시설';
-  const mid = rec.agentMid || rec.item || '거푸집/동바리';
-  const min = rec.agentMinor || rec.agent || '파이프서포트';
+  const isGangForm = /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+  const maj = rec.agentMajor || rec.kind || (isGangForm ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
+  const mid = rec.agentMid || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리');
+  const min = rec.agentMinor || rec.agent || (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (mid === '특수거푸집' ? '갱폼' : '시스템비계'));
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = maj;
   if ($('#txtAgentMid')) $('#txtAgentMid').value = mid;
   if ($('#txtAgentMinor')) $('#txtAgentMinor').value = min;
@@ -5092,9 +5093,10 @@ async function handleSaveImportedRecords() {
 
     const batchItems = await Promise.all(importedRecords.map(async (rec) => {
       const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-      const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (m9 && m9.점검영역9x9) || '가시설';
-      const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (m9 && m9.점검대상9x9) || '거푸집/동바리';
-      const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (m9 && m9.가시설세부사양) || '파이프서포트';
+      const isGangForm = /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
+      const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (isGangForm ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
+      const matrixTarget = rec.agentMid || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리');
+      const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : '시스템비계'));
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
       const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '시공담당';

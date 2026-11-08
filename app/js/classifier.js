@@ -43,7 +43,7 @@
         { name: '비계', kws: ['비계', '아시바', '비계기둥', '수직재', '수평재', '가새'], specs: { '시스템비계': ['시스템', '시스템비계'], '강관비계': ['강관', '파이프비계', '단관'], '틀비계': ['틀비계', 'bt', 'b/t'] } },
         { name: '흙막이', kws: ['흙막이', '토류판', 'cip', 'scw', '어스앵커', '스트럿', '띠장', '버팀대', '토사', '비탈면'], specs: { '수직재': ['수직재', 'h파일', 'h-pile'], '수평재': ['수평재', '띠장', '웨일'], '코너부': ['코너', '모서리'], '경사재': ['경사재', '버팀대'], '토사부': ['토사', '배면'], '상부': ['상부', '상단'] } },
         { name: '거푸집/동바리', kws: ['동바리', '서포트', 'support', '파이프서포트', '잭서포트', '시스템동바리', '거푸집'], specs: { '시스템동바리': ['시스템동바리', '시스템'], '파이프서포트': ['파이프서포트', '서포트'], '잭서포트': ['잭서포트', 'jack'] } },
-        { name: '특수거푸집', kws: ['특수거푸집', 'acs', 'rcs', '슬립폼', '갱폼', '클라이밍'], specs: { '갱폼': ['갱폼', 'gang'], 'ACS': ['acs'], 'RCS': ['rcs'], 'SLIP': ['slip', '슬립폼'] } },
+        { name: '특수거푸집', kws: ['특수거푸집', 'acs', 'rcs', '슬립폼', '갱폼', 'gang', 'gangform', 'gang form', '선해체', '선해체방지커버', '절곡부위', '클라이밍'], specs: { '갱폼': ['갱폼', 'gang', 'gangform', 'gang form', '선해체방지커버', '선해체', '절곡부위'], 'ACS': ['acs'], 'RCS': ['rcs'], 'SLIP': ['slip', '슬립폼'] } },
         { name: '철골', kws: ['철골', 'h빔', 'h-beam', '트러스', '철골보', '철골기둥'], specs: { '기둥': ['철골기둥', '기둥'], '큰보': ['큰보', '거더'], '작은보': ['작은보', '빔'], '경사보': ['경사보'], '계단': ['철골계단', '계단'] } },
         { name: 'PC', kws: ['pc', '프리캐스트', 'pc부재', '더블티'], specs: { '기둥(C)': ['pc기둥', '기둥'], '큰보(G)': ['pc보', '큰보', '거더'], '작은보(B)': ['작은보', '보'], '슬래브': ['슬래브', '판'] } },
         { name: '데크플레이트', kws: ['데크', '데크플레이트', '트러스데크', '이지데크'], specs: { '보접합부': ['보접합', '접합부'], '코너부': ['코너', '모서리'], '데크': ['데크', '플레이트'] } },
@@ -165,11 +165,18 @@
     }
   ];
 
-  function inferMatrix9x9(text) {
+  function inferMatrix9x9(text, options = {}) {
     const t = norm(text);
+    // 갱폼, 특수거푸집 최우선 판별 (영문 Gang Form, 선해체방지커버 등 포함)
+    if (/gangform|gang\s*form|gang|갱폼|선해체방지커버|선해체|특수거푸집/i.test(t)) {
+      return { area: '가시설', item: '특수거푸집', spec: '갱폼', score: 99 };
+    }
+
     let best = { area: '가시설', item: '비계', spec: '시스템비계', score: 0 };
+    const allowWorkMethod = options.allowWorkMethod ?? false;
 
     for (const group of MATRIX_9X9) {
+      if (group.area === '작업방법' && !allowWorkMethod) continue;
       for (const it of group.items) {
         let itScore = 0;
         if (t.includes(norm(it.name))) itScore += 10;
@@ -334,7 +341,33 @@
         return { item: it, score, hits, agents, rlBoost };
       }).filter(x => x.score > 0).sort((a, b) => b.score - a.score);
 
-      if (!scored.length) return { matched: false, candidates: [] };
+      if (!scored.length) {
+        const m9 = inferMatrix9x9(content);
+        const rootAnalysis = inferRootCauseAndStakeholder(content, m9, '낙하');
+        return {
+          matched: true,
+          result: {
+            종류: m9.area || '가시설',
+            항목: m9.item || '특수거푸집',
+            기인물: [m9.spec || '갱폼'],
+            기인물대: m9.area || '가시설',
+            기인물중: m9.item || '특수거푸집',
+            기인물소: m9.spec || '갱폼',
+            유형: '낙하',
+            산업안전보건법: '안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)',
+            상태: bestOf(keywords.conditions, text, weights.conditionWeights) || '안전방호장치의 결함 (미설치·해체·불량)',
+            행동: bestOf(keywords.actions, text, weights.actionWeights) || '작업절차 미준수',
+            발생원인: [],
+            점검영역9x9: m9.area,
+            점검대상9x9: m9.item,
+            가시설세부사양: m9.spec,
+            근본원인_관리감독: rootAnalysis.mgmt,
+            근본원인_안전시스템: rootAnalysis.system,
+            관리책임주체: rootAnalysis.stakeholder
+          },
+          candidates: []
+        };
+      }
 
       const top = scored[0];
       const exactAgents = top.agents.filter(a => a.exact).map(a => a.name);
