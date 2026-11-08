@@ -16,3 +16,4 @@ The following directories and files must NEVER be removed, deleted, overwritten,
 - `샘플2_물류센터_개구부덮개_경부적합.pptx`
 
 Any tool call that executes destructive deletion commands (`git clean`, `rm`, `Remove-Item`) on these assets is strictly prohibited.
+

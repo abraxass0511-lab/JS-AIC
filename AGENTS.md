@@ -19,3 +19,4 @@
 - `git clean -f`, `git clean -fd`, `git clean -xdf`
 - Direct branch checkout (`git checkout <other-branch>`) inside the primary workspace
 - Recursive deletion of workspace directories without explicit user confirmation
+

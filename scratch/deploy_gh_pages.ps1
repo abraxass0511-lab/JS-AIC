@@ -9,6 +9,10 @@ foreach ($folder in $protectedFolders) {
 }
 
 Write-Host "Creating worktree for gh-pages..."
+if (Test-Path "..\gh-pages-work") {
+    Remove-Item -Path "..\gh-pages-work" -Recurse -Force
+}
+git worktree prune
 git worktree add "..\gh-pages-work" gh-pages
 
 Write-Host "Copying app files to gh-pages-work root and app..."
@@ -25,7 +29,7 @@ Push-Location "..\gh-pages-work"
 try {
     git status --short
     git add -A
-    git commit -m "Deploy: sync app and permanently protect 템플릿, 표준분류, 분류표 인자 assets"
+    git commit -m "Deploy: sync app and permanently protect 템플릿, 표준분류, 분류표 인자 assets (v20)"
     git push origin gh-pages
 } finally {
     Pop-Location
