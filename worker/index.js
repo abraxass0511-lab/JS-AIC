@@ -156,6 +156,16 @@ function analyzeRuleFallback(content) {
     holdPoint = false;
     analysis = '임시 분전함 외함 접지 미시행 또는 누전차단기 불량';
     pmVerdict = '해당 차단기 전원 즉시 차단 및 외함 접지선 체결 완료 후 통전';
+  } else if (text.includes('알폼') || text.includes('al form') || text.includes('alform') || text.includes('알루미늄 거푸집')) {
+    item = '알폼';
+    law = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
+    hazardType = text.includes('동바리') ? '붕괴·도괴' : '추락';
+    severity = '중부적합';
+    mgmtCauses = ['계획 미이행', '불안전 상태'];
+    holdPoint = true;
+    photoBanner = text.includes('동바리') ? '콘크리트 타설 중 계단참 AL Form 동바리 미복구' : 'AL Form 해체 구간 슬래브 단부 추락방지 미조치';
+    analysis = '알폼(AL Form) 작업 시 동바리 임의 해체 후 미복구로 붕괴·도괴 위험 극심';
+    pmVerdict = '동바리 즉시 원상복구 및 관리감독자 타설 전 검측 프로세스 준수';
   } else if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집') || text.includes('벽체') || text.includes('전도방지')) {
     item = '거푸집동바리';
     law = '산안규칙 제332조(거푸집동바리등의 안전조치)';
@@ -432,34 +442,7 @@ export default {
           });
         }
 
-        // 알폼(AL Form) 특수거푸집 우선 판정
-        if (/알폼|al\s*form|alform|알루미늄\s*거푸집/i.test(content)) {
-          return new Response(JSON.stringify({
-            ok: true,
-            source: 'cloudflare_rule_engine',
-            model: 'SanAn Rule Engine (Cloudflare Cloud)',
-            severity: '중부적합',
-            law: '안전보건규칙 제332조(거푸집동바리등의 안전조치)',
-            hazardType: '추락',
-            item: '알폼',
-            photoBanner: '알폼 해체 구간 슬래브 단부 추락방지 미조치',
-            photo2Banner: '',
-            mgmtCauses: ['계획 미이행', '불안전 상태'],
-            holdPoint: true,
-            analysis: '알폼 해체 작업 시 슬래브 단부 안전난간 미설치로 추락 위험',
-            pmVerdict: '시스템 개선',
-            workGroup: '거푸집동바리공사',
-            workMethod: '해체작업',
-            agentMajor: '가시설',
-            agentMid: '특수거푸집',
-            agentMinor: '알폼'
-          }), {
-            status: 200,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-          });
-        }
-
-        // 산안법 룰 기반 즉시 백업 판정 데이터 생성
+        // 산안법 룰 기반 즉시 백업 판정 데이터 생성 (Qwen AI 호출 실패 시 백업용)
         const quickFallback = analyzeRuleFallback(content);
 
         // Cloudflare Workers AI 인스턴스가 바인딩되어 있는 경우 실행
