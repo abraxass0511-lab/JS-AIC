@@ -634,6 +634,7 @@ JSON 형식:
             });
 
             let text = '';
+            let lastAiErr = '';
             if (aiRes && aiRes.response) text = aiRes.response;
             else if (aiRes && aiRes.choices && aiRes.choices[0]) text = aiRes.choices[0].message?.content || '';
 
