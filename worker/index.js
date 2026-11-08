@@ -306,6 +306,43 @@ function buildFallbackCleanedFields(rawOcr, fb) {
   };
 }
 
+const TAXONOMY_STANDARD_PROMPT = `
+[건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 표준 목록 내에서만 선택할 것]
+1. 공종 (workGroup): ["거푸집동바리공사", "가설공사", "철근콘크리트공사", "철골공사", "토공사", "기초공사", "양중작업", "마감공사", "설비·전기공사", "해체공사", "공통"] 중 선택.
+   - 갱폼, 알폼, 유로폼, 동바리, 서포트 등 거푸집류는 반드시 "거푸집동바리공사"
+   - 비계, 낙하물방지망 등은 "가설공사"
+   - 전기, 전선, 누전차단기 등은 "설비·전기공사"
+2. 작업방법 (workMethod): ["설치조립작업", "해체작업", "양중작업", "굴착작업", "하역운반작업", "고소작업", "가공조립작업", "운전조정작업", "중량물취급작업"] 중 선택.
+   - 설치, 세팅, 거치, 조립은 "설치조립작업"
+   - 해체, 탈형, 철거는 "해체작업"
+   - 크레인/호이스트 인양은 "양중작업"
+3. 기인물 대분류 (agentMajor): ["가시설", "건설장비", "작업발판", "작업장·통로", "전기·화기·설비", "양중·줄걸이", "개인보호구", "토공·구조물"] 중 선택.
+4. 기인물 중분류 (agentMid):
+   - 가시설 하위: ["특수거푸집", "거푸집/동바리", "비계", "안전시설", "흙막이가시설"]
+   - 건설장비 하위: ["양중장비", "굴착·토공장비", "콘크리트장비", "고소작업장비", "하역운반장비"]
+   - 작업발판 하위: ["가설발판", "이동식발판"]
+   - 전기·화기·설비 하위: ["전기시설", "화기·용접", "소방시설"]
+   - 작업장·통로 하위: ["통로", "개구부"]
+   - 양중·줄걸이 하위: ["줄걸이용구"]
+   - 개인보호구 하위: ["보호구"]
+5. 기인물 소분류 (agentMinor):
+   - 특수거푸집: ["갱폼", "Gang Form", "ACS", "RCS", "슬립폼"] (갱폼, 선해체방지커버는 반드시 "특수거푸집" > "갱폼")
+   - 거푸집/동바리: ["알폼", "AL Form", "유로폼", "파이프서포트", "시스템동바리", "잭서포트"]
+   - 비계: ["시스템비계", "강관비계", "틀비계", "외부비계", "달비계"]
+   - 안전시설: ["안전난간", "개구부덮개", "낙하물방지망", "방호선반", "수직보호망", "안전대걸이시설"]
+   - 전기시설: ["누전차단기", "가설전선/이동릴선", "분전함", "접지시설", "투광등"]
+6. 재해 형태 (hazardType): ["추락", "낙하·비래", "붕괴·도괴", "전도", "협착", "충돌", "전복", "화재", "폭발·파열", "감전"] 중 선택.
+7. 관련 법령 (law): 산업안전보건기준에 관한 규칙 공식 조문 (예: "안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)", "안전보건규칙 제332조(거푸집동바리등의 안전조치)", "안전보건규칙 제56조(작업발판의 구조)", "안전보건규칙 제304조(누전차단기 설치 등)" 등).
+8. 불안전 상태 (condition): ["방호장치 결함 (덮개·난간 미설치 등)", "물(物) 자체의 결함 (자재·부재 손상/변형)", "복장·보호구 결함", "작업환경 불량", "생산공정 결함", "배치·적재 불량", "경보·신호 체계 결함", "해당없음"] 중 선택.
+9. 불안전 행동 (action): ["보호구 미착용", "방호장치 기능 무효화", "위험구역 접근", "불안전한 동작·자세", "부적절한 작업방법", "기계·기구 무단 취급", "해당없음"] 중 선택.
+10. 근본원인 분석:
+    - rootCauseMgmt (법적 관리감독): ["관리감독자 지정 및 역할 수행 미흡", "작업계획서 미수립 또는 형식적 작성", "위험성평가 유해위험요인 누락/미반영", "특별안전보건교육 미실시", "합동 안전점검 및 순회점검 미흡"] 중 선택.
+    - rootCauseSystem (안전시스템): ["협력업체 안전관리계획 검토/승인 절차 미흡", "Hold Point(승인점검) 절차 미이행", "공정 간 간섭사항 사전 검토 체계 부재", "안전시설물 설치/인계인수 프로세스 미흡", "표준작업절차서(SOP) 미배포 또는 현장 부적합"] 중 선택.
+    - stakeholder (관리/책임주체): ["원청 시공팀", "원청 안전팀", "협력사 관리감독자", "협력사 근로자", "장비 임대/운전원"] 중 선택.
+[사진 요약 배너 photoBanner 작성 규칙]
+- 사진 상단에 들어갈 배너 문구는 반드시 완성된 명사구로 작성하고, 절대 말줄임표(...)나 미완성 문장으로 끝내지 말 것.
+- (예: "절곡부위 Gang Form 선해체 방지커버 설치 불량", "콘크리트 타설 중 계단참 AL Form 동바리 미복구", "비계 워킹타워 하부 밑둥잡이 일부 누락", "외부비계 벽이음용 버팀대 설치각도 기준 미준수")`;
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -384,7 +421,7 @@ export default {
             let rightPhotoIsReference = null;
 
             // 1) Vision AI 이미지 직접 판독 (텍스트 스트립 이미지 또는 우측 참고도면 판별)
-            if (body.stripImageBase64) {
+            if (body.stripImageBase64 && (!body.rawOcrText || String(body.rawOcrText).trim().length < 15)) {
               try {
                 const cleanB64 = String(body.stripImageBase64).replace(/^data:image\/\w+;base64,/, '');
                 const visionPrompt = `이 이미지는 건설현장 안전점검 장표의 텍스트 셀들을 위에서 아래로 모아놓은 이미지입니다.
@@ -447,56 +484,76 @@ export default {
             }
 
             const isOcrClean = (body.mode === 'ocr_clean' || url.pathname === '/api/vision-ocr') && (body.rawOcrText || visionText);
-            const systemPrompt = isOcrClean
-              ? `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이자 Vision+OCR 문맥 교정 전문가이다.
-주어진 점검장표 Vision 판독 결과와 OCR 추출 텍스트의 오탈자(예: cm가 00으로 오인식, 한자 等이 5/&/쪽/종으로 오인식, 안전작업지침 제목 깨짐, 영문/기호 노이즈 등)를 문맥에 맞게 완벽히 교정하고, 법령 위반 및 사진 상단 배너를 JSON으로만 출력하라.
+                        const systemPrompt = isOcrClean
+              ? `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이자 Vision+OCR 문맥 교정 및 표준 분류 전문가이다.
+주어진 점검장표의 OCR 추출 텍스트와 사진 문맥을 정밀 분석하여, 오탈자를 교정하고 건설안전 표준 분류 목록(Taxonomy)에서 정확한 항목을 직접 선택하여 JSON으로만 출력하라.
+
+${TAXONOMY_STANDARD_PROMPT}
 
 [OCR 문맥 교정 절대 규칙]
 - 협력사가 빈칸이면 절대 임의로 넣지 말고 ""로 둘 것 (공종명 '비계공사', 'HEY' 등을 협력사에 넣지 말 것)
-- 작업장소에 '[ERE 12', 'ee' 같은 테두리 노이즈가 있으면 완벽히 제거할 것 (예: '106동 지하2층', '106동 서측', '101동, 상가동')
-- 여러 항목이 '-'로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우(예: '검토 및 / 재수립 후', '현장 / 모니터링 강화', '적정여부 / 전수 점검 실시', '해체 시 / 받침목 추가 / (또는 버림틀 존치)')는 한 문장으로 자연스럽게 이어붙일 것
+- 작업장소에 '[ERE 12', 'ee', '섬검자', '집십사수' 같은 테두리 노이즈가 있으면 완벽히 제거할 것 (예: '106동 지하2층', '106동 서측', '101동 외부', '107동 3층 1코어')
+- 인접 열이나 테두리 침범 깨진 텍스트(예: 'a 0 2{2.쓰.......시푸시', 'ee —')는 완전히 삭제할 것
+- 여러 항목이 '-'로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우는 한 문장으로 자연스럽게 이어붙일 것
 - 관련기준의 '*' 항목이 3개인 경우 각각 줄바꿈(\\n* )으로 구분할 것
 
 JSON 형식:
 {
   "severity": "중부적합" 또는 "경부적합",
+  "workGroup": "표준 공종",
+  "workMethod": "표준 작업방법",
+  "agentMajor": "표준 기인물 대분류",
+  "agentMid": "표준 기인물 중분류",
+  "agentMinor": "표준 기인물 소분류",
   "law": "산안규칙 제OO조(조항명)",
-  "hazardType": "추락" 또는 "낙하" 또는 "붕괴" 또는 "도괴" 또는 "협착" 또는 "전도" 또는 "화재" 또는 "감전",
+  "hazardType": "표준 재해 형태",
+  "condition": "표준 불안전 상태",
+  "action": "표준 불안전 행동",
+  "rootCauseMgmt": "표준 법적 관리감독",
+  "rootCauseSystem": "표준 안전시스템",
+  "stakeholder": "표준 관리/책임주체",
   "item": "기인물/작업 명칭",
-  "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 미준수 문구",
-  "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 미준수 문구 (단일 지적이면 '')",
+  "photoBanner": "사진 1 상단 배너용 15~20자 구체적 미준수 문구 (말줄임표 ... 절대 금지)",
+  "photo2Banner": "사진 2 상단 배너용 15~20자 구체적 미준수 문구 (단일 지적이면 '')",
+  "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
   "pmVerdict": "시스템 개선" 또는 "교육/코칭" 또는 "페널티",
   "cleanedFields": {
-    "content": "교정된 부적합 내용",
-    "location": "교정된 작업장소",
+    "content": "교정된 부적합 내용 (말단 깨진 노이즈 완전 제거)",
+    "location": "교정된 작업장소 (동, 층, 코어, 외부 보존)",
     "workGroup": "교정된 공종명",
-    "subcontractor": "교정된 협력사명 (공란이면 반드시 '')",
+    "subcontractor": "교정된 협력사명 (공란이면 '')",
     "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 유지)",
     "auditProposal": "교정된 점검단 제안 ('- ' 불릿 구분)",
     "actionPlan": "교정된 개선대책 ('- ' 불릿 구분, 단순 줄바꿈은 병합)",
-    "rawLaw": "교정된 관련기준 제목 (예: 안전작업지침 [IZ12B-106(K)] 비계 작업)",
+    "rawLaw": "교정된 관련기준 제목",
     "lawBody": "교정된 관련기준 본문 ('*' 항목 줄바꿈 유지)"
   }
 }`
               : `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
-주어진 부적합 지적내용과 사진 상황을 엄밀히 분석하여, 사진 상단 배너(photoBanner, photo2Banner)와 법령 위반을 JSON으로만 출력하라.
+주어진 부적합 지적내용과 사진 상황을 엄밀히 분석하여, 사진 상단 배너(photoBanner, photo2Banner)와 표준 분류 목록에서 선택한 분류를 JSON으로만 출력하라.
 
-[작성 원칙 - 사진 상단 배너 photoBanner/photo2Banner]
-- 무엇을 안 했는지 / 어떤 위험 행동을 했는지 구체적으로 직시하라 (15~20자 내외).
-  (예: '양중작업 시 화물을 직접 손으로 잡음', '양중작업 시 유도로프 미사용', '양중작업 시 화물의 수평양중 미 실시', '말비계 모서리 구간 단부 추락방지 미조치', '통로 바닥 가설전선 거치 및 정리 미실시', '보 상부 승인 미실시 및 불안전 자세 작업', '구획된 바닥 안전통로 내 거푸집 자재 방치')
-- 모호한 '표준 안전작업절차 미준수'나 통계 분류 '작업방법 불량(동작/자세 불량)' 등은 절대 넣지 말 것!
-- 2가지 독립 지적사항이 있거나 2장 사진일 경우 photo2Banner에 2번 사진용 문구를 넣을 것 (없으면 '').
+${TAXONOMY_STANDARD_PROMPT}
 
 JSON 형식:
 {
   "severity": "중부적합" 또는 "경부적합",
+  "workGroup": "표준 공종",
+  "workMethod": "표준 작업방법",
+  "agentMajor": "표준 기인물 대분류",
+  "agentMid": "표준 기인물 중분류",
+  "agentMinor": "표준 기인물 소분류",
   "law": "산안규칙 제OO조(조항명)",
-  "hazardType": "추락" 또는 "낙하" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전",
+  "hazardType": "표준 재해 형태",
+  "condition": "표준 불안전 상태",
+  "action": "표준 불안전 행동",
+  "rootCauseMgmt": "표준 법적 관리감독",
+  "rootCauseSystem": "표준 안전시스템",
+  "stakeholder": "표준 관리/책임주체",
   "item": "기인물/작업 명칭",
-  "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 미준수 문구",
-  "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 미준수 문구 (단일 지적이면 '')",
+  "photoBanner": "사진 1 상단 배너용 15~20자 구체적 미준수 문구",
+  "photo2Banner": "사진 2 상단 배너용 15~20자 구체적 미준수 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장",
@@ -523,7 +580,7 @@ JSON 형식:
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
               ],
-              max_tokens: isOcrClean ? 950 : 500,
+              max_tokens: isOcrClean ? 1200 : 650,
               temperature: 0.05
             }).catch(async () => {
               return await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
@@ -531,7 +588,7 @@ JSON 형식:
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt }
                 ],
-                max_tokens: isOcrClean ? 950 : 500,
+                max_tokens: isOcrClean ? 1200 : 650,
                 temperature: 0.05
               });
             }).catch(async () => {
@@ -540,7 +597,7 @@ JSON 형식:
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt }
                 ],
-                max_tokens: isOcrClean ? 950 : 500,
+                max_tokens: isOcrClean ? 1200 : 650,
                 temperature: 0.05
               });
             });
@@ -572,7 +629,17 @@ JSON 형식:
                 rightPhotoIsReference,
                 ...quickFallback,
                 ...parsed,
-                severity: parsed.severity?.includes('중부적합') ? '중부적합' : (parsed.severity?.includes('경부적합') ? '경부적합' : quickFallback.severity)
+                severity: parsed.severity?.includes('중부적합') ? '중부적합' : (parsed.severity?.includes('경부적합') ? '경부적합' : quickFallback.severity),
+                workGroup: parsed.workGroup || quickFallback.workGroup,
+                workMethod: parsed.workMethod || quickFallback.workMethod,
+                agentMajor: parsed.agentMajor || quickFallback.agentMajor,
+                agentMid: parsed.agentMid || quickFallback.agentMid,
+                agentMinor: parsed.agentMinor || quickFallback.agentMinor,
+                condition: parsed.condition || quickFallback.condition,
+                action: parsed.action || quickFallback.action,
+                rootCauseMgmt: parsed.rootCauseMgmt || quickFallback.rootCauseMgmt,
+                rootCauseSystem: parsed.rootCauseSystem || quickFallback.rootCauseSystem,
+                stakeholder: parsed.stakeholder || quickFallback.stakeholder
               }), {
                 status: 200,
                 headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }

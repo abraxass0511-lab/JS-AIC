@@ -5126,7 +5126,7 @@ async function handleSaveImportedRecords() {
           amount: siteObj.amount || ''
         },
         content: rec.content || '부적합 사항 지적',
-        photoBanner: (rec.photoBanner && rec.photoBanner.trim()) ? rec.photoBanner.trim() : (typeof deriveConcreteBanner === 'function' ? deriveConcreteBanner(rec.content || '') : '현장 부적합 작업 전경'),
+        photoBanner: (window.SafeExcel?.resolvePhotoBanner ? window.SafeExcel.resolvePhotoBanner(rec) : (rec.photoBanner || '현장 부적합 작업 전경')),
         location: (window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '')),
         workName: workMethod,
         workMethod: workMethod,
