@@ -279,7 +279,9 @@
     .replace(/Gang\s*Form/gi, 'Gang Form')
     .replace(/GangForm/gi, 'Gang Form')
     .replace(/AL\s*Form/gi, 'AL Form')
-    .replace(/선해[세체]\s*방지\s*커버|선해세방지커버/g, '선해체방지커버')
+    .replace(/선해[세체]\s*방지\s*커[바버]|선해세방지커[바버]|방지커바/g, '선해체방지커버')
+      .replace(/방지\s*커[바버]/g, '방지커버')
+      .replace(/커바\b/g, '커버')
     .replace(/선해[세체]\s*방지/g, '선해체 방지')
     .replace(/선해[세체]방지/g, '선해체방지')
     // 1. ㅠ AF AYA 등 OCR 영문 노이즈 -> 인양 시 간섭사항 미고려
@@ -535,10 +537,10 @@
 
     if (s) {
       s = s.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
-      if (/Gang\s*Form|갱폼|선해체/i.test(s) && s.includes('절곡부위') && s.length < 25) {
+      if (/Gang\s*Form|갱폼|선해체/i.test(s) && (s.includes('절곡부위') || s.includes('간섭')) && !s.includes('설치 불량') && !s.includes('설치불량')) {
         return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
       }
-      if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && s.length < 25) {
+      if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && !s.includes('미복구')) {
         return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
       }
       return s;
@@ -624,9 +626,9 @@
         major = '가시설';
         mid = '특수거푸집';
         minor = '갱폼';
-      } else if (/AL\s*Form|알폼/i.test(`${minor} ${mid} ${r.content || ''}`)) {
+      } else if (/AL\s*Form|알폼|알루미늄/i.test(`${minor} ${mid} ${r.content || ''}`)) {
         major = '가시설';
-        mid = '거푸집/동바리';
+        mid = '특수거푸집';
         minor = '알폼';
       }
       return { major, mid, minor };
@@ -647,33 +649,39 @@
     // 2) 건설안전 9×9 표준(가시설 > 거푸집/동바리 / 특수거푸집) 정규화
     //    '동바리', '거푸집', '거푸집동바리' 등 분리/변형 표기를 모두 '거푸집/동바리'로 통일
     //    (갱폼·ACS·RCS·SLIP·Gang Form 등은 9×9 표준상 '특수거푸집')
-    const isSpecialForm = /갱폼|gang\s*form|gangform|ACS|RCS|SLIP|슬립폼|선해체/i.test(`${minor} ${mid} ${r.content || ''}`);
+    const isSpecialForm = /갱폼|gang\s*form|gangform|ACS|RCS|SLIP|슬립폼|선해체|알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${mid} ${r.content || ''}`);
     if (isSpecialForm) {
       major = '가시설';
       mid = '특수거푸집';
-      minor = (minor && !/거푸집|동바리|파이프서포트|비계/.test(minor)) ? minor : '갱폼';
+      if (/알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${r.content || ''}`)) {
+        minor = '알폼';
+      } else {
+        minor = (minor && !/거푸집|동바리|파이프서포트|비계/.test(minor)) ? minor : '갱폼';
+      }
     } else if (['동바리', '거푸집', '거푸집동바리', '거푸집 동바리'].includes(mid)) {
       mid = '거푸집/동바리';
     }
 
     // 3) 비계 하위에 거푸집이 들어간 경우 (예: 비계 > 거푸집) -> 교정
-    if (mid === '비계' && (minor.includes('거푸집') || minor.includes('폼') || /gang/i.test(minor))) {
+    if (mid === '비계' && (minor.includes('거푸집') || minor.includes('폼') || /gang|알폼/i.test(minor))) {
       mid = isSpecialForm ? '특수거푸집' : '거푸집/동바리';
-      if (isSpecialForm) minor = '갱폼';
+      if (isSpecialForm) minor = /알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${r.content || ''}`) ? '알폼' : '갱폼';
     }
 
     // 이미 유효한 대/중이 정해져 있다면 즉시 반환
     if (major && mid && validMajors.includes(major)) {
-      if (mid === '특수거푸집' && (!minor || /파이프서포트|시스템비계/.test(minor))) minor = '갱폼';
+      if (mid === '특수거푸집' && (!minor || /파이프서포트|시스템비계/.test(minor))) {
+        minor = /알폼|al\s*form|alform|알루미늄/i.test(`${r.content || ''}`) ? '알폼' : '갱폼';
+      }
       return { major, mid, minor: minor || mid };
     }
 
     // 미지정 레거시 레코드인 경우 키워드로 자동 추론
     const text = `${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.workName || ''}`;
-    if (/갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(text)) {
+    if (/갱폼|gang\s*form|gangform|특수거푸집|선해체|알폼|al\s*form|alform|알루미늄/i.test(text)) {
       major = '가시설';
       mid = '특수거푸집';
-      minor = '갱폼';
+      minor = /알폼|al\s*form|alform|알루미늄/i.test(text) ? '알폼' : '갱폼';
     } else if (text.includes('전등') || text.includes('투광등') || text.includes('조도') || text.includes('조명')) {
       major = '전기시설';
       mid = '전등시설';

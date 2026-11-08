@@ -462,7 +462,9 @@ export function healSafetyKoreanLexicon(str) {
     .replace(/Gang\s*Form/gi, 'Gang Form')
     .replace(/GangForm/gi, 'Gang Form')
     .replace(/AL\s*Form/gi, 'AL Form')
-    .replace(/선해[세체]\s*방지\s*커버|선해세방지커버/g, '선해체방지커버')
+    .replace(/선해[세체]\s*방지\s*커[바버]|선해세방지커[바버]|방지커바/g, '선해체방지커버')
+      .replace(/방지\s*커[바버]/g, '방지커버')
+      .replace(/커바\b/g, '커버')
     .replace(/선해[세체]\s*방지/g, '선해체 방지')
     .replace(/선해[세체]방지/g, '선해체방지')
     // 1. ㅠ AF AYA 등 OCR 영문 노이즈 -> 인양 시 간섭사항 미고려
@@ -592,8 +594,8 @@ export function cleanBannerText(rawBanner, content = '') {
   }
 
   b = b.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
-  if (/Gang\s*Form|갱폼|선해체/i.test(b) && b.includes('절곡부위') && b.length < 25) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
-  if (/AL\s*Form|알폼|동바리/i.test(b) && /계단참/.test(b) && b.length < 25) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+  if (/Gang\s*Form|갱폼|선해체/i.test(b) && (b.includes('절곡부위') || b.includes('간섭')) && !b.includes('설치 불량') && !b.includes('설치불량')) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+  if (/AL\s*Form|알폼|동바리/i.test(b) && /계단참/.test(b) && !b.includes('미복구')) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
 
   const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(b);
   const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
@@ -800,7 +802,12 @@ export function cleanActionPlan(raw) {
 
 export function cleanContent(raw) {
   if (!raw) return '';
-  const cleanedLines = healSafetyKoreanLexicon(String(raw))
+  let rawStr = String(raw || '');
+  rawStr = rawStr.replace(/\s+[a-z]\s*\d+\s*\{[\s\S]*$/i, '');
+  rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
+  rawStr = rawStr.replace(/\.{3,}[가-힣a-zA-Z0-9\s.]*$/g, '');
+  rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
+  const cleanedLines = healSafetyKoreanLexicon(rawStr)
     .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
     .replace(/^[|ㅣ¦_!~\-\s]+/, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|eevee|[—\-_]{3,})[\s\S]*$/gi, '')

@@ -94,7 +94,9 @@
       .replace(/Gang\s*Form/gi, 'Gang Form')
       .replace(/GangForm/gi, 'Gang Form')
       .replace(/AL\s*Form/gi, 'AL Form')
-      .replace(/선해[세체]\s*방지\s*커버|선해세방지커버/g, '선해체방지커버')
+      .replace(/선해[세체]\s*방지\s*커[바버]|선해세방지커[바버]|방지커바/g, '선해체방지커버')
+      .replace(/방지\s*커[바버]/g, '방지커버')
+      .replace(/커바\b/g, '커버')
       .replace(/선해[세체]방지/g, '선해체방지')
       .replace(/선해[세체]\s*방지/g, '선해체 방지')
       // 1. ㅠ AF AYA 등 OCR 영문 노이즈 -> 인양 시 간섭사항 미고려
@@ -213,7 +215,12 @@
 
   function cleanContent(raw) {
     if (!raw) return '';
-    let s = healSafetyKoreanLexicon(String(raw))
+    let rawStr = String(raw || '');
+    rawStr = rawStr.replace(/\s+[a-z]\s*\d+\s*\{[\s\S]*$/i, '');
+    rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
+    rawStr = rawStr.replace(/\.{3,}[가-힣a-zA-Z0-9\s.]*$/g, '');
+    rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
+    let s = healSafetyKoreanLexicon(rawStr)
       .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
       .replace(/^[|ㅣ¦_!~\-\s]+/, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|eevee|[—\-_]{3,})[\s\S]*$/gi, '')
@@ -432,8 +439,8 @@
     }
 
     s = s.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
-    if (/Gang\s*Form|갱폼|선해체/i.test(s) && s.includes('절곡부위') && s.length < 25) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
-    if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && s.length < 25) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+    if (/Gang\s*Form|갱폼|선해체/i.test(s) && (s.includes('절곡부위') || s.includes('간섭')) && !s.includes('설치 불량') && !s.includes('설치불량')) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+    if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && !s.includes('미복구')) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
 
     const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
     const hangulCount = (s.match(/[가-힣]/g) || []).length;
@@ -627,12 +634,12 @@
     if (!text) return baseSize;
     let units = 0;
     for (let i = 0; i < text.length; i++) {
-      units += text.charCodeAt(i) > 127 ? 1.2 : 0.75;
+      units += text.charCodeAt(i) > 127 ? 1.55 : 0.85;
     }
-    const avail = widthInch - 0.12;
+    const avail = widthInch - 0.16;
     let sz = baseSize;
     while (sz > minSize) {
-      const est = units * (sz * 0.011);
+      const est = units * (sz * 0.0135);
       if (est <= avail) break;
       sz -= 0.5;
     }
@@ -1218,7 +1225,7 @@
     // ── [좌측 컬럼] 적색 음영 배너 & 현장 사진 (x = 0.3121, w = 5.4580) ──
     // 적색 배너 (SHAPE #12: x = 0.3121, y = 2.8121, w = 5.4580, h = 0.3702, fill #C00000 @ alpha 60% = #D96666)
     const bannerWidth = 5.4580;
-    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 16, 9.5);
+    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 14, 9.5);
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.3121, y: 2.8121, w: bannerWidth, h: 0.3702,
       fill: { color: C_PHOTO_BANNER_RAW, transparency: 40 },
@@ -1238,7 +1245,7 @@
         }
       ], {
         x: 0.3121, y: 2.8121, w: bannerWidth, h: 0.3702,
-        align: 'center', valign: 'middle', wrap: false, inset: 0.04
+        align: 'center', valign: 'middle', wrap: false, inset: 0.02, shrinkText: true
       });
     }
 
@@ -1468,7 +1475,8 @@
     slide.addText(counterRuns.length ? counterRuns : '', {
       x: 8.2448, y: 5.9064, w: 3.3858, h: 1.3959,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      margin: counterMargin, valign: 'top', lineSpacingMultiple: counterLineSpacing
+      margin: counterMargin, valign: 'top', lineSpacingMultiple: counterLineSpacing,
+      bold: false, fontFace: FONT_MALGUN
     });
 
     // 8) [PM 판정결과] 우측 상단 셀 (SHAPE #9: x = 11.6307, y = 5.9064, w = 1.5354, h = 0.3329)
@@ -1590,7 +1598,7 @@
 
     // 1) 좌측 적색 음영 배너 (SHAPE #3 [TextBox 11]: x = 0.8685, y = 2.8276, w = 5.4580, h = 0.3702, fill #C00000 @ alpha 60% = #D96666)
     const leftBannerW = 5.4580;
-    const leftBannerSz = calcSingleLineFontSize(data.photoBanner, leftBannerW, 16, 9.5);
+    const leftBannerSz = calcSingleLineFontSize(data.photoBanner, leftBannerW, 14, 9.5);
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.8685, y: 2.8276, w: leftBannerW, h: 0.3702,
       fill: { color: C_PHOTO_BANNER_RAW, transparency: 40 },
@@ -1683,15 +1691,11 @@
 
   function isRiskAssessmentSheet(record, data) {
     if (!record) return false;
-    if (record.sheetType === '위험성평가' || record.isRiskAssessment === true) return true;
+    // 경부적합(Minor) 또는 위험성평가 서식인 경우 템플릿/부적합장표(경부적합).pptx 서식 100% 적용
+    if (record.severity === '경부적합' || record.sheetType === '위험성평가' || record.isRiskAssessment === true) {
+      return true;
+    }
     const txt = `${record.sheetCategory || ''} ${record.category || ''} ${data.rawLaw || ''} ${record.content || ''}`;
-    // 일반 시설물/법규 장표(공종명, 발생원인, 개선대책 중 하나라도 정상 기입된 경우)는 표준 시설물/법규 서식 사용 (샘플2 등)
-    const hasStandardFields = Boolean(
-      (data.countermeasureContent && data.countermeasureContent.length > 5) ||
-      (data.interviewOpinion && data.interviewOpinion.length > 5) ||
-      (record.workGroup && record.workGroup !== '거푸집동바리공사' && record.location)
-    );
-    if (hasStandardFields) return false;
     return /위험성\s*평가\s*확인|유해\s*위험요인\s*파악/i.test(txt);
   }
 
