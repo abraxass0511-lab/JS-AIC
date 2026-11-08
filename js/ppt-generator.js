@@ -423,7 +423,8 @@
       .trim();
     const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
     const hangulCount = (s.match(/[가-힣]/g) || []).length;
-    if (!hasDigitHangulGlue && hangulCount >= 5 && s.length >= 6 && hangulCount / s.length >= 0.55) {
+    const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(s);
+    if (!hasDigitHangulGlue && (hangulCount >= 4 || isTechnicalForm) && s.length >= 5 && (isTechnicalForm || hangulCount / s.length >= 0.4)) {
       return s.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
     }
     return '';
@@ -461,6 +462,10 @@
     }
     const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     
+    // 0. Gang Form / 갱폼 및 선해체 방지커버
+    if (/Gang\s*Form|선해체|갱폼/i.test(text)) {
+      return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
+    }
     // 1. 양중작업 시 손으로 화물 직접 잡음 (이미지 4번 실물 점검장표 100% 일치)
     if (text.includes('손으로') || text.includes('직접 잡') || (text.includes('유도로프') && (text.includes('손') || text.includes('당기')))) {
       return '양중작업 시 화물을 직접 손으로 잡음';
@@ -550,14 +555,13 @@
       if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
       if (firstLine.includes('가새')) return '비계 설치구간 가새 설치 누락';
       if (firstLine.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
-      if (firstLine.length >= 6 && firstLine.length <= 26 && !isGenericTaxonomyLabel(firstLine)) return firstLine;
-      if (firstLine.length > 26) return firstLine.substring(0, 24) + '...';
+      if (firstLine.length >= 6 && !isGenericTaxonomyLabel(firstLine)) return firstLine;
     }
 
     // 최종 대체: 지적사항 또는 기인물/공종 기반 구체적 행동 표현
     if (r.content && r.content.trim().length >= 6) {
       const trimmed = r.content.trim().replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '');
-      return trimmed.length <= 26 ? trimmed : trimmed.substring(0, 24) + '...';
+      return trimmed;
     }
     const targetItem = (r.item && r.item !== '기타') ? r.item : (r.workMethod || r.workGroup || '현장 작업');
     return `${targetItem} 안전조치 기준 미준수`;
@@ -1446,7 +1450,7 @@
     slide.addText(data.countermeasureContent || '', {
       x: 8.2448, y: 5.9064, w: 3.3858, h: 1.3959,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      fontFace: FONT_MALGUN, fontSize: counterSz, bold: true, color: '000000',
+      fontFace: FONT_MALGUN, fontSize: counterSz, bold: false, color: '000000',
       margin: counterMargin, valign: 'top', lineSpacingMultiple: counterLineSpacing
     });
 
@@ -1558,6 +1562,15 @@
       try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) {}
     }
 
+    const hasPhoto1 = Boolean(photo1Base64);
+    const hasPhoto2 = Boolean(photo2Base64);
+    // 우측 사진이 실제 위험성평가표(문서/도면/표)인지 판별 (현장 부적합 사진이면 절대 [위험성평가표]에 넣지 않음)
+    const isPhoto2RiskDoc = Boolean(
+      record.rightPhotoIsReference === true ||
+      record.photo2IsRiskDoc === true ||
+      /위험성\s*평가표|평가표|문서|서식|도면|작업절차서|매뉴얼/i.test(record.photo2Banner || record.photo2Type || '')
+    );
+
     // 1) 좌측 적색 음영 배너 (SHAPE #3 [TextBox 11]: x = 0.8685, y = 2.8276, w = 5.4580, h = 0.3702, fill #C00000 @ alpha 60% = #D96666)
     const leftBannerW = 5.4580;
     const leftBannerSz = calcSingleLineFontSize(data.photoBanner, leftBannerW, 16, 9.5);
@@ -1584,8 +1597,24 @@
       });
     }
 
-    // 좌측 현장 사진 (x = 0.8685, y = 3.2500, w = 5.4580, h = 3.9500)
-    if (photo1Base64) {
+    // 좌측 부적합 사례 사진 배치:
+    // - 사진이 2장이고 둘 다 부적합 현장 사진인 경우: 좌측 부적합 사례 영역 내에 2장을 나란히 분할 배치
+    // - 우측 사진이 실제 위험성평가표 문서이거나 사진이 1장인 경우: 좌측 부적합 사례 영역 전체(5.4580)에 1번 사진 배치
+    if (hasPhoto2 && !isPhoto2RiskDoc) {
+      const halfW = 2.6800;
+      if (photo1Base64) {
+        slide.addImage({
+          data: photo1Base64,
+          x: 0.8685, y: 3.2500, w: halfW, h: 3.9500,
+          sizing: { type: 'contain', w: halfW, h: 3.9500 }
+        });
+      }
+      slide.addImage({
+        data: photo2Base64,
+        x: 3.6465, y: 3.2500, w: halfW, h: 3.9500,
+        sizing: { type: 'contain', w: halfW, h: 3.9500 }
+      });
+    } else if (photo1Base64) {
       slide.addImage({
         data: photo1Base64,
         x: 0.8685, y: 3.2500, w: leftBannerW, h: 3.9500,
@@ -1625,8 +1654,8 @@
       align: 'center', valign: 'middle', wrap: false, inset: 0.04
     });
 
-    // 우측 위험성평가표 이미지 (첨부된 2번째 이미지가 있는 경우 배치, 없으면 양식 원본처럼 공란 확보)
-    if (photo2Base64) {
+    // 우측 영역: 실제 위험성평가표 문서일 때만 배치 (현장 부적합 사진은 절대 위험성평가표에 배치하지 않고 원본 서식처럼 공란 유지)
+    if (hasPhoto2 && isPhoto2RiskDoc && photo2Base64) {
       slide.addImage({
         data: photo2Base64,
         x: 7.8740, y: 3.2500, w: rightBannerW, h: 3.9500,
@@ -1635,16 +1664,30 @@
     }
   }
 
+  function isRiskAssessmentSheet(record, data) {
+    if (!record) return false;
+    if (record.sheetType === '위험성평가' || record.isRiskAssessment === true) return true;
+    const txt = `${record.sheetCategory || ''} ${record.category || ''} ${data.rawLaw || ''} ${record.content || ''}`;
+    // 일반 시설물/법규 장표(공종명, 발생원인, 개선대책 중 하나라도 정상 기입된 경우)는 표준 시설물/법규 서식 사용 (샘플2 등)
+    const hasStandardFields = Boolean(
+      (data.countermeasureContent && data.countermeasureContent.length > 5) ||
+      (data.interviewOpinion && data.interviewOpinion.length > 5) ||
+      (record.workGroup && record.workGroup !== '거푸집동바리공사' && record.location)
+    );
+    if (hasStandardFields) return false;
+    return /위험성\s*평가\s*확인|유해\s*위험요인\s*파악/i.test(txt);
+  }
+
   /**
-   * PptxGenJS 단일 슬라이드에 점검장표 레이아웃 추가 (중부적합 / 경부적합 자동 분기)
+   * PptxGenJS 단일 슬라이드에 점검장표 레이아웃 추가 (시설물/법규 표준서식 / 위험성평가 서식 정밀 분기)
    */
   async function addInspectionSheetSlide(pptx, record, options = {}) {
     const { rulesFromTaxonomy = [] } = options;
     const data = normalizeJangpyoData(record, rulesFromTaxonomy, options);
-    if (data.isMajor) {
-      return addMajorInspectionSheetSlide(pptx, record, data, options);
+    if (isRiskAssessmentSheet(record, data)) {
+      return addMinorInspectionSheetSlide(pptx, record, data, options);
     }
-    return addMinorInspectionSheetSlide(pptx, record, data, options);
+    return addMajorInspectionSheetSlide(pptx, record, data, options);
   }
 
   /**
@@ -1922,7 +1965,7 @@
 
         <!-- 개선대책 본문 셀 (SHAPE #11: x = 8.2448, y = 5.9064, w = 3.3858, h = 1.3959) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.35cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(counterSz)}; font-weight: 700; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(data.countermeasureContent || '')}</div>
+          <div style="font-size: ${pt(counterSz)}; font-weight: 400; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(data.countermeasureContent || '')}</div>
         </div>
 
         <!-- [PM 판정결과] 헤더 셀 (SHAPE #9: x = 11.6307, y = 5.9064, w = 1.5354, h = 0.3329) -->
@@ -1960,6 +2003,12 @@
     const leftBannerW = 5.4580;
     const leftBannerSz = calcSingleLineFontSize(data.photoBanner, leftBannerW, 16, 9.5);
     const rightBannerW = 4.4082;
+    const hasPhoto2 = Boolean(photo2Url);
+    const isPhoto2RiskDoc = Boolean(
+      record.rightPhotoIsReference === true ||
+      record.photo2IsRiskDoc === true ||
+      /위험성\s*평가표|평가표|문서|서식|도면|작업절차서|매뉴얼/i.test(record.photo2Banner || record.photo2Type || '')
+    );
 
     return `
       <div id="jangpyoSlidePreview" data-severity="경부적합" style="
@@ -2015,34 +2064,43 @@
           <span style="font-size: ${pt(leftBannerSz)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
         </div>
 
-        <!-- 6-2. 좌측 현장 사진 (x = 0.8685, y = 3.2500, w = 5.4580, h = 3.9500) -->
-        <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-          ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
-        </div>
+        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치) -->
+        ${(hasPhoto2 && !isPhoto2RiskDoc) ? `
+          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+          </div>
+          <div style="position: absolute; left: ${pctX(3.6465)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+          </div>
+        ` : `
+          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          </div>
+        `}
 
         <!-- 6-3. 우측 피치/오렌지 음영 배너 (SHAPE #2: x = 7.8740, y = 2.8276, w = 4.4082, h = 0.3702, #F8CBAD @ 60% = #fbe0ce) -->
         <div style="position: absolute; left: ${pctX(7.8740)}; top: ${pctY(2.8276)}; width: ${pctW(rightBannerW)}; height: ${pctH(0.3702)}; background: rgba(248, 203, 173, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap;">
           <span style="font-size: ${pt(16)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">[위험성평가표]</span>
         </div>
 
-        <!-- 6-4. 우측 위험성평가표 영역 (x = 7.8740, y = 3.2500, w = 4.4082, h = 3.9500) -->
+        <!-- 6-4. 우측 위험성평가표 영역 (실제 위험성평가표 문서일 때만 표시, 현장 부적합 사진은 절대 표시하지 않음) -->
         <div style="position: absolute; left: ${pctX(7.8740)}; top: ${pctY(3.2500)}; width: ${pctW(rightBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: transparent;">
-          ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : ''}
+          ${(hasPhoto2 && isPhoto2RiskDoc && photo2Url) ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : ''}
         </div>
       </div>
     `;
   }
 
   /**
-   * 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (중부적합 / 경부적합 자동 분기)
+   * 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (시설물/법규 표준서식 / 위험성평가 서식 정밀 분기)
    */
   function renderInspectionSheetHTML(record, options = {}) {
     const { rulesFromTaxonomy = [] } = options;
     const data = normalizeJangpyoData(record, rulesFromTaxonomy, options);
-    if (data.isMajor) {
-      return renderMajorInspectionSheetHTML(record, data, options);
+    if (isRiskAssessmentSheet(record, data)) {
+      return renderMinorInspectionSheetHTML(record, data, options);
     }
-    return renderMinorInspectionSheetHTML(record, data, options);
+    return renderMajorInspectionSheetHTML(record, data, options);
   }
 
   // ── 통계 기반 시사점 자동 도출 ──
