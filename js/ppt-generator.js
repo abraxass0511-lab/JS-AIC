@@ -418,7 +418,7 @@
       .replace(/벽의음/g, '벽이음')
       .replace(/상부0버팀대8/g, '상부 버팀대 ')
       .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
-      .replace(/[^\w가-힣↓↑\s/()\-.]/g, ' ')
+      .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ↓↑\s/()\-.,]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     const hasDigitHangulGlue = /\d[가-힣]|[가-힣]\d[가-힣]/.test(s.replace(/\d+(?:도|단|층|동|차|호|개소|cm|mm)/gi, ''));
