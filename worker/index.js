@@ -475,7 +475,7 @@ export default {
                 const visionPrompt = `이 이미지는 건설현장 안전점검 장표의 텍스트 셀들을 위에서 아래로 모아놓은 이미지입니다.
 각 셀의 한국어, 한자(等, 上, 中), 영문 코드([IZ12B-106(K)]), 단위(cm, mm, 도), 불릿 기호(-, *, 1), 2))를 보이는 그대로 정확히 읽어서 텍스트로 출력하세요.
 절대 임의로 단어를 생략하거나 지어내지 마세요.`;
-                const vRes = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+                const vRes = await env.AI.run('@cf/qwen/qwen3.8-27b', {
                   messages: [
                     {
                       role: 'user',
@@ -509,7 +509,7 @@ export default {
               try {
                 const cleanPhotoB64 = String(body.rightPhotoBase64).replace(/^data:image\/\w+;base64,/, '');
                 const refPrompt = `이 이미지가 (A) 실제 건설현장을 카메라로 촬영한 현장 사진(여러 장을 묶은 콜라주 사진 포함)인지, 아니면 (B) 매뉴얼/작업절차서/시공상세도/도면/표 캡처 이미지(예: '6.2 거푸집 보강', '[거푸집 보강 예]', 'O/X 예시')인지 판별하세요. 매뉴얼/도면/표 캡처이면 "REFERENCE", 실제 현장 촬영 사진이면 "REAL_PHOTO"라고만 답하세요.`;
-                const pRes = await env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+                const pRes = await env.AI.run('@cf/qwen/qwen3.8-27b', {
                   messages: [
                     {
                       role: 'user',
@@ -631,7 +631,7 @@ JSON 형식:
               max_tokens: isOcrClean ? 1200 : 650,
               temperature: 0.05
             }).catch(async () => {
-              return await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+              return await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt }
@@ -671,8 +671,8 @@ JSON 형식:
               }
               return new Response(JSON.stringify({
                 ok: true,
-                source: visionText ? 'cloudflare_vision_qwen_hybrid' : 'cloudflare_workers_ai',
-                model: visionText ? 'Llama-3.2-11B-Vision + Qwen-32B (Cloudflare Cloud)' : 'Qwen-32B/7B (Cloudflare Cloud)',
+                source: visionText ? 'cloudflare_qwen_vision_hybrid' : 'cloudflare_qwen_cloud',
+                model: visionText ? 'Qwen-3.8-27B-Vision + Qwen-32B (Cloudflare 24h Cloud)' : 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)',
                 visionText: visionText || undefined,
                 rightPhotoIsReference,
                 ...quickFallback,
