@@ -5099,12 +5099,14 @@ async function handleSaveImportedRecords() {
     }
 
     const batchItems = await Promise.all(importedRecords.map(async (rec) => {
-      const m9 = (classifier && rec.content) ? classifier.classify(rec.content).result : null;
-      const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
-      const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
-      const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (isGangForm ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
-      const matrixTarget = isAlForm ? '특수거푸집' : (rec.agentMid || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (m9 && m9.점검대상9x9) || '거푸집/동바리'));
-      const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : '시스템비계')));
+      const fullCtxText = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''} ${rec.auditProposal || ''} ${rec.actionPlan || ''}`;
+      const m9 = (classifier && fullCtxText.trim()) ? classifier.classify(fullCtxText).result : null;
+      const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
+      const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
+      const isFormwork = !isGangForm && /거푸집|동바리|벽체|전도방지|유로폼|합판|서포트/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
+      const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (isGangForm || isFormwork ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
+      const matrixTarget = isAlForm ? '특수거푸집' : (rec.agentMid || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (isFormwork ? '거푸집/동바리' : (m9 && m9.점검대상9x9) || '거푸집/동바리')));
+      const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : (matrixTarget === '거푸집/동바리' ? '유로폼' : '시스템비계'))));
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
       const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '시공담당';

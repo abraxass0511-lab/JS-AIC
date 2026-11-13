@@ -594,7 +594,11 @@
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
       .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:협력사|근로자)\s*교육\s*\)|\(관리감독자\s*경고\)/g, '')
-      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,}|pee\s+1\s+ea[\s\S]*$|—\.\.\.—[\s\S]*$|\d{8,}[\s\S]*$)/gi, '')
+      .replace(/\[\s*(?:1\s*디\s*HO|HARK\s*EH)[^\]]*\]/gi, '')
+      .replace(/\b(?:DI\s*EL|Naas\s*NS|Nw\s*NE|Chol\s*iodo\s*ER|mem\s*)\b\s*\|*/gi, '')
+      .replace(/】\s*-/g, '\n- ')
+      .replace(/개\s*ST,\s*Nw\s*NE\s*SNS내\s*등\s*\|?\s*스템\s*구축/gi, 'SNS내 등록 시스템 구축')
       .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
       .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
       .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
@@ -652,16 +656,23 @@
     let mid = r.agentMid || '';
     let minor = r.agentMinor || r.agent || '';
 
-    // Qwen AI가 직접 선택한 표준 기인물 계층이 있으면 최우선 적용
+    // Qwen AI가 직접 선택한 표준 기인물 계층이 있으면 최우선 적용 (단, 거푸집공사가 비계/전기시설로 오분류된 경우는 즉시 보정)
     if (major && mid && minor) {
-      if (/갱폼|gang\s*form|선해체/i.test(`${minor} ${mid} ${r.content || ''}`)) {
+      const fullCtx = `${r.workGroup || ''} ${minor} ${mid} ${r.content || ''}`;
+      if (/갱폼|gang\s*form|선해체/i.test(fullCtx)) {
         major = '가시설';
         mid = '특수거푸집';
         minor = '갱폼';
-      } else if (/AL\s*Form|알폼|알루미늄/i.test(`${minor} ${mid} ${r.content || ''}`)) {
+      } else if (/AL\s*Form|알폼|알루미늄/i.test(fullCtx)) {
         major = '가시설';
         mid = '특수거푸집';
         minor = '알폼';
+      } else if (/거푸집|동바리|전도방지|벽체|유로폼/i.test(fullCtx) && !/전기|전선|누전|분전함|비계/i.test(r.content || '')) {
+        if (/전기|비계/.test(major) || /전기|누전|비계/.test(mid)) {
+          major = '가시설';
+          mid = '거푸집/동바리';
+          minor = /서포트/.test(fullCtx) ? '파이프서포트' : (/동바리/.test(fullCtx) ? '시스템동바리' : '유로폼');
+        }
       }
       return { major, mid, minor };
     }
@@ -709,7 +720,7 @@
     }
 
     // 미지정 레거시 레코드인 경우 키워드로 자동 추론
-    const text = `${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.workName || ''}`;
+    const text = `${r.workGroup || ''} ${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.workName || ''}`;
     if (/갱폼|gang\s*form|gangform|특수거푸집|선해체|알폼|al\s*form|alform|알루미늄/i.test(text)) {
       major = '가시설';
       mid = '특수거푸집';
@@ -752,7 +763,7 @@
       major = '가시설';
       mid = '거푸집/동바리';
       minor = minor || (text.includes('시스템') ? '시스템동바리' : '파이프서포트');
-    } else if (text.includes('거푸집') || text.includes('알폼') || text.includes('유로폼')) {
+    } else if (text.includes('거푸집') || text.includes('알폼') || text.includes('유로폼') || text.includes('전도방지') || text.includes('벽체')) {
       major = '가시설';
       mid = '거푸집/동바리';
       minor = minor || (text.includes('알폼') ? '알폼' : '유로폼');

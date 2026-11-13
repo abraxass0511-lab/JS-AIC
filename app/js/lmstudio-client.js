@@ -949,11 +949,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const pin = storage.getItem('sp_pin') || '111111';
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
 
-    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen AI 연동 (빠른 응답 최우선, 타임아웃 3.5초) ──
+    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen AI 연동 (응답 완료 보장 타임아웃 45초) ──
     if (!forceLocal && workerUrl) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 15000);
+        const timeout = setTimeout(() => ctrl.abort(), 45000);
+        const hasSufficientOcr = rawOcrText && String(rawOcrText).trim().length >= 40;
         const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -963,7 +964,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           body: JSON.stringify({
             mode: 'ocr_clean',
             rawOcrText: rawOcrText || '',
-            stripImageBase64: fallbackRecord._stripImageBase64 || undefined,
+            stripImageBase64: hasSufficientOcr ? undefined : (fallbackRecord._stripImageBase64 || undefined),
             rightPhotoBase64: fallbackRecord._rightPhotoBase64 || undefined,
             content: fallbackRecord.content || rawOcrText,
             location: fallbackRecord.location || '',
