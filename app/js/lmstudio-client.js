@@ -943,18 +943,26 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   /**
    * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원 (Cloudflare 24시간 클라우드 Qwen AI 최우선 연동)
    */
+  let _cfQuotaCooldownUntil = 0;
+
   async function cleanOcrRecord(rawOcrText, fallbackRecord) {
     if (!fallbackRecord) fallbackRecord = {};
     const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (typeof globalThis !== 'undefined' ? globalThis.SAFEPATROL_CONFIG?.workerUrl : null) || 'https://safepatrol-relay.abraxass0511.workers.dev';
     const pin = storage.getItem('sp_pin') || '111111';
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
 
-    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen AI 연동 (응답 완료 보장 타임아웃 45초) ──
-    if (!forceLocal && workerUrl) {
+    if (!forceLocal && workerUrl && Date.now() < _cfQuotaCooldownUntil) {
+      fallbackRecord._aiQuotaExceeded = true;
+    }
+
+    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen3-30B 텍스트 하이브리드 연동 (Tesseract 원문 확보 시 Vision 생략) ──
+    if (!forceLocal && workerUrl && Date.now() >= _cfQuotaCooldownUntil) {
       try {
         const ctrl = new AbortController();
         const timeout = setTimeout(() => ctrl.abort(), 60000);
-        const hasSufficientOcr = !!(fallbackRecord._hasDigitalText && rawOcrText && String(rawOcrText).trim().length >= 40);
+        const rawLen = rawOcrText ? String(rawOcrText).trim().length : 0;
+        const contentLen = fallbackRecord.content ? String(fallbackRecord.content).trim().length : 0;
+        const hasSufficientOcr = (rawLen >= 40 || contentLen >= 10);
         const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -983,7 +991,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         if (cfRes.ok) {
           const cfData = await cfRes.json();
           if (cfData) {
-            if (cfData.quotaExceeded) fallbackRecord._aiQuotaExceeded = true;
+            if (cfData.quotaExceeded) {
+              fallbackRecord._aiQuotaExceeded = true;
+              _cfQuotaCooldownUntil = Date.now() + 3 * 60 * 1000;
+            }
             if (Array.isArray(cfData.aiErrors) && cfData.aiErrors.length > 0) fallbackRecord._aiErrors = cfData.aiErrors;
             const cfContent = cfData.cleanedFields && typeof cfData.cleanedFields.content === 'string'
               ? cfData.cleanedFields.content.trim()

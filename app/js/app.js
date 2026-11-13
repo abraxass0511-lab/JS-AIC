@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v31';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v32';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
