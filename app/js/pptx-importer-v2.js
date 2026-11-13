@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261107_v10';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261114_v30';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -1586,36 +1586,54 @@ function preprocessBannerCanvas(sourceCanvas, rect) {
  * 동시에 Cloudflare Vision AI 전송용 압축 스트립 이미지(stripDataUrl) 생성
  * - 비정수 배율(1.35x) 보간 블러 및 이질적인 셀 폭 병합으로 인한 DPI/줄높이 왜곡을 원천 차단
  */
-async function ocrCellsSinglePass(canvas, cellSpecs) {
+async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
   const result = {};
   const validSpecs = [];
+  const LABEL_MAP = {
+    type: '[유형/등급]',
+    law: '[관련기준]',
+    check: '[점검체크]',
+    meta: '[협력사/공종명/작업장소/점검자/점검차수]',
+    content: '[부적합내용]',
+    interview: '[발생원인/관리자의견]',
+    propType: '[점검단제안_판정]',
+    propText: '[점검단제안_내용]',
+    cm: '[개선대책]',
+    pm: '[PM판정결과]',
+    banner: '[사진1배너]',
+    banner2: '[사진2배너]'
+  };
+  const HEADER_H = 22;
   const GAP = 28;
   const PAD_X = 12;
-  const PAD_Y = 12;
-  let maxW = 400;
+  const PAD_Y = 10;
+  let maxW = 520;
   let totalH = PAD_Y;
 
   for (const spec of cellSpecs) {
     result[spec.key] = '';
     const b = spec.box;
     if (!b || b.w < 5 || b.h < 5) continue;
-    // sheet-layout.js에서 이미 테두리 안쪽으로 정밀 크롭되었으므로 추가 inset 없이 상단 획 보존
     const sx = b.x;
     const sy = b.y;
     const sw = Math.max(4, b.w);
     const sh = Math.max(4, b.h);
-    // 원본 1.0x 픽셀 보존 (한글 획 뭉개짐 방지)
-    const dw = sw;
-    const dh = sh;
+    // Vision AI 가독성 최적화: 좁은 셀(250~950px)은 1.25~1.35배 선명 확대, 초대형 스캔은 최대 1250px로 압축하여 고속 전송
+    const scale = sw < 500 ? 1.35 : (sw < 950 ? 1.25 : (sw > 1250 ? (1250 / sw) : 1.0));
+    const dw = Math.round(sw * scale);
+    const dh = Math.round(sh * scale);
     if (dw + PAD_X * 2 > maxW) maxW = dw + PAD_X * 2;
+    const imgY0 = totalH + HEADER_H;
     validSpecs.push({
       key: spec.key,
+      label: LABEL_MAP[spec.key] || `[${spec.key}]`,
       sx, sy, sw, sh,
       dw, dh,
-      y0: totalH,
-      y1: totalH + dh
+      labelY: totalH,
+      y0: imgY0,
+      y1: imgY0 + dh
     });
-    totalH += dh + GAP;
+    totalH = imgY0 + dh + 10;
   }
 
   if (validSpecs.length === 0) return { texts: result, stripDataUrl: '' };
@@ -1626,14 +1644,26 @@ async function ocrCellsSinglePass(canvas, cellSpecs) {
   const sctx = stripCanvas.getContext('2d');
   sctx.fillStyle = '#FFFFFF';
   sctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+  sctx.imageSmoothingEnabled = true;
+  sctx.imageSmoothingQuality = 'high';
+  sctx.font = 'bold 14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+  sctx.textBaseline = 'middle';
 
   for (const item of validSpecs) {
+    sctx.fillStyle = '#EBF2FA';
+    sctx.fillRect(PAD_X - 4, item.labelY, maxW - PAD_X * 2 + 8, HEADER_H - 2);
+    sctx.fillStyle = '#0A2458';
+    sctx.fillText(item.label, PAD_X + 4, item.labelY + (HEADER_H - 2) / 2);
     sctx.drawImage(canvas, item.sx, item.sy, item.sw, item.sh, PAD_X, item.y0, item.dw, item.dh);
   }
 
-  const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.88);
+  const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.90);
 
-  if (window.Tesseract) {
+  // Cloudflare 24시간 클라우드 AI 모드에서는 느리고 오타가 많은 Tesseract WASM 생략 (Vision AI가 직접 판독)
+  const isLocalProvider = typeof localStorage !== 'undefined' && localStorage.getItem('sp_ai_provider') === 'local';
+  const shouldRunTesseract = options.forceTesseract || (isLocalProvider && !options.hasDigitalText);
+
+  if (shouldRunTesseract && window.Tesseract) {
     // 초고속 병렬 풀을 사용하여 각 셀을 원본 1.0x 해상도로 정밀 인식 (고속 JPEG 인코딩 적용)
     await Promise.all(validSpecs.map(async (s) => {
       try {
@@ -1684,17 +1714,22 @@ export async function parseSheetCanvas(canvas, options = {}) {
 
     const mgmtCauses = detectCheckboxesFromLayout(imgData, layout.checkCell);
 
-    const { texts: cellTexts, stripDataUrl } = await ocrCellsSinglePass(canvas, [
+    const hasDigitalText = !!(digitalText && digitalText.trim().length >= 30);
+    const cellSpecsList = [
       { key: 'type', box: layout.typeCell },
       { key: 'law', box: layout.lawCell },
+      { key: 'check', box: layout.checkCell },
       { key: 'meta', box: layout.metaRow },
       { key: 'content', box: layout.contentRow },
       { key: 'interview', box: layout.interview },
+      { key: 'propType', box: layout.proposalType },
       { key: 'propText', box: layout.proposalText },
       { key: 'cm', box: layout.countermeasure },
       { key: 'pm', box: layout.pmCell },
-      { key: 'banner', box: banners.length > 0 ? banners[0] : null }
-    ]);
+      { key: 'banner', box: banners.length > 0 ? banners[0] : null },
+      { key: 'banner2', box: banners.length > 1 ? banners[1] : null }
+    ];
+    const { texts: cellTexts, stripDataUrl } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText });
 
     const tType = cellTexts.type || '';
     const tLaw = cellTexts.law || '';
@@ -1833,24 +1868,40 @@ export async function parseSheetCanvas(canvas, options = {}) {
       photos,
       photo1,
       photo2,
+      _hasDigitalText: hasDigitalText,
       _stripImageBase64: stripDataUrl || undefined,
       _fullDocImage: fullDocDataUrl,
       _sourceFile: sourceName
     };
 
-    // Cloudflare Vision AI + Qwen 32B 하이브리드 연동 (전체 장표 텍스트 컨텍스트 + 스트립 이미지 전달)
+    // Cloudflare Vision AI + Qwen3-30B 하이브리드 연동 (클라우드 모드 시 Tesseract 없이 이미지 직접 판독)
     if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
       try {
-        const fullSheetContext = [
-          `[메타 정보]: ${tMeta}`,
-          `[관련 기준]: ${tLaw}`,
-          `[부적합 내용]: ${content}`,
-          `[발생원인 관리자 의견]: ${tInterview}`,
-          `[점검단 제안]: ${tPropType} / ${tPropText}`,
-          `[개선대책]: ${tCm}`,
-          `[PM 판정결과]: ${tPm}`
-        ].join('\n\n');
+        const ctxParts = [];
+        if (hasDigitalText) ctxParts.push(`[디지털 PDF 원문]: ${digitalText.trim()}`);
+        if (tMeta) ctxParts.push(`[메타 정보]: ${tMeta}`);
+        if (tLaw) ctxParts.push(`[관련 기준]: ${tLaw}`);
+        if (content) ctxParts.push(`[부적합 내용]: ${content}`);
+        if (tInterview) ctxParts.push(`[발생원인 관리자 의견]: ${tInterview}`);
+        if (tPropType || tPropText) ctxParts.push(`[점검단 제안]: ${tPropType} / ${tPropText}`);
+        if (tCm) ctxParts.push(`[개선대책]: ${tCm}`);
+        if (tPm) ctxParts.push(`[PM 판정결과]: ${tPm}`);
+        const fullSheetContext = ctxParts.join('\n\n');
         record = await window.SafeLocalAI.cleanOcrRecord(fullSheetContext, record);
+      } catch (e) {}
+    }
+
+    // 비상 오프라인 폴백: 클라우드 AI 응답이 실패해 content가 비어있고 Tesseract가 있을 때만 로컬 OCR 1회 시도
+    if (!record._aiCleaned && !record.content && window.Tesseract) {
+      try {
+        const { texts: fbTexts } = await ocrCellsSinglePass(canvas, cellSpecsList, { forceTesseract: true });
+        if (fbTexts.content) record.content = cleanContent(fbTexts.content);
+        if (fbTexts.interview && !record.interviewOpinion) record.interviewOpinion = cleanOpinionText(fbTexts.interview);
+        if (fbTexts.propText && !record.auditProposal) record.auditProposal = cleanProposalText(fbTexts.propText);
+        if (fbTexts.cm && !record.actionPlan) {
+          record.actionPlan = cleanActionPlan(fbTexts.cm);
+          record.countermeasure = record.actionPlan;
+        }
       } catch (e) {}
     }
     return record;
@@ -1955,25 +2006,15 @@ export async function parseSheetCanvas(canvas, options = {}) {
       const stripCanvas = buildCleanTextStripCanvas(canvas, frame);
       const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.90);
       record._stripImageBase64 = stripDataUrl;
-      const ret = await recognizeWithWorkerPool(stripDataUrl);
-      const ocrText = (ret && ret.data && ret.data.text) || '';
+      record._hasDigitalText = false;
 
-      // OCR 텍스트 기반 참고자료/샘플 판별
-      if (isSampleOrReferencePage(ocrText, sig)) {
-        console.log(`[SafePatrol] OCR 분석 결과: Page ${pageNumber} 생략 (시공 가이드 / 샘플 안내문)`);
-        return {
-          _skipped: true,
-          reason: '시공 가이드 및 예시 참고자료 (지적사항 장표 아님)',
-          slideNumber: pageNumber,
-          pageNumber
-        };
-      }
+      const isLocalProvider = typeof localStorage !== 'undefined' && localStorage.getItem('sp_ai_provider') === 'local';
+      let ocrText = '';
 
-      if (ocrText.trim().length > 10) {
-        const parsedOcr = parseStructuredTextFromSheet(ocrText, mgmtCauses);
-        record = { ...record, ...parsedOcr, mgmtCauses };
-        if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
-          record = await window.SafeLocalAI.cleanOcrRecord(ocrText, record);
+      // 1차: Cloudflare 24시간 클라우드 AI 모드에서는 Tesseract 없이 Vision AI로 직접 판독
+      if (!isLocalProvider && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+        try {
+          record = await window.SafeLocalAI.cleanOcrRecord('', record);
           if (record && (record.sheetType === '참고사항' || record._skipped)) {
             return {
               _skipped: true,
@@ -1981,6 +2022,38 @@ export async function parseSheetCanvas(canvas, options = {}) {
               slideNumber: pageNumber,
               pageNumber
             };
+          }
+        } catch (e) {}
+      }
+
+      // 2차: 로컬 AI 모드이거나 클라우드 AI 응답 실패 시에만 Tesseract WASM 폴백 실행
+      if (!record._aiCleaned && window.Tesseract) {
+        const ret = await recognizeWithWorkerPool(stripDataUrl);
+        ocrText = (ret && ret.data && ret.data.text) || '';
+
+        if (isSampleOrReferencePage(ocrText, sig)) {
+          console.log(`[SafePatrol] OCR 분석 결과: Page ${pageNumber} 생략 (시공 가이드 / 샘플 안내문)`);
+          return {
+            _skipped: true,
+            reason: '시공 가이드 및 예시 참고자료 (지적사항 장표 아님)',
+            slideNumber: pageNumber,
+            pageNumber
+          };
+        }
+
+        if (ocrText.trim().length > 10) {
+          const parsedOcr = parseStructuredTextFromSheet(ocrText, mgmtCauses);
+          record = { ...record, ...parsedOcr, mgmtCauses };
+          if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+            record = await window.SafeLocalAI.cleanOcrRecord(ocrText, record);
+            if (record && (record.sheetType === '참고사항' || record._skipped)) {
+              return {
+                _skipped: true,
+                reason: record.skipReason || '시공 가이드 참고자료',
+                slideNumber: pageNumber,
+                pageNumber
+              };
+            }
           }
         }
       }
@@ -2095,7 +2168,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
   if (hasFullBinaryJpegs) {
     totalPages = binaryResult.jpegPages.length;
-    const BATCH_SIZE = 1;
+    const BATCH_SIZE = 6;
     let processedCount = 0;
 
     for (let i = 0; i < binaryResult.jpegPages.length; i += BATCH_SIZE) {

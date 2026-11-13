@@ -431,7 +431,7 @@ export default {
       }
     }
 
-    // ── 🤖 AI 자동 분석 엔드포인트 (Cloudflare Vision AI + Qwen 32B 하이브리드 24시간 연동) ──
+    // ── 🤖 AI 자동 분석 엔드포인트 (Cloudflare Vision AI + Qwen3-30B/Qwen2.5-32B 하이브리드 24시간 연동) ──
     if (url.pathname === '/api/ai-analyze' || url.pathname === '/api/vision-ocr') {
       try {
         const body = await request.json().catch(() => ({}));
@@ -452,63 +452,94 @@ export default {
             let visionText = '';
             let rightPhotoIsReference = null;
 
-            // 1) Vision AI 이미지 직접 판독 (텍스트 스트립 이미지 또는 우측 참고도면 판별)
-            if (body.stripImageBase64 && (!body.rawOcrText || String(body.rawOcrText).trim().length < 15)) {
+            // 1) Vision AI 이미지 직접 판독 (@cf/qwen/qwen3.8-27b 고속 low-reasoning OCR -> Llama-4-Scout 보조)
+            const extractJsonFromAiRes = (res) => {
+              if (!res) return null;
+              if (res.response && typeof res.response === 'object') return res.response;
+              const raw = (typeof res.response === 'string' && res.response) || (res.choices && res.choices[0]?.message?.content) || '';
+              if (raw && typeof raw === 'object') return raw;
+              const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json/g, '').replace(/```/g, '').trim();
+              const sIdx = cleaned.indexOf('{');
+              const eIdx = cleaned.lastIndexOf('}');
+              if (sIdx === -1 || eIdx <= sIdx) return null;
               try {
-                const cleanB64 = String(body.stripImageBase64).replace(/^data:image\/\w+;base64,/, '');
-                const visionPrompt = `이 이미지는 건설현장 안전점검 장표의 텍스트 셀들을 위에서 아래로 모아놓은 이미지입니다.
-각 셀의 한국어, 한자(等, 上, 中), 영문 코드([IZ12B-106(K)]), 단위(cm, mm, 도), 불릿 기호(-, *, 1), 2))를 보이는 그대로 정확히 읽어서 텍스트로 출력하세요.
-절대 임의로 단어를 생략하거나 지어내지 마세요.`;
-                const vRes = await env.AI.run('@cf/qwen/qwen3.8-27b', {
-                  messages: [
-                    {
-                      role: 'user',
-                      content: [
-                        { type: 'text', text: visionPrompt },
-                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${cleanB64}` } }
-                      ]
-                    }
-                  ],
-                  max_tokens: 700,
-                  temperature: 0.05
-                }).catch(async () => {
-                  const binStr = atob(cleanB64);
-                  const bytes = new Uint8Array(binStr.length);
-                  for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
-                  return await env.AI.run('@cf/llava-1.5-7b-hf', {
-                    image: [...bytes],
-                    prompt: visionPrompt,
-                    max_tokens: 500
-                  });
-                });
-                if (vRes) {
-                  visionText = vRes.response || vRes.description || (vRes.choices && vRes.choices[0]?.message?.content) || '';
-                }
-              } catch (vErr) {
-                console.warn('Vision strip OCR fallback to Qwen text clean:', vErr);
+                return JSON.parse(cleaned.slice(sIdx, eIdx + 1));
+              } catch (e) {
+                return null;
               }
+            };
+
+            const extractTextFromAiRes = (res) => {
+              if (!res) return '';
+              const raw = (typeof res.response === 'string' && res.response) || res.description || (res.choices && res.choices[0]?.message?.content) || '';
+              return String(raw).replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+            };
+
+            const runQwenVisionOcr = async (cleanB64, visionPrompt) => {
+              const messages = [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: visionPrompt },
+                    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${cleanB64}` } }
+                  ]
+                }
+              ];
+              try {
+                const qRes = await env.AI.run('@cf/qwen/qwen3.8-27b', {
+                  messages,
+                  max_tokens: 1200,
+                  temperature: 0.05,
+                  reasoning_effort: 'low'
+                });
+                const txt = extractTextFromAiRes(qRes);
+                if (txt && txt.length >= 20) return txt;
+              } catch (e1) {}
+              // Qwen Vision 실패/빈 응답 시 고속 Llama-4-Scout 한국어 Vision 보조 호출 (llava 사용 배제)
+              try {
+                const lRes = await env.AI.run('@cf/meta/llama-4-scout-17b-16e-instruct', {
+                  messages,
+                  max_tokens: 1000,
+                  temperature: 0.05
+                });
+                return extractTextFromAiRes(lRes);
+              } catch (e2) {
+                return '';
+              }
+            };
+
+            let parsed = null;
+            let usedModelLabel = 'Qwen3-30B-A3B (Cloudflare 24h Cloud)';
+
+            if (body.stripImageBase64 && (body.forceVision || !body.rawOcrText || String(body.rawOcrText).trim().length < 25)) {
+              const cleanB64 = String(body.stripImageBase64).replace(/^data:image\/\w+;base64,/, '');
+              const visionPrompt = `이 이미지는 건설현장 안전점검 장표의 텍스트 셀들을 섹션 라벨([유형/등급], [관련기준], [점검체크], [협력사/공종명/작업장소/점검자/점검차수], [부적합내용], [발생원인/관리자의견], [점검단제안_판정], [점검단제안_내용], [개선대책], [PM판정결과], [사진1배너], [사진2배너])과 함께 위에서 아래로 모아놓은 이미지입니다.
+각 라벨 아래에 있는 모든 한국어, 한자(上/下/中), 영문 코드, 숫자, 단위(cm/mm/도), 체크박스(☑/✓/□), 불릿 기호(-, *)를 오탈자 없이 보이는 그대로 빠짐없이 읽어서 출력하세요. /no_think`;
+              visionText = await runQwenVisionOcr(cleanB64, visionPrompt);
             }
 
             // rightPhotoBase64 도면/사진 제외 판별 생략 (잭베이스 불량·비계설치도면 등 모든 사진 보존 및 5~15초 지연 제거)
 
             const isOcrClean = (body.mode === 'ocr_clean' || url.pathname === '/api/vision-ocr') && (body.rawOcrText || visionText);
-                        const systemPrompt = isOcrClean
+            const systemPrompt = isOcrClean
               ? `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이자 Vision+OCR 문맥 교정 및 표준 분류 전문가이다.
-주어진 점검장표의 OCR 추출 텍스트와 사진 문맥을 정밀 분석하여, 오탈자를 교정하고 건설안전 표준 분류 목록(Taxonomy)에서 정확한 항목을 직접 선택하여 JSON으로만 출력하라.
+주어진 장표 판독 원문(Vision AI 판독 텍스트 및 디지털 PDF 텍스트)을 정밀 분석하여, 오탈자·줄바꿈을 교정하고 건설안전 표준 분류 목록(Taxonomy)에서 정확한 항목을 직접 선택하여 JSON으로만 출력하라.
 
 ${TAXONOMY_STANDARD_PROMPT}
 
-[OCR 문맥 교정 절대 규칙]
-- 협력사가 빈칸이면 절대 임의로 넣지 말고 ""로 둘 것 (공종명 '비계공사', 'HEY' 등을 협력사에 넣지 말 것)
-- 작업장소에 '[ERE 12', 'ee', '섬검자', '집십사수' 같은 테두리 노이즈가 있으면 완벽히 제거할 것 (예: '106동 지하2층', '106동 서측', '101동 외부', '107동 3층 1코어')
-- 인접 열이나 테두리 침범 깨진 텍스트(예: 'a 0 2{2.쓰.......시푸시', 'ee —')는 완전히 삭제할 것
-- 여러 항목이 '-'로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우는 한 문장으로 자연스럽게 이어붙일 것
+[문맥 교정 절대 규칙]
+- 협력사가 빈칸이면 절대 임의로 넣지 말고 ""로 둘 것 (공종명 '비계공사', '거푸집동바리공사' 등을 협력사에 넣지 말 것)
+- 작업장소에 테두리 노이즈('서검자', '집십사수', '|')가 있으면 완전히 제거하고 정확한 동·층·구간명만 남길 것 (예: '106동 지하2층', '102동', '101동 상가동')
+- [부적합내용]에서는 머리말 '부적합 내용 :'을 제거하되 1), 2) 등 다중 항목과 핵심 수치(60도, 30cm, 3개소 등)를 정확히 보존할 것
+- 여러 항목이 '- '로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우는 공백 하나로 자연스럽게 이어붙일 것
+- [점검단제안_내용]과 [개선대책]에는 판정 라벨('시스템 개선', '교육/코칭', '페널티', '(현장모니터링 강화)', '(근로자 교육)', 'PM 판정결과')을 절대 섞지 말고 오직 조치/제안 본문만 넣을 것
 - 관련기준의 '*' 항목이 3개인 경우 각각 줄바꿈(\\n* )으로 구분할 것
 
 JSON 형식:
 {
   "severity": "중부적합" 또는 "경부적합",
-  "workGroup": "표준 공종",
+  "type": "재해형태 1개 (예: 낙하, 붕괴, 추락, 전도, 협착, 화재, 감전)",
+  "workGroup": "표준 공종 (장표 [공종명] 원문 우선: 예 거푸집동바리공사, 비계공사)",
   "workMethod": "표준 작업방법",
   "agentMajor": "표준 기인물 대분류",
   "agentMid": "표준 기인물 중분류",
@@ -521,19 +552,22 @@ JSON 형식:
   "rootCauseSystem": "표준 안전시스템",
   "stakeholder": "표준 관리/책임주체",
   "item": "기인물/작업 명칭",
-  "photoBanner": "사진 1 상단 배너용 15~20자 구체적 미준수 문구 (말줄임표 ... 절대 금지)",
-  "photo2Banner": "사진 2 상단 배너용 15~20자 구체적 미준수 문구 (단일 지적이면 '')",
-  "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
+  "photoBanner": "사진 1 상단 배너용 15~25자 구체적 미준수 문구 (원문 [사진1배너]가 있으면 정제하여 최우선 반영, 말줄임표 금지)",
+  "photo2Banner": "사진 2 상단 배너용 15~25자 구체적 미준수 문구 (원문 [사진2배너]가 있으면 정제하여 반영, 단일 사진이면 '')",
+  "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 체크된 1~2개],
   "holdPoint": true 또는 false,
-  "pmVerdict": "시스템 개선" 또는 "교육/코칭" 또는 "페널티",
+  "pmVerdict": "시스템 개선" 또는 "교육/코칭" 또는 "페널티" (복수면 쉼표 구분),
   "cleanedFields": {
-    "content": "교정된 부적합 내용 (말단 깨진 노이즈 완전 제거)",
-    "location": "교정된 작업장소 (동, 층, 코어, 외부 보존)",
-    "workGroup": "교정된 공종명",
     "subcontractor": "교정된 협력사명 (공란이면 '')",
+    "workGroup": "교정된 공종명",
+    "location": "교정된 작업장소 (동, 층, 코어, 외부 보존)",
+    "inspector": "교정된 점검자명 (가려졌거나 공란이면 '')",
+    "round": "교정된 점검차수 (예: '26년상 2차)",
+    "content": "교정된 부적합 내용",
+    "law": "교정된 관련기준 제목/법령",
     "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 유지)",
-    "auditProposal": "교정된 점검단 제안 ('- ' 불릿 구분)",
-    "actionPlan": "교정된 개선대책 ('- ' 불릿 구분, 단순 줄바꿈은 병합)"
+    "auditProposal": "교정된 점검단 제안 본문 ('- ' 불릿 구분)",
+    "actionPlan": "교정된 개선대책 본문 ('- ' 불릿 구분, 단순 줄바꿈 병합)"
   }
 }`
               : `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
@@ -544,6 +578,7 @@ ${TAXONOMY_STANDARD_PROMPT}
 JSON 형식:
 {
   "severity": "중부적합" 또는 "경부적합",
+  "type": "재해형태",
   "workGroup": "표준 공종",
   "workMethod": "표준 작업방법",
   "agentMajor": "표준 기인물 대분류",
@@ -564,85 +599,89 @@ JSON 형식:
   "pmVerdict": "현장 PM 조치 권고 문장"
 }`;
 
+            const seedFields = {};
+            if (body.content) seedFields.content = body.content;
+            if (body.location) seedFields.location = body.location;
+            if (body.workGroup) seedFields.workGroup = body.workGroup;
+            if (body.subcontractor) seedFields.subcontractor = body.subcontractor;
+            if (body.interviewOpinion) seedFields.interviewOpinion = body.interviewOpinion;
+            if (body.auditProposal) seedFields.auditProposal = body.auditProposal;
+            if (body.actionPlan) seedFields.actionPlan = body.actionPlan;
+
             const userPrompt = isOcrClean
-              ? `${visionText ? `[Vision AI 직접 판독 원문]:\n${visionText}\n\n` : ''}[장표 OCR 원문]:\n${body.rawOcrText || ''}\n\n[1차 추출 필드]:\n${JSON.stringify({
-                  content: body.content,
-                  location: body.location,
-                  workGroup: body.workGroup,
-                  subcontractor: body.subcontractor,
-                  interviewOpinion: body.interviewOpinion,
-                  auditProposal: body.auditProposal,
-                  actionPlan: body.actionPlan
-                })}`
+              ? `${visionText ? `[Vision AI 직접 판독 원문]:\n${visionText}\n\n` : ''}${body.rawOcrText ? `[디지털/보조 텍스트]:\n${body.rawOcrText}\n\n` : ''}${Object.keys(seedFields).length ? `[1차 추출 필드]:\n${JSON.stringify(seedFields)}` : ''}`
               : `[현장 지적사항]: "${content.trim()}"`;
 
-            // <think> 추론 지연 없이 빠른 속도로 JSON을 반환하는 Instruct 모델 호출 (토큰 상한 최적화로 고속화)
-            // Non-Thinking Instruct 모델(@cf/qwen/qwen2.5-coder-32b-instruct) 직접 최우선 호출 (불필요한 사전 실패 지연 제거)
-            const extractJsonFromAiRes = (res) => {
-              if (!res) return null;
-              const raw = res.response || (res.choices && res.choices[0]?.message?.content) || '';
-              const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json/g, '').replace(/```/g, '').trim();
-              const sIdx = cleaned.indexOf('{');
-              const eIdx = cleaned.lastIndexOf('}');
-              if (sIdx === -1 || eIdx <= sIdx) return null;
-              try {
-                return JSON.parse(cleaned.slice(sIdx, eIdx + 1));
-              } catch (e) {
-                return null;
-              }
-            };
+            const hasValidParsed = (p) => p && (p.workGroup || p.agentMajor) && (!isOcrClean || (p.cleanedFields && p.cleanedFields.content));
 
-            let usedModelLabel = 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)';
-            let parsed = null;
+            // 1순위: 고속 Qwen3-30B-A3B-FP8 (약 1~3.5초, /no_think)
             try {
-              const coderRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: userPrompt }
-                ],
-                max_tokens: isOcrClean ? 620 : 420,
-                temperature: 0.05
-              });
-              parsed = extractJsonFromAiRes(coderRes);
-            } catch (e) {}
-
-            if (!parsed) {
-              usedModelLabel = 'Qwen-3-30B-A3B-FP8 (Cloudflare 24h Cloud)';
-              const fallbackRes = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
+              const q3Res = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: `${userPrompt}\n/no_think` }
                 ],
-                max_tokens: isOcrClean ? 900 : 500,
+                max_tokens: isOcrClean ? 1300 : 500,
                 temperature: 0.05
-              }).catch(() => null);
-              parsed = extractJsonFromAiRes(fallbackRes);
+              });
+              const cand = extractJsonFromAiRes(q3Res);
+              if (hasValidParsed(cand)) {
+                parsed = cand;
+                usedModelLabel = visionText ? 'Qwen-3.8-27B-Vision + Qwen3-30B-A3B (Cloudflare 24h Cloud)' : 'Qwen3-30B-A3B (Cloudflare 24h Cloud)';
+              }
+            } catch (e) {}
+
+            // 2순위: Qwen-2.5-Coder-32B-Instruct 백업
+            if (!parsed) {
+              try {
+                const coderRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
+                  messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt }
+                  ],
+                  max_tokens: isOcrClean ? 1400 : 550,
+                  temperature: 0.05
+                });
+                parsed = extractJsonFromAiRes(coderRes);
+                if (parsed) {
+                  usedModelLabel = visionText ? 'Qwen-3.8-27B-Vision + Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)' : 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)';
+                }
+              } catch (e) {}
             }
 
             if (parsed) {
 
-              // Post-AI 표준 정합성 검증 (거푸집동바리공사가 전기시설/비계로 오분류되는 현상 원천 차단)
+              // Post-AI 표준 정합성 검증 (표준 분류표 대·중·소분류 정확도 보장)
               const combinedCtx = `${parsed.workGroup || ''} ${body.workGroup || ''} ${parsed.cleanedFields?.content || content || ''}`;
-              const isFormCtx = /거푸집|동바리|벽체|전도방지|유로폼|갱폼|알폼|al\s*form|gang\s*form|서포트/i.test(combinedCtx);
               const isElecCtx = /전기|전선|분전함|누전|차단기|접지|투광등|케이블/i.test(combinedCtx);
+              const isFormCtx = /거푸집|동바리|벽체|전도방지|유로폼|갱폼|알폼|al\s*form|gang\s*form|서포트/i.test(combinedCtx);
+              const isScafCtx = !isFormCtx && /비계|버팀대|벽이음|잭\s*베이스|잭베이스|가새|작업발판/i.test(combinedCtx);
               if (isFormCtx && !isElecCtx) {
-                if (!parsed.agentMajor || /전기|화기/.test(parsed.agentMajor)) parsed.agentMajor = '가시설';
+                parsed.agentMajor = '가시설';
                 const isSpecForm = /갱폼|gang\s*form|선해체|알폼|al\s*form|알루미늄/i.test(combinedCtx);
-                if (!parsed.agentMid || /전기|누전|비계/.test(parsed.agentMid)) {
-                  parsed.agentMid = isSpecForm ? '특수거푸집' : '거푸집/동바리';
-                }
+                parsed.agentMid = isSpecForm ? '특수거푸집' : '거푸집/동바리';
                 if (parsed.agentMid === '특수거푸집') {
                   parsed.agentMinor = /알폼|al\s*form|알루미늄/i.test(combinedCtx) ? '알폼' : '갱폼';
-                } else if (!parsed.agentMinor || /누전|차단기|시스템비계/.test(parsed.agentMinor)) {
-                  parsed.agentMinor = /유로폼/.test(combinedCtx) ? '유로폼' : (/서포트/.test(combinedCtx) ? '파이프서포트' : (/벽체|거푸집/.test(combinedCtx) ? '유로폼' : '시스템동바리'));
+                } else if (!['유로폼', '파이프서포트', '시스템동바리', '잭서포트'].includes(parsed.agentMinor)) {
+                  parsed.agentMinor = /서포트/.test(combinedCtx) ? '파이프서포트' : (/시스템\s*동바리/.test(combinedCtx) ? '시스템동바리' : '유로폼');
+                }
+              } else if (isScafCtx && !isElecCtx) {
+                parsed.agentMajor = '가시설';
+                parsed.agentMid = '비계';
+                if (!['시스템비계', '강관비계', '틀비계', '외부비계', '달비계'].includes(parsed.agentMinor)) {
+                  parsed.agentMinor = /시스템\s*비계/.test(combinedCtx) ? '시스템비계' : (/외부비계|버팀대|벽이음|잭\s*베이스|가새/.test(combinedCtx) ? '외부비계' : '강관비계');
                 }
               }
 
               if (parsed.cleanedFields && typeof parsed.cleanedFields === 'object') {
                 for (const k of Object.keys(parsed.cleanedFields)) {
                   if (typeof parsed.cleanedFields[k] === 'string') {
-                    parsed.cleanedFields[k] = healSafetyKoreanLexicon(parsed.cleanedFields[k]);
+                    parsed.cleanedFields[k] = healSafetyKoreanLexicon(parsed.cleanedFields[k])
+                      .replace(/가관\s*파이프/g, '각관 파이프');
                   }
+                }
+                if (parsed.cleanedFields.round && /^'?\d{2}년[상하上下]\s*\d+$/.test(parsed.cleanedFields.round.trim())) {
+                  parsed.cleanedFields.round = `${parsed.cleanedFields.round.trim()}차`;
                 }
                 if (parsed.cleanedFields.location) {
                   parsed.cleanedFields.location = cleanLocationWorker(parsed.cleanedFields.location, parsed.cleanedFields.content || content);
