@@ -600,7 +600,7 @@ JSON 형식:
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt }
                 ],
-                max_tokens: isOcrClean ? 420 : 280,
+                max_tokens: isOcrClean ? 620 : 420,
                 temperature: 0.05
               });
               parsed = extractJsonFromAiRes(coderRes);
