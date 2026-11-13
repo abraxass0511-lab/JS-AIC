@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261114_v31';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261114_v32';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -1659,16 +1659,19 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
 
   const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.84);
 
-  // Cloudflare 24시간 클라우드 AI 모드에서는 느리고 오타가 많은 Tesseract WASM 생략 (Vision AI가 직접 판독)
-  const isLocalProvider = typeof localStorage !== 'undefined' && localStorage.getItem('sp_ai_provider') === 'local';
-  const shouldRunTesseract = options.forceTesseract || (isLocalProvider && !options.hasDigitalText);
+  // 방안 A (무료 일일 처리량 10배 확대 하이브리드): 디지털 텍스트가 없는 스캔 장표는 4-워커 병렬 Tesseract로 원문을 추출한 뒤
+  // Cloudflare Qwen3-30B(텍스트 전용)로 오타 교정·표준 분류를 수행 (Tesseract가 실패한 셀만 Vision 백업)
+  const shouldRunTesseract = options.forceTesseract || !options.hasDigitalText;
 
   if (shouldRunTesseract && window.Tesseract) {
-    // 초고속 병렬 풀을 사용하여 각 셀을 원본 1.0x 해상도로 정밀 인식 (고속 JPEG 인코딩 적용)
-    await Promise.all(validSpecs.map(async (s) => {
+    // check 셀은 픽셀 밀도(detectCheckboxesFromLayout)가 직접 판독하므로 OCR 생략해 속도 최적화
+    const ocrTargets = validSpecs.filter(s => s.key !== 'check');
+    await Promise.all(ocrTargets.map(async (s) => {
       try {
-        const rect = { x: s.sx, y: s.sy, w: s.sw, h: s.sh };
-        const c = s.key === 'banner'
+        const isBanner = s.key === 'banner' || s.key === 'banner2';
+        const pad = (!isBanner && s.sw > 30 && s.sh > 24) ? 2 : 0;
+        const rect = { x: s.sx + pad, y: s.sy + pad, w: s.sw - pad * 2, h: s.sh - pad * 2 };
+        const c = isBanner
           ? preprocessBannerCanvas(canvas, rect)
           : cropCanvas(canvas, rect);
         const ret = await recognizeWithWorkerPool(c.toDataURL('image/jpeg', 0.88));
