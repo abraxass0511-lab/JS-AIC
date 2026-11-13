@@ -634,16 +634,58 @@
     if (!text) return baseSize;
     let units = 0;
     for (let i = 0; i < text.length; i++) {
-      units += text.charCodeAt(i) > 127 ? 1.55 : 0.85;
+      const ch = text[i];
+      if (ch === ' ') units += 0.34;
+      else if (/[:.,/()\[\]\-]/.test(ch)) units += 0.36;
+      else if (text.charCodeAt(i) > 127) units += 1.02;
+      else units += 0.60;
     }
-    const avail = widthInch - 0.16;
+    const avail = Math.max(0.2, widthInch - 0.14);
     let sz = baseSize;
     while (sz > minSize) {
-      const est = units * (sz * 0.0135);
+      const est = units * (sz / 72);
       if (est <= avail) break;
       sz -= 0.5;
     }
     return sz;
+  }
+
+  /**
+   * '-' / '•' 불릿 줄을 PowerPoint 네이티브 내어쓰기(hanging indent) 문단 런으로 변환
+   * - 첫 줄과 2, 3번째 줄의 시작 위치를 정확히 일치시켜 들여쓰기/돌출 깨짐 방지
+   */
+  function buildHangingBulletRuns(text, fontSize, color = '111111', fontFace = FONT_MALGUN, indentPt = 8.5) {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return [];
+    return lines.map((line, idx) => {
+      const m = line.match(/^[-•·∙]\s*(.+)$/);
+      const isLast = idx === lines.length - 1;
+      if (m) {
+        return {
+          text: m[1].trim(),
+          options: {
+            fontFace,
+            fontSize,
+            color,
+            bullet: { characterCode: '002D', indent: indentPt },
+            breakLine: !isLast
+          }
+        };
+      }
+      return {
+        text: line,
+        options: {
+          fontFace,
+          fontSize,
+          color,
+          bullet: false,
+          breakLine: !isLast
+        }
+      };
+    });
   }
 
   /**
@@ -1181,31 +1223,44 @@
       slide.addText(runs, {
         x: col.x, y: 1.2444, w: col.w, h: 0.3769,
         fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-        align: 'left', valign: 'middle', inset: 0.06, wrap: false
+        align: 'left', valign: 'middle', margin: [2, 5, 2, 5], wrap: false
       });
     });
 
-    // 부적합 개요 2행: 부적합 내용 (Cell(4,2): x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925, 14pt, 1)/2) 줄바꿈 및 내어쓰기 정렬)
+    // 부적합 개요 2행: 부적합 내용 (Cell(4,2): x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925, 14pt, 1)/2) 줄바꿈 및 수직 중앙 정렬)
     const mainLines = String(data.mainContent || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const longestMainLine = mainLines.reduce((a, b) => (a.length >= b.length ? a : b), '');
-    const mainSz = calcSingleLineFontSize(longestMainLine, 11.05, 14, 12);
 
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.9375, y: 1.6213, w: 12.2938, h: 0.6925,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 }
     });
-    slide.addText([
-      { text: '부적합 내용 ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } },
-      { text: ': ', options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } }
-    ], {
-      x: 0.9375, y: 1.6213, w: 1.2500, h: 0.6925,
-      align: 'left', valign: 'top', margin: [4, 0, 4, 6], wrap: false
-    });
-    slide.addText(mainLines.join('\n'), {
-      x: 2.1300, y: 1.6213, w: 11.0950, h: 0.6925,
-      fontFace: FONT_MALGUN, fontSize: mainSz, bold: true, color: '000000',
-      align: 'left', valign: 'top', margin: [4, 6, 4, 0], lineSpacingMultiple: 1.15, wrap: true
-    });
+    if (mainLines.length <= 1) {
+      const singleMainText = mainLines[0] || '';
+      const mainSz = calcSingleLineFontSize(`부적합 내용 : ${singleMainText}`, 12.2938, 14, 11.5);
+      slide.addText([
+        { text: '부적합 내용 ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } },
+        { text: ': ', options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } },
+        ...(singleMainText ? [{ text: singleMainText, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } }] : [])
+      ], {
+        x: 0.9375, y: 1.6213, w: 12.2938, h: 0.6925,
+        align: 'left', valign: 'middle', margin: [2, 6, 2, 6], wrap: true
+      });
+    } else {
+      const mainSz = calcSingleLineFontSize(longestMainLine, 11.05, 14, 11.5);
+      slide.addText([
+        { text: '부적합 내용 ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } },
+        { text: ': ', options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } }
+      ], {
+        x: 0.9375, y: 1.6213, w: 1.2500, h: 0.6925,
+        align: 'left', valign: 'top', margin: [6, 0, 4, 6], lineSpacingMultiple: 1.15, wrap: false
+      });
+      slide.addText(mainLines.join('\n'), {
+        x: 2.1300, y: 1.6213, w: 11.0950, h: 0.6925,
+        fontFace: FONT_MALGUN, fontSize: mainSz, bold: true, color: '000000',
+        align: 'left', valign: 'top', margin: [6, 6, 4, 0], lineSpacingMultiple: 1.15, wrap: true
+      });
+    }
 
     // ── 3. 하단 통합 컨테이너 (Cell(5,1): x = 0.1070, y = 2.3138, w = 13.1243, h = 5.0632, bottom = 7.3770) ──
     slide.addShape(pptx.ShapeType.rect, {
@@ -1387,7 +1442,8 @@
 
     // 2) [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.3773)
     const intLineSpacing = (data.interviewOpinion || '').length > 110 ? 1.08 : 1.14;
-    const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213, 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 4]);
+    const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213 - (8.5 / 72), 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 6]);
+    const intBodyRuns = buildHangingBulletRuns(data.interviewOpinion, intSz, '111111', FONT_MALGUN, 8.5);
     slide.addText([
       {
         text: data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]',
@@ -1396,22 +1452,16 @@
           bold: true,
           color: C_SUBHEADER_TEXT,
           fontFace: FONT_MALGUN,
-          breakLine: true,
+          bullet: false,
+          breakLine: intBodyRuns.length > 0,
           paraSpaceAfter: 5
         }
       },
-      {
-        text: data.interviewOpinion,
-        options: {
-          fontSize: intSz,
-          color: '111111',
-          fontFace: FONT_MALGUN
-        }
-      }
+      ...intBodyRuns
     ], {
       x: 8.2448, y: 2.8227, w: 4.9213, h: 1.3773,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      margin: [5, 8, 4, 4], valign: 'top', lineSpacingMultiple: intLineSpacing
+      margin: [5, 8, 4, 6], valign: 'top', lineSpacingMultiple: intLineSpacing
     });
 
     // 3) [점검단 제안] 좌측 상단 셀 (SHAPE #5: x = 8.2448, y = 4.2000, w = 1.5342, h = 0.3100)
@@ -1447,8 +1497,9 @@
     // 5) [점검단 제안] 우측 본문 셀 (SHAPE #4: x = 9.7790, y = 4.2000, w = 3.3871, h = 1.2450 - 높이 확대 및 자동 폰트 맞춤)
     const propMargin = [4, 6, 4, 6];
     const propLineSpacing = (data.proposalContent || '').length > 65 ? 1.08 : 1.14;
-    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.2450, 12, 8.5, propLineSpacing, propMargin);
-    slide.addText(data.proposalContent, {
+    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871 - (8.5 / 72), 1.2450, 12, 8.5, propLineSpacing, propMargin);
+    const proposalBodyRuns = buildHangingBulletRuns(data.proposalContent, propSz, '111111', FONT_MALGUN, 8.5);
+    slide.addText(proposalBodyRuns.length ? proposalBodyRuns : '', {
       x: 9.7790, y: 4.2000, w: 3.3871, h: 1.2450,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
       fontFace: FONT_MALGUN, fontSize: propSz, color: '111111',
@@ -1464,14 +1515,11 @@
     });
 
     // 7) 개선대책 좌측 본문 셀 (SHAPE #11: x = 8.2448, y = 5.9064, w = 3.3858, h = 1.3959)
-    // 사용자 표준 기본값 12pt 유지 (장문 극단 초과 시에만 최소 10pt까지 점진 조절)
-    const counterMargin = [4, 6, 2, 4];
+    // 사용자 표준 기본값 12pt 유지 (장문 극단 초과 시에만 최소 9.5pt까지 점진 조절) + PowerPoint 네이티브 내어쓰기 적용
+    const counterMargin = [4, 6, 2, 6];
     const counterLineSpacing = 1.10;
-    const counterSz = calcFitMultilineFontSize(data.countermeasureContent || '', 3.3858, 1.3959, 12, 9.5, counterLineSpacing, counterMargin);
-    const counterRuns = (data.countermeasureContent || '').split('\n').filter(Boolean).map((line, idx, arr) => ({
-      text: line + (idx < arr.length - 1 ? '\n' : ''),
-      options: { fontFace: FONT_MALGUN, fontSize: counterSz, bold: false, color: '000000' }
-    }));
+    const counterSz = calcFitMultilineFontSize(data.countermeasureContent || '', 3.3858 - (8.5 / 72), 1.3959, 12, 9.5, counterLineSpacing, counterMargin);
+    const counterRuns = buildHangingBulletRuns(data.countermeasureContent, counterSz, '000000', FONT_MALGUN, 8.5);
     slide.addText(counterRuns.length ? counterRuns : '', {
       x: 8.2448, y: 5.9064, w: 3.3858, h: 1.3959,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
@@ -1562,7 +1610,7 @@
     ], {
       x: 0.9395, y: 1.0000, w: 12.2873, h: 1.1806,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      align: 'left', valign: 'middle', inset: 0.10, lineSpacingMultiple: 1.20
+      align: 'left', valign: 'middle', margin: [4, 8, 4, 8], lineSpacingMultiple: 1.20
     });
 
     // ── 3. 부적합 사례 헤더 행 (Cell(4,1): x = 0.1031, y = 2.1806, w = 13.1237, h = 0.3639, fill #FFD966, 16pt Bold) ──

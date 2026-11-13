@@ -934,7 +934,7 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
     return lum < 232 || (max - min) > 25;
   };
 
-  // X축 1차 분할
+  // X축 1차 분할 (좁은 좌/우 사진 경계 3~5px도 정확히 분리)
   const xSegs = find1DSegments(
     Math.max(1, searchX2 - searchX1 + 1),
     dx => {
@@ -949,7 +949,7 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
       return cnt / (tot || 1);
     },
     0.25,
-    Math.max(6, Math.floor(FW * 0.006)),
+    Math.max(2, Math.floor(FW * 0.0025)),
     Math.floor(FW * 0.08)
   ).map(([a, b]) => [searchX1 + a, searchX1 + b]);
 
@@ -969,10 +969,11 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
         return cnt / (tot || 1);
       },
       0.25,
-      Math.max(6, Math.floor(FH * 0.008)),
-      Math.floor(FH * 0.12)
+      Math.max(5, Math.floor(FH * 0.006)),
+      Math.floor(FH * 0.08)
     ).map(([a, b]) => [searchY1 + a, searchY1 + b]);
 
+    const colBoxes = [];
     for (const [y1, y2] of ySegs) {
       // Y 구간 내부에서 다시 정밀 X 경계 추출
       const xRefined = find1DSegments(
@@ -988,14 +989,14 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
           return cnt / (tot || 1);
         },
         0.20,
-        Math.max(5, Math.floor(FW * 0.005)),
+        Math.max(4, Math.floor(FW * 0.004)),
         Math.floor(FW * 0.08)
       ).map(([a, b]) => [x1 + a, x1 + b]);
 
       for (const [rx1, rx2] of xRefined) {
         const bw = rx2 - rx1 + 1;
         const bh = y2 - y1 + 1;
-        // 흰색 텍스트 상자(예: 줄걸이 작업자의 책임, Hold Point 표 등) 배제: 내부 백색 비율 검사
+        // 순수 백색 종이/체크리스트 문서 표만 배제하고, 현장 사진 콜라주(예: 잭베이스 설치불량) 및 비계설치도면은 모두 보존
         let whitePixels = 0;
         let totalPixels = 0;
         for (let yy = y1 + Math.floor(bh * 0.08); yy < y2 - Math.floor(bh * 0.08); yy += 3) {
@@ -1008,26 +1009,85 @@ export function extractPhotosDynamic(canvas, sheetFrame = null) {
           }
         }
         const whiteRatio = whitePixels / (totalPixels || 1);
-        // 현장 실물 사진은 whiteRatio가 통상 0.15 이하임.
-        // 기준/시공 가이드 도면, CAD 도면, 설명서 캡처(예: '6.2 거푸집 보강 예')는 whiteRatio > 0.22 이므로 자동 제외!
-        const isRightHalf = rx1 > searchX1 + (searchX2 - searchX1) * 0.45;
-        const isReferenceDiagram = whiteRatio > 0.22 || (isRightHalf && (whiteRatio > 0.18 || bh < FH * 0.35));
-        if (whiteRatio < 0.68 && !isReferenceDiagram) {
+        if (whiteRatio < 0.48) {
           const rawBox = { x: rx1, y: y1, w: bw, h: bh, whiteRatio };
           const trimmedBox = trimRedBannerFromBox(imgData, W, rawBox);
-          if (trimmedBox.w >= Math.floor(FW * 0.08) && trimmedBox.h >= Math.floor(FH * 0.10)) {
-            candidateBoxes.push(trimmedBox);
+          if (trimmedBox.w >= Math.floor(FW * 0.08) && trimmedBox.h >= Math.floor(FH * 0.08)) {
+            colBoxes.push(trimmedBox);
           }
         }
       }
     }
+
+    // 동일 X 열 내부의 인접한 사진 콜라주(예: 2x2 잭베이스 불량 사진 묶음)를 하나의 통합 사진으로 병합
+    if (colBoxes.length >= 2) {
+      colBoxes.sort((a, b) => a.y - b.y);
+      const clusters = [];
+      for (const b of colBoxes) {
+        const prev = clusters[clusters.length - 1];
+        const prevBottom = prev ? (prev.y + prev.h) : -9999;
+        // 세로 간격이 7% 이하이면 동일 콜라주 그룹으로 통합 (긴 흰색 설명 텍스트 블록으로 분리된 경우는 분리 유지)
+        if (prev && (b.y - prevBottom) <= Math.floor(FH * 0.07)) {
+          const nx1 = Math.min(prev.x, b.x);
+          const ny1 = Math.min(prev.y, b.y);
+          const nx2 = Math.max(prev.x + prev.w, b.x + b.w);
+          const ny2 = Math.max(prev.y + prev.h, b.y + b.h);
+          prev.x = nx1;
+          prev.y = ny1;
+          prev.w = nx2 - nx1;
+          prev.h = ny2 - ny1;
+          prev.whiteRatio = Math.max(prev.whiteRatio, b.whiteRatio);
+        } else {
+          clusters.push({ ...b });
+        }
+      }
+      // 열 내에서 가장 큰 클러스터(또는 유효 박스) 우선 채택
+      clusters.sort((a, b) => (b.w * b.h) - (a.w * a.h));
+      candidateBoxes.push(clusters[0]);
+    } else if (colBoxes.length === 1) {
+      candidateBoxes.push(colBoxes[0]);
+    }
   }
 
-  // 만약 단일 박스가 매우 넓고(bw > FW * 0.38) 우상단에 흰색 설명상자가 겹쳐진 형태(수평양중 슬라이드1 등)라면 좌/우 분리
+  // 만약 단일 박스가 매우 넓고(bw > FW * 0.38) 우상단에 흰색 설명상자가 겹쳤거나 하단 배너로 연결된 좌/우 2열 형태라면 좌/우 분리
   const finalBoxes = [];
   for (const box of candidateBoxes) {
     if (candidateBoxes.length === 1 && box.w > FW * 0.38) {
-      // 우상단(x: 53%~98%, y: 0%~28%)의 백색 비율 확인
+      // 1) 상/하 배너 영역(12%~86%)을 제외한 내부에서 세로 백색 경계선 탐색 (예: [가새 누락 현장사진 | 비계설치도면])
+      const scanY1 = box.y + Math.floor(box.h * 0.12);
+      const scanY2 = box.y + Math.floor(box.h * 0.85);
+      const midXStart = box.x + Math.floor(box.w * 0.35);
+      const midXEnd = box.x + Math.floor(box.w * 0.72);
+      let splitX = -1;
+      let gutterStart = -1;
+      for (let x = midXStart; x <= midXEnd; x += 2) {
+        let whiteRun = 0, runTot = 0;
+        for (let y = scanY1; y <= scanY2; y += 3) {
+          runTot++;
+          const idx = (y * W + x) * 4;
+          if (imgData[idx] > 224 && imgData[idx + 1] > 224 && imgData[idx + 2] > 224) whiteRun++;
+        }
+        const isGapCol = runTot > 0 && (whiteRun / runTot) >= 0.82;
+        if (isGapCol) {
+          if (gutterStart < 0) gutterStart = x;
+        } else if (gutterStart >= 0) {
+          if ((x - gutterStart) >= 2) {
+            splitX = Math.round((gutterStart + x) / 2);
+            break;
+          }
+          gutterStart = -1;
+        }
+      }
+      if (splitX > 0) {
+        const leftW = Math.max(20, splitX - box.x - 2);
+        const rightX = Math.min(box.x + box.w - 20, splitX + 2);
+        const rightW = Math.max(20, (box.x + box.w) - rightX);
+        finalBoxes.push(trimRedBannerFromBox(imgData, W, { x: box.x, y: box.y, w: leftW, h: box.h }));
+        finalBoxes.push(trimRedBannerFromBox(imgData, W, { x: rightX, y: box.y, w: rightW, h: box.h }));
+        continue;
+      }
+
+      // 2) 우상단(x: 53%~98%, y: 0%~28%)의 백색 비율 확인
       let trWhite = 0, trTot = 0;
       for (let yy = box.y; yy < box.y + Math.floor(box.h * 0.28); yy += 2) {
         for (let xx = box.x + Math.floor(box.w * 0.54); xx < box.x + box.w; xx += 2) {
@@ -1473,7 +1533,7 @@ async function recognizeWithWorkerPool(imageDataUrl) {
     try {
       if (!_ocrWorkerInitPromise) {
         _ocrWorkerInitPromise = (async () => {
-          const POOL_SIZE = 3;
+          const POOL_SIZE = 4;
           const workers = await Promise.all(
             Array.from({ length: POOL_SIZE }, () => window.Tesseract.createWorker('kor+eng'))
           );
@@ -2135,7 +2195,7 @@ export async function parsePDF(file, onProgress = () => {}) {
   totalPages = pdfDoc.numPages;
 
   let lastKnownLocation = '';
-  const BATCH_SIZE = 3;
+  const BATCH_SIZE = 6;
   const orderedResults = new Array(totalPages).fill(null);
 
   for (let startPage = 1; startPage <= totalPages; startPage += BATCH_SIZE) {
@@ -2157,7 +2217,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
     await Promise.all(batchPages.map(async (pNum) => {
       const page = await pdfDoc.getPage(pNum);
-      const viewport = page.getViewport({ scale: 2.0 });
+      const viewport = page.getViewport({ scale: 1.5 });
       let pageCanvas = document.createElement('canvas');
       pageCanvas.width = viewport.width;
       pageCanvas.height = viewport.height;
