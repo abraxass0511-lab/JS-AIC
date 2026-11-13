@@ -489,31 +489,7 @@ export default {
               }
             }
 
-            if (body.rightPhotoBase64) {
-              try {
-                const cleanPhotoB64 = String(body.rightPhotoBase64).replace(/^data:image\/\w+;base64,/, '');
-                const refPrompt = `이 이미지가 (A) 실제 건설현장을 카메라로 촬영한 현장 사진(여러 장을 묶은 콜라주 사진 포함)인지, 아니면 (B) 매뉴얼/작업절차서/시공상세도/도면/표 캡처 이미지(예: '6.2 거푸집 보강', '[거푸집 보강 예]', 'O/X 예시')인지 판별하세요. 매뉴얼/도면/표 캡처이면 "REFERENCE", 실제 현장 촬영 사진이면 "REAL_PHOTO"라고만 답하세요.`;
-                const pRes = await env.AI.run('@cf/qwen/qwen3.8-27b', {
-                  messages: [
-                    {
-                      role: 'user',
-                      content: [
-                        { type: 'text', text: refPrompt },
-                        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${cleanPhotoB64}` } }
-                      ]
-                    }
-                  ],
-                  max_tokens: 30,
-                  temperature: 0.0
-                }).catch(() => null);
-                const pTxt = (pRes && (pRes.response || (pRes.choices && pRes.choices[0]?.message?.content))) || '';
-                if (/REFERENCE/i.test(pTxt) && !/REAL_PHOTO/i.test(pTxt)) {
-                  rightPhotoIsReference = true;
-                } else if (/REAL_PHOTO/i.test(pTxt)) {
-                  rightPhotoIsReference = false;
-                }
-              } catch (pErr) {}
-            }
+            // rightPhotoBase64 도면/사진 제외 판별 생략 (잭베이스 불량·비계설치도면 등 모든 사진 보존 및 5~15초 지연 제거)
 
             const isOcrClean = (body.mode === 'ocr_clean' || url.pathname === '/api/vision-ocr') && (body.rawOcrText || visionText);
                         const systemPrompt = isOcrClean
@@ -549,7 +525,6 @@ JSON 형식:
   "photo2Banner": "사진 2 상단 배너용 15~20자 구체적 미준수 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
-  "analysis": "법적 위반 판단 이유 1~2문장",
   "pmVerdict": "시스템 개선" 또는 "교육/코칭" 또는 "페널티",
   "cleanedFields": {
     "content": "교정된 부적합 내용 (말단 깨진 노이즈 완전 제거)",
@@ -558,9 +533,7 @@ JSON 형식:
     "subcontractor": "교정된 협력사명 (공란이면 '')",
     "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 유지)",
     "auditProposal": "교정된 점검단 제안 ('- ' 불릿 구분)",
-    "actionPlan": "교정된 개선대책 ('- ' 불릿 구분, 단순 줄바꿈은 병합)",
-    "rawLaw": "교정된 관련기준 제목",
-    "lawBody": "교정된 관련기준 본문 ('*' 항목 줄바꿈 유지)"
+    "actionPlan": "교정된 개선대책 ('- ' 불릿 구분, 단순 줄바꿈은 병합)"
   }
 }`
               : `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
@@ -588,7 +561,6 @@ JSON 형식:
   "photo2Banner": "사진 2 상단 배너용 15~20자 구체적 미준수 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
-  "analysis": "법적 위반 판단 이유 1~2문장",
   "pmVerdict": "현장 PM 조치 권고 문장"
 }`;
 
@@ -600,50 +572,54 @@ JSON 형식:
                   subcontractor: body.subcontractor,
                   interviewOpinion: body.interviewOpinion,
                   auditProposal: body.auditProposal,
-                  actionPlan: body.actionPlan,
-                  rawLaw: body.rawLaw,
-                  lawBody: body.lawBody
+                  actionPlan: body.actionPlan
                 })}`
               : `[현장 지적사항]: "${content.trim()}"`;
 
-            // <think> 추론 지연 없이 1~2초 내 즉시 JSON을 반환하는 Non-Thinking Instruct 모델 최우선 호출
-            const aiRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
-              ],
-              max_tokens: isOcrClean ? 850 : 550,
-              temperature: 0.05
-            }).catch(async () => {
-              return await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
+            // <think> 추론 지연 없이 빠른 속도로 JSON을 반환하는 Instruct 모델 호출 (토큰 상한 최적화로 고속화)
+            // Non-Thinking Instruct 모델(@cf/qwen/qwen2.5-coder-32b-instruct) 직접 최우선 호출 (불필요한 사전 실패 지연 제거)
+            const extractJsonFromAiRes = (res) => {
+              if (!res) return null;
+              const raw = res.response || (res.choices && res.choices[0]?.message?.content) || '';
+              const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json/g, '').replace(/```/g, '').trim();
+              const sIdx = cleaned.indexOf('{');
+              const eIdx = cleaned.lastIndexOf('}');
+              if (sIdx === -1 || eIdx <= sIdx) return null;
+              try {
+                return JSON.parse(cleaned.slice(sIdx, eIdx + 1));
+              } catch (e) {
+                return null;
+              }
+            };
+
+            let usedModelLabel = 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)';
+            let parsed = null;
+            try {
+              const coderRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt }
                 ],
-                max_tokens: isOcrClean ? 1200 : 650,
+                max_tokens: isOcrClean ? 420 : 280,
                 temperature: 0.05
               });
-            }).catch(async () => {
-              return await env.AI.run('@cf/qwen/qwen1.5-14b-chat-awq', {
+              parsed = extractJsonFromAiRes(coderRes);
+            } catch (e) {}
+
+            if (!parsed) {
+              usedModelLabel = 'Qwen-3-30B-A3B-FP8 (Cloudflare 24h Cloud)';
+              const fallbackRes = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
                 messages: [
                   { role: 'system', content: systemPrompt },
-                  { role: 'user', content: userPrompt }
+                  { role: 'user', content: `${userPrompt}\n/no_think` }
                 ],
-                max_tokens: isOcrClean ? 1200 : 650,
+                max_tokens: isOcrClean ? 900 : 500,
                 temperature: 0.05
-              });
-            });
+              }).catch(() => null);
+              parsed = extractJsonFromAiRes(fallbackRes);
+            }
 
-            let text = '';
-            let lastAiErr = '';
-            if (aiRes && aiRes.response) text = aiRes.response;
-            else if (aiRes && aiRes.choices && aiRes.choices[0]) text = aiRes.choices[0].message?.content || '';
-
-            const cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json/g, '').replace(/```/g, '').trim();
-            const startIdx = cleaned.indexOf('{');
-            const endIdx = cleaned.lastIndexOf('}');
-            if (startIdx !== -1 && endIdx !== -1) {
-              const parsed = JSON.parse(cleaned.slice(startIdx, endIdx + 1));
+            if (parsed) {
 
               // Post-AI 표준 정합성 검증 (거푸집동바리공사가 전기시설/비계로 오분류되는 현상 원천 차단)
               const combinedCtx = `${parsed.workGroup || ''} ${body.workGroup || ''} ${parsed.cleanedFields?.content || content || ''}`;
@@ -675,7 +651,7 @@ JSON 형식:
               return new Response(JSON.stringify({
                 ok: true,
                 source: visionText ? 'cloudflare_qwen_vision_hybrid' : 'cloudflare_qwen_cloud',
-                model: visionText ? 'Qwen-3.8-27B-Vision + Qwen-32B (Cloudflare 24h Cloud)' : 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)',
+                model: visionText ? `Qwen-3.8-27B-Vision + ${usedModelLabel}` : usedModelLabel,
                 visionText: visionText || undefined,
                 rightPhotoIsReference,
                 ...quickFallback,

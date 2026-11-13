@@ -965,7 +965,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             mode: 'ocr_clean',
             rawOcrText: rawOcrText || '',
             stripImageBase64: hasSufficientOcr ? undefined : (fallbackRecord._stripImageBase64 || undefined),
-            rightPhotoBase64: fallbackRecord._rightPhotoBase64 || undefined,
             content: fallbackRecord.content || rawOcrText,
             location: fallbackRecord.location || '',
             workGroup: fallbackRecord.workGroup || '',
@@ -974,7 +973,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             auditProposal: fallbackRecord.auditProposal || '',
             actionPlan: fallbackRecord.actionPlan || '',
             rawLaw: fallbackRecord.rawLaw || '',
-            lawBody: fallbackRecord.lawBody || '',
             productType: fallbackRecord.productType || '공동주택',
             progressRate: 35
           }),
@@ -985,10 +983,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const cfData = await cfRes.json();
           if (cfData) {
             fallbackRecord._aiCleaned = true;
-            if (cfData.rightPhotoIsReference === true && Array.isArray(fallbackRecord.photos) && fallbackRecord.photos.length > 1) {
-              fallbackRecord.photos = [fallbackRecord.photos[0]];
-              fallbackRecord.photo2 = null;
-            }
             if (cfData.agentMajor) fallbackRecord.agentMajor = cfData.agentMajor;
             if (cfData.agentMid) fallbackRecord.agentMid = cfData.agentMid;
             if (cfData.agentMinor) {
