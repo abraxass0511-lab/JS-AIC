@@ -2,7 +2,7 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v30';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v31';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4809,6 +4809,11 @@ async function handlePptxImportChange(e) {
   if (importedRecords.length > 0) {
     const skipMsg = totalSkippedPages > 0 ? ` (일반 글씨 ${totalSkippedPages}장 생략)` : '';
     toast(`총 ${importedRecords.length}건의 점검장표 사진·내용을 추출했습니다!${skipMsg}`, 'success', 3500);
+    if (importedRecords.some(r => r._aiQuotaExceeded)) {
+      setTimeout(() => {
+        toast('Cloudflare AI 일일 무료 한도 소진으로 로컬 OCR/분류 모드로 자동 전환해 추출했습니다.', 'warning', 5500);
+      }, 450);
+    }
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'block';
     if ($('#importCount')) $('#importCount').textContent = importedRecords.length;
     renderImportedCards();

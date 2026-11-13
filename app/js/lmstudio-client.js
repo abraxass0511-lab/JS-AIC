@@ -719,7 +719,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       else if (/비계|워킹타워/i.test(contentText)) s = '외부비계';
       else if (/지하\s*\d+\s*층/i.test(contentText)) s = '지하층';
     }
-    if (!s) return '' ? String('').trim() : '101동 외부';
+    if (!s) return '';
 
     // 2. 온전한 건물/동/층/코어/외부/E/V 패턴이 이미 포함되어 있으면 즉시 추출
     const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
@@ -759,7 +759,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       return mSecond[0].replace(/\s+/g, ' ').trim();
     }
 
-    return s || '101동 외부';
+    return s || '';
   }
 
   function cleanBannerText(rawBanner, content) {
@@ -791,7 +791,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (c.includes('동바리') && (c.includes('해체') || c.includes('미복구'))) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
       if (/Gang\s*Form|선해체|갱폼/i.test(c)) return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
       const firstLine = c.split('\n')[0].trim();
-      return (firstLine || '안전기준 미준수').replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
+      return firstLine ? firstLine.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '') : '';
     }
     return b.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
   }
@@ -983,74 +983,84 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         if (cfRes.ok) {
           const cfData = await cfRes.json();
           if (cfData) {
-            fallbackRecord._aiCleaned = true;
-            if (cfData.agentMajor) fallbackRecord.agentMajor = cfData.agentMajor;
-            if (cfData.agentMid) fallbackRecord.agentMid = cfData.agentMid;
-            if (cfData.agentMinor) {
-              fallbackRecord.agentMinor = cfData.agentMinor;
-              fallbackRecord.agent = cfData.agentMinor;
-              fallbackRecord.item = cfData.agentMid || cfData.agentMinor;
-            }
-            if (cfData.workGroup) fallbackRecord.workGroup = cfData.workGroup;
-            if (cfData.workMethod) fallbackRecord.workMethod = cfData.workMethod;
-            if (cfData.condition) fallbackRecord.condition = cfData.condition;
-            if (cfData.action) fallbackRecord.action = cfData.action;
-            if (cfData.rootCauseMgmt) fallbackRecord.rootCauseMgmt = cfData.rootCauseMgmt;
-            if (cfData.rootCauseSystem) fallbackRecord.rootCauseSystem = cfData.rootCauseSystem;
-            if (cfData.stakeholder) fallbackRecord.stakeholder = cfData.stakeholder;
-            if (cfData.severity && /중부적합|경부적합/.test(cfData.severity) && (!fallbackRecord.severity || !fallbackRecord._hasDigitalText)) {
-              fallbackRecord.severity = cfData.severity.includes('중부적합') ? '중부적합' : '경부적합';
-            }
-            if (cfData.law && (!fallbackRecord.law || /안전보건기준\s*검토/.test(fallbackRecord.law))) {
-              fallbackRecord.law = cfData.law;
-            }
-            if ((cfData.type || cfData.hazardType) && (!fallbackRecord.type || !fallbackRecord._hasDigitalText)) {
-              fallbackRecord.type = cfData.type || String(cfData.hazardType).split('·')[0];
-            }
-            if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText)) {
-              fallbackRecord.photoBanner = cfData.photoBanner;
-            }
-            if (cfData.photo2Banner) {
-              fallbackRecord.photo2Banner = cfData.photo2Banner;
-              if (!fallbackRecord.photo2Title) fallbackRecord.photo2Title = cfData.photo2Banner;
-            }
-            if (cfData.pmVerdict) {
-              fallbackRecord.pmVerdict = cfData.pmVerdict;
-              fallbackRecord.inspectorOpinionType = cfData.pmVerdict;
-              fallbackRecord.pmVerdictType = cfData.pmVerdict;
-            }
-            // 주의: 장표에서 픽셀로 직접 감지한 4대 발생요인(mgmtCauses)이 이미 있으면 AI 추론값으로 절대 덮어쓰지 않음!
-            if ((!Array.isArray(fallbackRecord.mgmtCauses) || fallbackRecord.mgmtCauses.length === 0) && Array.isArray(cfData.mgmtCauses) && cfData.mgmtCauses.length > 0) {
-              fallbackRecord.mgmtCauses = cfData.mgmtCauses;
-            }
-            if (cfData.cleanedFields && typeof cfData.cleanedFields === 'object') {
-              const cf = cfData.cleanedFields;
-              if (cf.content) fallbackRecord.content = cleanContent(cf.content) || cf.content;
-              if (cf.location) fallbackRecord.location = cf.location;
-              if (cf.workGroup) fallbackRecord.workGroup = cleanWorkGroup(cf.workGroup, fallbackRecord.content) || cf.workGroup;
-              if (cf.subcontractor !== undefined) fallbackRecord.subcontractor = cf.subcontractor;
-              if (cf.inspector !== undefined && cf.inspector) {
-                fallbackRecord.inspector = cf.inspector;
-                fallbackRecord.inspectUser = cf.inspector;
+            if (cfData.quotaExceeded) fallbackRecord._aiQuotaExceeded = true;
+            if (Array.isArray(cfData.aiErrors) && cfData.aiErrors.length > 0) fallbackRecord._aiErrors = cfData.aiErrors;
+            const cfContent = cfData.cleanedFields && typeof cfData.cleanedFields.content === 'string'
+              ? cfData.cleanedFields.content.trim()
+              : '';
+            const isRealAiSource = !!(cfData.source && !String(cfData.source).includes('rule_engine'));
+            const hasCallerText = String(rawOcrText || fallbackRecord.content || '').trim().length >= 4;
+            const hasRealAiResult = !cfData.needsClientOcr && (isRealAiSource || cfContent.length >= 4 || (hasCallerText && !!cfData.agentMajor));
+            if (hasRealAiResult) {
+              fallbackRecord._aiCleaned = true;
+              if (cfData.agentMajor) fallbackRecord.agentMajor = cfData.agentMajor;
+              if (cfData.agentMid) fallbackRecord.agentMid = cfData.agentMid;
+              if (cfData.agentMinor) {
+                fallbackRecord.agentMinor = cfData.agentMinor;
+                fallbackRecord.agent = cfData.agentMinor;
+                fallbackRecord.item = cfData.agentMid || cfData.agentMinor;
               }
-              if (cf.round) {
-                fallbackRecord.round = cf.round;
-                fallbackRecord.inspectRound = cf.round;
+              if (cfData.workGroup) fallbackRecord.workGroup = cfData.workGroup;
+              if (cfData.workMethod) fallbackRecord.workMethod = cfData.workMethod;
+              if (cfData.condition) fallbackRecord.condition = cfData.condition;
+              if (cfData.action) fallbackRecord.action = cfData.action;
+              if (cfData.rootCauseMgmt) fallbackRecord.rootCauseMgmt = cfData.rootCauseMgmt;
+              if (cfData.rootCauseSystem) fallbackRecord.rootCauseSystem = cfData.rootCauseSystem;
+              if (cfData.stakeholder) fallbackRecord.stakeholder = cfData.stakeholder;
+              if (cfData.severity && /중부적합|경부적합/.test(cfData.severity) && (!fallbackRecord.severity || !fallbackRecord._hasDigitalText)) {
+                fallbackRecord.severity = cfData.severity.includes('중부적합') ? '중부적합' : '경부적합';
               }
-              if (cf.interviewOpinion) fallbackRecord.interviewOpinion = cleanOpinionText(cf.interviewOpinion) || cf.interviewOpinion;
-              if (cf.auditProposal) fallbackRecord.auditProposal = cleanProposalText(cf.auditProposal) || cf.auditProposal;
-              if (cf.actionPlan) {
-                const cleanedPlan = cleanActionPlan(cf.actionPlan) || cf.actionPlan;
-                fallbackRecord.actionPlan = cleanedPlan;
-                fallbackRecord.countermeasure = cleanedPlan;
+              if (cfData.law && (!fallbackRecord.law || /안전보건기준\s*검토/.test(fallbackRecord.law))) {
+                fallbackRecord.law = cfData.law;
               }
-              if (cf.law) fallbackRecord.rawLaw = cf.law;
-              if (cf.rawLaw) fallbackRecord.rawLaw = cf.rawLaw;
-              if (cf.lawBody) fallbackRecord.lawBody = cf.lawBody;
+              if ((cfData.type || cfData.hazardType) && (!fallbackRecord.type || !fallbackRecord._hasDigitalText)) {
+                fallbackRecord.type = cfData.type || String(cfData.hazardType).split('·')[0];
+              }
+              if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText)) {
+                fallbackRecord.photoBanner = cfData.photoBanner;
+              }
+              if (cfData.photo2Banner) {
+                fallbackRecord.photo2Banner = cfData.photo2Banner;
+                if (!fallbackRecord.photo2Title) fallbackRecord.photo2Title = cfData.photo2Banner;
+              }
+              if (cfData.pmVerdict) {
+                fallbackRecord.pmVerdict = cfData.pmVerdict;
+                fallbackRecord.inspectorOpinionType = cfData.pmVerdict;
+                fallbackRecord.pmVerdictType = cfData.pmVerdict;
+              }
+              // 주의: 장표에서 픽셀로 직접 감지한 4대 발생요인(mgmtCauses)이 이미 있으면 AI 추론값으로 절대 덮어쓰지 않음!
+              if ((!Array.isArray(fallbackRecord.mgmtCauses) || fallbackRecord.mgmtCauses.length === 0) && Array.isArray(cfData.mgmtCauses) && cfData.mgmtCauses.length > 0) {
+                fallbackRecord.mgmtCauses = cfData.mgmtCauses;
+              }
+              if (cfData.cleanedFields && typeof cfData.cleanedFields === 'object') {
+                const cf = cfData.cleanedFields;
+                if (cf.content) fallbackRecord.content = cleanContent(cf.content) || cf.content;
+                if (cf.location) fallbackRecord.location = cf.location;
+                if (cf.workGroup) fallbackRecord.workGroup = cleanWorkGroup(cf.workGroup, fallbackRecord.content) || cf.workGroup;
+                if (cf.subcontractor !== undefined) fallbackRecord.subcontractor = cf.subcontractor;
+                if (cf.inspector !== undefined && cf.inspector) {
+                  fallbackRecord.inspector = cf.inspector;
+                  fallbackRecord.inspectUser = cf.inspector;
+                }
+                if (cf.round) {
+                  fallbackRecord.round = cf.round;
+                  fallbackRecord.inspectRound = cf.round;
+                }
+                if (cf.interviewOpinion) fallbackRecord.interviewOpinion = cleanOpinionText(cf.interviewOpinion) || cf.interviewOpinion;
+                if (cf.auditProposal) fallbackRecord.auditProposal = cleanProposalText(cf.auditProposal) || cf.auditProposal;
+                if (cf.actionPlan) {
+                  const cleanedPlan = cleanActionPlan(cf.actionPlan) || cf.actionPlan;
+                  fallbackRecord.actionPlan = cleanedPlan;
+                  fallbackRecord.countermeasure = cleanedPlan;
+                }
+                if (cf.law) fallbackRecord.rawLaw = cf.law;
+                if (cf.rawLaw) fallbackRecord.rawLaw = cf.rawLaw;
+                if (cf.lawBody) fallbackRecord.lawBody = cf.lawBody;
+              }
+              delete fallbackRecord._stripImageBase64;
+              delete fallbackRecord._rightPhotoBase64;
+              delete fallbackRecord._hasDigitalText;
             }
-            delete fallbackRecord._stripImageBase64;
-            delete fallbackRecord._rightPhotoBase64;
-            delete fallbackRecord._hasDigitalText;
           }
         }
       } catch (cfErr) {
@@ -1114,11 +1124,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       auditProposal: cleanProposalText(fallbackRecord.auditProposal),
       actionPlan: cleanActionPlan(fallbackRecord.actionPlan),
       countermeasure: cleanActionPlan(fallbackRecord.actionPlan || fallbackRecord.countermeasure),
-      inspectorOpinionType: fallbackRecord.inspectorOpinionType || '시스템 개선',
-      pmVerdict: fallbackRecord.pmVerdict || '시스템 개선',
-      pmVerdictType: fallbackRecord.pmVerdictType || fallbackRecord.pmVerdict || '시스템 개선',
-      severity: fallbackRecord.severity || '중부적합',
-      type: fallbackRecord.type || '붕괴'
+      inspectorOpinionType: fallbackRecord.inspectorOpinionType || ((fallbackRecord._aiCleaned || cleanedContent) ? '시스템 개선' : ''),
+      pmVerdict: fallbackRecord.pmVerdict || ((fallbackRecord._aiCleaned || cleanedContent) ? '시스템 개선' : ''),
+      pmVerdictType: fallbackRecord.pmVerdictType || fallbackRecord.pmVerdict || ((fallbackRecord._aiCleaned || cleanedContent) ? '시스템 개선' : ''),
+      severity: fallbackRecord.severity || ((fallbackRecord._aiCleaned || cleanedContent) ? '중부적합' : ''),
+      type: fallbackRecord.type || ((fallbackRecord._aiCleaned || cleanedContent) ? '붕괴' : '')
     };
 
     return cleaned;
