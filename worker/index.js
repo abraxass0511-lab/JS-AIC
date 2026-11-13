@@ -445,9 +445,43 @@ export default {
 
         // 산안법 룰 기반 즉시 백업 판정 데이터 생성 (Qwen AI 호출 실패 시 백업용)
         const quickFallback = analyzeRuleFallback(content);
+        const makeRuleFallbackResponse = (errs, isQuota = false) => {
+          const fallbackCleaned = buildFallbackCleanedFields(content, body.fallbackRecord);
+          const needsClientOcr = !String(content).trim() && !fallbackCleaned.content;
+          const payload = needsClientOcr
+            ? {
+                ok: true,
+                source: 'cloudflare_rule_engine',
+                needsClientOcr: true,
+                quotaExceeded: !!isQuota,
+                aiErrors: errs,
+                model: 'SanAn Rule Engine (Cloudflare Cloud)',
+                severity: '',
+                photoBanner: '',
+                workGroup: '',
+                cleanedFields: {}
+              }
+            : {
+                ok: true,
+                source: 'cloudflare_rule_engine',
+                needsClientOcr: false,
+                quotaExceeded: !!isQuota,
+                aiErrors: errs,
+                model: 'SanAn Rule Engine (Cloudflare Cloud)',
+                ...quickFallback,
+                cleanedFields: fallbackCleaned
+              };
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+          });
+        };
 
         // Cloudflare Workers AI 인스턴스가 바인딩되어 있는 경우 실행
         if (env.AI) {
+          const aiErrors = [];
+          let quotaHit = false;
+          const isQuotaErr = (e) => /4006|daily free allocation|quota|neurons|rate.?limit/i.test(String(e?.message || e || ''));
           try {
             let visionText = '';
             let rightPhotoIsReference = null;
@@ -494,7 +528,14 @@ export default {
                 });
                 const txt = extractTextFromAiRes(qRes);
                 if (txt && txt.length >= 20) return txt;
-              } catch (e1) {}
+                aiErrors.push(`qwen3.8-27b: short_or_empty(${txt?.length || 0})`);
+              } catch (e1) {
+                aiErrors.push(`qwen3.8-27b: ${e1?.message || String(e1)}`);
+                if (isQuotaErr(e1)) {
+                  quotaHit = true;
+                  return '';
+                }
+              }
               // Qwen Vision 실패/빈 응답 시 고속 Llama-4-Scout 한국어 Vision 보조 호출 (llava 사용 배제)
               try {
                 const lRes = await env.AI.run('@cf/meta/llama-4-scout-17b-16e-instruct', {
@@ -502,8 +543,13 @@ export default {
                   max_tokens: 1000,
                   temperature: 0.05
                 });
-                return extractTextFromAiRes(lRes);
+                const txt2 = extractTextFromAiRes(lRes);
+                if (txt2 && txt2.length >= 10) return txt2;
+                aiErrors.push(`llama-4-scout: short_or_empty(${txt2?.length || 0})`);
+                return '';
               } catch (e2) {
+                aiErrors.push(`llama-4-scout: ${e2?.message || String(e2)}`);
+                if (isQuotaErr(e2)) quotaHit = true;
                 return '';
               }
             };
@@ -615,38 +661,52 @@ JSON 형식:
             const hasValidParsed = (p) => p && (p.workGroup || p.agentMajor) && (!isOcrClean || (p.cleanedFields && p.cleanedFields.content));
 
             // 1순위: 고속 Qwen3-30B-A3B-FP8 (약 1~3.5초, /no_think)
-            try {
-              const q3Res = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
-                messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: `${userPrompt}\n/no_think` }
-                ],
-                max_tokens: isOcrClean ? 1300 : 500,
-                temperature: 0.05
-              });
-              const cand = extractJsonFromAiRes(q3Res);
-              if (hasValidParsed(cand)) {
-                parsed = cand;
-                usedModelLabel = visionText ? 'Qwen-3.8-27B-Vision + Qwen3-30B-A3B (Cloudflare 24h Cloud)' : 'Qwen3-30B-A3B (Cloudflare 24h Cloud)';
-              }
-            } catch (e) {}
-
-            // 2순위: Qwen-2.5-Coder-32B-Instruct 백업
-            if (!parsed) {
+            if (!quotaHit && (isOcrClean || content.trim())) {
               try {
-                const coderRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
+                const q3Res = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
                   messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
+                    { role: 'user', content: `${userPrompt}\n/no_think` }
                   ],
-                  max_tokens: isOcrClean ? 1400 : 550,
+                  max_tokens: isOcrClean ? 1300 : 500,
                   temperature: 0.05
                 });
-                parsed = extractJsonFromAiRes(coderRes);
-                if (parsed) {
-                  usedModelLabel = visionText ? 'Qwen-3.8-27B-Vision + Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)' : 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)';
+                const cand = extractJsonFromAiRes(q3Res);
+                if (hasValidParsed(cand)) {
+                  parsed = cand;
+                  usedModelLabel = visionText ? 'Qwen-3.8-27B-Vision + Qwen3-30B-A3B (Cloudflare 24h Cloud)' : 'Qwen3-30B-A3B (Cloudflare 24h Cloud)';
+                } else {
+                  aiErrors.push(`qwen3-30b: invalid_json`);
                 }
-              } catch (e) {}
+              } catch (e) {
+                aiErrors.push(`qwen3-30b: ${e?.message || String(e)}`);
+                if (isQuotaErr(e)) quotaHit = true;
+              }
+
+              // 2순위: Qwen-2.5-Coder-32B-Instruct 백업
+              if (!parsed && !quotaHit) {
+                try {
+                  const coderRes = await env.AI.run('@cf/qwen/qwen2.5-coder-32b-instruct', {
+                    messages: [
+                      { role: 'system', content: systemPrompt },
+                      { role: 'user', content: userPrompt }
+                    ],
+                    max_tokens: isOcrClean ? 1400 : 550,
+                    temperature: 0.05
+                  });
+                  parsed = extractJsonFromAiRes(coderRes);
+                  if (parsed) {
+                    usedModelLabel = visionText ? 'Qwen-3.8-27B-Vision + Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)' : 'Qwen-2.5-Coder-32B (Cloudflare 24h Cloud)';
+                  } else {
+                    aiErrors.push(`qwen2.5-coder: invalid_json`);
+                  }
+                } catch (e) {
+                  aiErrors.push(`qwen2.5-coder: ${e?.message || String(e)}`);
+                  if (isQuotaErr(e)) quotaHit = true;
+                }
+              }
+            } else if (!quotaHit) {
+              aiErrors.push('no_vision_or_ocr_text');
             }
 
             if (parsed) {
@@ -712,22 +772,16 @@ JSON 형식:
               });
             }
           } catch (aiErr) {
+            aiErrors.push(`outer: ${aiErr?.message || String(aiErr)}`);
             console.warn('Workers AI run error:', aiErr);
           }
+
+          // Workers AI 연동 전이거나 일시 한도/오류 시
+          return makeRuleFallbackResponse(aiErrors, quotaHit);
         }
 
-        // Workers AI 연동 전이거나 대기 시에도 산안법 룰 기반 즉시 고품질 결과 반환
-        const fallbackCleaned = buildFallbackCleanedFields(content, body.fallbackRecord);
-        return new Response(JSON.stringify({
-          ok: true,
-          source: 'cloudflare_rule_engine',
-          model: 'SanAn Rule Engine (Cloudflare Cloud)',
-          ...quickFallback,
-          cleanedFields: fallbackCleaned
-        }), {
-          status: 200,
-          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-        });
+        // env.AI 바인딩이 없는 경우
+        return makeRuleFallbackResponse(['no_env_ai'], false);
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), {
           status: 500,

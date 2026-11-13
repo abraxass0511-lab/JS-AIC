@@ -238,23 +238,24 @@
 
   // 공종명 노이즈('_ |', 'HA 공사', 'HEY: 비계' 등 테이블 경계선 및 OCR 잔여물) 정제 함수
   function cleanWorkGroup(raw, content = '') {
-    if (!raw) return '가설공사';
-    let cleaned = String(raw)
-      .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
-      .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
-      .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    let cleaned = raw
+      ? String(raw)
+        .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
+        .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
+        .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      : '';
 
     const comb = `${cleaned} ${content}`;
+    if (comb.includes('거푸집') || comb.includes('동바리') || comb.includes('유로폼') || comb.includes('전도방지')) return '거푸집동바리공사';
     if (comb.includes('비계') || /^(?:HA|HE|HEY|BEE)\s*공사$/i.test(cleaned)) return '비계공사';
-    if (comb.includes('거푸집') || comb.includes('동바리') || comb.includes('유로폼')) return '거푸집동바리공사';
     if (comb.includes('철근')) return '철근공사';
     if (comb.includes('콘크리트')) return '콘크리트공사';
     if (comb.includes('양중') || comb.includes('크레인')) return '양중작업';
     if (comb.includes('토공') || comb.includes('흙막이')) return '토공사';
 
-    return cleaned || '비계공사';
+    return cleaned || '';
   }
 
   // 협력사 노이즈('HEY 비계공사', '원영건업', '공종명' 등) 원천 차단 함수 (공란이면 철저히 공란 유지)
@@ -375,7 +376,7 @@
       else if (/비계|워킹타워/i.test(content)) s = '외부비계';
       else if (/지하\s*\d+\s*층/i.test(content)) s = '지하층';
     }
-    if (!s) return '' ? String('').trim() : '101동 외부';
+    if (!s) return '';
 
     // 2. 온전한 건물/동/층/코어/외부/E/V 패턴이 이미 포함되어 있으면 즉시 추출
     const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
@@ -415,7 +416,7 @@
       return mSecond[0].replace(/\s+/g, ' ').trim();
     }
 
-    return s || '101동 외부';
+    return s || '';
   }
 
   // 부적합 내용(지적사항) 숫자/한자 오인식('5)'->'등)', '5560ㅁ7'/'5500'->'55cm') 및 하단 깨진 중복줄 정제 함수

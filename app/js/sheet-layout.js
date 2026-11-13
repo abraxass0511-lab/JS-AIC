@@ -210,13 +210,53 @@ export function analyzeSheetLayout(img) {
   const band1 = yBands[0];
   const band2 = yBands[yBands.length - 1];
 
-  // 패널 좌우 경계
-  const midY = Math.round((band1[0] + band1[1]) / 2);
+  // 패널 좌우 경계: 사진 내부의 우발적 황색 픽셀(안전모/스티커 등)에 끌리지 않도록 band1·band2 공통 연속 황색 바만 채택
+  const panelRows = [];
+  for (let y = band1[0]; y <= band1[1]; y++) panelRows.push(y);
+  for (let y = band2[0]; y <= band2[1]; y++) panelRows.push(y);
+  const xScan0 = Math.floor(W * 0.40);
+  const maxXGap = Math.max(18, Math.round(W * 0.015));
+  const colYellowReq = Math.max(4, panelRows.length * 0.35);
+  const colYellow = new Uint8Array(W);
+  const ySegs = [];
+  let segS = -1, segLast = -1;
+  for (let x = xScan0; x < W; x++) {
+    let yCnt = 0;
+    for (let i = 0; i < panelRows.length; i++) {
+      if (isYellow(data, (panelRows[i] * W + x) * 4)) yCnt++;
+    }
+    if (yCnt >= colYellowReq) {
+      colYellow[x] = 1;
+      if (segS < 0) segS = x;
+      segLast = x;
+    } else if (segS >= 0 && x - segLast > maxXGap) {
+      ySegs.push([segS, segLast]);
+      segS = -1;
+    }
+  }
+  if (segS >= 0) ySegs.push([segS, segLast]);
+  const panelSegs = ySegs.filter(([a, b]) => (b - a) >= W * 0.18 && b >= W * 0.65);
   let px1 = rx1, px2 = rx0;
-  for (let x = Math.floor(W * 0.4); x < W; x++) {
-    if (isYellow(data, (midY * W + x) * 4)) {
-      if (x < px1) px1 = x;
-      if (x > px2) px2 = x;
+  if (panelSegs.length > 0) {
+    panelSegs.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+    px1 = panelSegs[0][0];
+    px2 = panelSegs[0][1];
+    // 앞쪽 고립 노이즈(1~4px) + 공백(4px+) 제거해 사진 우측 끝이 잘리지 않도록 보정
+    while (px1 + 8 < px2) {
+      let runEnd = px1;
+      while (runEnd <= px2 && colYellow[runEnd]) runEnd++;
+      if (runEnd - px1 >= 5) break;
+      let gapEnd = runEnd;
+      while (gapEnd <= px2 && !colYellow[gapEnd]) gapEnd++;
+      if (gapEnd - runEnd >= 4) { px1 = gapEnd; } else break;
+    }
+  } else {
+    const midY = Math.round((band1[0] + band1[1]) / 2);
+    for (let x = rx0; x < W; x++) {
+      if (isYellow(data, (midY * W + x) * 4)) {
+        if (x < px1) px1 = x;
+        if (x > px2) px2 = x;
+      }
     }
   }
   const pw = px2 - px1;
@@ -533,7 +573,9 @@ export function findPhotoBoxes(img, area, banners = []) {
     while (ty1 > ty0 && isRowBlank(ty1)) ty1--;
     r = rect(r.x, ty0, r.x + r.w, ty1 + 1);
 
-    // 박스 내부 백색 비율 계산 → 기준 문서/시공 가이드 캡처(예: 6.2 거푸집 보강, 900mm 이내 등) 판별
+    // 박스 내부 백색 비율 + 밝은 종이/텍스트 밴드 비율 동시 측정
+    // → 기준 문서/시공 가이드 캡처('6.2 거푸집 보강' 등 지침 문서: whiteRowFrac ~0.15, whiteRatio ~0.34)만 정밀 제외하고
+    //   실제 다분할 콜라주('② 잭베이스 설치불량': whiteRowFrac <=0.03) 및 도면('[비계설치도면]': whiteRowFrac ~0.01)은 100% 보존
     let white = 0, tot = 0;
     for (let y = r.y; y < r.y + r.h; y += 2) {
       for (let x = r.x; x < r.x + r.w; x += 2) {
@@ -543,9 +585,28 @@ export function findPhotoBoxes(img, area, banners = []) {
       }
     }
     const whiteRatio = white / Math.max(1, tot);
-    // 참고 문서/빈 여백 필터 완화: 실제 다분할 콜라주('② 잭베이스 설치불량' 등 ~0.266) 및 도면('[비계설치도면]') 누락 방지
-    const isReference = whiteRatio > 0.52;
-    results.push({ ...r, whiteRatio, isReference });
+
+    const tx0 = r.x + Math.round(r.w * 0.04);
+    const tx1 = r.x + Math.round(r.w * 0.96);
+    let whiteRows = 0;
+    for (let y = r.y; y < r.y + r.h; y++) {
+      let bright = 0, colorSat = 0, rowTot = 0;
+      for (let x = tx0; x < tx1; x += 2) {
+        const k = (y * W + x) * 4;
+        const rv = data[k], gv = data[k + 1], bv = data[k + 2];
+        const mx = Math.max(rv, gv, bv), mn = Math.min(rv, gv, bv);
+        const lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
+        rowTot++;
+        if (lum > 225 && mx - mn < 25) bright++;
+        if (mx - mn > 35) colorSat++;
+      }
+      if (rowTot > 0 && (bright / rowTot) >= 0.72 && (colorSat / rowTot) < 0.08) {
+        whiteRows++;
+      }
+    }
+    const whiteRowFrac = whiteRows / Math.max(1, r.h);
+    const isReference = whiteRatio > 0.52 || (whiteRowFrac >= 0.09 && whiteRatio > 0.27);
+    results.push({ ...r, whiteRatio, whiteRowFrac, isReference });
   }
 
   return results.sort((p, q) => p.x - q.x);
