@@ -166,7 +166,7 @@ function analyzeRuleFallback(content) {
     photoBanner = text.includes('동바리') ? '콘크리트 타설 중 계단참 AL Form 동바리 미복구' : 'AL Form 해체 구간 슬래브 단부 추락방지 미조치';
     analysis = '알폼(AL Form) 작업 시 동바리 임의 해체 후 미복구로 붕괴·도괴 위험 극심';
     pmVerdict = '동바리 즉시 원상복구 및 관리감독자 타설 전 검측 프로세스 준수';
-  } else if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집') || text.includes('벽체') || text.includes('전도방지')) {
+  } else if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집') || text.includes('벽체') || text.includes('전도방지') || text.includes('유로폼')) {
     item = '거푸집동바리';
     law = '산안규칙 제332조(거푸집동바리등의 안전조치)';
     hazardType = '붕괴·도괴';
@@ -176,6 +176,7 @@ function analyzeRuleFallback(content) {
     photoBanner = text.includes('전도방지') ? '대형 벽체 조립 설치 시 전도방지 파이프 미사용' : '거푸집동바리 안전조치 기준 미준수';
     analysis = '대형 벽체 거푸집 조립·설치 시 전도방지 파이프 또는 전용철물 미사용으로 전도·붕괴 위험';
     pmVerdict = '구조검토서 및 작업절차서 기준 전도방지 파이프/전용철물 보강 완료 후 작업 진행';
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '거푸집동바리공사', workMethod: '설치조립작업', agentMajor: '가시설', agentMid: '거푸집/동바리', agentMinor: text.includes('서포트') ? '파이프서포트' : '유로폼' };
   } else if (text.includes('사다리') || text.includes('우마')) {
     item = '사다리';
     law = '산안규칙 제24조(사다리식 통로 등의 구조)';
@@ -340,7 +341,7 @@ function buildFallbackCleanedFields(rawOcr, fb) {
 const TAXONOMY_STANDARD_PROMPT = `
 [건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 표준 목록 내에서만 선택할 것]
 1. 공종 (workGroup): ["거푸집동바리공사", "가설공사", "철근콘크리트공사", "철골공사", "토공사", "기초공사", "양중작업", "마감공사", "설비·전기공사", "해체공사", "공통"] 중 선택.
-   - 갱폼, 알폼, 유로폼, 동바리, 서포트 등 거푸집류는 반드시 "거푸집동바리공사"
+   - 갱폼, 알폼, 유로폼, 대형 벽체 거푸집, 전도방지 파이프, 동바리, 서포트 등 거푸집류는 반드시 "거푸집동바리공사" (절대 비계/전기시설로 분류 금지!)
    - 비계, 낙하물방지망 등은 "가설공사"
    - 전기, 전선, 누전차단기 등은 "설비·전기공사"
 2. 작업방법 (workMethod): ["설치조립작업", "해체작업", "양중작업", "굴착작업", "하역운반작업", "고소작업", "가공조립작업", "운전조정작업", "중량물취급작업"] 중 선택.
@@ -611,7 +612,7 @@ JSON 형식:
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
               ],
-              max_tokens: isOcrClean ? 1200 : 650,
+              max_tokens: isOcrClean ? 850 : 550,
               temperature: 0.05
             }).catch(async () => {
               return await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
@@ -643,6 +644,24 @@ JSON 형식:
             const endIdx = cleaned.lastIndexOf('}');
             if (startIdx !== -1 && endIdx !== -1) {
               const parsed = JSON.parse(cleaned.slice(startIdx, endIdx + 1));
+
+              // Post-AI 표준 정합성 검증 (거푸집동바리공사가 전기시설/비계로 오분류되는 현상 원천 차단)
+              const combinedCtx = `${parsed.workGroup || ''} ${body.workGroup || ''} ${parsed.cleanedFields?.content || content || ''}`;
+              const isFormCtx = /거푸집|동바리|벽체|전도방지|유로폼|갱폼|알폼|al\s*form|gang\s*form|서포트/i.test(combinedCtx);
+              const isElecCtx = /전기|전선|분전함|누전|차단기|접지|투광등|케이블/i.test(combinedCtx);
+              if (isFormCtx && !isElecCtx) {
+                if (!parsed.agentMajor || /전기|화기/.test(parsed.agentMajor)) parsed.agentMajor = '가시설';
+                const isSpecForm = /갱폼|gang\s*form|선해체|알폼|al\s*form|알루미늄/i.test(combinedCtx);
+                if (!parsed.agentMid || /전기|누전|비계/.test(parsed.agentMid)) {
+                  parsed.agentMid = isSpecForm ? '특수거푸집' : '거푸집/동바리';
+                }
+                if (parsed.agentMid === '특수거푸집') {
+                  parsed.agentMinor = /알폼|al\s*form|알루미늄/i.test(combinedCtx) ? '알폼' : '갱폼';
+                } else if (!parsed.agentMinor || /누전|차단기|시스템비계/.test(parsed.agentMinor)) {
+                  parsed.agentMinor = /유로폼/.test(combinedCtx) ? '유로폼' : (/서포트/.test(combinedCtx) ? '파이프서포트' : (/벽체|거푸집/.test(combinedCtx) ? '유로폼' : '시스템동바리'));
+                }
+              }
+
               if (parsed.cleanedFields && typeof parsed.cleanedFields === 'object') {
                 for (const k of Object.keys(parsed.cleanedFields)) {
                   if (typeof parsed.cleanedFields[k] === 'string') {

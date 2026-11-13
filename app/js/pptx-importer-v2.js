@@ -1243,10 +1243,12 @@ function buildCleanTextStripCanvas(canvas, frame) {
     { x: Math.round(FX + FW * 0.070), y: Math.round(FY + FH * 0.158), w: Math.round(FW * 0.920), h: Math.round(FH * 0.056) },
     // 4. 부적합 내용 행
     { x: Math.round(FX + FW * 0.070), y: Math.round(FY + FH * 0.214), w: Math.round(FW * 0.920), h: Math.round(FH * 0.095) },
-    // 5. 우측 발생원인(인터뷰 결과) 및 점검단 제안
-    { x: Math.round(FX + FW * 0.600), y: Math.round(FY + FH * 0.365), w: Math.round(FW * 0.388), h: Math.round(FH * 0.365) },
+    // 5-1. 우측 발생원인(인터뷰 결과)
+    { x: Math.round(FX + FW * 0.602), y: Math.round(FY + FH * 0.365), w: Math.round(FW * 0.384), h: Math.round(FH * 0.180) },
+    // 5-2. 우측 점검단 제안 본문 (좌측 '시스템 개선 / 교육/코칭' 세로 경계선 제외하여 '| |', 'DI EL' OCR 노이즈 원천 차단)
+    { x: Math.round(FX + FW * 0.725), y: Math.round(FY + FH * 0.545), w: Math.round(FW * 0.261), h: Math.round(FH * 0.180) },
     // 6. 우측 하단 개선대책 본문 (우측 끝 PM 판정결과 박스가 줄 중간에 섞이지 않도록 본문 열만 분리 크롭)
-    { x: Math.round(FX + FW * 0.600), y: Math.round(FY + FH * 0.725), w: Math.round(FW * 0.295), h: Math.round(FH * 0.255) }
+    { x: Math.round(FX + FW * 0.602), y: Math.round(FY + FH * 0.765), w: Math.round(FW * 0.292), h: Math.round(FH * 0.215) }
   ];
 
   const pad = 16;
@@ -1891,8 +1893,9 @@ export async function parseSheetCanvas(canvas, options = {}) {
   if (window.Tesseract) {
     try {
       const stripCanvas = buildCleanTextStripCanvas(canvas, frame);
-      record._stripImageBase64 = stripCanvas.toDataURL('image/jpeg', 0.90);
-      const ret = await window.Tesseract.recognize(stripCanvas.toDataURL('image/jpeg', 0.90), 'kor+eng');
+      const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.90);
+      record._stripImageBase64 = stripDataUrl;
+      const ret = await recognizeWithWorkerPool(stripDataUrl);
       const ocrText = (ret && ret.data && ret.data.text) || '';
 
       // OCR 텍스트 기반 참고자료/샘플 판별
@@ -2132,84 +2135,89 @@ export async function parsePDF(file, onProgress = () => {}) {
   totalPages = pdfDoc.numPages;
 
   let lastKnownLocation = '';
-  for (let pNum = 1; pNum <= totalPages; pNum++) {
+  const BATCH_SIZE = 3;
+  const orderedResults = new Array(totalPages).fill(null);
+
+  for (let startPage = 1; startPage <= totalPages; startPage += BATCH_SIZE) {
+    const batchPages = [];
+    for (let p = startPage; p < startPage + BATCH_SIZE && p <= totalPages; p++) {
+      batchPages.push(p);
+    }
+
     onProgress({
-      current: pNum,
+      current: startPage,
       total: totalPages,
       extracted: records.length,
       skipped: skippedCount,
-      currentPage: pNum,
+      currentPage: startPage,
       totalPages,
       extractedCount: records.length,
       skippedCount
     });
 
-    const page = await pdfDoc.getPage(pNum);
-    const viewport = page.getViewport({ scale: 2.0 });
-    let pageCanvas = document.createElement('canvas');
-    pageCanvas.width = viewport.width;
-    pageCanvas.height = viewport.height;
-    const pCtx = pageCanvas.getContext('2d');
-    await page.render({ canvasContext: pCtx, viewport }).promise;
+    await Promise.all(batchPages.map(async (pNum) => {
+      const page = await pdfDoc.getPage(pNum);
+      const viewport = page.getViewport({ scale: 2.0 });
+      let pageCanvas = document.createElement('canvas');
+      pageCanvas.width = viewport.width;
+      pageCanvas.height = viewport.height;
+      const pCtx = pageCanvas.getContext('2d');
+      await page.render({ canvasContext: pCtx, viewport }).promise;
 
-    // 가로 정방향 정규화
-    if (pageCanvas.height > pageCanvas.width) {
-      const c270 = rotateCanvas(pageCanvas, 270);
-      const c90 = rotateCanvas(pageCanvas, 90);
-      pageCanvas = measureHeaderSignature(c270).score >= measureHeaderSignature(c90).score ? c270 : c90;
-    }
+      // 가로 정방향 정규화
+      if (pageCanvas.height > pageCanvas.width) {
+        const c270 = rotateCanvas(pageCanvas, 270);
+        const c90 = rotateCanvas(pageCanvas, 90);
+        pageCanvas = measureHeaderSignature(c270).score >= measureHeaderSignature(c90).score ? c270 : c90;
+      }
 
-    // 디지털 텍스트 추출
-    let digitalText = '';
-    try {
-      const textContent = await page.getTextContent();
-      digitalText = (textContent.items || []).map(it => it.str || '').join(' ');
-    } catch (e) {}
+      // 디지털 텍스트 추출
+      let digitalText = '';
+      try {
+        const textContent = await page.getTextContent();
+        digitalText = (textContent.items || []).map(it => it.str || '').join(' ');
+      } catch (e) {}
 
-    const sig = measureHeaderSignature(pageCanvas);
-    const hasSheetKeywords = digitalText.includes('부적합') && (digitalText.includes('관련') || digitalText.includes('공종') || digitalText.includes('발생원인'));
+      const sig = measureHeaderSignature(pageCanvas);
+      const hasSheetKeywords = digitalText.includes('부적합') && (digitalText.includes('관련') || digitalText.includes('공종') || digitalText.includes('발생원인'));
 
-    if (!sig.isSheet && !hasSheetKeywords) {
-      skippedCount++;
-      onProgress({
-        phase: 'skip',
-        current: pNum,
-        total: totalPages,
-        extracted: records.length,
-        skipped: skippedCount,
-        currentPage: pNum,
-        totalPages,
-        extractedCount: records.length,
-        skippedCount
+      if (!sig.isSheet && !hasSheetKeywords) {
+        skippedCount++;
+        console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (일반 텍스트/간지 페이지)`);
+        return;
+      }
+
+      const rec = await parseSheetCanvas(pageCanvas, {
+        digitalText,
+        pageNumber: pNum,
+        sourceName: `${file.name} (p.${pNum})`,
+        lastKnownLocation
       });
-      console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (일반 텍스트/간지 페이지)`);
-      continue;
-    }
+      if (rec && rec.location) lastKnownLocation = rec.location;
+      if (rec && rec._skipped) {
+        skippedCount++;
+        console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
+        return;
+      }
+      orderedResults[pNum - 1] = rec;
+    }));
 
-    const rec = await parseSheetCanvas(pageCanvas, {
-      digitalText,
-      pageNumber: pNum,
-      sourceName: `${file.name} (p.${pNum})`,
-      lastKnownLocation
+    // 배치 결과 순서대로 반영 및 진행률 갱신
+    records.length = 0;
+    for (const r of orderedResults) {
+      if (r) records.push(r);
+    }
+    const donePage = Math.min(totalPages, startPage + BATCH_SIZE - 1);
+    onProgress({
+      current: donePage,
+      total: totalPages,
+      extracted: records.length,
+      skipped: skippedCount,
+      currentPage: donePage,
+      totalPages,
+      extractedCount: records.length,
+      skippedCount
     });
-    if (rec && rec.location) lastKnownLocation = rec.location;
-    if (rec && rec._skipped) {
-      skippedCount++;
-      onProgress({
-        phase: 'skip',
-        current: pNum,
-        total: totalPages,
-        extracted: records.length,
-        skipped: skippedCount,
-        currentPage: pNum,
-        totalPages,
-        extractedCount: records.length,
-        skippedCount
-      });
-      console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
-      continue;
-    }
-    records.push(rec);
   }
 
   onProgress({
