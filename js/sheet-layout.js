@@ -437,7 +437,7 @@ export function findPhotoBoxes(img, area, banners = []) {
   for (let x = 0; x < mw; x++) {
     if (colEmpty(x)) gap++;
     else {
-      if (gap >= 6 && x - gap > s) {
+      if (gap >= 2 && x - gap > s) {
         xSegs.push([s, x - gap - 1]);
         s = x;
       }
@@ -445,6 +445,54 @@ export function findPhotoBoxes(img, area, banners = []) {
     }
   }
   xSegs.push([s, mw - 1]);
+
+  // 2차 수직 거터 분할: 상단 체크리스트/하단 배너로 인해 전체 열 기준 colEmpty()가 실패한 좁은(2~4px) 사진 간 틈새 분할
+  const refinedSegs = [];
+  for (const [x0, x1] of xSegs) {
+    const segW = x1 - x0 + 1;
+    if (segW > mw * 0.58) {
+      const yProbeStart = area.y + Math.round(area.h * 0.20);
+      const yProbeEnd = area.y + Math.round(area.h * 0.85);
+      const xScanStart = x0 + Math.round(segW * 0.28);
+      const xScanEnd = x0 + Math.round(segW * 0.78);
+      let runStart = -1;
+      let bestGutter = null;
+      for (let rx = xScanStart; rx <= xScanEnd; rx++) {
+        const ix = area.x + rx;
+        let whiteCnt = 0, totalCnt = 0;
+        for (let iy = yProbeStart; iy < yProbeEnd; iy++) {
+          const k = (iy * W + ix) * 4;
+          totalCnt++;
+          if (data[k] > 230 && data[k + 1] > 230 && data[k + 2] > 230) whiteCnt++;
+        }
+        const ratio = whiteCnt / Math.max(1, totalCnt);
+        if (ratio >= 0.88) {
+          if (runStart < 0) runStart = rx;
+        } else {
+          if (runStart >= 0 && rx - runStart >= 2) {
+            const center = Math.floor((runStart + rx - 1) / 2);
+            if (!bestGutter || (rx - runStart) > bestGutter.width) {
+              bestGutter = { leftEnd: runStart - 1, rightStart: rx, width: rx - runStart, center };
+            }
+          }
+          runStart = -1;
+        }
+      }
+      if (runStart >= 0 && xScanEnd + 1 - runStart >= 2) {
+        const center = Math.floor((runStart + xScanEnd) / 2);
+        if (!bestGutter || (xScanEnd + 1 - runStart) > bestGutter.width) {
+          bestGutter = { leftEnd: runStart - 1, rightStart: xScanEnd + 1, width: xScanEnd + 1 - runStart, center };
+        }
+      }
+      if (bestGutter && bestGutter.leftEnd - x0 >= mw * 0.22 && x1 - bestGutter.rightStart >= mw * 0.20) {
+        refinedSegs.push([x0, bestGutter.leftEnd], [bestGutter.rightStart, x1]);
+        continue;
+      }
+    }
+    refinedSegs.push([x0, x1]);
+  }
+  xSegs.length = 0;
+  xSegs.push(...refinedSegs);
 
   const results = [];
   for (const [xa0, xb0] of xSegs) {
@@ -495,10 +543,8 @@ export function findPhotoBoxes(img, area, banners = []) {
       }
     }
     const whiteRatio = white / Math.max(1, tot);
-    const isRightHalf = r.x > area.x + Math.round(area.w * 0.45);
-    // 참고 도면(예: Page 0 우측 '6.2 거푸집 보강')은 전체 컬럼 백색 비율이 ~0.39로 높고,
-    // 실제 4분할 현장사진 콜라주(예: Page 1 우측 '② 잭베이스 설치불량')는 ~0.217 수준임
-    const isReference = whiteRatio > 0.28 || (isRightHalf && whiteRatio > 0.25);
+    // 참고 문서/빈 여백 필터 완화: 실제 다분할 콜라주('② 잭베이스 설치불량' 등 ~0.266) 및 도면('[비계설치도면]') 누락 방지
+    const isReference = whiteRatio > 0.52;
     results.push({ ...r, whiteRatio, isReference });
   }
 

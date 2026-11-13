@@ -24,7 +24,7 @@
   let isCloudMode = true; // 기본 24시간 Cloudflare 클라우드 Qwen AI 모드
 
   async function checkConnection(url = currentEndpoint) {
-    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (root.SAFEPATROL_CONFIG && root.SAFEPATROL_CONFIG.workerUrl) || 'https://safepatrol-relay.abraxass0511.workers.dev';
+    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (typeof globalThis !== 'undefined' ? globalThis.SAFEPATROL_CONFIG?.workerUrl : null) || 'https://safepatrol-relay.abraxass0511.workers.dev';
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
 
     // 1. Cloudflare 24시간 상시 가동 Qwen AI (최우선 연결 - 노트북/서버 오프라인 상관없이 24시간 작동)
@@ -805,7 +805,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (/거푸집|동바리|유로폼/i.test(s) || /거푸집|동바리|유로폼/i.test(content || '')) return '거푸집동바리공사';
     if (/비계/i.test(s) || /비계/i.test(content || '')) return '비계공사';
     if (/^(?:HA|HE|HEY|BEE)\s*공사/i.test(s)) return '비계공사';
-    return s || '비계공사';
+    return s || '';
   }
 
   function cleanOpinionText(txt) {
@@ -945,7 +945,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
    */
   async function cleanOcrRecord(rawOcrText, fallbackRecord) {
     if (!fallbackRecord) fallbackRecord = {};
-    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (root.SAFEPATROL_CONFIG && root.SAFEPATROL_CONFIG.workerUrl) || 'https://safepatrol-relay.abraxass0511.workers.dev';
+    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (typeof globalThis !== 'undefined' ? globalThis.SAFEPATROL_CONFIG?.workerUrl : null) || 'https://safepatrol-relay.abraxass0511.workers.dev';
     const pin = storage.getItem('sp_pin') || '111111';
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
 
@@ -953,8 +953,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!forceLocal && workerUrl) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 45000);
-        const hasSufficientOcr = rawOcrText && String(rawOcrText).trim().length >= 40;
+        const timeout = setTimeout(() => ctrl.abort(), 60000);
+        const hasSufficientOcr = !!(fallbackRecord._hasDigitalText && rawOcrText && String(rawOcrText).trim().length >= 40);
         const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -963,6 +963,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           },
           body: JSON.stringify({
             mode: 'ocr_clean',
+            forceVision: !hasSufficientOcr && !!fallbackRecord._stripImageBase64,
             rawOcrText: rawOcrText || '',
             stripImageBase64: hasSufficientOcr ? undefined : (fallbackRecord._stripImageBase64 || undefined),
             content: fallbackRecord.content || rawOcrText,
@@ -997,29 +998,59 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             if (cfData.rootCauseMgmt) fallbackRecord.rootCauseMgmt = cfData.rootCauseMgmt;
             if (cfData.rootCauseSystem) fallbackRecord.rootCauseSystem = cfData.rootCauseSystem;
             if (cfData.stakeholder) fallbackRecord.stakeholder = cfData.stakeholder;
-            if (cfData.severity && !fallbackRecord.severity) fallbackRecord.severity = cfData.severity.includes('중부적합') ? '중부적합' : '경부적합';
-            if (cfData.law && !fallbackRecord.law) fallbackRecord.law = cfData.law;
-            if (cfData.hazardType && !fallbackRecord.type) fallbackRecord.type = cfData.hazardType;
-            if (cfData.photoBanner && !fallbackRecord.photoBanner) fallbackRecord.photoBanner = cfData.photoBanner;
-            if (cfData.pmVerdict && !fallbackRecord.pmVerdict) fallbackRecord.pmVerdict = cfData.pmVerdict;
+            if (cfData.severity && /중부적합|경부적합/.test(cfData.severity) && (!fallbackRecord.severity || !fallbackRecord._hasDigitalText)) {
+              fallbackRecord.severity = cfData.severity.includes('중부적합') ? '중부적합' : '경부적합';
+            }
+            if (cfData.law && (!fallbackRecord.law || /안전보건기준\s*검토/.test(fallbackRecord.law))) {
+              fallbackRecord.law = cfData.law;
+            }
+            if ((cfData.type || cfData.hazardType) && (!fallbackRecord.type || !fallbackRecord._hasDigitalText)) {
+              fallbackRecord.type = cfData.type || String(cfData.hazardType).split('·')[0];
+            }
+            if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText)) {
+              fallbackRecord.photoBanner = cfData.photoBanner;
+            }
+            if (cfData.photo2Banner) {
+              fallbackRecord.photo2Banner = cfData.photo2Banner;
+              if (!fallbackRecord.photo2Title) fallbackRecord.photo2Title = cfData.photo2Banner;
+            }
+            if (cfData.pmVerdict) {
+              fallbackRecord.pmVerdict = cfData.pmVerdict;
+              fallbackRecord.inspectorOpinionType = cfData.pmVerdict;
+              fallbackRecord.pmVerdictType = cfData.pmVerdict;
+            }
             // 주의: 장표에서 픽셀로 직접 감지한 4대 발생요인(mgmtCauses)이 이미 있으면 AI 추론값으로 절대 덮어쓰지 않음!
             if ((!Array.isArray(fallbackRecord.mgmtCauses) || fallbackRecord.mgmtCauses.length === 0) && Array.isArray(cfData.mgmtCauses) && cfData.mgmtCauses.length > 0) {
               fallbackRecord.mgmtCauses = cfData.mgmtCauses;
             }
             if (cfData.cleanedFields && typeof cfData.cleanedFields === 'object') {
               const cf = cfData.cleanedFields;
-              if (cf.content) fallbackRecord.content = cf.content;
+              if (cf.content) fallbackRecord.content = cleanContent(cf.content) || cf.content;
               if (cf.location) fallbackRecord.location = cf.location;
-              if (cf.workGroup) fallbackRecord.workGroup = cf.workGroup;
-              if (cf.subcontractor !== undefined && fallbackRecord.subcontractor) fallbackRecord.subcontractor = cf.subcontractor;
-              if (cf.interviewOpinion) fallbackRecord.interviewOpinion = cf.interviewOpinion;
-              if (cf.auditProposal) fallbackRecord.auditProposal = cf.auditProposal;
-              if (cf.actionPlan) fallbackRecord.actionPlan = cf.actionPlan;
+              if (cf.workGroup) fallbackRecord.workGroup = cleanWorkGroup(cf.workGroup, fallbackRecord.content) || cf.workGroup;
+              if (cf.subcontractor !== undefined) fallbackRecord.subcontractor = cf.subcontractor;
+              if (cf.inspector !== undefined && cf.inspector) {
+                fallbackRecord.inspector = cf.inspector;
+                fallbackRecord.inspectUser = cf.inspector;
+              }
+              if (cf.round) {
+                fallbackRecord.round = cf.round;
+                fallbackRecord.inspectRound = cf.round;
+              }
+              if (cf.interviewOpinion) fallbackRecord.interviewOpinion = cleanOpinionText(cf.interviewOpinion) || cf.interviewOpinion;
+              if (cf.auditProposal) fallbackRecord.auditProposal = cleanProposalText(cf.auditProposal) || cf.auditProposal;
+              if (cf.actionPlan) {
+                const cleanedPlan = cleanActionPlan(cf.actionPlan) || cf.actionPlan;
+                fallbackRecord.actionPlan = cleanedPlan;
+                fallbackRecord.countermeasure = cleanedPlan;
+              }
+              if (cf.law) fallbackRecord.rawLaw = cf.law;
               if (cf.rawLaw) fallbackRecord.rawLaw = cf.rawLaw;
               if (cf.lawBody) fallbackRecord.lawBody = cf.lawBody;
             }
             delete fallbackRecord._stripImageBase64;
             delete fallbackRecord._rightPhotoBase64;
+            delete fallbackRecord._hasDigitalText;
           }
         }
       } catch (cfErr) {

@@ -414,7 +414,7 @@
     return BAD_LABELS.some(bad => s.includes(bad)) || s.length < 4;
   }
 
-    function cleanBannerText(rawBanner, content) {
+  function cleanBannerText(rawBanner, content) {
     let s = String(rawBanner || '').replace(/\s+/g, ' ').trim();
     if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(content || '')) {
       return '벽이음용 상부 버팀대 설치각도(60도↓) 불량';
@@ -428,7 +428,7 @@
       .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ↓↑\s/()\-.,]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-    
+
     // 말줄임표(...) 절단 복원
     if ((s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5) && content) {
       const c = healSafetyKoreanLexicon(String(content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
@@ -482,7 +482,7 @@
       if (cleanedBanner && !isGenericTaxonomyLabel(cleanedBanner)) return cleanedBanner;
     }
     const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
-    
+
     // 0. Gang Form / 갱폼 및 선해체 방지커버
     if (/Gang\s*Form|선해체|갱폼/i.test(text)) {
       return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
@@ -500,8 +500,8 @@
       return '양중작업 시 유도로프 미사용';
     }
     // 4. 통로 바닥 가설전선 거치 및 정리 미실시 (이미지 1번 지적사항 정밀 일치)
-    if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) && 
-        (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
+    if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) &&
+      (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
       return '통로 바닥 가설전선 거치 및 정리 미실시';
     }
     // 5. 보 상부작업 승인 미실시 및 불안전 자세 (이미지 2번 지적사항 정밀 일치)
@@ -953,7 +953,7 @@
       } else if (text.includes('양중') || text.includes('유도로프')) {
         interviewOpinion = '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.';
       } else {
-        interviewOpinion = r.action 
+        interviewOpinion = r.action
           ? `현장 시공 여건 상 ${r.action} 사유로 기준이 미준수되었으며, 관리감독자의 사전 작업지휘가 미흡한 상태에서 작업이 진행됨.`
           : '현장 작업진행 과정에서 안전작업수칙에 대한 관리감독 및 작업자 간 소통이 미흡하여 규정 절차가 누락됨.';
       }
@@ -1119,14 +1119,14 @@
     // 2) 사고유형 & 부적합등급 (Cell(1,4): x = 2.1666, w = 1.5186, h = 1.0535, 20pt Bold #000000, 3.0pt #FFC000)
     const accRuns = data.typeSub
       ? [
-          { text: `${data.typeMain}\n`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-          { text: `${data.typeSub}\n`, options: { fontSize: 11, bold: true, color: '333333', fontFace: FONT_MALGUN } },
-          { text: `[${data.severity}]`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } }
-        ]
+        { text: `${data.typeMain}\n`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+        { text: `${data.typeSub}\n`, options: { fontSize: 11, bold: true, color: '333333', fontFace: FONT_MALGUN } },
+        { text: `[${data.severity}]`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } }
+      ]
       : [
-          { text: `${data.typeMain}\n`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } },
-          { text: `[${data.severity}]`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } }
-        ];
+        { text: `${data.typeMain}\n`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } },
+        { text: `[${data.severity}]`, options: { fontSize: 20, bold: true, color: '000000', fontFace: FONT_MALGUN } }
+      ];
     slide.addText(accRuns, {
       x: 2.1666, y: 0.1216, w: 1.5186, h: 1.0535,
       fill: { color: 'FFFFFF' }, line: { color: C_ACC_BORDER, width: 3.0 },
@@ -1272,8 +1272,8 @@
     let photo1Base64 = null;
     let photo2Base64 = null;
     if (loadPhotoBase64) {
-      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) {}
-      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) {}
+      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) { }
+      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) { }
     }
     const hasPhoto2 = Boolean(photo2Base64);
 
@@ -1631,8 +1631,8 @@
     let photo1Base64 = null;
     let photo2Base64 = null;
     if (loadPhotoBase64) {
-      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) {}
-      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) {}
+      try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) { }
+      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) { }
     }
 
     const hasPhoto1 = Boolean(photo1Base64);
@@ -1805,7 +1805,7 @@
           try {
             if (a.parentNode) a.parentNode.removeChild(a);
             URL.revokeObjectURL(url);
-          } catch (e) {}
+          } catch (e) { }
         }, 60000);
       }
     }
@@ -1930,14 +1930,14 @@
 
         <!-- 6-2. 메타 정보 5개 독립 셀 (14pt bold, 라벨 #0000ff) -->
         ${metaCols.map(col => {
-          const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 9.5);
-          return `
+      const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 9.5);
+      return `
             <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.2444)}; width: ${pctW(col.w)}; height: ${pctH(0.3769)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.4cqw; box-sizing: border-box; white-space: nowrap;">
               <strong style="color: #0000ff; font-size: ${pt(sz)}; margin-right: 0.2cqw;">${col.label}</strong>
               <span style="font-weight: 800; color: #000000; font-size: ${pt(sz)};">${col.val}</span>
             </div>
           `;
-        }).join('')}
+    }).join('')}
 
         <!-- 6-3. 부적합 내용 셀 (x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925, 14pt bold, 1)/2) 줄바꿈 및 내어쓰기 정렬) -->
         <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: flex-start; padding: 0.28cqw 0.5cqw; box-sizing: border-box; overflow: hidden;">
@@ -2323,10 +2323,10 @@
 
       let b64Before = null, b64After = null;
       if (loadPhotoBase64 && sample.photos && sample.photos[0]) {
-        try { b64Before = await loadPhotoBase64(sample.photos[0]); } catch (e) {}
+        try { b64Before = await loadPhotoBase64(sample.photos[0]); } catch (e) { }
       }
       if (loadPhotoBase64 && sample.fix && sample.fix.photo) {
-        try { b64After = await loadPhotoBase64(sample.fix.photo); } catch (e) {}
+        try { b64After = await loadPhotoBase64(sample.fix.photo); } catch (e) { }
       }
 
       if (b64Before) {
@@ -2362,8 +2362,8 @@
     const safeMonthStr = (month || '전체기간').replace(/[\s~:\/\\]+/g, '_');
     const filename = `안전회의_패트롤부적합분석_${safeMonthStr}_${siteName}.pptx`;
     const pptxBlob = await pptx.write({ outputType: 'blob' });
-    const mimeBlob = new Blob([pptxBlob], { 
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' 
+    const mimeBlob = new Blob([pptxBlob], {
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     });
 
     if (download !== false) {
@@ -2381,7 +2381,7 @@
           try {
             if (a.parentNode) a.parentNode.removeChild(a);
             URL.revokeObjectURL(url);
-          } catch (e) {}
+          } catch (e) { }
         }, 60000);
       }
     }
