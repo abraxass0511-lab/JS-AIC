@@ -853,14 +853,17 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (/pl\s*창호|플라스틱\s*창호/i.test(s)) return '창호공사(PL)';
     if (/^가설\s*전기(?:\s*공사)?$/i.test(s)) return '가설전기공사';
     const ctx = String(content || '');
-    if (s && s.length >= 2 && s !== '거푸집동바리공사') {
+    const isSuspiciousDefault =
+      s === '거푸집동바리공사' ||
+      (s === '가설공사(기타)' && /전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|분전반|분전함|차단기|충전부|누전|접지선|가설전선|가설전기/.test(ctx));
+    if (s && s.length >= 2 && !isSuspiciousDefault) {
       return s;
     }
     if (s === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(ctx)) {
       return '거푸집동바리공사';
     }
     if (/pl\s*창호/i.test(ctx)) return '창호공사(PL)';
-    if (/분전함|분전반|차단기|충전부|누전|가설전선|접지선|전기/i.test(ctx)) return '가설전기공사';
+    if (/분전함|분전반|차단기|충전부|누전|가설전선|접지선|전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|전기/i.test(ctx)) return '가설전기공사';
     if (/지게차|하역|운반/i.test(ctx)) return '양중 및 운반작업';
     if (/양중|타워크레인|크레인|인양|유도로프/i.test(ctx)) return '양중작업';
     if (/비계|작업발판|안전난간|개구부/i.test(ctx)) return '비계공사';
@@ -1225,8 +1228,35 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return cleaned;
   }
 
-  function applyLocalTaxonomyToRecords(records = []) {
+  const ELECTRICAL_SIGNAL_RE = /가설전기|분전반|분전함|누전차단기|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량|누설전류/;
+  const GENUINE_DEMOLITION_RE = /석면\s*해체|구조물\s*해체|비계\s*해체|동바리\s*해체|슬래브\s*철거|벽체\s*철거|철거\s*작업|해체\s*작업/;
+  const GENUINE_EXCAVATION_RE = /굴착\s*작업|터파기|토류판|어스앙카|집수정\s*굴착|사면\s*붕괴|굴착면|법면/;
+
+  function sanitizeWorkMethod(rawMethod, workGroup, content, location) {
+    const wm = String(rawMethod || '').trim();
+    const wg = String(workGroup || '').trim();
+    const contentText = String(content || '').trim();
+    const strippedContent = contentText
+      .replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' ')
+      .trim();
+    const hasElectrical = wg === '가설전기공사' || ELECTRICAL_SIGNAL_RE.test(`${wg} ${contentText}`);
+    const hasGenuineDemolition = GENUINE_DEMOLITION_RE.test(contentText);
+    const hasGenuineExcavation = GENUINE_EXCAVATION_RE.test(strippedContent);
+
+    if (hasElectrical && !hasGenuineDemolition && !hasGenuineExcavation) {
+      if (!wm || wm === '해체작업' || wm === '굴착작업') {
+        return '설치조립작업';
+      }
+    }
+    if (wm === '굴착작업' && !hasGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${location || ''} ${contentText}`)) {
+      return hasElectrical ? '설치조립작업' : '고소작업';
+    }
+    return wm;
+  }
+
+  function applyLocalTaxonomyToRecords(records = [], options = {}) {
     if (!Array.isArray(records)) return records;
+    const preserveAiFields = Boolean(options.preserveAiFields);
     records.forEach((rec) => {
       if (!rec) return;
       const fullCtx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''}`;
@@ -1239,9 +1269,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       } else {
         rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
       }
-      if ((!rec.workMethod || (rec.workMethod === '설치조립작업' && /하역운반작업|양중작업|굴착작업|해체작업/.test(r.workMethod || ''))) && r.workMethod) {
-        rec.workMethod = r.workMethod;
+      if (!preserveAiFields || !rec.workMethod) {
+        if ((!rec.workMethod || (rec.workMethod === '설치조립작업' && /하역운반작업|양중작업|굴착작업|해체작업/.test(r.workMethod || ''))) && r.workMethod) {
+          rec.workMethod = r.workMethod;
+        }
       }
+      rec.workMethod = sanitizeWorkMethod(rec.workMethod, rec.workGroup, rec.content, rec.location) || r.workMethod || rec.workMethod;
       if (rec.workMethod) rec.workName = rec.workMethod;
       if (r.agentMajor && (!rec.agentMajor || (rec.agentMid === '거푸집/동바리' && !/거푸집|동바리|유로폼|서포트/.test(fullCtx)))) {
         rec.agentMajor = r.agentMajor;
@@ -1257,8 +1290,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if ((!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(fullCtx))) && r.type) {
         rec.type = r.type;
       }
-      const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
-      rec.photoBanner = cleanBannerText(rawBannerFromSheet || rec.photoBanner, rec.content) || r.photoBanner || '';
+      if (!preserveAiFields || !rec.photoBanner) {
+        const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
+        rec.photoBanner = cleanBannerText(rawBannerFromSheet || rec.photoBanner, rec.content) || r.photoBanner || '';
+      }
       if (!rec.condition || rec.condition === '해당없음') rec.condition = r.condition || rec.condition;
       if (!rec.action || rec.action === '해당없음') rec.action = r.action || rec.action;
       if (!rec.rootCauseMgmt && r.rootCauseMgmt) rec.rootCauseMgmt = r.rootCauseMgmt;
@@ -1305,7 +1340,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 18000);
+      const timer = setTimeout(() => ctrl.abort(), 24000);
       const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1355,7 +1390,39 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           } else {
             rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
           }
-          if (aiItem.workMethod) rec.workName = aiItem.workMethod;
+          // 1) AI 전수 교정(fixedFields: 띄어쓰기 + 스캔 오탈자 + 말미 영문 노이즈 제거) 우선 반영
+          if (aiItem.fixedFields && typeof aiItem.fixedFields === 'object') {
+            const ff = aiItem.fixedFields;
+            const applyFixedField = (key, rawVal, cleanerFn, syncKey) => {
+              if (typeof rawVal !== 'string') return;
+              const v = rawVal.trim();
+              const orig = String(rec[key] || '').trim();
+              if (!v || !orig || /\uFFFD/.test(v)) return;
+              const vCompactLen = v.replace(/\s+/g, '').length;
+              const oCompactLen = orig.replace(/\s+/g, '').length;
+              if (oCompactLen > 0 && (vCompactLen < oCompactLen * 0.45 || vCompactLen > oCompactLen * 1.85)) return;
+              const normFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
+                ? (s) => window.SafeTextNormalizer.normalizeFieldText(key === 'interviewOpinion' ? 'interview' : key, s)
+                : (s) => s;
+              const normalized = normFn(healSafetyKoreanLexicon(v));
+              const cleaned = cleanerFn ? cleanerFn(normalized) : normalized;
+              if (cleaned && cleaned.length >= 2) {
+                rec[key] = cleaned;
+                if (syncKey) rec[syncKey] = cleaned;
+              }
+            };
+            applyFixedField('location', ff.location, null);
+            applyFixedField('content', ff.content, cleanContent);
+            applyFixedField('interviewOpinion', ff.interview || ff.interviewOpinion, cleanOpinionText);
+            applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
+            applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
+          }
+          if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
+            window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
+          }
+
+          rec.workMethod = sanitizeWorkMethod(rec.workMethod || aiItem.workMethod, rec.workGroup, rec.content, rec.location);
+          if (rec.workMethod) rec.workName = rec.workMethod;
           if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; }
           if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; }
           if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; }
@@ -1363,19 +1430,22 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             rec.type = String(aiItem.hazardType).split('·')[0];
           }
           const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
-          if (rawBannerFromSheet) {
+          const aiBanner = (aiItem.photoBanner || '').trim();
+          const hasUsefulSpaces = (s) => /\s/.test(s) || s.length < 10;
+          const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s);
+          if (rawBannerFromSheet && hasUsefulSpaces(rawBannerFromSheet) && !isTruncatedRawBanner(rawBannerFromSheet)) {
             rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content);
-          } else if (aiItem.photoBanner && aiItem.photoBanner.trim() && aiItem.photoBanner.trim() !== (rec.content || '').trim()) {
-            rec.photoBanner = cleanBannerText(aiItem.photoBanner.trim(), rec.content);
+          } else if (aiBanner && !/\uFFFD/.test(aiBanner) && aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner)) {
+            rec.photoBanner = cleanBannerText(aiBanner, rec.content);
+          } else if (rawBannerFromSheet) {
+            rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content);
           } else {
             rec.photoBanner = summarizeContentToBanner(rec.content);
           }
           if (aiItem.law && !rec.law) rec.law = aiItem.law;
-          if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
-            window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
-          }
           rec._aiCleaned = true;
         });
+        return applyLocalTaxonomyToRecords(records, { preserveAiFields: true });
       }
     } catch (e) {
       _cfTransientBackoffUntil = Date.now() + 15 * 1000;

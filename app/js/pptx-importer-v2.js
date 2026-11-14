@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v37';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v37';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v39';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v39';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -19,7 +19,7 @@ import {
   OFFICIAL_WORK_GROUPS,
   mapToStandardWorkGroup,
   extractCoreViolationBanner
-} from './text-normalizer.js?v=20261115_v37';
+} from './text-normalizer.js?v=20261115_v39';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -2444,7 +2444,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
   if (hasFullBinaryJpegs) {
     totalPages = binaryResult.jpegPages.length;
-    const BATCH_SIZE = 6;
+    const BATCH_SIZE = 4;
     let processedCount = 0;
 
     for (let i = 0; i < binaryResult.jpegPages.length; i += BATCH_SIZE) {
@@ -2578,7 +2578,7 @@ export async function parsePDF(file, onProgress = () => {}) {
   totalPages = pdfDoc.numPages;
 
   let lastKnownLocation = '';
-  const BATCH_SIZE = 6;
+  const BATCH_SIZE = 4;
   const orderedResults = new Array(totalPages).fill(null);
 
   for (let startPage = 1; startPage <= totalPages; startPage += BATCH_SIZE) {

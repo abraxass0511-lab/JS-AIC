@@ -147,21 +147,24 @@ function analyzeRuleFallback(content) {
     holdPoint = true;
     analysis = '용접·용단 불티 비산방지포 미설치 또는 소화기 미배치';
     pmVerdict = '화기작업 즉시 중단, 불티비산방지포 및 소화기 2대 전진 배치 후 재개';
-  } else if (text.includes('전기') || text.includes('분전') || text.includes('누전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부')) {
+  } else if (text.includes('전기') || text.includes('분전') || text.includes('누전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부') || text.includes('전등') || text.includes('소켓') || text.includes('심선') || text.includes('전선')) {
     const isLivePart = text.includes('충전부') || text.includes('노출');
+    const isLight = text.includes('전등') || text.includes('소켓') || text.includes('심선');
     const isGroundBolt = text.includes('접지선') && (text.includes('고정') || text.includes('볼트') || text.includes('용량'));
-    item = '분전반';
+    item = isLight ? '전등/전선' : '분전반';
     law = isLivePart ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)' : '안전보건규칙 제302조(전기 기계·기구의 접지)';
     hazardType = '감전';
     severity = '중부적합';
     mgmtCauses = ['불안전 상태', '계획 미이행'];
     holdPoint = false;
-    photoBanner = isLivePart
-      ? '분전함 차단기 충전부 노출'
-      : (isGroundBolt ? '접지선 볼트 고정 불량 및 용량 부족' : '임시 분전함 누전차단기 및 접지 불량');
-    analysis = isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 누전차단기 불량';
-    pmVerdict = '해당 차단기 전원 즉시 차단 및 충전부 방호커버·접지선 체결 완료 후 통전';
-    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '가설전기공사', workMethod: '설치조립작업', agentMajor: '전기시설', agentMid: '누전차단기', agentMinor: isLivePart ? '분전함' : '누전차단기', condition: '안전방호장치의 결함 (미설치·해체·불량)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
+    photoBanner = isLight
+      ? '전등 소켓 충전부 노출 및 절연 불량'
+      : (isLivePart
+        ? '분전함 차단기 충전부 노출'
+        : (isGroundBolt ? '접지선 볼트 고정 불량 및 용량 부족' : '가설분전반 관리 및 접지 불량'));
+    analysis = isLivePart ? '가설전등/분전반 내 충전부 방호 미흡으로 감전 위험' : '가설전기 분전반 관리·접지 및 누전차단기 점검 불량';
+    pmVerdict = '해당 차단기 전원 즉시 차단 및 충전부 절연 방호·접지 보강 후 사용';
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '가설전기공사', workMethod: '설치조립작업', agentMajor: '전기·화기·설비', agentMid: '전기시설', agentMinor: isLivePart ? '분전함' : '누전차단기', condition: '방호장치 결함 (덮개·난간 미설치 등)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
   } else if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
     const isWindow = /pl\s*창호|창호|유리/i.test(text);
     item = '운반장비';
@@ -360,13 +363,14 @@ const TAXONOMY_STANDARD_PROMPT = `
 [건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 분류표(작업분류표.jpg) 내에서만 선택할 것]
 1. 공종 (workGroup): ["비계공사", "안전시설공사", "가설공사(타워크레인)", "가설공사(건설용리프트)", "흙막이/차수공사", "터파기공사", "굴착공사", "파일공사", "거푸집동바리공사", "거푸집공사(갱폼)", "철근공사", "콘크리트공사", "철골공사", "양중 및 운반작업", "창호공사(PL)", "창호공사(AL)", "창호공사(STL)", "창호공사(목창호)", "창호공사(기타)", "유리공사", "가설전기공사", "수변전설비공사", "전선관공사", "기타전기공사", "해체/철거공사", "방수/방습공사"] 중 선택.
    - PL창호공사, 피엘창호, 창호(PL) 관련 작업은 반드시 건축공사 세부공종인 "창호공사(PL)"로 분류
-   - 가설전기, 임시전력, 분전반, 차단기, 접지, 가설전선 관련 작업은 반드시 전기공사 세부공종인 "가설전기공사"로 분류
+   - 가설전기, 임시전력, 분전반, 차단기, 접지, 가설전선, 전등 소켓, 심선 노출 관련 작업은 반드시 전기공사 세부공종인 "가설전기공사"로 분류 (임의로 "가설공사(기타)"로 분류 금지)
    - 갱폼, 알폼, 유로폼, 대형 벽체 거푸집, 전도방지 파이프, 동바리, 서포트는 "거푸집동바리공사" 또는 "거푸집공사(갱폼)"
    - 시스템비계, 외부비계, 작업발판, 벽이음은 "비계공사"
 2. 작업방법 (workMethod): ["굴착작업", "하역운반작업", "양중작업", "설치조립작업", "해체작업", "중량물취급작업", "고소작업", "밀폐공간작업", "협소공간작업"] 중 선택.
    - 지게차 작업, 자재 하역, 상차·하차, 운반은 반드시 "하역운반작업"
-   - 설치, 세팅, 거치, 조립은 "설치조립작업"
-   - 해체, 탈형, 철거는 "해체작업"
+   - 가설전기·분전반·접지선·전등·가설시설물 설치/배치/유지관리·점검 불량은 반드시 "설치조립작업" (절대 "해체작업"으로 오분류 금지! 인터뷰에 "철거 예정"이 있거나 커버가 열려 노출돼도 해체작업이 아님)
+   - "굴착작업"은 실제 터파기·굴착·토사반출 작업일 때만 선택 (단순히 작업장소가 "흙막이 상부/주변"이면서 분전반·통로·난간 불량인 경우 절대 "굴착작업" 선택 금지!)
+   - "해체작업"은 실제로 비계·거푸집·동바리·구조물을 철거·해체하는 작업 중 지적된 경우에만 선택
    - 크레인/호이스트 인양은 "양중작업"
 3. 기인물 대분류 (agentMajor): ["가시설", "건설장비", "작업발판", "작업장·통로", "전기·화기·설비", "양중·줄걸이", "개인보호구", "토공·구조물"] 중 선택.
 4. 기인물 중분류 (agentMid):
@@ -392,9 +396,9 @@ const TAXONOMY_STANDARD_PROMPT = `
     - rootCauseSystem (안전시스템): ["협력업체 안전관리계획 검토/승인 절차 미흡", "Hold Point(승인점검) 절차 미이행", "공정 간 간섭사항 사전 검토 체계 부재", "안전시설물 설치/인계인수 프로세스 미흡", "표준작업절차서(SOP) 미배포 또는 현장 부적합"] 중 선택.
     - stakeholder (관리/책임주체): ["원청 시공팀", "원청 안전팀", "협력사 관리감독자", "협력사 근로자", "장비 임대/운전원"] 중 선택.
 [사진 요약 배너 photoBanner 작성 규칙]
-- 사진 상단 배너는 실제 위반한 핵심 사실(대상 + 결함/행동)만 12~20자 완성된 명사구로 간결히 요약할 것.
+- 사진 상단 배너는 실제 위반한 핵심 사실(대상 + 결함/행동)만 12~24자 완성된 한국어 띄어쓰기 명사구로 간결히 요약할 것 (괄호가 중간에 끊기거나 글자가 잘리는 일이 절대 없게 완성문으로 작성).
 - 절대 부적합 내용(content) 전체를 그대로 복사하거나 '~발생시 감전우려', '~하여 충돌 우려', '~방전 미흡', '2) ...' 부연 결과절 및 말줄임표(...)를 붙이지 말 것!
-- (예: "접지선 볼트 고정 불량 및 용량 부족", "유도원·근로자 지게차 근접 작업", "분전함 차단기 충전부 노출", "벽이음용 상부 버팀대 설치각도(60도↓) 불량")`;
+- (예: "접지선 볼트 고정 불량 및 용량 부족", "유도원·근로자 지게차 근접 작업", "분전함 차단기 충전부 노출", "가설분전반 관리 및 주변정리 불량", "전등 소켓 충전부 노출 및 절연 불량")`;
 
 export default {
   async fetch(request, env) {
@@ -498,8 +502,11 @@ export default {
             });
           }
 
-          const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy) 전문가 AI이다.
-입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 각 페이지별로 건설안전 9x9 및 작업분류표(창호공사(PL), 가설전기공사 등) 표준 분류코드와 산안규칙 조문을 매핑하고, 사진 상단용 12~20자 핵심 위반 명사구 요약 배너(photoBanner: 절대 content 원문을 그대로 복사하지 말고 결과·우려 꼬리 없이 실제 위반한 핵심만 축약할 것)를 생성하며, 본문 텍스트에 명백한 스캔 오탈자 어절이 있는 경우에만 typoPatches 사전({"틀린어절":"바른어절"})으로 반환하라.
+          const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy)·한국어 OCR 교정 전문가 AI이다.
+입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 다음 3가지를 동시에 수행하라:
+1. 건설안전 9x9 및 작업분류표(창호공사(PL), 가설전기공사 등) 표준 분류코드와 산안규칙 조문을 정확히 매핑할 것 (가설전기 분전반/접지/전등 불량은 절대 "해체작업"이나 "굴착작업"으로 분류하지 말고 "설치조립작업"으로 선택).
+2. 사진 상단용 12~24자 핵심 위반 명사구 요약 배너(photoBanner: 반드시 자연스러운 띄어쓰기 포함 완성 명사구, content 복사·결과/우려 꼬리·'2)'·말줄임표 및 괄호 중간 절단 절대 금지)를 생성할 것.
+3. fixedFields에 입력 텍스트(content, interview, proposalText, countermeasure, location)의 의미·숫자·단위·항목번호(1), 2), -)는 100% 보존하되, OCR 과정에서 누락된 한국어 띄어쓰기(예: 유도하는과정에서→유도하는 과정에서, 전등관리미흡전선연결부심선노출→전등 관리 미흡 및 전선 연결부 심선 노출, 재발방지대책수립→재발방지대책 수립), 명백한 스캔 오탈자(흥로→종로, 적격성올→적격성을), 줄 끝 잔여 영문 노이즈(cb, cYb, ee 등)를 깨끗이 교정·제거하여 반환할 것 (PL, AL, Door, E/V, 2EA, cm 등 유효 영문·단위는 유지).
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -508,19 +515,26 @@ ${TAXONOMY_STANDARD_PROMPT}
   "results": [
     {
       "pageIndex": 1,
-      "workGroup": "작업분류표 기준 표준 공종 (PL창호공사→창호공사(PL), 가설전기→가설전기공사)",
-      "workMethod": "표준 작업방법 (지게차/하역→하역운반작업)",
+      "workGroup": "작업분류표 기준 표준 공종 (PL창호공사→창호공사(PL), 가설전기/전등/분전반→가설전기공사)",
+      "workMethod": "표준 작업방법 (가설전기/분전반/점검불량→설치조립작업, 지게차/하역→하역운반작업)",
       "agentMajor": "표준 기인물 대분류",
       "agentMid": "표준 기인물 중분류",
       "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
-      "photoBanner": "12~20자 핵심 위반 명사구 요약 배너 (content 복사·결과/우려 꼬리·'2)' 금지)",
+      "photoBanner": "12~24자 완성된 띄어쓰기 핵심 위반 명사구 (중간 절단·원문 복사·우려 꼬리 금지)",
       "condition": "표준 불안전 상태",
       "action": "표준 불안전 행동",
       "rootCauseMgmt": "표준 법적 관리감독",
       "rootCauseSystem": "표준 안전시스템",
       "stakeholder": "표준 관리/책임주체",
       "law": "안전보건규칙 제OO조(조항명)",
+      "fixedFields": {
+        "location": "띄어쓰기/노이즈 교정된 작업장소 (원본이 비었으면 빈 문자열)",
+        "content": "띄어쓰기/오탈자/말단노이즈 교정된 부적합 내용",
+        "interview": "띄어쓰기/오탈자/말단노이즈 교정된 관계자 의견",
+        "proposalText": "띄어쓰기/오탈자/말단노이즈(cYb 등) 교정된 점검단 제안",
+        "countermeasure": "띄어쓰기/오탈자/말단노이즈(cb 등) 교정된 개선대책"
+      },
       "typoPatches": {}
     }
   ]
@@ -531,7 +545,7 @@ ${TAXONOMY_STANDARD_PROMPT}
                 { role: 'system', content: batchSystemPrompt },
                 { role: 'user', content: `${JSON.stringify(items)}\n/no_think` }
               ],
-              max_tokens: 1400,
+              max_tokens: 4096,
               temperature: 0.05
             });
             const raw = (typeof qRes?.response === 'string' && qRes.response) || qRes?.choices?.[0]?.message?.content || '';
@@ -541,11 +555,28 @@ ${TAXONOMY_STANDARD_PROMPT}
             if (sIdx !== -1 && eIdx > sIdx) {
               const parsedBatch = JSON.parse(cleaned.slice(sIdx, eIdx + 1));
               if (Array.isArray(parsedBatch?.results)) {
+                const cleanedResults = parsedBatch.results.map((item) => {
+                  if (!item || typeof item !== 'object') return item;
+                  const out = { ...item };
+                  if (typeof out.photoBanner === 'string' && out.photoBanner.includes('\uFFFD')) {
+                    out.photoBanner = '';
+                  }
+                  if (out.fixedFields && typeof out.fixedFields === 'object') {
+                    const ff = {};
+                    for (const [k, v] of Object.entries(out.fixedFields)) {
+                      if (typeof v === 'string' && !v.includes('\uFFFD')) {
+                        ff[k] = v;
+                      }
+                    }
+                    out.fixedFields = ff;
+                  }
+                  return out;
+                });
                 return new Response(JSON.stringify({
                   ok: true,
                   source: 'qwen3_30b_batch',
                   model: 'Qwen3-30B-A3B Batch (Cloudflare 24h Cloud)',
-                  results: parsedBatch.results
+                  results: cleanedResults
                 }), {
                   status: 200,
                   headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
