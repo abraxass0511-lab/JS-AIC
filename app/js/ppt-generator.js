@@ -258,7 +258,8 @@
     if (!raw) return '';
     let s = healSafetyKoreanLexicon(String(raw))
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-      .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
+      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
+      .replace(/^\s*[-•·▪]?\s*(?:관리자|근로자|작업자|담당자|관계자)\s*의견\s*[:：][^\n]*\n?/gim, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')

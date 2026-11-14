@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v34';
-import './text-normalizer.js?v=20261114_v34';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v35';
+import './text-normalizer.js?v=20261114_v35';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4485,10 +4485,10 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       : (r.severity === '중부적합' || (!r.severity && r.status !== '조치완료') ? '중부적합' : '경부적합');
     const isMajor = sevVal === '중부적합';
     const agent = resolveAgent(r);
-    const accType = mapType(r.type);
+    const accType = mapType(r.type, r.content);
     const opType = getOpType(r);
     const pmType = getPmType(r);
-    const cleanedWorkGroup = cleanWorkGroupFn(r.workGroup);
+    const cleanedWorkGroup = cleanWorkGroupFn(r.workGroup, r.content);
     const cleanedContent = cleanContentFn(r.content || '');
     const cleanedLocation = cleanLocationFn(r.location || '', cleanedContent || r.content || '');
     const cleanedInterviewOp = cleanOpinionFn(r.interviewOpinion || r.workerOpinion || '');
@@ -4592,8 +4592,8 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
           h('span.badge', { class: isFixed ? 'success' : 'danger', style: { flexShrink: '0', whiteSpace: 'nowrap' } }, isFixed ? '✅ 조치완료' : '⚠️ 미조치')
         ),
         cardBody,
-        (r.workGroup || r.workMethod || r.workName) ? h('div', { style: { fontSize: '0.76rem', color: '#0f766e', background: '#f0fdfa', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
-          `🔨 공종·작업방법: ${r.workGroup || '가설공사'} › ${resolveDisplayWorkMethod(r)}`
+        (cleanedWorkGroup || r.workMethod || r.workName) ? h('div', { style: { fontSize: '0.76rem', color: '#0f766e', background: '#f0fdfa', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
+          `🔨 공종·작업방법: ${cleanedWorkGroup || '가설공사'} › ${resolveDisplayWorkMethod(r)}`
         ) : '',
         (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
           `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate !== undefined && r.progressRate !== null ? r.progressRate : 0}% (${r.stage || '지하 골조 단계'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
@@ -5195,12 +5195,15 @@ async function handleSaveImportedRecords() {
     const batchItems = await Promise.all(importedRecords.map(async (rec) => {
       const fullCtxText = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''} ${rec.auditProposal || ''} ${rec.actionPlan || ''}`;
       const m9 = (classifier && fullCtxText.trim()) ? classifier.classify(fullCtxText).result : null;
+      const resolvedAgent = window.SafeExcel?.resolveAgentHierarchy
+        ? window.SafeExcel.resolveAgentHierarchy(rec)
+        : null;
       const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
       const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
       const isFormwork = !isGangForm && /거푸집|동바리|벽체|전도방지|유로폼|합판|서포트/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
-      const matrixArea = rec.agentMajor || rec.matrixArea || rec.kind || (isGangForm || isFormwork ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
-      const matrixTarget = isAlForm ? '특수거푸집' : (rec.agentMid || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (isFormwork ? '거푸집/동바리' : (m9 && m9.점검대상9x9) || '거푸집/동바리')));
-      const matrixSpec = rec.agentMinor || rec.matrixSpec || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : (matrixTarget === '거푸집/동바리' ? '유로폼' : '시스템비계'))));
+      const matrixArea = rec.agentMajor || (resolvedAgent && resolvedAgent.major) || rec.matrixArea || rec.kind || (isGangForm || isFormwork ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
+      const matrixTarget = isAlForm ? '특수거푸집' : (rec.agentMid || (resolvedAgent && resolvedAgent.mid) || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (isFormwork ? '거푸집/동바리' : (m9 && m9.점검대상9x9) || '안전시설')));
+      const matrixSpec = rec.agentMinor || (resolvedAgent && resolvedAgent.minor) || rec.matrixSpec || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : (matrixTarget === '거푸집/동바리' ? '유로폼' : matrixTarget))));
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
       const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '시공담당';
@@ -5213,6 +5216,16 @@ async function handleSaveImportedRecords() {
       const action = (rec.action && !['계획 미이행', '불안전 행동'].includes(rec.action))
         ? rec.action
         : inferAction(rec.content, mgmtCauses);
+
+      const resolvedWorkGroup = window.SafeExcel?.cleanWorkGroup
+        ? window.SafeExcel.cleanWorkGroup(rec.workGroup, rec.content)
+        : (rec.workGroup || '공통').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+      const resolvedType = window.SafeExcel?.mapAccidentType
+        ? window.SafeExcel.mapAccidentType(rec.type, rec.content)
+        : (rec.type || '추락');
+      const resolvedAuthor = window.SafeExcel?.resolveInterviewAuthor
+        ? window.SafeExcel.resolveInterviewAuthor(rec)
+        : (rec.interviewAuthor || '시공관리자 및 근로자');
 
       const finalRecord = {
         site,
@@ -5235,14 +5248,14 @@ async function handleSaveImportedRecords() {
         location: (window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '')),
         workName: workMethod,
         workMethod: workMethod,
-        workGroup: (rec.workGroup || '거푸집동바리공사').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/\s+/g, ' ').trim(),
+        workGroup: resolvedWorkGroup,
         kind: matrixArea,
         item: matrixTarget,
         agent: matrixSpec,
         agentMajor: matrixArea,
         agentMid: matrixTarget,
         agentMinor: matrixSpec,
-        type: rec.type || '붕괴',
+        type: resolvedType,
         condition,
         action,
         matrixArea,
@@ -5253,8 +5266,8 @@ async function handleSaveImportedRecords() {
         stakeholder,
         mgmtCauses,
         holdPoint: !!rec.holdPoint,
-        interviewAuthor: rec.interviewAuthor || '협력사 시공관리자',
-        interviewAuthorTitle: rec.interviewAuthorTitle || (rec.interviewAuthor ? `[관리자 의견 : ${rec.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]'),
+        interviewAuthor: resolvedAuthor,
+        interviewAuthorTitle: rec.interviewAuthorTitle || `[의견 : ${resolvedAuthor}]`,
         interviewOpinion: (window.SafeExcel?.cleanOpinionText ? window.SafeExcel.cleanOpinionText(rec.interviewOpinion || rec.workerOpinion || '') : (rec.interviewOpinion || '')),
         proposalItems: rec.proposalItems || [],
         inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',

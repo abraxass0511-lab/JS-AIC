@@ -60,9 +60,9 @@ export function levenshteinDistance(a, b) {
  * @param {number} threshold
  * @returns {string}
  */
-export function snapToStandardTaxonomy(rawInput, candidates = [], threshold = 0.62) {
+export function snapToStandardTaxonomy(rawInput, candidates = [], threshold = 0.62, fallback = null) {
   if (!Array.isArray(candidates) || candidates.length === 0) return rawInput || '';
-  if (!rawInput || !String(rawInput).trim()) return candidates[0];
+  if (!rawInput || !String(rawInput).trim()) return fallback !== null ? fallback : '';
   const trimmed = String(rawInput).trim();
   if (candidates.includes(trimmed)) return trimmed;
 
@@ -77,8 +77,10 @@ export function snapToStandardTaxonomy(rawInput, candidates = [], threshold = 0.
     if (maxLen === 0) continue;
     const dist = levenshteinDistance(target, source);
     let score = (maxLen - dist) / maxLen;
-    // 핵심 접두/부분 포함 가산점
-    if (cand.includes(trimmed) || trimmed.includes(cand)) {
+    // 핵심 접두/부분 포함 가산점 (단, 단순 '공사'/'작업' 접미사 일치는 제외)
+    const coreCand = cand.replace(/(?:공사|작업)$/, '');
+    const coreTrim = trimmed.replace(/(?:공사|작업)$/, '');
+    if (coreCand.length >= 2 && coreTrim.length >= 2 && (coreCand.includes(coreTrim) || coreTrim.includes(coreCand))) {
       score = Math.max(score, 0.82);
     }
     if (score > bestScore) {
@@ -86,7 +88,7 @@ export function snapToStandardTaxonomy(rawInput, candidates = [], threshold = 0.
       bestMatch = cand;
     }
   }
-  return bestScore >= threshold ? bestMatch : candidates[0];
+  return bestScore >= threshold ? bestMatch : (fallback !== null ? fallback : trimmed);
 }
 
 /**

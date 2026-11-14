@@ -411,15 +411,15 @@ export function findRedBanners(img, area) {
   }, minBannerH);
   for (const [a, b] of rows) {
     const h = b - a + 1;
-    if (h > img.height * 0.105) continue;
-    const isTopBanner = a <= area.h * 0.16;
-    const isBottomBanner = b >= area.h * 0.80;
+    if (h > img.height * 0.165) continue;
+    const isTopBanner = a <= area.h * 0.20;
+    const isBottomBanner = b >= area.h * 0.78;
     if (!isTopBanner && !isBottomBanner) continue;
-    // 같은 행 안에 배너가 여러 개일 수 있으므로 x 방향 구간 분리
+    // 같은 행 안에 배너가 여러 개일 수 있으므로 x 방향 구간 분리 (좌/우 줄 수가 달라도 모두 검출되도록 0.18 적용)
     const xs = bands(area.w, dx => {
       let c = 0;
       for (let y = area.y + a; y <= area.y + b; y += 2) if (isRedBanner(data, (y * W + area.x + dx) * 4)) c++;
-      return c > (h / 2) * 0.25;
+      return c > Math.max(2, (h / 2) * 0.18);
     }, Math.round(area.w * 0.10));
     if (isBottomBanner && xs.length >= 1) {
       const minXa = xs[0][0];
@@ -430,14 +430,27 @@ export function findRedBanners(img, area) {
       }
     } else {
       for (const [xa, xb] of xs) {
-        if (xb - xa >= area.w * 0.25) {
-          out.push(rect(area.x + xa, area.y + a, area.x + xb, area.y + b));
+        if (xb - xa >= area.w * 0.22) {
+          // 각 좌/우 배너별 실제 상하 적색 행 범위(ya..yb) 정밀 피팅 (1줄 배너와 2줄 배너가 나란히 있을 때 높이 개별 맞춤)
+          let ya = a, yb = b;
+          const segW = xb - xa + 1;
+          const rowHasRed = dy => {
+            let rc = 0;
+            const gy = area.y + dy;
+            for (let gx = area.x + xa; gx <= area.x + xb; gx += 2) {
+              if (isRedBanner(data, (gy * W + gx) * 4)) rc++;
+            }
+            return rc > (segW / 2) * 0.15;
+          };
+          while (ya < yb && !rowHasRed(ya)) ya++;
+          while (yb > ya && !rowHasRed(yb)) yb--;
+          out.push(rect(area.x + xa, area.y + ya, area.x + xb, area.y + yb));
         }
       }
     }
   }
-  // 근접 배너 병합 (두 줄 배너)
-  out.sort((p, q) => p.y - q.y || p.x - q.x);
+  // 근접 배너 병합 (두 줄 배너) 및 좌->우(① -> ②) 정렬
+  out.sort((p, q) => (Math.abs(p.y - q.y) < area.h * 0.15 ? (p.x - q.x) : (p.y - q.y)));
   const merged = [];
   for (const r of out) {
     const m = merged.find(o => Math.abs(o.x - r.x) < 30 && r.y - (o.y + o.h) < 12 && r.y >= o.y);
@@ -446,6 +459,7 @@ export function findRedBanners(img, area) {
       m.x = Math.min(m.x, r.x); m.y = Math.min(m.y, r.y); m.w = nx1 - m.x; m.h = ny1 - m.y;
     } else merged.push({ ...r });
   }
+  merged.sort((p, q) => (Math.abs(p.y - q.y) < area.h * 0.15 ? (p.x - q.x) : (p.y - q.y)));
   return merged;
 }
 
@@ -639,15 +653,24 @@ export function findPhotoBoxes(img, area, banners = []) {
 
     r = rect(r.x, ty0, r.x + r.w, ty1 + 1);
 
-    // 박스 내부 백색 비율 + 밝은 종이/텍스트 밴드 비율 동시 측정
-    // → 기준 문서/시공 가이드 캡처('6.2 거푸집 보강' 등 지침 문서: whiteRowFrac ~0.15, whiteRatio ~0.34)만 정밀 제외하고
-    //   실제 다분할 콜라주('② 잭베이스 설치불량': whiteRowFrac <=0.03) 및 도면('[비계설치도면]': whiteRowFrac ~0.01)은 100% 보존
+    // 박스 내부 순백 종이 비율 + 문서 줄무늬 비율 동시 측정
+    // - 중요: 상/하단에 고유 적색 지적 배너('① ...', '② 협력사 가설컨테이너 반입시 점검 불량' 등)가 붙어 있는 사진은
+    //   100% 실제 지적사항 사진이므로(참조 가이드 문서에는 적색 번호 배너가 붙지 않음) 절대 참조 이미지로 제외하지 않음!
+    // - 또한 흰색 플라스틱 누전차단기/타공 분전반 철판(lum 190~235)이 종이 문서로 오판되지 않도록 순백 종이 기준(lum > 240, 채도 < 15) 적용
+    const hasOwnBanner = banners.some(b => {
+      const overlapX = Math.max(0, Math.min(r.x + r.w, b.x + b.w) - Math.max(r.x, b.x));
+      return overlapX >= r.w * 0.28 && b.w <= area.w * 0.72;
+    });
+
     let white = 0, tot = 0;
     for (let y = r.y; y < r.y + r.h; y += 2) {
       for (let x = r.x; x < r.x + r.w; x += 2) {
         tot++;
         const k = (y * W + x) * 4;
-        if (!isNonWhite(data, k)) white++;
+        const rv = data[k], gv = data[k + 1], bv = data[k + 2];
+        const mx = Math.max(rv, gv, bv), mn = Math.min(rv, gv, bv);
+        const lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
+        if (lum > 238 && (mx - mn) < 16) white++;
       }
     }
     const whiteRatio = white / Math.max(1, tot);
@@ -663,16 +686,16 @@ export function findPhotoBoxes(img, area, banners = []) {
         const mx = Math.max(rv, gv, bv), mn = Math.min(rv, gv, bv);
         const lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
         rowTot++;
-        if (lum > 225 && mx - mn < 25) bright++;
+        if (lum > 240 && mx - mn < 15) bright++;
         if (mx - mn > 35) colorSat++;
       }
-      if (rowTot > 0 && (bright / rowTot) >= 0.72 && (colorSat / rowTot) < 0.08) {
+      if (rowTot > 0 && (bright / rowTot) >= 0.76 && (colorSat / rowTot) < 0.06) {
         whiteRows++;
       }
     }
     const whiteRowFrac = whiteRows / Math.max(1, r.h);
-    const isReference = whiteRatio > 0.52 || (whiteRowFrac >= 0.09 && whiteRatio > 0.27);
-    results.push({ ...r, whiteRatio, whiteRowFrac, isReference });
+    const isReference = !hasOwnBanner && (whiteRatio > 0.54 || (whiteRowFrac >= 0.11 && whiteRatio > 0.29));
+    results.push({ ...r, whiteRatio, whiteRowFrac, hasOwnBanner, isReference });
   }
 
   return results.sort((p, q) => p.x - q.x);
