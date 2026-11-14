@@ -852,8 +852,7 @@ export function preprocessCellCanvas(rawCanvas, shavePx = 2, padPx = 8, options 
  * @returns {HTMLCanvasElement[]}
  */
 export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
-  if (!cellCanvas) return [];
-  if (options.isBanner || cellCanvas.height < 34) return [cellCanvas];
+  if (!cellCanvas || cellCanvas.width < 4 || cellCanvas.height < 4) return [];
 
   const w = cellCanvas.width;
   const h = cellCanvas.height;
@@ -863,6 +862,39 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
   const xStart = Math.min(4, Math.floor(w * 0.02));
   const xEnd = Math.max(xStart + 1, w - xStart);
   const spanW = xEnd - xStart;
+
+  const cropBandHorizontally = (sy0, sy1) => {
+    const sh = Math.max(1, sy1 - sy0 + 1);
+    let minX = w;
+    let maxX = -1;
+    let darkPixels = 0;
+    for (let y = sy0; y <= sy1; y++) {
+      const rowOff = y * w;
+      for (let x = xStart; x < xEnd; x++) {
+        const k = (rowOff + x) * 4;
+        const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+        if (lum < 195) {
+          darkPixels++;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+      }
+    }
+    if (darkPixels < 8 || maxX - minX < 5) return null;
+    const sx0 = Math.max(0, minX - 8);
+    const sx1 = Math.min(w - 1, maxX + 8);
+    const sw = Math.max(8, sx1 - sx0 + 1);
+    const lc = document.createElement('canvas');
+    lc.width = sw;
+    lc.height = sh;
+    lc.getContext('2d').drawImage(cellCanvas, sx0, sy0, sw, sh, 0, 0, sw, sh);
+    return lc;
+  };
+
+  if (h < 34 || (options.isBanner && h < 44)) {
+    const single = cropBandHorizontally(0, h - 1);
+    return single ? [single] : [];
+  }
 
   const rowDensity = new Float32Array(h);
   for (let y = 0; y < h; y++) {
@@ -900,7 +932,10 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
     }
   }
 
-  if (!merged.length) return [cellCanvas];
+  if (!merged.length) {
+    const fallback = cropBandHorizontally(0, h - 1);
+    return fallback ? [fallback] : [];
+  }
 
   const finalSlices = [];
   for (const [y0, y1] of merged) {
@@ -925,14 +960,14 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
     finalSlices.push([Math.max(0, y0 - 4), Math.min(h - 1, y1 + 4)]);
   }
 
-  return finalSlices.map(([sy0, sy1]) => {
-    const sh = Math.max(1, sy1 - sy0 + 1);
-    const lc = document.createElement('canvas');
-    lc.width = w;
-    lc.height = sh;
-    lc.getContext('2d').drawImage(cellCanvas, 0, sy0, w, sh, 0, 0, w, sh);
-    return lc;
-  });
+  const maxLines = options.maxLines || 6;
+  const outCanvases = [];
+  for (const [sy0, sy1] of finalSlices) {
+    if (outCanvases.length >= maxLines) break;
+    const lc = cropBandHorizontally(sy0, sy1);
+    if (lc) outCanvases.push(lc);
+  }
+  return outCanvases;
 }
 
 

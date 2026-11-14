@@ -7,9 +7,9 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261114_v35';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261114_v35';
-import { normalizeRoundText, normalizeFieldText, snapToStandardTaxonomy, applyTypoPatches } from './text-normalizer.js?v=20261114_v35';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v36';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v36';
+import { normalizeRoundText, normalizeFieldText, snapToStandardTaxonomy, applyTypoPatches } from './text-normalizer.js?v=20261115_v36';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -1697,37 +1697,40 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
 
   if (validSpecs.length === 0) return { texts: result, stripDataUrl: '', cellCrops, cellConfidences, lowConfidenceFields };
 
-  const stripCanvas = document.createElement('canvas');
-  stripCanvas.width = maxW;
-  stripCanvas.height = totalH;
-  const sctx = stripCanvas.getContext('2d');
-  sctx.fillStyle = '#FFFFFF';
-  sctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
-  sctx.imageSmoothingEnabled = true;
-  sctx.imageSmoothingQuality = 'high';
-  sctx.font = 'bold 14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
-  sctx.textBaseline = 'middle';
+  let stripDataUrl = '';
+  if (options.buildStrip) {
+    const stripCanvas = document.createElement('canvas');
+    stripCanvas.width = maxW;
+    stripCanvas.height = totalH;
+    const sctx = stripCanvas.getContext('2d');
+    sctx.fillStyle = '#FFFFFF';
+    sctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+    sctx.imageSmoothingEnabled = true;
+    sctx.imageSmoothingQuality = 'high';
+    sctx.font = 'bold 14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+    sctx.textBaseline = 'middle';
 
-  // 서브셀(sub, work, loc, user, round)은 strip 이미지에 중복으로 그리지 않고 meta 행으로만 그림
-  const SUB_META_KEYS = new Set(['sub', 'work', 'loc', 'user', 'round']);
-  for (const item of validSpecs) {
-    if (SUB_META_KEYS.has(item.key)) continue;
-    sctx.fillStyle = '#EBF2FA';
-    sctx.fillRect(PAD_X - 4, item.labelY, maxW - PAD_X * 2 + 8, HEADER_H - 2);
-    sctx.fillStyle = '#0A2458';
-    sctx.fillText(item.label, PAD_X + 4, item.labelY + (HEADER_H - 2) / 2);
-    sctx.drawImage(canvas, item.sx, item.sy, item.sw, item.sh, PAD_X, item.y0, item.dw, item.dh);
+    const SUB_META_KEYS = new Set(['sub', 'work', 'loc', 'user', 'round']);
+    for (const item of validSpecs) {
+      if (SUB_META_KEYS.has(item.key)) continue;
+      sctx.fillStyle = '#EBF2FA';
+      sctx.fillRect(PAD_X - 4, item.labelY, maxW - PAD_X * 2 + 8, HEADER_H - 2);
+      sctx.fillStyle = '#0A2458';
+      sctx.fillText(item.label, PAD_X + 4, item.labelY + (HEADER_H - 2) / 2);
+      sctx.drawImage(canvas, item.sx, item.sy, item.sw, item.sh, PAD_X, item.y0, item.dw, item.dh);
+    }
+    stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.80);
   }
 
-  const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.84);
-
-  // 각 셀 원본 크롭(1:1 검수 루페용 DataURL) 생성 및 브라우저 내장 PaddleOCR v5 구동
-  // meta 통째 셀은 5개 서브셀(sub, work, loc, user, round)이 대신 인식하므로 생략
+  // 각 셀 원본 크롭 생성 (1:1 검수 루페용 DataURL은 UI 바인딩된 7개 필드만 인코딩하여 메인 스레드 지연 제거)
+  const LOUPE_KEYS = new Set(['content', 'interview', 'propText', 'cm', 'loc', 'sub', 'round']);
   const ocrTargets = validSpecs.filter(s => s.key !== 'check' && s.key !== 'meta');
   for (const s of ocrTargets) {
     try {
       const c = cropCanvas(canvas, { x: s.sx, y: s.sy, w: s.sw, h: s.sh });
-      cellCrops[s.key] = c.toDataURL('image/webp', 0.86);
+      if (LOUPE_KEYS.has(s.key)) {
+        cellCrops[s.key] = c.toDataURL('image/jpeg', 0.82);
+      }
       s._cropCanvas = c;
     } catch (e) {}
   }
@@ -1738,6 +1741,7 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     if (!options.forceTesseract) {
       try {
         await initPaddleOcr();
+        let cellIdx = 0;
         for (const s of ocrTargets) {
           if (!s._cropCanvas) continue;
           const pRes = await recognizeCellWithPaddle(s._cropCanvas, s.key);
@@ -1750,6 +1754,10 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
           };
           if (pRes.lowConfidence) {
             lowConfidenceFields.push(s.key);
+          }
+          cellIdx++;
+          if (cellIdx % 4 === 0) {
+            await new Promise(r => setTimeout(r, 0));
           }
         }
         paddleSucceeded = true;
@@ -2086,36 +2094,35 @@ function enrichRecordOfflineFromContent(record) {
  */
 export async function parseSheetCanvas(canvas, options = {}) {
   const { digitalText = '', pageNumber = 1, sourceName = '' } = options;
-  const fullDocDataUrl = canvas.toDataURL('image/jpeg', 0.90);
 
   // 0. 고정밀 셀 레이아웃 분석
   let layout = null;
+  let sharedImgData = null;
   try {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    layout = analyzeSheetLayout(imgData);
+    sharedImgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    layout = analyzeSheetLayout(sharedImgData);
   } catch (e) {
     console.warn('analyzeSheetLayout error:', e);
   }
 
   // 레이아웃 인식 성공 시: 셀별 1.0x 병렬 OCR + Vision/Qwen 하이브리드 정제 + 현장 실물 사진 분리 추출
   if (layout && layout.ok) {
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const imgData = sharedImgData || canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
     const banners = findRedBanners(imgData, layout.photoArea);
     const photoBoxes = findPhotoBoxes(imgData, layout.photoArea, banners);
 
-    // [Step 4.2] 2차 PaddleOCR 키워드·줄수 보강 필터: 회색/황색 음영 표라서 1차 whiteRatio 필터를 통과한 참조 이미지 방어
+    // [Step 4.2] 2차 PaddleOCR 키워드·줄수 보강 필터: 고유 적색 배너가 없고 백색/줄무늬 비율이 높은 문서 의심 상자만 상단 32% 고속 스캔
     if (photoBoxes.length >= 2) {
       for (const b of photoBoxes) {
-        if (!b.isReference && (b.whiteRowFrac >= 0.06 || b.whiteRatio >= 0.22)) {
+        if (!b.isReference && !b.hasOwnBanner && b.whiteRatio >= 0.36 && b.whiteRowFrac >= 0.075) {
           try {
             await initPaddleOcr();
-            const boxCanvas = cropCanvas(canvas, b);
+            const topHeaderRect = { x: b.x, y: b.y, w: b.w, h: Math.min(120, Math.round(b.h * 0.32)) };
+            const boxCanvas = cropCanvas(canvas, topHeaderRect);
             const refOcr = await recognizeCellWithPaddle(boxCanvas, 'refCheck');
             if (
               refOcr &&
-              refOcr.lineCount >= 5 &&
               /(?:설치기준|작업지침|표준안전|표준도|올바른\s*예|KOSHA|안전보건공단|안전보건규칙|보강\s*예|시공기준)/i.test(refOcr.text)
             ) {
               b.isReference = true;
@@ -2130,9 +2137,9 @@ export async function parseSheetCanvas(canvas, options = {}) {
       realPhotoBoxes = [[...photoBoxes].sort((a, b) => a.whiteRatio - b.whiteRatio)[0]];
     }
 
-    const photos = realPhotoBoxes.slice(0, 2).map(b => cropCanvas(canvas, b).toDataURL('image/jpeg', 0.92));
+    const photos = realPhotoBoxes.slice(0, 2).map(b => cropCanvas(canvas, b).toDataURL('image/jpeg', 0.90));
     if (photos.length === 0 && layout.photoArea) {
-      photos.push(cropCanvas(canvas, layout.photoArea).toDataURL('image/jpeg', 0.90));
+      photos.push(cropCanvas(canvas, layout.photoArea).toDataURL('image/jpeg', 0.88));
     }
     const photo1 = photos[0] || null;
     const photo2 = photos[1] || null;
@@ -2187,42 +2194,13 @@ export async function parseSheetCanvas(canvas, options = {}) {
       _fullSheetContext: fullSheetContext,
       _hasDigitalText: hasDigitalText,
       _stripImageBase64: stripDataUrl || undefined,
-      _fullDocImage: fullDocDataUrl,
       _sourceFile: sourceName
     };
 
-    // 다건 PDF 업로드 시에는 8~10페이지 단위 배치 추론(classifyBatchRecords)으로 일괄 처리하여 Neurons 85% 절감
-    if (!options.deferBatchAi && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+    // 단건/다건 모두 초고속 배치 분류기(classifyBatchRecords)로 통일하여 원문 덮어쓰기 방지 및 속도 향상
+    if (!options.deferBatchAi && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
       try {
-        record = await window.SafeLocalAI.cleanOcrRecord(fullSheetContext, record);
-      } catch (e) {}
-    }
-
-    // 비상 오프라인 폴백: OCR 본문이 비어있을 때만 병렬 Tesseract OCR 복원
-    if (!record.content && window.Tesseract) {
-      try {
-        const { texts: fbTexts } = await ocrCellsSinglePass(canvas, cellSpecsList, { forceTesseract: true });
-        const fbFields = parseCellTextsIntoFields(fbTexts, canvas, layout, mgmtCauses, true);
-        const keepIfPresent = [
-          'severity', 'type', 'workGroup', 'subcontractor', 'location',
-          'inspector', 'inspectUser', 'round', 'inspectRound',
-          'content', 'photoBanner', 'photo2Banner',
-          'interviewAuthor', 'interviewAuthorTitle', 'interviewOpinion',
-          'inspectorOpinionType', 'auditProposal',
-          'actionPlan', 'countermeasure',
-          'pmVerdictType', 'pmVerdict', 'law', 'rawLaw', 'lawBody'
-        ];
-        for (const k of keepIfPresent) {
-          if (fbFields[k]) record[k] = fbFields[k];
-        }
-        if (fbFields.proposalItems?.length) record.proposalItems = fbFields.proposalItems;
-        if (fbFields.pmVerdictItems?.length) record.pmVerdictItems = fbFields.pmVerdictItems;
-
-        if (!options.deferBatchAi && !record._aiQuotaExceeded && record.content && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
-          try {
-            record = await window.SafeLocalAI.cleanOcrRecord(buildAiContextFromCellTexts(fbTexts, digitalText, hasDigitalText), record);
-          } catch (e) {}
-        }
+        await window.SafeLocalAI.classifyBatchRecords([record]);
       } catch (e) {}
     }
 
@@ -2232,6 +2210,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
     return record;
   }
 
+  const fullDocDataUrl = canvas.toDataURL('image/jpeg', 0.88);
   const sig = measureHeaderSignature(canvas);
   const frame = sig.frame;
 
@@ -2492,7 +2471,8 @@ export async function parsePDF(file, onProgress = () => {}) {
 
     for (let i = 0; i < binaryResult.jpegPages.length; i += BATCH_SIZE) {
       const batch = binaryResult.jpegPages.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(batch.map(async (pg) => {
+      const batchResults = [];
+      for (const pg of batch) {
         onProgress({
           current: Math.min(totalPages, processedCount + 1),
           total: totalPages,
@@ -2503,41 +2483,15 @@ export async function parsePDF(file, onProgress = () => {}) {
           extractedCount: records.length,
           skippedCount
         });
+        await new Promise(r => setTimeout(r, 0));
 
         const canvas = await normalizeImageOrientation(pg.blob, pg.rotate);
         const sig = measureHeaderSignature(canvas);
 
-        // 일반 글씨가 있는 표지/간지/요약 장표는 생략!
         if (!sig.isSheet) {
           console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (일반 텍스트/간지 페이지, score=${sig.score})`);
-          return { _skipped: true, pageNumber: pg.pageNumber };
-        }
-
-        const rec = await parseSheetCanvas(canvas, {
-          pageNumber: pg.pageNumber,
-          sourceName: `${file.name} (p.${pg.pageNumber})`,
-          deferBatchAi: true
-        });
-        if (rec && rec._skipped) {
-          console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
-          return { _skipped: true, pageNumber: pg.pageNumber };
-        }
-        return rec;
-      }));
-
-      // 다건 배치 AI 표준 분류 및 핀포인트 오타 패치 (8페이지 이하 묶음 1회 호출)
-      const validBatchRecs = batchResults.filter(r => r && !r._skipped);
-      if (validBatchRecs.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
-        try {
-          await window.SafeLocalAI.classifyBatchRecords(validBatchRecs);
-        } catch (e) {
-          console.warn('[SafePatrol] Batch AI classify warning:', e);
-        }
-      }
-
-      for (const res of batchResults) {
-        processedCount++;
-        if (!res || res._skipped) {
+          batchResults.push({ _skipped: true, pageNumber: pg.pageNumber });
+          processedCount++;
           skippedCount++;
           onProgress({
             phase: 'skip',
@@ -2550,8 +2504,33 @@ export async function parsePDF(file, onProgress = () => {}) {
             extractedCount: records.length,
             skippedCount
           });
-        } else {
-          records.push(res);
+          continue;
+        }
+
+        const rec = await parseSheetCanvas(canvas, {
+          pageNumber: pg.pageNumber,
+          sourceName: `${file.name} (p.${pg.pageNumber})`,
+          deferBatchAi: true
+        });
+        processedCount++;
+        if (rec && rec._skipped) {
+          console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
+          batchResults.push({ _skipped: true, pageNumber: pg.pageNumber });
+          skippedCount++;
+          onProgress({
+            phase: 'skip',
+            current: processedCount,
+            total: totalPages,
+            extracted: records.length,
+            skipped: skippedCount,
+            currentPage: processedCount,
+            totalPages,
+            extractedCount: records.length,
+            skippedCount
+          });
+        } else if (rec) {
+          batchResults.push(rec);
+          records.push(rec);
           onProgress({
             current: processedCount,
             total: totalPages,
@@ -2562,6 +2541,16 @@ export async function parsePDF(file, onProgress = () => {}) {
             extractedCount: records.length,
             skippedCount
           });
+        }
+      }
+
+      // 다건 배치 AI 표준 분류 및 핀포인트 오타 패치 (묶음 1회 호출)
+      const validBatchRecs = batchResults.filter(r => r && !r._skipped);
+      if (validBatchRecs.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
+        try {
+          await window.SafeLocalAI.classifyBatchRecords(validBatchRecs);
+        } catch (e) {
+          console.warn('[SafePatrol] Batch AI classify warning:', e);
         }
       }
     }
@@ -2620,31 +2609,37 @@ export async function parsePDF(file, onProgress = () => {}) {
       batchPages.push(p);
     }
 
-    onProgress({
-      current: startPage,
-      total: totalPages,
-      extracted: records.length,
-      skipped: skippedCount,
-      currentPage: startPage,
-      totalPages,
-      extractedCount: records.length,
-      skippedCount
-    });
+    for (const pNum of batchPages) {
+      onProgress({
+        current: pNum,
+        total: totalPages,
+        extracted: orderedResults.filter(Boolean).length,
+        skipped: skippedCount,
+        currentPage: pNum,
+        totalPages,
+        extractedCount: orderedResults.filter(Boolean).length,
+        skippedCount
+      });
+      await new Promise(r => setTimeout(r, 0));
 
-    await Promise.all(batchPages.map(async (pNum) => {
       const page = await pdfDoc.getPage(pNum);
-      const viewport = page.getViewport({ scale: 2.5 });
+      const viewport = page.getViewport({ scale: 2.0 });
       let pageCanvas = document.createElement('canvas');
       pageCanvas.width = viewport.width;
       pageCanvas.height = viewport.height;
       const pCtx = pageCanvas.getContext('2d');
       await page.render({ canvasContext: pCtx, viewport }).promise;
 
-      // 가로 정방향 정규화
+      // 가로 정방향 정규화 (270도 우선 확인하여 불필요한 2중 회전 생략)
       if (pageCanvas.height > pageCanvas.width) {
         const c270 = rotateCanvas(pageCanvas, 270);
-        const c90 = rotateCanvas(pageCanvas, 90);
-        pageCanvas = measureHeaderSignature(c270).score >= measureHeaderSignature(c90).score ? c270 : c90;
+        const sig270 = measureHeaderSignature(c270);
+        if (sig270.isSheet) {
+          pageCanvas = c270;
+        } else {
+          const c90 = rotateCanvas(pageCanvas, 90);
+          pageCanvas = sig270.score >= measureHeaderSignature(c90).score ? c270 : c90;
+        }
       }
 
       // 디지털 텍스트 추출
@@ -2660,7 +2655,18 @@ export async function parsePDF(file, onProgress = () => {}) {
       if (!sig.isSheet && !hasSheetKeywords) {
         skippedCount++;
         console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (일반 텍스트/간지 페이지)`);
-        return;
+        onProgress({
+          phase: 'skip',
+          current: pNum,
+          total: totalPages,
+          extracted: orderedResults.filter(Boolean).length,
+          skipped: skippedCount,
+          currentPage: pNum,
+          totalPages,
+          extractedCount: orderedResults.filter(Boolean).length,
+          skippedCount
+        });
+        continue;
       }
 
       const rec = await parseSheetCanvas(pageCanvas, {
@@ -2674,10 +2680,31 @@ export async function parsePDF(file, onProgress = () => {}) {
       if (rec && rec._skipped) {
         skippedCount++;
         console.log(`[SafePatrol PDF] Page ${pNum}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
-        return;
+        onProgress({
+          phase: 'skip',
+          current: pNum,
+          total: totalPages,
+          extracted: orderedResults.filter(Boolean).length,
+          skipped: skippedCount,
+          currentPage: pNum,
+          totalPages,
+          extractedCount: orderedResults.filter(Boolean).length,
+          skippedCount
+        });
+        continue;
       }
       orderedResults[pNum - 1] = rec;
-    }));
+      onProgress({
+        current: pNum,
+        total: totalPages,
+        extracted: orderedResults.filter(Boolean).length,
+        skipped: skippedCount,
+        currentPage: pNum,
+        totalPages,
+        extractedCount: orderedResults.filter(Boolean).length,
+        skippedCount
+      });
+    }
 
     const batchSlice = batchPages.map(p => orderedResults[p - 1]).filter(Boolean);
     if (batchSlice.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
