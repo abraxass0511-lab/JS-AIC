@@ -13,7 +13,10 @@ const mimeTypes = {
   '.jpeg': 'image/jpeg',
   '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
+  '.onnx': 'application/octet-stream',
+  '.wasm': 'application/wasm'
 };
 
 const server = http.createServer((req, res) => {

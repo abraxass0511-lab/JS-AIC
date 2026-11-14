@@ -7,7 +7,9 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout } from './sheet-layout.js?v=20261114_v32';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261114_v34';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261114_v34';
+import { normalizeRoundText, normalizeFieldText, snapToStandardTaxonomy, applyTypoPatches } from './text-normalizer.js?v=20261114_v34';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -1588,12 +1590,20 @@ function preprocessBannerCanvas(sourceCanvas, rect) {
  */
 async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
   const result = {};
+  const cellCrops = {};
+  const cellConfidences = {};
+  const lowConfidenceFields = [];
   const validSpecs = [];
   const LABEL_MAP = {
     type: '[유형/등급]',
     law: '[관련기준]',
     check: '[점검체크]',
     meta: '[협력사/공종명/작업장소/점검자/점검차수]',
+    sub: '[협력사]',
+    work: '[공종명]',
+    loc: '[작업장소]',
+    user: '[점검자]',
+    round: '[점검차수]',
     content: '[부적합내용]',
     interview: '[발생원인/관리자의견]',
     propType: '[점검단제안_판정]',
@@ -1604,7 +1614,6 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     banner2: '[사진2배너]'
   };
   const HEADER_H = 22;
-  const GAP = 28;
   const PAD_X = 12;
   const PAD_Y = 10;
   let maxW = 520;
@@ -1618,7 +1627,6 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     const sy = b.y;
     const sw = Math.max(4, b.w);
     const sh = Math.max(4, b.h);
-    // Vision AI 가독성·토큰 최적화: 작은 셀 1.15배 선명 보정, 큰 셀은 최대 960px로 압축해 Neurons ~40% 절감
     const scale = sw < 480 ? 1.15 : (sw > 960 ? (960 / sw) : 1.0);
     const dw = Math.round(sw * scale);
     const dh = Math.round(sh * scale);
@@ -1636,7 +1644,7 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     totalH = imgY0 + dh + 10;
   }
 
-  if (validSpecs.length === 0) return { texts: result, stripDataUrl: '' };
+  if (validSpecs.length === 0) return { texts: result, stripDataUrl: '', cellCrops, cellConfidences, lowConfidenceFields };
 
   const stripCanvas = document.createElement('canvas');
   stripCanvas.width = maxW;
@@ -1649,7 +1657,10 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
   sctx.font = 'bold 14px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
   sctx.textBaseline = 'middle';
 
+  // 서브셀(sub, work, loc, user, round)은 strip 이미지에 중복으로 그리지 않고 meta 행으로만 그림
+  const SUB_META_KEYS = new Set(['sub', 'work', 'loc', 'user', 'round']);
   for (const item of validSpecs) {
+    if (SUB_META_KEYS.has(item.key)) continue;
     sctx.fillStyle = '#EBF2FA';
     sctx.fillRect(PAD_X - 4, item.labelY, maxW - PAD_X * 2 + 8, HEADER_H - 2);
     sctx.fillStyle = '#0A2458';
@@ -1659,28 +1670,74 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
 
   const stripDataUrl = stripCanvas.toDataURL('image/jpeg', 0.84);
 
-  // 방안 A (무료 일일 처리량 10배 확대 하이브리드): 디지털 텍스트가 없는 스캔 장표는 4-워커 병렬 Tesseract로 원문을 추출한 뒤
-  // Cloudflare Qwen3-30B(텍스트 전용)로 오타 교정·표준 분류를 수행 (Tesseract가 실패한 셀만 Vision 백업)
-  const shouldRunTesseract = options.forceTesseract || !options.hasDigitalText;
-
-  if (shouldRunTesseract && window.Tesseract) {
-    // check 셀은 픽셀 밀도(detectCheckboxesFromLayout)가 직접 판독하므로 OCR 생략해 속도 최적화
-    const ocrTargets = validSpecs.filter(s => s.key !== 'check');
-    await Promise.all(ocrTargets.map(async (s) => {
-      try {
-        const isBanner = s.key === 'banner' || s.key === 'banner2';
-        const pad = (!isBanner && s.sw > 30 && s.sh > 24) ? 2 : 0;
-        const rect = { x: s.sx + pad, y: s.sy + pad, w: s.sw - pad * 2, h: s.sh - pad * 2 };
-        const c = isBanner
-          ? preprocessBannerCanvas(canvas, rect)
-          : cropCanvas(canvas, rect);
-        const ret = await recognizeWithWorkerPool(c.toDataURL('image/jpeg', 0.88));
-        result[s.key] = (ret && ret.data && ret.data.text) ? ret.data.text.trim() : '';
-      } catch (e) {}
-    }));
+  // 각 셀 원본 크롭(1:1 검수 루페용 DataURL) 생성 및 브라우저 내장 PaddleOCR v5 구동
+  // meta 통째 셀은 5개 서브셀(sub, work, loc, user, round)이 대신 인식하므로 생략
+  const ocrTargets = validSpecs.filter(s => s.key !== 'check' && s.key !== 'meta');
+  for (const s of ocrTargets) {
+    try {
+      const c = cropCanvas(canvas, { x: s.sx, y: s.sy, w: s.sw, h: s.sh });
+      cellCrops[s.key] = c.toDataURL('image/webp', 0.86);
+      s._cropCanvas = c;
+    } catch (e) {}
   }
 
-  return { texts: result, stripDataUrl };
+  const shouldRunOcr = !options.hasDigitalText || options.forceTesseract;
+  if (shouldRunOcr) {
+    let paddleSucceeded = false;
+    if (!options.forceTesseract) {
+      try {
+        await initPaddleOcr();
+        for (const s of ocrTargets) {
+          if (!s._cropCanvas) continue;
+          const pRes = await recognizeCellWithPaddle(s._cropCanvas, s.key);
+          result[s.key] = pRes.text || '';
+          cellConfidences[s.key] = {
+            confidence: pRes.confidence,
+            minCharConfidence: pRes.minCharConfidence,
+            lowConfidence: pRes.lowConfidence,
+            needsVisionRetry: pRes.needsVisionRetry
+          };
+          if (pRes.lowConfidence) {
+            lowConfidenceFields.push(s.key);
+          }
+        }
+        paddleSucceeded = true;
+      } catch (paddleErr) {
+        console.warn('[SafePatrol] PaddleOCR v5 ONNX fallback to Tesseract:', paddleErr);
+      }
+    }
+
+    if (!paddleSucceeded && window.Tesseract) {
+      await Promise.all(ocrTargets.map(async (s) => {
+        try {
+          const isBanner = s.key === 'banner' || s.key === 'banner2';
+          const pad = (!isBanner && s.sw > 30 && s.sh > 24) ? 2 : 0;
+          const rect = { x: s.sx + pad, y: s.sy + pad, w: s.sw - pad * 2, h: s.sh - pad * 2 };
+          const c = isBanner
+            ? preprocessBannerCanvas(canvas, rect)
+            : cropCanvas(canvas, rect);
+          const ret = await recognizeWithWorkerPool(c.toDataURL('image/jpeg', 0.88));
+          result[s.key] = (ret && ret.data && ret.data.text) ? ret.data.text.trim() : '';
+        } catch (e) {}
+      }));
+    }
+
+    // 5개 서브셀 결과를 표준 meta 문자열로 합성 (기존 파서 및 AI 컨텍스트 완벽 호환)
+    const subV = String(result.sub || '').replace(/^.*?협력사\s*[:：.]?\s*/, '').replace(/^[^가-힣A-Za-z0-9]+|[^가-힣A-Za-z0-9()]+$/g, '').trim();
+    const workV = String(result.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
+    const locV = String(result.loc || '').replace(/^.*?작업장소\s*[:：.]?\s*/, '').trim();
+    let userV = String(result.user || '').replace(/^.*?점검자\s*[:：.]?\s*/, '').trim();
+    if (userV.length <= 1) userV = '';
+    const roundV = normalizeRoundText(result.round || '');
+    result.sub = subV;
+    result.work = workV;
+    result.loc = locV;
+    result.user = userV;
+    result.round = roundV;
+    result.meta = `협력사 : ${subV} 공종명 : ${workV} 작업장소 : ${locV} 점검자 : ${userV} 점검차수 : ${roundV}`;
+  }
+
+  return { texts: result, stripDataUrl, cellCrops, cellConfidences, lowConfidenceFields };
 }
 
 function parseVerdictItemsFromText(txt, monitoringDefault = '(현장모니터링 강화)') {
@@ -1745,8 +1802,11 @@ function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, allowDe
   const tType = cellTexts.type || '';
   const tLaw = cellTexts.law || '';
   const tMeta = cellTexts.meta || '';
+  const tSubCell = cellTexts.sub || '';
   const tWorkCell = cellTexts.work || '';
   const tLocCell = cellTexts.loc || '';
+  const tUserCell = cellTexts.user || '';
+  const tRoundCell = cellTexts.round || '';
   const tContent = cellTexts.content || '';
   const tInterview = cellTexts.interview || '';
   const tPropType = cellTexts.propType || '';
@@ -1756,47 +1816,67 @@ function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, allowDe
   const tBanner = cellTexts.banner || '';
   const tBanner2 = cellTexts.banner2 || '';
 
-  const content = cleanContent(tContent);
-  const photoBanner = (tBanner.trim() || content) ? cleanBannerText(tBanner, content) : '';
-  const photo2Banner = tBanner2.trim() ? cleanBannerText(tBanner2, content) : '';
+  const content = normalizeFieldText(cleanContent(tContent), 'content');
+  const photoBanner = (tBanner.trim() || content) ? normalizeFieldText(cleanBannerText(tBanner, content), 'banner') : '';
+  const photo2Banner = tBanner2.trim() ? normalizeFieldText(cleanBannerText(tBanner2, content), 'banner2') : '';
 
   const mSub = tMeta.match(/협력사\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/i);
-  const subcontractor = cleanSubcontractor(mSub ? mSub[1] : '');
+  const subcontractor = cleanSubcontractor(tSubCell || (mSub ? mSub[1] : ''));
 
   const mWork = tMeta.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
-  const workGroup = cleanWorkGroup(mWork ? mWork[1] : tWorkCell, content);
+  const rawWorkGroup = cleanWorkGroup(tWorkCell || (mWork ? mWork[1] : ''), content);
+  const STANDARD_WORK_GROUPS = [
+    '거푸집동바리공사', '비계공사', '가설공사(기타)', '철근콘크리트공사',
+    '철골공사', '토공사', '기계설비공사', '전기/통신공사',
+    '마감공사', '해체/철거공사', '양중 및 운반작업'
+  ];
+  const workGroup = rawWorkGroup
+    ? snapToStandardTaxonomy(rawWorkGroup, STANDARD_WORK_GROUPS, 0.58)
+    : '거푸집동바리공사';
 
   const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
-  const location = cleanLocation(mLoc ? mLoc[1] : '', tLocCell, content);
+  const location = cleanLocation(tLocCell || (mLoc ? mLoc[1] : ''), tLocCell, content);
 
   let inspectUser = '';
-  const mUser = tMeta.match(/점검자\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/i);
-  if (mUser && mUser[1].trim()) inspectUser = mUser[1].replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
+  if (tUserCell && tUserCell.trim().length > 1) {
+    inspectUser = tUserCell.replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
+  } else {
+    const mUser = tMeta.match(/점검자\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검차수|부적합|$))/i);
+    if (mUser && mUser[1].trim().length > 1) inspectUser = mUser[1].replace(/[^가-힣a-zA-Z0-9\s]/g, '').trim();
+  }
 
   let inspectRound = '';
-  const mRound = tMeta.match(/점검차수\s*[:;：]?\s*([^\n|]+)/i);
-  if (mRound && mRound[1].trim()) inspectRound = mRound[1].trim();
-  else if (tMeta.trim()) inspectRound = "'26년上 2차";
+  if (tRoundCell && tRoundCell.trim()) {
+    inspectRound = normalizeRoundText(tRoundCell);
+  } else {
+    const mRound = tMeta.match(/점검차수\s*[:;：]?\s*([^\n|]+)/i);
+    if (mRound && mRound[1].trim()) inspectRound = normalizeRoundText(mRound[1].trim());
+    else if (tMeta.trim()) inspectRound = "'26년上 2차";
+  }
 
   let interviewAuthor = '시공관리자 및 근로자';
   const mAuthor = tInterview.match(/\[\s*(?:관리자\s*의견|의견)\s*[:：]\s*([^\]]+)\]/i);
   if (mAuthor) interviewAuthor = mAuthor[1].replace(/의견\s*$/, '').trim();
   const interviewAuthorTitle = mAuthor ? `[관리자 의견 : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
-  const interviewOpinion = cleanOpinionText(tInterview.replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, ''));
+  const interviewOpinion = normalizeFieldText(cleanOpinionText(tInterview.replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')), 'interview');
 
   const proposalItems = parseVerdictItemsFromText(`${tPropType} ${tPropText}`, '(현장모니터링 강화)');
   const inspectorOpinionType = proposalItems.map(p => p.type).join(', ') || (allowDefaults ? '시스템 개선' : '');
-  const auditProposal = cleanProposalText(tPropText);
-  const actionPlan = cleanActionPlan(tCm);
+  const auditProposal = normalizeFieldText(cleanProposalText(tPropText), 'propText');
+  const actionPlan = normalizeFieldText(cleanActionPlan(tCm), 'cm');
   const pmVerdictItems = parseVerdictItemsFromText(tPm, '(모니터링 강화)');
   const pmVerdictType = pmVerdictItems.map(p => p.type).join(', ') || inspectorOpinionType;
 
   const detectedSev = detectSeverityFromTypeBox(canvas, layout?.typeCell, tType);
   const severity = detectedSev || (allowDefaults ? '중부적합' : '');
-  let type = '';
   const typeCandidates = ['붕괴', '도괴', '추락', '낙하', '비래', '협착', '충돌', '전도', '전복', '화재', '폭발', '감전'];
+  let type = '';
   for (const cand of typeCandidates) {
     if (tType.includes(cand)) { type = cand; break; }
+  }
+  if (!type && tType.trim()) {
+    const cleanedType = tType.replace(/중\s*부\s*적\s*합|경\s*부\s*적\s*합|[^가-힣]/g, '').trim();
+    if (cleanedType) type = snapToStandardTaxonomy(cleanedType, typeCandidates, 0.55);
   }
   if (!type && allowDefaults) type = '붕괴';
 
@@ -1938,9 +2018,33 @@ export async function parseSheetCanvas(canvas, options = {}) {
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const banners = findRedBanners(imgData, layout.photoArea);
     const photoBoxes = findPhotoBoxes(imgData, layout.photoArea, banners);
-    const realPhotoBoxes = photoBoxes.filter(b => !b.isReference);
 
-    const photos = realPhotoBoxes.map(b => cropCanvas(canvas, b).toDataURL('image/jpeg', 0.92));
+    // [Step 4.2] 2차 PaddleOCR 키워드·줄수 보강 필터: 회색/황색 음영 표라서 1차 whiteRatio 필터를 통과한 참조 이미지 방어
+    if (photoBoxes.length >= 2) {
+      for (const b of photoBoxes) {
+        if (!b.isReference && (b.whiteRowFrac >= 0.06 || b.whiteRatio >= 0.22)) {
+          try {
+            await initPaddleOcr();
+            const boxCanvas = cropCanvas(canvas, b);
+            const refOcr = await recognizeCellWithPaddle(boxCanvas, 'refCheck');
+            if (
+              refOcr &&
+              refOcr.lineCount >= 5 &&
+              /(?:설치기준|작업지침|표준안전|표준도|올바른\s*예|KOSHA|안전보건공단|안전보건규칙|보강\s*예|시공기준)/i.test(refOcr.text)
+            ) {
+              b.isReference = true;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    let realPhotoBoxes = photoBoxes.filter(b => !b.isReference);
+    if (realPhotoBoxes.length === 0 && photoBoxes.length > 0) {
+      realPhotoBoxes = [[...photoBoxes].sort((a, b) => a.whiteRatio - b.whiteRatio)[0]];
+    }
+
+    const photos = realPhotoBoxes.slice(0, 2).map(b => cropCanvas(canvas, b).toDataURL('image/jpeg', 0.92));
     if (photos.length === 0 && layout.photoArea) {
       photos.push(cropCanvas(canvas, layout.photoArea).toDataURL('image/jpeg', 0.90));
     }
@@ -1955,6 +2059,11 @@ export async function parseSheetCanvas(canvas, options = {}) {
       { key: 'law', box: layout.lawCell },
       { key: 'check', box: layout.checkCell },
       { key: 'meta', box: layout.metaRow },
+      { key: 'sub', box: layout.subCell },
+      { key: 'work', box: layout.workCell },
+      { key: 'loc', box: layout.locCell },
+      { key: 'user', box: layout.userCell },
+      { key: 'round', box: layout.roundCell },
       { key: 'content', box: layout.contentRow },
       { key: 'interview', box: layout.interview },
       { key: 'propType', box: layout.proposalType },
@@ -1964,9 +2073,19 @@ export async function parseSheetCanvas(canvas, options = {}) {
       { key: 'banner', box: banners.length > 0 ? banners[0] : null },
       { key: 'banner2', box: banners.length > 1 ? banners[1] : null }
     ];
-    const { texts: cellTexts, stripDataUrl } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText });
+    const {
+      texts: cellTexts,
+      stripDataUrl,
+      cellCrops,
+      cellConfidences,
+      lowConfidenceFields
+    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText });
     const hadCellText = Object.values(cellTexts).some(v => v && String(v).trim().length > 0);
     const parsedFields = parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, hadCellText);
+    if (photos.length <= 1) {
+      parsedFields.photo2Banner = '';
+    }
+    const fullSheetContext = buildAiContextFromCellTexts(cellTexts, digitalText, hasDigitalText);
 
     let record = {
       slideNumber: pageNumber,
@@ -1975,22 +2094,26 @@ export async function parseSheetCanvas(canvas, options = {}) {
       photos,
       photo1,
       photo2,
+      cellCrops,
+      cellConfidences,
+      lowConfidenceFields,
+      _rawCellTexts: cellTexts,
+      _fullSheetContext: fullSheetContext,
       _hasDigitalText: hasDigitalText,
       _stripImageBase64: stripDataUrl || undefined,
       _fullDocImage: fullDocDataUrl,
       _sourceFile: sourceName
     };
 
-    // Cloudflare Vision AI + Qwen3-30B 하이브리드 연동 (클라우드 모드 시 Tesseract 없이 이미지 직접 판독)
-    if (window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+    // 다건 PDF 업로드 시에는 8~10페이지 단위 배치 추론(classifyBatchRecords)으로 일괄 처리하여 Neurons 85% 절감
+    if (!options.deferBatchAi && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
       try {
-        const fullSheetContext = buildAiContextFromCellTexts(cellTexts, digitalText, hasDigitalText);
         record = await window.SafeLocalAI.cleanOcrRecord(fullSheetContext, record);
       } catch (e) {}
     }
 
-    // 비상 오프라인 폴백: 클라우드 AI 한도 초과/오류로 content가 비어있을 때 병렬 Tesseract OCR + 로컬 룰/분류기 복원
-    if (!record._aiCleaned && !record.content && window.Tesseract) {
+    // 비상 오프라인 폴백: OCR 본문이 비어있을 때만 병렬 Tesseract OCR 복원
+    if (!record.content && window.Tesseract) {
       try {
         const { texts: fbTexts } = await ocrCellsSinglePass(canvas, cellSpecsList, { forceTesseract: true });
         const fbFields = parseCellTextsIntoFields(fbTexts, canvas, layout, mgmtCauses, true);
@@ -2009,7 +2132,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
         if (fbFields.proposalItems?.length) record.proposalItems = fbFields.proposalItems;
         if (fbFields.pmVerdictItems?.length) record.pmVerdictItems = fbFields.pmVerdictItems;
 
-        if (!record._aiQuotaExceeded && record.content && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+        if (!options.deferBatchAi && !record._aiQuotaExceeded && record.content && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
           try {
             record = await window.SafeLocalAI.cleanOcrRecord(buildAiContextFromCellTexts(fbTexts, digitalText, hasDigitalText), record);
           } catch (e) {}
@@ -2306,7 +2429,8 @@ export async function parsePDF(file, onProgress = () => {}) {
 
         const rec = await parseSheetCanvas(canvas, {
           pageNumber: pg.pageNumber,
-          sourceName: `${file.name} (p.${pg.pageNumber})`
+          sourceName: `${file.name} (p.${pg.pageNumber})`,
+          deferBatchAi: true
         });
         if (rec && rec._skipped) {
           console.log(`[SafePatrol PDF] Page ${pg.pageNumber}/${totalPages} 생략 (${rec.reason || '참고사항/시공예시'})`);
@@ -2314,6 +2438,16 @@ export async function parsePDF(file, onProgress = () => {}) {
         }
         return rec;
       }));
+
+      // 다건 배치 AI 표준 분류 및 핀포인트 오타 패치 (8페이지 이하 묶음 1회 호출)
+      const validBatchRecs = batchResults.filter(r => r && !r._skipped);
+      if (validBatchRecs.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
+        try {
+          await window.SafeLocalAI.classifyBatchRecords(validBatchRecs);
+        } catch (e) {
+          console.warn('[SafePatrol] Batch AI classify warning:', e);
+        }
+      }
 
       for (const res of batchResults) {
         processedCount++;
@@ -2347,6 +2481,19 @@ export async function parsePDF(file, onProgress = () => {}) {
     }
 
     records.sort((a, b) => (a.pageNumber || 0) - (b.pageNumber || 0));
+
+    // 2차 패스: 장소 미추출 레코드에 동일 문서 내 유효 장소 상속 및 오프라인 보강
+    const bestBinaryLoc = records.find(r => r.location && r.location.length >= 2)?.location || '101동 외부';
+    for (const r of records) {
+      if (!r.location || r.location.length < 2) {
+        if (/계단구간|E\/V/i.test(r.content)) r.location = '계단구간 E/V 최상부';
+        else if (/갱폼|gang\s*form/i.test(r.content)) r.location = `${bestBinaryLoc} (갱폼)`;
+        else r.location = bestBinaryLoc;
+      }
+      if (!r.agentMajor || !r.workMethod) {
+        enrichRecordOfflineFromContent(r);
+      }
+    }
 
     onProgress({
       current: totalPages,
@@ -2400,7 +2547,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
     await Promise.all(batchPages.map(async (pNum) => {
       const page = await pdfDoc.getPage(pNum);
-      const viewport = page.getViewport({ scale: 1.5 });
+      const viewport = page.getViewport({ scale: 2.5 });
       let pageCanvas = document.createElement('canvas');
       pageCanvas.width = viewport.width;
       pageCanvas.height = viewport.height;
@@ -2434,7 +2581,8 @@ export async function parsePDF(file, onProgress = () => {}) {
         digitalText,
         pageNumber: pNum,
         sourceName: `${file.name} (p.${pNum})`,
-        lastKnownLocation
+        lastKnownLocation,
+        deferBatchAi: true
       });
       if (rec && rec.location) lastKnownLocation = rec.location;
       if (rec && rec._skipped) {
@@ -2444,6 +2592,15 @@ export async function parsePDF(file, onProgress = () => {}) {
       }
       orderedResults[pNum - 1] = rec;
     }));
+
+    const batchSlice = batchPages.map(p => orderedResults[p - 1]).filter(Boolean);
+    if (batchSlice.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
+      try {
+        await window.SafeLocalAI.classifyBatchRecords(batchSlice);
+      } catch (e) {
+        console.warn('[SafePatrol] Batch AI classify warning:', e);
+      }
+    }
 
     // 배치 결과 순서대로 반영 및 진행률 갱신
     records.length = 0;

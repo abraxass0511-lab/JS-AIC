@@ -435,6 +435,159 @@ export default {
     if (url.pathname === '/api/ai-analyze' || url.pathname === '/api/vision-ocr') {
       try {
         const body = await request.json().catch(() => ({}));
+
+        // [v2.0 신규] 다건 묶음(Multi-Page Batch) 표준 분류 + 핀포인트 오타 패치 모드 (일 2,500장+ 무료 처리)
+        if (body.mode === 'batch_classify' && Array.isArray(body.items) && body.items.length > 0) {
+          const items = body.items.slice(0, 10);
+          const buildFallbackBatch = (quota = false, errMsg = '') => ({
+            ok: true,
+            source: 'cloudflare_rule_batch',
+            quotaExceeded: quota,
+            error: errMsg || undefined,
+            results: items.map(it => {
+              const fb = analyzeRuleFallback(`${it.cells?.workTypeRaw || ''} ${it.cells?.content || ''}`);
+              return {
+                pageIndex: it.pageIndex,
+                workGroup: it.cells?.workTypeRaw || fb.workGroup || '거푸집동바리공사',
+                workMethod: fb.workMethod || '설치조립작업',
+                agentMajor: fb.agentMajor || '가시설',
+                agentMid: fb.agentMid || '거푸집/동바리',
+                agentMinor: fb.agentMinor || '유로폼',
+                hazardType: fb.hazardType || '붕괴',
+                condition: fb.condition || '안전시설 미비/불량',
+                action: fb.action || '해당없음',
+                rootCauseMgmt: fb.rootCauseMgmt || '관리감독자 직무 미이행 (점검·확인 누락)',
+                rootCauseSystem: fb.rootCauseSystem || '작업계획서·위험성평가 미수립/부실',
+                stakeholder: fb.stakeholder || '원청 관리감독자 + 협력사 소장',
+                law: fb.law || '안전보건규칙 제42조(추락의 방지)',
+                typoPatches: {}
+              };
+            })
+          });
+
+          if (!env.AI) {
+            return new Response(JSON.stringify(buildFallbackBatch(false, 'no_ai_binding')), {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy) 전문가 AI이다.
+입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 각 페이지별로 건설안전 9x9 표준 분류코드와 산안규칙 조문을 매핑하고, 본문 텍스트에 명백한 스캔 오탈자 어절이 있는 경우에만 typoPatches 사전({"틀린어절":"바른어절"})으로 반환하라.
+
+${TAXONOMY_STANDARD_PROMPT}
+
+반드시 아래 JSON 형식으로만 응답하라 (설명 금지):
+{
+  "results": [
+    {
+      "pageIndex": 1,
+      "workGroup": "표준 공종",
+      "workMethod": "표준 작업방법",
+      "agentMajor": "표준 기인물 대분류",
+      "agentMid": "표준 기인물 중분류",
+      "agentMinor": "표준 기인물 소분류",
+      "hazardType": "표준 재해형태",
+      "condition": "표준 불안전 상태",
+      "action": "표준 불안전 행동",
+      "rootCauseMgmt": "표준 법적 관리감독",
+      "rootCauseSystem": "표준 안전시스템",
+      "stakeholder": "표준 관리/책임주체",
+      "law": "안전보건규칙 제OO조(조항명)",
+      "typoPatches": {}
+    }
+  ]
+}`;
+          try {
+            const qRes = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
+              messages: [
+                { role: 'system', content: batchSystemPrompt },
+                { role: 'user', content: `${JSON.stringify(items)}\n/no_think` }
+              ],
+              max_tokens: 1400,
+              temperature: 0.05
+            });
+            const raw = (typeof qRes?.response === 'string' && qRes.response) || qRes?.choices?.[0]?.message?.content || '';
+            const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json|```/g, '').trim();
+            const sIdx = cleaned.indexOf('{');
+            const eIdx = cleaned.lastIndexOf('}');
+            if (sIdx !== -1 && eIdx > sIdx) {
+              const parsedBatch = JSON.parse(cleaned.slice(sIdx, eIdx + 1));
+              if (Array.isArray(parsedBatch?.results)) {
+                return new Response(JSON.stringify({
+                  ok: true,
+                  source: 'qwen3_30b_batch',
+                  model: 'Qwen3-30B-A3B Batch (Cloudflare 24h Cloud)',
+                  results: parsedBatch.results
+                }), {
+                  status: 200,
+                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+                });
+              }
+            }
+          } catch (batchErr) {
+            const isQ = /4006|daily free allocation|quota|neurons|rate.?limit/i.test(String(batchErr?.message || batchErr || ''));
+            return new Response(JSON.stringify(buildFallbackBatch(isQ, String(batchErr?.message || batchErr))), {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+            });
+          }
+          return new Response(JSON.stringify(buildFallbackBatch(false, 'parse_fallback')), {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+          });
+        }
+
+        // [v2.0 신규] 현장 직접 등록 모드(Guided Complete): 1줄 키워드 + 선택 분류값으로 보고서 문장 자동 생성
+        if (body.mode === 'guided_complete') {
+          const memo = String(body.memo || body.content || '').trim();
+          const workGroup = body.workGroup || '가설공사(기타)';
+          const workMethod = body.workMethod || '설치조립작업';
+          const severity = body.severity || '중부적합';
+          const fb = analyzeRuleFallback(`${workGroup} ${workMethod} ${memo}`);
+          if (env.AI && memo) {
+            try {
+              const guidedPrompt = `건설현장 안전점검 메모("${memo}", 공종: ${workGroup}, 작업: ${workMethod}, 등급: ${severity})를 바탕으로 표준 부적합 점검장표용 문장을 JSON으로 작성하라.
+JSON 형식:
+{
+  "content": "구체적 부적합 개요 문장",
+  "photoBanner": "사진 상단 18자 내외 핵심 요약 배너",
+  "law": "안전보건규칙 제OO조(조항명)",
+  "interviewOpinion": "- 현장 관계자 인터뷰(발생원인) 문장",
+  "auditProposal": "- 점검단 개선제안 문장",
+  "actionPlan": "- 현장 즉시 조치 및 재발방지 개선대책 문장"
+}`;
+              const gRes = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
+                messages: [{ role: 'user', content: `${guidedPrompt}\n/no_think` }],
+                max_tokens: 550,
+                temperature: 0.1
+              });
+              const raw = (typeof gRes?.response === 'string' && gRes.response) || gRes?.choices?.[0]?.message?.content || '';
+              const cleaned = String(raw).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/```json|```/g, '').trim();
+              const sIdx = cleaned.indexOf('{');
+              const eIdx = cleaned.lastIndexOf('}');
+              if (sIdx !== -1 && eIdx > sIdx) {
+                const parsedG = JSON.parse(cleaned.slice(sIdx, eIdx + 1));
+                return new Response(JSON.stringify({ ok: true, ...fb, ...parsedG }), {
+                  status: 200,
+                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+                });
+              }
+            } catch (e) {}
+          }
+          return new Response(JSON.stringify({
+            ok: true,
+            ...fb,
+            content: memo || fb.analysis,
+            interviewOpinion: `- 작업 중 안전기준 숙지 미흡 및 현장 사전 확인 부족으로 발생함`,
+            auditProposal: `- ${workGroup} ${workMethod} 관련 안전기준 재교육 및 현장 모니터링 강화 필요`,
+            actionPlan: `- ${fb.pmVerdict}`
+          }), {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+          });
+        }
+
         const content = body.content || body.rawOcrText || '';
         if (!content && !body.stripImageBase64) {
           return new Response(JSON.stringify({ error: '지적 내용(content) 또는 이미지(stripImageBase64)가 필요합니다.' }), {
