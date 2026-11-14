@@ -815,7 +815,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return c.split('\n')[0].replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
   }
 
-  function cleanBannerText(rawBanner, content) {
+  function cleanBannerText(rawBanner, content, location = '') {
     if (typeof window !== 'undefined' && window.SafeTextNormalizer?.extractCoreViolationBanner) {
       let b = String(rawBanner || '').trim();
       b = healSafetyKoreanLexicon(b)
@@ -828,14 +828,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ\s/()\-↓↑.,]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+      const isLocOnly = typeof window !== 'undefined' && window.SafeTextNormalizer?.isLocationOnlyBanner?.(b, location);
       const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(b);
       const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
       const hangulCount = (b.match(/[가-힣]/g) || []).length;
       const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
-      if (!b || b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '') || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
-        return window.SafeTextNormalizer.extractCoreViolationBanner('', content);
+      if (!b || isLocOnly || b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '') || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
+        return window.SafeTextNormalizer.extractCoreViolationBanner('', content, location);
       }
-      return window.SafeTextNormalizer.extractCoreViolationBanner(b, content);
+      return window.SafeTextNormalizer.extractCoreViolationBanner(b, content, location);
     }
     return summarizeContentToBanner(content || rawBanner);
   }
@@ -1029,7 +1030,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   let _cfQuotaCooldownUntil = 0;
   let _cfTransientBackoffUntil = 0;
 
-  async function cleanOcrRecord(rawOcrText, fallbackRecord) {
+  function isQuotaCoolingDown() {
+    return Date.now() < _cfQuotaCooldownUntil || Date.now() < _cfTransientBackoffUntil;
+  }
+
+  function isFieldKeyLiteral(val) {
+    return /^-?\s*(?:location|content|interview|interviewOpinion|proposalText|auditProposal|countermeasure|actionPlan|rawLaw|lawBody)$/i.test(String(val || '').trim());
+  }
+
+  async function cleanOcrRecord(rawOcrText, fallbackRecord, options = {}) {
     if (!fallbackRecord) fallbackRecord = {};
     const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (typeof globalThis !== 'undefined' ? globalThis.SAFEPATROL_CONFIG?.workerUrl : null) || 'https://safepatrol-relay.abraxass0511.workers.dev';
     const pin = storage.getItem('sp_pin') || '111111';
@@ -1039,14 +1048,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       fallbackRecord._aiQuotaExceeded = true;
     }
 
-    // ── [1순위] Cloudflare 24시간 상시 가동 Qwen3-30B 텍스트 하이브리드 연동 (Tesseract 원문 확보 시 Vision 생략) ──
-    if (!forceLocal && workerUrl && Date.now() >= _cfQuotaCooldownUntil && Date.now() >= _cfTransientBackoffUntil) {
+    // ── [1순위] Cloudflare 24시간 상시 가동 하이브리드 연동 (Selective Vision Rescue 지원) ──
+    if (!forceLocal && workerUrl && !isQuotaCoolingDown()) {
       try {
-        const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 14000);
         const rawLen = rawOcrText ? String(rawOcrText).trim().length : 0;
         const contentLen = fallbackRecord.content ? String(fallbackRecord.content).trim().length : 0;
         const hasSufficientOcr = (rawLen >= 40 || contentLen >= 10);
+        const wantVision = Boolean(options.forceVision || !hasSufficientOcr) && !!fallbackRecord._stripImageBase64;
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), wantVision ? 45000 : 14000);
         const cfRes = await fetch(`${workerUrl.replace(/\/$/, '')}/api/ai-analyze`, {
           method: 'POST',
           headers: {
@@ -1055,9 +1065,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           },
           body: JSON.stringify({
             mode: 'ocr_clean',
-            forceVision: !hasSufficientOcr && !!fallbackRecord._stripImageBase64,
+            forceVision: wantVision,
             rawOcrText: rawOcrText || '',
-            stripImageBase64: hasSufficientOcr ? undefined : (fallbackRecord._stripImageBase64 || undefined),
+            stripImageBase64: wantVision ? fallbackRecord._stripImageBase64 : undefined,
             content: fallbackRecord.content || rawOcrText,
             location: fallbackRecord.location || '',
             workGroup: fallbackRecord.workGroup || '',
@@ -1087,6 +1097,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             const hasRealAiResult = !cfData.needsClientOcr && isRealAiSource && (cfContent.length >= 4 || (hasCallerText && !!cfData.agentMajor));
             if (hasRealAiResult) {
               fallbackRecord._aiCleaned = true;
+              if (wantVision) fallbackRecord._visionCleaned = true;
               if (cfData.agentMajor) fallbackRecord.agentMajor = cfData.agentMajor;
               if (cfData.agentMid) fallbackRecord.agentMid = cfData.agentMid;
               if (cfData.agentMinor) {
@@ -1110,9 +1121,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               if ((cfData.type || cfData.hazardType) && (!fallbackRecord.type || !fallbackRecord._hasDigitalText)) {
                 fallbackRecord.type = cfData.type || String(cfData.hazardType).split('·')[0];
               }
-              if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText)) {
-                fallbackRecord.photoBanner = cfData.photoBanner;
-              }
               if (cfData.photo2Banner) {
                 fallbackRecord.photo2Banner = cfData.photo2Banner;
                 if (!fallbackRecord.photo2Title) fallbackRecord.photo2Title = cfData.photo2Banner;
@@ -1128,8 +1136,20 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               }
               if (cfData.cleanedFields && typeof cfData.cleanedFields === 'object') {
                 const cf = cfData.cleanedFields;
-                if (cf.content) fallbackRecord.content = cleanContent(cf.content) || cf.content;
-                if (cf.location) fallbackRecord.location = cf.location;
+                const normField = (val, fk) => {
+                  const healed = healSafetyKoreanLexicon(String(val || '').trim());
+                  return (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
+                    ? window.SafeTextNormalizer.normalizeFieldText(healed, fk)
+                    : healed;
+                };
+                if (cf.content && !isFieldKeyLiteral(cf.content)) {
+                  const c = cleanContent(normField(cf.content, 'content')) || cf.content;
+                  if (c && !isFieldKeyLiteral(c)) fallbackRecord.content = c;
+                }
+                if (cf.location && !isFieldKeyLiteral(cf.location)) {
+                  const loc = normField(cf.location, 'location');
+                  if (loc && !isFieldKeyLiteral(loc)) fallbackRecord.location = loc;
+                }
                 if (cf.workGroup) fallbackRecord.workGroup = cleanWorkGroup(cf.workGroup, fallbackRecord.content) || cf.workGroup;
                 if (cf.subcontractor !== undefined) fallbackRecord.subcontractor = cf.subcontractor;
                 if (cf.inspector !== undefined && cf.inspector) {
@@ -1140,16 +1160,35 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   fallbackRecord.round = cf.round;
                   fallbackRecord.inspectRound = cf.round;
                 }
-                if (cf.interviewOpinion) fallbackRecord.interviewOpinion = cleanOpinionText(cf.interviewOpinion) || cf.interviewOpinion;
-                if (cf.auditProposal) fallbackRecord.auditProposal = cleanProposalText(cf.auditProposal) || cf.auditProposal;
-                if (cf.actionPlan) {
-                  const cleanedPlan = cleanActionPlan(cf.actionPlan) || cf.actionPlan;
-                  fallbackRecord.actionPlan = cleanedPlan;
-                  fallbackRecord.countermeasure = cleanedPlan;
+                if (cf.interviewOpinion && !isFieldKeyLiteral(cf.interviewOpinion)) {
+                  const op = cleanOpinionText(normField(cf.interviewOpinion, 'interview')) || cf.interviewOpinion;
+                  if (op && !isFieldKeyLiteral(op)) fallbackRecord.interviewOpinion = op;
                 }
-                if (cf.law && !fallbackRecord.rawLaw) fallbackRecord.rawLaw = cf.law;
-                if (cf.rawLaw) fallbackRecord.rawLaw = cf.rawLaw;
-                if (cf.lawBody) fallbackRecord.lawBody = cf.lawBody;
+                if (cf.auditProposal && !isFieldKeyLiteral(cf.auditProposal)) {
+                  const prop = cleanProposalText(normField(cf.auditProposal, 'auditProposal')) || cf.auditProposal;
+                  if (prop && !isFieldKeyLiteral(prop)) fallbackRecord.auditProposal = prop;
+                }
+                if (cf.actionPlan && !isFieldKeyLiteral(cf.actionPlan)) {
+                  const cleanedPlan = cleanActionPlan(normField(cf.actionPlan, 'actionPlan')) || cf.actionPlan;
+                  if (cleanedPlan && !isFieldKeyLiteral(cleanedPlan)) {
+                    fallbackRecord.actionPlan = cleanedPlan;
+                    fallbackRecord.countermeasure = cleanedPlan;
+                  }
+                }
+                if (cf.law && !isFieldKeyLiteral(cf.law) && !fallbackRecord.rawLaw) fallbackRecord.rawLaw = cf.law;
+                if (cf.rawLaw && !isFieldKeyLiteral(cf.rawLaw)) fallbackRecord.rawLaw = cf.rawLaw;
+                if (cf.lawBody && !isFieldKeyLiteral(cf.lawBody)) fallbackRecord.lawBody = cf.lawBody;
+                if (!cf.rawLaw && !cf.lawBody && cfData.visionText) {
+                  const lawSecMatch = String(cfData.visionText).match(/\[관련기준\]\s*([\s\S]*?)(?=\n\[[가-힣A-Za-z0-9_/]+\]|$)/);
+                  if (lawSecMatch && lawSecMatch[1] && lawSecMatch[1].trim().length >= 12) {
+                    fallbackRecord.rawLaw = lawSecMatch[1].trim();
+                  }
+                }
+              }
+              if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText || wantVision)) {
+                fallbackRecord.photoBanner = cleanBannerText(cfData.photoBanner, fallbackRecord.content, fallbackRecord.location);
+              } else if (fallbackRecord.photoBanner) {
+                fallbackRecord.photoBanner = cleanBannerText(fallbackRecord.photoBanner, fallbackRecord.content, fallbackRecord.location);
               }
               delete fallbackRecord._stripImageBase64;
               delete fallbackRecord._rightPhotoBase64;
@@ -1292,7 +1331,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       }
       if (!preserveAiFields || !rec.photoBanner) {
         const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
-        rec.photoBanner = cleanBannerText(rawBannerFromSheet || rec.photoBanner, rec.content) || r.photoBanner || '';
+        rec.photoBanner = cleanBannerText(rawBannerFromSheet || rec.photoBanner, rec.content, rec.location) || r.photoBanner || '';
       }
       if (!rec.condition || rec.condition === '해당없음') rec.condition = r.condition || rec.condition;
       if (!rec.action || rec.action === '해당없음') rec.action = r.action || rec.action;
@@ -1391,22 +1430,23 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
           }
           // 1) AI 전수 교정(fixedFields: 띄어쓰기 + 스캔 오탈자 + 말미 영문 노이즈 제거) 우선 반영
-          if (aiItem.fixedFields && typeof aiItem.fixedFields === 'object') {
+          // 단, Selective Vision Rescue(_visionCleaned)로 픽셀 직독 완료된 레코드는 텍스트 재추론으로 덮어쓰지 않음
+          if (!rec._visionCleaned && aiItem.fixedFields && typeof aiItem.fixedFields === 'object') {
             const ff = aiItem.fixedFields;
             const applyFixedField = (key, rawVal, cleanerFn, syncKey) => {
               if (typeof rawVal !== 'string') return;
               const v = rawVal.trim();
               const orig = String(rec[key] || '').trim();
-              if (!v || !orig || /\uFFFD/.test(v)) return;
+              if (!v || !orig || /\uFFFD/.test(v) || isFieldKeyLiteral(v)) return;
               const vCompactLen = v.replace(/\s+/g, '').length;
               const oCompactLen = orig.replace(/\s+/g, '').length;
               if (oCompactLen > 0 && (vCompactLen < oCompactLen * 0.45 || vCompactLen > oCompactLen * 1.85)) return;
               const normFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
-                ? (s) => window.SafeTextNormalizer.normalizeFieldText(key === 'interviewOpinion' ? 'interview' : key, s)
+                ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, key === 'interviewOpinion' ? 'interview' : key)
                 : (s) => s;
               const normalized = normFn(healSafetyKoreanLexicon(v));
               const cleaned = cleanerFn ? cleanerFn(normalized) : normalized;
-              if (cleaned && cleaned.length >= 2) {
+              if (cleaned && cleaned.length >= 2 && !/\uFFFD/.test(cleaned) && !isFieldKeyLiteral(cleaned)) {
                 rec[key] = cleaned;
                 if (syncKey) rec[syncKey] = cleaned;
               }
@@ -1417,7 +1457,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
             applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
           }
-          if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
+          if (!rec._visionCleaned && aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
             window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
           }
 
@@ -1433,12 +1473,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const aiBanner = (aiItem.photoBanner || '').trim();
           const hasUsefulSpaces = (s) => /\s/.test(s) || s.length < 10;
           const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s);
-          if (rawBannerFromSheet && hasUsefulSpaces(rawBannerFromSheet) && !isTruncatedRawBanner(rawBannerFromSheet)) {
-            rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content);
-          } else if (aiBanner && !/\uFFFD/.test(aiBanner) && aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner)) {
-            rec.photoBanner = cleanBannerText(aiBanner, rec.content);
-          } else if (rawBannerFromSheet) {
-            rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content);
+          const isLocBanner = (s) => typeof window !== 'undefined' && window.SafeTextNormalizer?.isLocationOnlyBanner?.(s, rec.location);
+          if (rec._visionCleaned && rec.photoBanner && !isLocBanner(rec.photoBanner)) {
+            rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location);
+          } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet) && hasUsefulSpaces(rawBannerFromSheet) && !isTruncatedRawBanner(rawBannerFromSheet)) {
+            rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
+          } else if (aiBanner && !isLocBanner(aiBanner) && !/\uFFFD/.test(aiBanner) && aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner)) {
+            rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location);
+          } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet)) {
+            rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
           } else {
             rec.photoBanner = summarizeContentToBanner(rec.content);
           }
@@ -1478,6 +1521,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     streamAnalyzeSafetyText,
     cleanOcrRecord,
     classifyBatchRecords,
+    isQuotaCoolingDown,
     completeGuidedRecord,
     getEndpoint: () => currentEndpoint,
     setEndpoint: ep => { currentEndpoint = ep; storage.setItem('sp_lmstudio_endpoint', ep); },

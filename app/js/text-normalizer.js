@@ -441,10 +441,26 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
   return w || '안전시설공사';
 }
 
+const BANNER_DEFECT_SIGNAL_RE = /(?:불량|미흡|누락|노출|파손|훼손|변형|이탈|탈락|부족|위험|우려|방치|위반|금지|불가|누출|누전|침하|균열|전도|추락|낙하|충돌|감전|붕괴|협착|화재|폭발|역화|근접|혼재|과부하|적치|관리\s*불량|관리\s*미흡|정리\s*정돈|미\s*(?:설치|비치|착용|고정|체결|연결|시공|실시|확보|준수|사용|이행|수립|결속|보강|접지|구획|방호|표시|부착|배치)|고정\s*(?:불량|미흡)|개폐\s*불가|접지\s*(?:불량|미연결|누락)|충전부|심선|단자부|작업\s*중|하역|인양|달기구|해체)/;
+const BANNER_LOCATION_HINT_RE = /(?:주변|외부|내부|후면|전면|측면|상부|하부|상단|하단|옥상|코어|계단실?|피트|\d+\s*동|\d+\s*층|지하\s*\d*|구간|구역|호실|근생|상가|컨테이너|현장\s*내|동\s*옆|건물)/;
+
+export function isLocationOnlyBanner(text = '', locationText = '') {
+  const clean = normalizeKoreanSpacing(String(text || '')).trim();
+  if (!clean) return false;
+  const compact = clean.replace(/\s+/g, '');
+  const locCompact = String(locationText || '').replace(/\s+/g, '');
+  if (locCompact && compact.length >= 2 && (locCompact === compact || locCompact.includes(compact))) {
+    return true;
+  }
+  if (BANNER_DEFECT_SIGNAL_RE.test(clean)) return false;
+  if (BANNER_LOCATION_HINT_RE.test(clean)) return true;
+  return compact.length <= 8;
+}
+
 /**
  * 사진 요약 배너(photoBanner) 전용: 원인/결과/우려 서술어를 제거하고 '실제 위반한 핵심 내용'만 12~20자로 추출
  */
-export function extractCoreViolationBanner(rawBanner = '', contentText = '') {
+export function extractCoreViolationBanner(rawBanner = '', contentText = '', locationText = '') {
   const truncateBannerAtWordBoundary = (text, maxLen = 25) => {
     let t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) return '';
@@ -547,7 +563,7 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '') {
 
   const isUnspacedLongBanner = normBanner.length >= 10 && !/\s/.test(normBanner);
   const hasUnclosedParen = /\([^)]*$/.test(normBanner);
-  if (normBanner && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && normBanner.length >= 5 && normBanner.length <= 24) {
+  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && normBanner.length >= 5 && normBanner.length <= 24) {
     return truncateBannerAtWordBoundary(normBanner, 24);
   }
 
@@ -654,6 +670,7 @@ if (_globalRoot) {
     normalizeKoreanSpacing,
     OFFICIAL_WORK_GROUPS,
     mapToStandardWorkGroup,
+    isLocationOnlyBanner,
     extractCoreViolationBanner,
     normalizeFieldText,
     applyTypoPatches

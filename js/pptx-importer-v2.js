@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v39';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v39';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v40';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v40';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -19,7 +19,7 @@ import {
   OFFICIAL_WORK_GROUPS,
   mapToStandardWorkGroup,
   extractCoreViolationBanner
-} from './text-normalizer.js?v=20261115_v39';
+} from './text-normalizer.js?v=20261115_v40';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -2150,7 +2150,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
       cellCrops,
       cellConfidences,
       lowConfidenceFields
-    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText });
+    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText, buildStrip: !hasDigitalText });
     const hadCellText = Object.values(cellTexts).some(v => v && String(v).trim().length > 0);
     const parsedFields = parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, hadCellText);
     if (photos.length <= 1) {
@@ -2176,6 +2176,24 @@ export async function parseSheetCanvas(canvas, options = {}) {
     };
 
     // 단건/다건 모두 초고속 배치 분류기(classifyBatchRecords)로 통일하여 원문 덮어쓰기 방지 및 속도 향상
+    const triggerVision = Boolean(
+      stripDataUrl &&
+      !hasDigitalText &&
+      !window.SafeLocalAI?.isQuotaCoolingDown?.() &&
+      shouldTriggerVisionRescue(cellTexts, cellConfidences, parsedFields, hasDigitalText)
+    );
+
+    if (triggerVision && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
+      try {
+        console.log(`[SafePatrol] Selective Vision Rescue 실행 (p.${pageNumber}, lowConf=${lowConfidenceFields?.join(',') || 'content/law'})`);
+        record = await window.SafeLocalAI.cleanOcrRecord(fullSheetContext || parsedFields.content || '', record, { forceVision: true });
+      } catch (vErr) {
+        console.warn('[SafePatrol] Selective Vision Rescue fallback to batch AI:', vErr);
+      }
+    } else {
+      delete record._stripImageBase64;
+    }
+
     if (!options.deferBatchAi && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
       try {
         await window.SafeLocalAI.classifyBatchRecords([record]);
@@ -2736,6 +2754,32 @@ export async function parsePDF(file, onProgress = () => {}) {
   records.skippedCount = skippedCount;
   records._skippedPages = skippedCount;
   return records;
+}
+
+/**
+ * Selective Vision Rescue 판단기:
+ * 브라우저 PaddleOCR 결과가 고신뢰도·정상 텍스트이면 Vision API를 호출하지 않아 무료 할당량(10,000 Neurons/일)을 보존하고,
+ * 흐린 스캔·저신뢰·심한 자모/영문 혼입이 감지된 페이지만 선별적으로 Cloudflare Vision OCR 정밀 복원을 실행합니다.
+ */
+export function shouldTriggerVisionRescue(cellTexts = {}, cellConfidences = {}, parsedFields = {}, hasDigitalText = false) {
+  if (hasDigitalText) return false;
+  const content = String(parsedFields.content || cellTexts.content || '').trim();
+  if (!content || content.replace(/\s+/g, '').length < 6) return true;
+
+  const coreKeys = ['content', 'interview', 'propText', 'cm', 'law'];
+  const retryCount = coreKeys.filter((k) => Boolean(cellConfidences?.[k]?.needsVisionRetry)).length;
+  if (retryCount >= 2) return true;
+
+  const contentCorrupted = /\uFFFD|\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))|[A-Za-z]{2,}(?=[가-힣])|[가-힣](?=[a-z]{2,})/.test(content)
+    || /[가-힣]{16,}/.test(content);
+  if (cellConfidences?.content?.needsVisionRetry && contentCorrupted) return true;
+
+  const lawText = String(cellTexts.law || parsedFields.rawLaw || '').trim();
+  const brokenSingleSyllables = (lawText.match(/(?:^|\s)[가-힣](?=\s|$)/g) || []).length;
+  const lawAvgConf = typeof cellConfidences?.law?.avgConf === 'number' ? cellConfidences.law.avgConf : 1;
+  if (cellConfidences?.law?.needsVisionRetry && (brokenSingleSyllables >= 2 || lawAvgConf < 0.72 || /\uFFFD/.test(lawText))) return true;
+
+  return false;
 }
 
 /**
