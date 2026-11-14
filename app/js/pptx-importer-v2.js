@@ -7,9 +7,9 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261114_v34';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261114_v34';
-import { normalizeRoundText, normalizeFieldText, snapToStandardTaxonomy, applyTypoPatches } from './text-normalizer.js?v=20261114_v34';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261114_v35';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261114_v35';
+import { normalizeRoundText, normalizeFieldText, snapToStandardTaxonomy, applyTypoPatches } from './text-normalizer.js?v=20261114_v35';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -27,7 +27,7 @@ export function deriveConcreteBanner(content) {
     .trim();
   c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동|\s*외부)?)\s*/i, '');
   c = c.replace(/^\d+\)\s*/, '');
-  const firstLine = c.split('\n')[0].trim();
+  const firstLine = c.split('\n')[0].replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
   if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
   if (firstLine.includes('버팀대') && (firstLine.includes('각도') || firstLine.includes('미준수') || firstLine.includes('불량'))) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
   if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
@@ -36,9 +36,37 @@ export function deriveConcreteBanner(content) {
   if (firstLine.includes('밑둥잡이')) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
   if (firstLine.includes('동바리') && (firstLine.includes('해체') || firstLine.includes('미복구'))) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
   if (/Gang\s*Form|선해체|갱폼/i.test(firstLine)) return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
+  if (firstLine.includes('지게차') && firstLine.includes('근접')) {
+    return /pl\s*창호|창호/i.test(firstLine) ? 'PL창호 유리 하역 중 지게차 근접 충돌 우려' : '지게차 하역 중 유도원·근로자 근접 충돌 우려';
+  }
+  if (firstLine.includes('충전부') && firstLine.includes('노출')) {
+    return '가설컨테이너 분전함 차단기 충전부 노출';
+  }
 
-  // 말줄임표(...) 절단 원천 배제: 첫 문장 온전히 보존
-  return firstLine || '';
+  // 괄호 안에 핵심 결함이 요약되어 있는 경우 (예: "협력사 가설컨테이너 반입 시 점검 불량(분전함 차단기 충전부 노출)")
+  const mParen = firstLine.match(/^(.+?)\s*\(([^)]{6,30})\)\s*$/);
+  if (mParen && /불량|미흡|누락|미설치|위반/.test(mParen[1])) {
+    return mParen[2].trim();
+  }
+
+  // 서술형 부적합 내용을 핵심 명사구 요약 배너로 자동 압축 (부적합 내용과 100% 동일한 문장 복사 방지)
+  let summary = firstLine
+    .replace(/(?:유도원과\s*근로자가|신호수와\s*근로자가|유도원\s*및\s*근로자가|작업자와\s*근로자가|근로자가|작업자가|유도원이)\s*/g, '')
+    .replace(/([가-힣]{2,6})작업\s*중\s*/g, '$1 중 ')
+    .replace(/에\s*근접하여\s*/g, ' 근접 ')
+    .replace(/(?:을|를)\s*미설치하여\s*/g, ' 미설치 ')
+    .replace(/(?:이|가)\s*설치되지\s*않아\s*/g, ' 미설치 ')
+    .replace(/(?:이|가)\s*되지\s*않아\s*/g, ' 미실시 ')
+    .replace(/(?:을|를)\s*사용하지\s*않아\s*/g, ' 미사용 ')
+    .replace(/(?:으로|로)\s*인한\s*/g, ' ')
+    .replace(/(?:하여|으로\s*인해)\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (summary === firstLine && summary.length > 22) {
+    summary = summary.replace(/\s*(?:작업|진행)\s*중\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  return summary || firstLine || '';
 }
 
 /**
@@ -55,7 +83,13 @@ export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
       return trimmed;
     }
   }
-  // 사내 작업지침(예: 작업지침 [IZSW-003(K)] 동바리 작업)인 경우 내용 기반 산업안전보건기준에 관한 규칙 조문 자동 매핑
+  // 사내 작업지침(예: 작업지침 [IZSW-003(K)] 동바리 작업, [IZ12B-108(K)] 지게차 작업지침 등)인 경우 내용 기반 산업안전보건기준에 관한 규칙 조문 자동 매핑
+  if (/지게차|유도자|유도원|하역|운행경로/.test(combined)) {
+    return '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
+  }
+  if (/충전부/.test(combined)) {
+    return '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+  }
   if (/갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(combined)) {
     return '안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)';
   }
@@ -83,8 +117,8 @@ export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
   if (combined.includes('통로') || combined.includes('조도') || combined.includes('전등')) {
     return '안전보건규칙 제22조(통로의 설치)';
   }
-  if (combined.includes('누전차단기') || combined.includes('전선') || combined.includes('분전함')) {
-    return '안전보건규칙 제304조(가설전선 등)';
+  if (combined.includes('누전차단기') || combined.includes('전선') || combined.includes('분전함') || combined.includes('차단기')) {
+    return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
   }
   return '';
 }
@@ -633,7 +667,8 @@ export function cleanBannerText(rawBanner, content = '') {
   const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(b);
   const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
   const hangulCount = (b.match(/[가-힣]/g) || []).length;
-  if (!b || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
+  const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
+  if (!b || b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '') || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
     return deriveConcreteBanner(content).replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
   }
   return b.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
@@ -647,10 +682,21 @@ export function cleanWorkGroup(rawWork, contentText = '') {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const combined = `${w} ${contentText}`;
-  if (combined.includes('비계') || /^(?:HA|HE|HEY|BEE)\s*공사$/i.test(w)) {
+  if (/^(?:HA|HE|HEY|BEE)\s*공사$/i.test(w)) {
     return '비계공사';
   }
+  // 장표의 '공종명' 셀에 명시된 공종(예: PL창호공사, 창호공사, 가설전기 등)이 유효하면 덮어쓰지 않고 그대로 보존!
+  if (w.length >= 2 && w !== '거푸집동바리공사') {
+    return w;
+  }
+  const combined = `${w} ${contentText}`;
+  if (w === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(contentText)) {
+    return '거푸집동바리공사';
+  }
+  if (/pl\s*창호|창호|유리/i.test(combined)) return 'PL창호공사';
+  if (/분전함|차단기|충전부|누전|가설전선|전선|전기/i.test(combined)) return '설비·전기공사';
+  if (/지게차|하역|운반/i.test(combined)) return '양중 및 운반작업';
+  if (combined.includes('비계')) return '비계공사';
   if (combined.includes('거푸집') || combined.includes('동바리') || combined.includes('유로폼') || combined.includes('전도방지')) {
     return '거푸집동바리공사';
   }
@@ -684,11 +730,14 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
   let rawTitle = (rawLines[titleIdx] || fallbackTitle).replace(/^[0-9I=;:\s]+/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim();
   let sliceStart = titleIdx + 1;
 
-  // 비계 안전작업지침 제목 OCR 오인식 완벽 복원 ('TE EAM [[21286-10606)] 미계', 'rea EAM [1£Z12B-100K] 미계 식보', '안전삭업시집' 등)
+  // 비계 안전작업지침 제목 OCR 오인식 복원 (단, 108(K) 지게차 작업지침 등 타 공종 지침은 절대 덮어쓰지 않도록 보호!)
   if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^(?:7\.)?1\s*비계\s*조립기준|^6\.3\.[12]\s*작업/.test(rawTitle)) {
     rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
     sliceStart = titleIdx; // 본문 첫 줄로 보존
-  } else if (/(?:안전[작삭]업|[TErea\s]*EAM|IZ12B|1Z12B|1£Z12B|2128|10606|100K|106\(K\)|106K|106&|106\(|[비미]계\s*(?:작업|삭보|식보|&))/i.test(rawTitle)) {
+  } else if (
+    /(?:10606|100K|106\(K\)|106K|106&|106\(|[비미]계\s*(?:작업|삭보|식보|&))/i.test(rawTitle) &&
+    !/지게차|108|거푸집|동바리|전기|창호|크레인|양중/i.test(rawTitle)
+  ) {
     rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
   } else if (/현장\s*제작\s*대형\s*거푸집/.test(rawTitle)) {
     rawTitle = '현장 제작 대형 거푸집공사 작업 절차';
@@ -739,7 +788,7 @@ export function cleanOpinionText(raw) {
     rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
     let s = healSafetyKoreanLexicon(rawStr)
     .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-    .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
+    .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
     .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
     .replace(/^[^\n]*?=\s*-\s*/, '- ')
@@ -751,9 +800,11 @@ export function cleanOpinionText(raw) {
   const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const items = [];
   for (let l of rawLines) {
+    if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
     const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(l);
     let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
     if (!text || text.length < 2) continue;
+    if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
     if (items.length === 0 || isBulletStart) {
       items.push(text);
     } else {
@@ -1681,7 +1732,7 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     } catch (e) {}
   }
 
-  const shouldRunOcr = !options.hasDigitalText || options.forceTesseract;
+  const shouldRunOcr = true;
   if (shouldRunOcr) {
     let paddleSucceeded = false;
     if (!options.forceTesseract) {
@@ -1827,12 +1878,13 @@ function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, allowDe
   const rawWorkGroup = cleanWorkGroup(tWorkCell || (mWork ? mWork[1] : ''), content);
   const STANDARD_WORK_GROUPS = [
     '거푸집동바리공사', '비계공사', '가설공사(기타)', '철근콘크리트공사',
-    '철골공사', '토공사', '기계설비공사', '전기/통신공사',
-    '마감공사', '해체/철거공사', '양중 및 운반작업'
+    '철골공사', '토공사', '기계설비공사', '전기/통신공사', '설비·전기공사',
+    '마감공사', '창호공사', 'PL창호공사', '유리공사', '수장공사', '도장공사', '방수공사', '조적공사', '미장공사', '석공사', '타일공사',
+    '해체/철거공사', '양중 및 운반작업', '양중작업'
   ];
   const workGroup = rawWorkGroup
-    ? snapToStandardTaxonomy(rawWorkGroup, STANDARD_WORK_GROUPS, 0.58)
-    : '거푸집동바리공사';
+    ? snapToStandardTaxonomy(rawWorkGroup, STANDARD_WORK_GROUPS, 0.72, rawWorkGroup)
+    : cleanWorkGroup('', content) || '공통';
 
   const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
   const location = cleanLocation(tLocCell || (mLoc ? mLoc[1] : ''), tLocCell, content);
@@ -1855,10 +1907,17 @@ function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, allowDe
   }
 
   let interviewAuthor = '시공관리자 및 근로자';
-  const mAuthor = tInterview.match(/\[\s*(?:관리자\s*의견|의견)\s*[:：]\s*([^\]]+)\]/i);
-  if (mAuthor) interviewAuthor = mAuthor[1].replace(/의견\s*$/, '').trim();
-  const interviewAuthorTitle = mAuthor ? `[관리자 의견 : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
-  const interviewOpinion = normalizeFieldText(cleanOpinionText(tInterview.replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')), 'interview');
+  let interviewRoleLabel = '관리자 의견';
+  const mAuthor = tInterview.match(/\[\s*(?:([가-힣a-zA-Z\s]{1,12}?)\s*의견|의견)\s*[:;：]?\s*([^\]]*)\]/i);
+  if (mAuthor) {
+    const rolePrefix = (mAuthor[1] || '').trim();
+    const targetName = (mAuthor[2] || '').replace(/의견\s*$/, '').trim();
+    if (rolePrefix) interviewRoleLabel = `${rolePrefix} 의견`;
+    if (targetName) interviewAuthor = targetName;
+    else if (rolePrefix) interviewAuthor = rolePrefix;
+  }
+  const interviewAuthorTitle = mAuthor ? `[${interviewRoleLabel} : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
+  const interviewOpinion = normalizeFieldText(cleanOpinionText(tInterview.replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')), 'interview');
 
   const proposalItems = parseVerdictItemsFromText(`${tPropType} ${tPropText}`, '(현장모니터링 강화)');
   const inspectorOpinionType = proposalItems.map(p => p.type).join(', ') || (allowDefaults ? '시스템 개선' : '');
@@ -1869,16 +1928,31 @@ function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, allowDe
 
   const detectedSev = detectSeverityFromTypeBox(canvas, layout?.typeCell, tType);
   const severity = detectedSev || (allowDefaults ? '중부적합' : '');
-  const typeCandidates = ['붕괴', '도괴', '추락', '낙하', '비래', '협착', '충돌', '전도', '전복', '화재', '폭발', '감전'];
+  const typeCandidates = ['추락', '낙하', '비래', '붕괴', '도괴', '전복', '전도', '협착', '충돌', '추돌', '충격', '접촉', '익사', '질식', '중독', '흡인', '화재', '폭발', '화상', '감전', '감염', '질병'];
   let type = '';
   for (const cand of typeCandidates) {
     if (tType.includes(cand)) { type = cand; break; }
   }
   if (!type && tType.trim()) {
     const cleanedType = tType.replace(/중\s*부\s*적\s*합|경\s*부\s*적\s*합|[^가-힣]/g, '').trim();
-    if (cleanedType) type = snapToStandardTaxonomy(cleanedType, typeCandidates, 0.55);
+    if (cleanedType) type = snapToStandardTaxonomy(cleanedType, typeCandidates, 0.58, '');
   }
-  if (!type && allowDefaults) type = '붕괴';
+  if (!type) {
+    const ctxForType = `${content} ${tLaw}`;
+    if (/충돌|부딪|지게차에\s*근접|장비에\s*근접/.test(ctxForType)) type = '충돌';
+    else if (/협착|끼임|감김/.test(ctxForType)) type = '협착';
+    else if (/감전|충전부|누전|분전함|차단기/.test(ctxForType)) type = '감전';
+    else if (/화재|불티|인화/.test(ctxForType)) type = '화재';
+    else if (/폭발|파열/.test(ctxForType)) type = '폭발';
+    else if (/질식|산소결핍|밀폐/.test(ctxForType)) type = '질식';
+    else if (/전복/.test(ctxForType)) type = '전복';
+    else if (/전도|넘어짐|걸려/.test(ctxForType)) type = '전도';
+    else if (/낙하|선해체/.test(ctxForType)) type = '낙하';
+    else if (/비래/.test(ctxForType)) type = '비래';
+    else if (/붕괴|도괴|동바리|서포트/.test(ctxForType)) type = '붕괴';
+    else if (/추락|개구부|난간|안전대|발판|비계/.test(ctxForType)) type = '추락';
+  }
+  if (!type && allowDefaults) type = '추락';
 
   const hasLawOrCtx = !!(tLaw.trim() || content || workGroup);
   const lawParsed = parseLawCell(tLaw);
@@ -1989,9 +2063,21 @@ function enrichRecordOfflineFromContent(record) {
   }
   if (!record.workGroup) record.workGroup = cleanWorkGroup('', record.content);
   if (!record.location) record.location = cleanLocation('', '', record.content);
-  if (!record.photoBanner) record.photoBanner = deriveConcreteBanner(record.content);
+  if (!record.photoBanner || record.photoBanner.replace(/\s+/g, '') === record.content.replace(/\s+/g, '')) {
+    record.photoBanner = deriveConcreteBanner(record.content);
+  }
   if (!record.severity) record.severity = '중부적합';
-  if (!record.type) record.type = '붕괴';
+  if (!record.type) {
+    const c = `${record.content || ''} ${record.rawLaw || ''}`;
+    if (/충돌|부딪|지게차에\s*근접|장비에\s*근접/.test(c)) record.type = '충돌';
+    else if (/협착|끼임|감김/.test(c)) record.type = '협착';
+    else if (/감전|충전부|누전|분전함|차단기/.test(c)) record.type = '감전';
+    else if (/화재|불티|인화/.test(c)) record.type = '화재';
+    else if (/전도|넘어짐|걸려/.test(c)) record.type = '전도';
+    else if (/낙하|선해체/.test(c)) record.type = '낙하';
+    else if (/붕괴|도괴|동바리|서포트/.test(c)) record.type = '붕괴';
+    else record.type = '추락';
+  }
   return record;
 }
 

@@ -18,6 +18,9 @@
   ];
 
   const storage = typeof localStorage !== 'undefined' ? localStorage : { getItem: () => null, setItem: () => {} };
+  const CLOUDFLARE_AI_URL = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) ||
+    (typeof globalThis !== 'undefined' ? globalThis.SAFEPATROL_CONFIG?.workerUrl : null) ||
+    'https://safepatrol-relay.abraxass0511.workers.dev';
   let currentEndpoint = storage.getItem('sp_lmstudio_endpoint') || DEFAULT_ENDPOINTS[0];
   let currentModel = storage.getItem('sp_lmstudio_model') || 'qwen3.5-9b-deepseek-v4-flash';
   let isConnected = true;
@@ -255,18 +258,56 @@
         pmVerdict: '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개'
       };
     }
-    // 7. 가설전기 / 감전
-    if (text.includes('전기') || text.includes('분전') || text.includes('접지') || text.includes('차단기') || text.includes('감전')) {
+    // 7. 가설전기 / 감전 / 분전함 충전부 노출
+    if (text.includes('전기') || text.includes('분전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부') || text.includes('감전')) {
+      const isLivePart = text.includes('충전부') || text.includes('노출');
       return {
-        item: '가설전기',
-        law: '산안규칙 제302조(전기 기계·기구의 접지)',
+        item: '분전반',
+        workGroup: '설비·전기공사',
+        workMethod: '설치조립작업',
+        agentMajor: '전기시설',
+        agentMid: '누전차단기',
+        agentMinor: isLivePart ? '분전함' : '누전차단기',
+        law: isLivePart ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)' : '안전보건규칙 제302조(전기 기계·기구의 접지)',
         hazardType: '감전',
+        type: '감전',
         severity: '중부적합',
-        mgmtCauses: ['불안전 상태'],
+        mgmtCauses: ['불안전 상태', '계획 미이행'],
+        condition: '안전방호장치의 결함 (미설치·해체·불량)',
+        action: '해당없음',
+        rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡',
+        rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡',
+        stakeholder: '협력사 관리감독자',
         holdPoint: false,
-        photoBanner: '전기기구 누전차단기 미접속',
-        analysis: '임시 분전함 외함 접지 미시행 또는 누전차단기 불량',
-        pmVerdict: '해당 차단기 전원 즉시 차단 및 외함 접지선 체결 완료 후 통전'
+        photoBanner: isLivePart ? '가설컨테이너 분전함 차단기 충전부 노출' : '전기기구 누전차단기 및 접지 불량',
+        analysis: isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 누전차단기 불량',
+        pmVerdict: '즉시 전원 차단 및 충전부 절연 방호커버 설치, 반입 전 사전 점검 이행'
+      };
+    }
+    // 7-B. 지게차 / 하역운반 / 유도원 근접 충돌
+    if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
+      const isWindow = /pl\s*창호|창호|유리/i.test(text);
+      return {
+        item: '운반장비',
+        workGroup: isWindow ? 'PL창호공사' : '양중 및 운반작업',
+        workMethod: '하역운반작업',
+        agentMajor: '건설장비',
+        agentMid: '운반장비',
+        agentMinor: '지게차',
+        law: '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)',
+        hazardType: '충돌',
+        type: '충돌',
+        severity: '중부적합',
+        mgmtCauses: ['계획 미이행', '불안전 행동'],
+        condition: '해당없음',
+        action: '위험장소 접근 (출입통제 구역 진입 등)',
+        rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성',
+        rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합',
+        stakeholder: '협력사 근로자',
+        holdPoint: true,
+        photoBanner: isWindow ? 'PL창호 유리 하역 중 지게차 근접 충돌 우려' : '지게차 자재 하역 중 유도원·근로자 근접 충돌 우려',
+        analysis: '지게차 자재 하역작업 중 유도원 및 근로자가 안전거리(5m) 미확보 상태로 장비에 근접하여 충돌 위험',
+        pmVerdict: '지게차 유도원 안전거리 확보 기준 재교육 및 하역장소 통제 모니터링 강화'
       };
     }
     // 8. 거푸집 동바리 / 붕괴
@@ -762,6 +803,51 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return s || '';
   }
 
+  function summarizeContentToBanner(content) {
+    const c = healSafetyKoreanLexicon(String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
+    if (!c) return '';
+    if (c.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
+    if (c.includes('버팀대') && (c.includes('각도') || c.includes('미준수') || c.includes('불량'))) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+    if (c.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
+    if (c.includes('가새')) return '비계 설치구간 가새 설치 누락';
+    if (c.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
+    if (c.includes('밑둥잡이')) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
+    if (c.includes('동바리') && (c.includes('해체') || c.includes('미복구'))) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+    if (/Gang\s*Form|선해체|갱폼/i.test(c)) return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
+    if (c.includes('지게차') && c.includes('근접')) {
+      return /pl\s*창호|창호/i.test(c) ? 'PL창호 유리 하역 중 지게차 근접 충돌 우려' : '지게차 하역 중 유도원·근로자 근접 충돌 우려';
+    }
+    if (c.includes('충전부') && c.includes('노출')) {
+      return '가설컨테이너 분전함 차단기 충전부 노출';
+    }
+
+    let firstLine = c.split('\n')[0].replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
+    // 괄호 안에 핵심 결함이 요약되어 있는 경우 (예: "협력사 가설컨테이너 반입 시 점검 불량(분전함 차단기 충전부 노출)")
+    const mParen = firstLine.match(/^(.+?)\s*\(([^)]{6,30})\)\s*$/);
+    if (mParen && /불량|미흡|누락|미설치|위반/.test(mParen[1])) {
+      return mParen[2].trim();
+    }
+
+    // 서술형 부적합 내용을 핵심 명사구 요약 배너로 자동 압축 (원문 복사 방지)
+    let summary = firstLine
+      .replace(/(?:유도원과\s*근로자가|신호수와\s*근로자가|유도원\s*및\s*근로자가|작업자와\s*근로자가|근로자가|작업자가|유도원이)\s*/g, '')
+      .replace(/([가-힣]{2,6})작업\s*중\s*/g, '$1 중 ')
+      .replace(/에\s*근접하여\s*/g, ' 근접 ')
+      .replace(/(?:을|를)\s*미설치하여\s*/g, ' 미설치 ')
+      .replace(/(?:이|가)\s*설치되지\s*않아\s*/g, ' 미설치 ')
+      .replace(/(?:이|가)\s*되지\s*않아\s*/g, ' 미실시 ')
+      .replace(/(?:을|를)\s*사용하지\s*않아\s*/g, ' 미사용 ')
+      .replace(/(?:으로|로)\s*인한\s*/g, ' ')
+      .replace(/(?:하여|으로\s*인해)\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (summary === firstLine && summary.length > 22) {
+      summary = summary.replace(/\s*(?:작업|진행)\s*중\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+    return summary || firstLine;
+  }
+
   function cleanBannerText(rawBanner, content) {
     let b = String(rawBanner || '').trim();
     b = healSafetyKoreanLexicon(b)
@@ -780,18 +866,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(b);
     const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
     const hangulCount = (b.match(/[가-힣]/g) || []).length;
-    if (!b || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
-      const c = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
-      if (c.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
-      if (c.includes('버팀대')) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
-      if (c.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
-      if (c.includes('가새')) return '비계 설치구간 가새 설치 누락';
-      if (c.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
-      if (c.includes('밑둥잡이')) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
-      if (c.includes('동바리') && (c.includes('해체') || c.includes('미복구'))) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-      if (/Gang\s*Form|선해체|갱폼/i.test(c)) return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
-      const firstLine = c.split('\n')[0].trim();
-      return firstLine ? firstLine.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '') : '';
+    const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
+    // 배너가 없거나 부적합 내용 원문과 똑같은 경우 요약 배너로 변환
+    if (!b || b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '') || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
+      return summarizeContentToBanner(content);
     }
     return b.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
   }
@@ -802,17 +880,29 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     s = s.replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ');
     s = s.replace(/[^가-힣a-zA-Z0-9·()\/\s]/g, '');
     s = s.replace(/\s+/g, ' ').trim();
-    if (/거푸집|동바리|유로폼/i.test(s) || /거푸집|동바리|유로폼/i.test(content || '')) return '거푸집동바리공사';
-    if (/비계/i.test(s) || /비계/i.test(content || '')) return '비계공사';
     if (/^(?:HA|HE|HEY|BEE)\s*공사/i.test(s)) return '비계공사';
-    return s || '';
+    const ctx = String(content || '');
+    // 장표에서 직접 읽은 공종명(PL창호공사 등)이 존재하고, 기본값 오분류('거푸집동바리공사')가 아니면 그대로 보존
+    if (s && s.length >= 2 && s !== '거푸집동바리공사') {
+      return s;
+    }
+    if (s === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(ctx)) {
+      return '거푸집동바리공사';
+    }
+    if (/pl\s*창호|창호|유리/i.test(ctx)) return 'PL창호공사';
+    if (/분전함|차단기|충전부|누전|가설전선|전선|전기/i.test(ctx)) return '설비·전기공사';
+    if (/지게차|하역|운반/i.test(ctx)) return '양중 및 운반작업';
+    if (/양중|타워크레인|크레인|인양|유도로프/i.test(ctx)) return '양중작업';
+    if (/비계|작업발판|안전난간|개구부/i.test(ctx)) return '비계공사';
+    if (/거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(ctx)) return '거푸집동바리공사';
+    return s || '공통';
   }
 
   function cleanOpinionText(txt) {
     if (!txt) return '';
     let s = healSafetyKoreanLexicon(String(txt))
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-      .replace(/\[\s*(?:관리자\s*의견|의견)[^\]]*\]/gi, '')
+      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -828,9 +918,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (let l of rawLines) {
+      if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(l);
       let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
+      if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
       if (items.length === 0 || isBulletStart) {
         items.push(text);
       } else {
@@ -1202,11 +1294,28 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             for (const f of taxFields) {
               if (aiItem[f]) rec[f] = aiItem[f];
             }
+            // 장표 원문에 공종명이 없었거나 기본값('거푸집동바리공사')으로 잘못 들어간 경우 AI 공종 반영
+            const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
+            if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
+              rec.workGroup = rawWorkFromSheet;
+            } else if (aiItem.workGroup && (!rec.workGroup || rec.workGroup === '거푸집동바리공사')) {
+              rec.workGroup = aiItem.workGroup;
+            }
             if (aiItem.workMethod) rec.workName = aiItem.workMethod;
             if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; }
             if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; }
             if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; }
-            if (!rec.type && aiItem.hazardType) rec.type = aiItem.hazardType;
+            if (aiItem.hazardType && (!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(`${rec._rawCellTexts?.type || ''} ${rec.content || ''}`)))) {
+              rec.type = String(aiItem.hazardType).split('·')[0];
+            }
+            const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
+            if (!rawBannerFromSheet) {
+              if (aiItem.photoBanner && aiItem.photoBanner.trim() && aiItem.photoBanner.trim() !== (rec.content || '').trim()) {
+                rec.photoBanner = aiItem.photoBanner.trim();
+              } else {
+                rec.photoBanner = summarizeContentToBanner(rec.content);
+              }
+            }
             if (aiItem.law && !rec.law) rec.law = aiItem.law;
             if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
               window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);

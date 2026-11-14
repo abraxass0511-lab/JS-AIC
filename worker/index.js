@@ -147,15 +147,30 @@ function analyzeRuleFallback(content) {
     holdPoint = true;
     analysis = '용접·용단 불티 비산방지포 미설치 또는 소화기 미배치';
     pmVerdict = '화기작업 즉시 중단, 불티비산방지포 및 소화기 2대 전진 배치 후 재개';
-  } else if (text.includes('전기') || text.includes('분전함') || text.includes('누전') || text.includes('접지')) {
-    item = '가설전기';
-    law = '산안규칙 제302조(전기 기계·기구의 접지)';
+  } else if (text.includes('전기') || text.includes('분전') || text.includes('누전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부')) {
+    const isLivePart = text.includes('충전부') || text.includes('노출');
+    item = '분전반';
+    law = isLivePart ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)' : '안전보건규칙 제302조(전기 기계·기구의 접지)';
     hazardType = '감전';
     severity = '중부적합';
-    mgmtCauses = ['불안전 상태'];
+    mgmtCauses = ['불안전 상태', '계획 미이행'];
     holdPoint = false;
-    analysis = '임시 분전함 외함 접지 미시행 또는 누전차단기 불량';
-    pmVerdict = '해당 차단기 전원 즉시 차단 및 외함 접지선 체결 완료 후 통전';
+    photoBanner = isLivePart ? '가설컨테이너 분전함 차단기 충전부 노출' : '임시 분전함 누전차단기 및 접지 불량';
+    analysis = isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 누전차단기 불량';
+    pmVerdict = '해당 차단기 전원 즉시 차단 및 충전부 방호커버·접지선 체결 완료 후 통전';
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '설비·전기공사', workMethod: '설치조립작업', agentMajor: '전기시설', agentMid: '누전차단기', agentMinor: isLivePart ? '분전함' : '누전차단기', condition: '안전방호장치의 결함 (미설치·해체·불량)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
+  } else if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
+    const isWindow = /pl\s*창호|창호|유리/i.test(text);
+    item = '운반장비';
+    law = '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
+    hazardType = '충돌';
+    severity = '중부적합';
+    mgmtCauses = ['계획 미이행', '불안전 행동'];
+    holdPoint = true;
+    photoBanner = isWindow ? 'PL창호 유리 하역 중 지게차 근접 충돌 우려' : '지게차 자재 하역 중 유도원·근로자 근접 충돌 우려';
+    analysis = '지게차 자재 하역작업 중 유도원 및 근로자가 안전거리(5m) 미확보 상태로 장비에 근접하여 충돌 위험';
+    pmVerdict = '지게차 유도원 안전거리 확보 기준 재교육 및 하역장소 통제 모니터링 강화';
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: isWindow ? 'PL창호공사' : '양중 및 운반작업', workMethod: '하역운반작업', agentMajor: '건설장비', agentMid: '운반장비', agentMinor: '지게차', condition: '해당없음', action: '위험장소 접근 (출입통제 구역 진입 등)', rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성', rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합', stakeholder: '협력사 근로자' };
   } else if (text.includes('알폼') || text.includes('al form') || text.includes('alform') || text.includes('알루미늄 거푸집')) {
     item = '알폼';
     law = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
@@ -448,12 +463,13 @@ export default {
               const fb = analyzeRuleFallback(`${it.cells?.workTypeRaw || ''} ${it.cells?.content || ''}`);
               return {
                 pageIndex: it.pageIndex,
-                workGroup: it.cells?.workTypeRaw || fb.workGroup || '거푸집동바리공사',
+                workGroup: (it.cells?.workTypeRaw && it.cells.workTypeRaw !== '거푸집동바리공사') ? it.cells.workTypeRaw : (fb.workGroup || it.cells?.workTypeRaw || '거푸집동바리공사'),
                 workMethod: fb.workMethod || '설치조립작업',
                 agentMajor: fb.agentMajor || '가시설',
                 agentMid: fb.agentMid || '거푸집/동바리',
                 agentMinor: fb.agentMinor || '유로폼',
-                hazardType: fb.hazardType || '붕괴',
+                hazardType: fb.hazardType || '추락',
+                photoBanner: fb.photoBanner || '',
                 condition: fb.condition || '안전시설 미비/불량',
                 action: fb.action || '해당없음',
                 rootCauseMgmt: fb.rootCauseMgmt || '관리감독자 직무 미이행 (점검·확인 누락)',
@@ -473,7 +489,7 @@ export default {
           }
 
           const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy) 전문가 AI이다.
-입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 각 페이지별로 건설안전 9x9 표준 분류코드와 산안규칙 조문을 매핑하고, 본문 텍스트에 명백한 스캔 오탈자 어절이 있는 경우에만 typoPatches 사전({"틀린어절":"바른어절"})으로 반환하라.
+입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 각 페이지별로 건설안전 9x9 표준 분류코드와 산안규칙 조문을 매핑하고, 사진 상단용 16~22자 핵심 명사구 요약 배너(photoBanner: 절대 content 원문을 그대로 복사하지 말고 핵심만 축약할 것)를 생성하며, 본문 텍스트에 명백한 스캔 오탈자 어절이 있는 경우에만 typoPatches 사전({"틀린어절":"바른어절"})으로 반환하라.
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -482,12 +498,13 @@ ${TAXONOMY_STANDARD_PROMPT}
   "results": [
     {
       "pageIndex": 1,
-      "workGroup": "표준 공종",
+      "workGroup": "장표 원문 workTypeRaw가 명확하면 그대로 유지, 없거나 불명확하면 표준 공종",
       "workMethod": "표준 작업방법",
       "agentMajor": "표준 기인물 대분류",
       "agentMid": "표준 기인물 중분류",
       "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
+      "photoBanner": "16~22자 핵심 명사구 요약 배너 (content 원문 복사 금지)",
       "condition": "표준 불안전 상태",
       "action": "표준 불안전 행동",
       "rootCauseMgmt": "표준 법적 관리감독",
