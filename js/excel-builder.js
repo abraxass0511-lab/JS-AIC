@@ -293,7 +293,7 @@
     if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
       parts.push('시스템 개선');
     }
-    if (/교육|코칭|TBM|지도/.test(auditText)) {
+    if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사|안전)\s*교육|코칭|TBM/.test(auditText)) {
       parts.push('교육/코칭');
     }
     if (/벌점|페널티|과태료|고발|퇴출|자격\s*박탈/.test(auditText)) {
@@ -1051,7 +1051,17 @@
 
     // [관리정보(자동)]
     ['관리정보(자동)', '점검일자', 11, null, r => r.inspectedDate || ''],
-    ['관리정보(자동)', '점검자', 8, null, r => r.inspector || r.inspectUser || ''],
+    ['관리정보(자동)', '점검자', 8, null, r => {
+      const clean = (v) => {
+        const s = String(v || '')
+          .replace(/^.*?(?:점\s*검\s*자|적\s*검\s*자|점\s*겸\s*자|정\s*검\s*자|서\s*검\s*자|섬\s*검\s*자)\s*[:：.;]?\s*/g, '')
+          .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return (!s || /^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(s) || s.length <= 1) ? '' : s;
+      };
+      return clean(r.inspector) || clean(r.inspectUser) || clean(r.user) || '';
+    }],
   ];
 
   const PHOTO1_COL = COLS.findIndex(c => c[1] === '사진 1') + 1;
