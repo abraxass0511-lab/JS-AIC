@@ -823,6 +823,7 @@ JSON 형식:
     "round": "교정된 점검차수 (예: '26년상 2차)",
     "content": "교정된 부적합 내용",
     "law": "교정된 관련기준 제목/법령",
+    "rawLaw": "교정된 관련기준 본문 원문(세부 조항/항목 줄바꿈 유지)",
     "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 유지)",
     "auditProposal": "교정된 점검단 제안 본문 ('- ' 불릿 구분)",
     "actionPlan": "교정된 개선대책 본문 ('- ' 불릿 구분, 단순 줄바꿈 병합)"
@@ -962,7 +963,7 @@ JSON 형식:
               return new Response(JSON.stringify({
                 ok: true,
                 source: visionText ? 'cloudflare_qwen_vision_hybrid' : 'cloudflare_qwen_cloud',
-                model: visionText ? `Qwen-3.8-27B-Vision + ${usedModelLabel}` : usedModelLabel,
+                model: usedModelLabel,
                 visionText: visionText || undefined,
                 rightPhotoIsReference,
                 ...quickFallback,

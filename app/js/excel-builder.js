@@ -659,9 +659,13 @@
     const isSameAsContent = s && normContent && s.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
 
     const norm = _getNorm();
+    const isLocOnlyBanner = (txt) => !!(norm && typeof norm.isLocationOnlyBanner === 'function' && norm.isLocationOnlyBanner(txt, r && r.location));
+    if (s && isLocOnlyBanner(s)) {
+      s = '';
+    }
     if (norm && typeof norm.extractCoreViolationBanner === 'function') {
       const condensed = norm.extractCoreViolationBanner(s, normContent);
-      if (condensed && condensed.length >= 4 && !/미확인|전경/.test(condensed)) {
+      if (condensed && condensed.length >= 4 && !/미확인|전경/.test(condensed) && !isLocOnlyBanner(condensed)) {
         s = condensed;
       }
     }
@@ -670,7 +674,7 @@
     const hasRiskTail = /[2-9]\)|②|발생\s*시|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전/.test(s);
     const hasUnclosedParen = /\([^)]*$/.test(s);
     const isUnspacedLong = s.length >= 10 && !/\s/.test(s);
-    const isTruncated = !s || isSameAsContent || hasRiskTail || hasUnclosedParen || isUnspacedLong || s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5;
+    const isTruncated = !s || isLocOnlyBanner(s) || isSameAsContent || hasRiskTail || hasUnclosedParen || isUnspacedLong || s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5;
     if (isTruncated && normContent) {
       const c = _normSpacing(normContent);
       if (/Gang\s*Form|갱폼|선해체/i.test(c)) {
