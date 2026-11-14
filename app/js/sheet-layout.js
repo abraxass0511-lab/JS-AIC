@@ -891,7 +891,7 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
     return lc;
   };
 
-  if (h < 34 || (options.isBanner && h < 44)) {
+  if (h < 22 || (options.isBanner && h < 42)) {
     const single = cropBandHorizontally(0, h - 1);
     return single ? [single] : [];
   }
@@ -918,15 +918,19 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
       startY = y;
     } else if (rowDensity[y] <= 0.012 && inBand) {
       inBand = false;
-      if (y - startY >= 8) rawBands.push([startY, y - 1]);
+      if (y - startY >= 6) rawBands.push([startY, y - 1]);
     }
   }
-  if (inBand && h - startY >= 8) rawBands.push([startY, h - 1]);
+  if (inBand && h - startY >= 6) rawBands.push([startY, h - 1]);
 
   const merged = [];
   for (const b of rawBands) {
-    if (merged.length && b[0] - merged[merged.length - 1][1] <= 3) {
-      merged[merged.length - 1][1] = b[1];
+    const prev = merged.length ? merged[merged.length - 1] : null;
+    const prevH = prev ? (prev[1] - prev[0] + 1) : 0;
+    const curH = b[1] - b[0] + 1;
+    // 두 밴드 모두 8px 이상인 정상 텍스트 행이면 1~3px 공백이라도 절대 병합하지 않고 별도 줄로 보존
+    if (prev && (b[0] - prev[1] <= 2) && (prevH < 8 || curH < 8)) {
+      prev[1] = b[1];
     } else {
       merged.push(b);
     }
@@ -938,26 +942,43 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
   }
 
   const finalSlices = [];
-  for (const [y0, y1] of merged) {
+  const splitBandByValleys = (y0, y1, depth = 0) => {
     const bh = y1 - y0 + 1;
-    if (bh >= 44) {
-      const midStart = y0 + Math.floor(bh * 0.30);
-      const midEnd = y0 + Math.floor(bh * 0.70);
-      let minVal = 1;
-      let minY = midStart;
-      for (let y = midStart; y <= midEnd; y++) {
-        if (rowDensity[y] < minVal) {
-          minVal = rowDensity[y];
-          minY = y;
+    if (bh >= 18 && depth < 3) {
+      const scanStart = y0 + Math.max(7, Math.floor(bh * 0.22));
+      const scanEnd = y1 - Math.max(7, Math.floor(bh * 0.22));
+      let bestY = -1;
+      let bestRatio = 1.0;
+      for (let y = scanStart; y <= scanEnd; y++) {
+        const val = rowDensity[y];
+        let peakTop = 0;
+        for (let ty = y0; ty < y; ty++) {
+          if (rowDensity[ty] > peakTop) peakTop = rowDensity[ty];
+        }
+        let peakBot = 0;
+        for (let by = y + 1; by <= y1; by++) {
+          if (rowDensity[by] > peakBot) peakBot = rowDensity[by];
+        }
+        const minPeak = Math.min(peakTop, peakBot);
+        if (minPeak >= 0.035) {
+          const ratio = val / minPeak;
+          if ((ratio < 0.36 || val < 0.032) && ratio < bestRatio) {
+            bestRatio = ratio;
+            bestY = y;
+          }
         }
       }
-      if (minVal < 0.045) {
-        finalSlices.push([Math.max(0, y0 - 3), Math.min(h - 1, minY + 2)]);
-        finalSlices.push([Math.max(0, minY - 1), Math.min(h - 1, y1 + 4)]);
-        continue;
+      if (bestY > 0) {
+        splitBandByValleys(y0, bestY, depth + 1);
+        splitBandByValleys(bestY, y1, depth + 1);
+        return;
       }
     }
-    finalSlices.push([Math.max(0, y0 - 4), Math.min(h - 1, y1 + 4)]);
+    finalSlices.push([Math.max(0, y0 - 3), Math.min(h - 1, y1 + 3)]);
+  };
+
+  for (const [y0, y1] of merged) {
+    splitBandByValleys(y0, y1, 0);
   }
 
   const maxLines = options.maxLines || 6;

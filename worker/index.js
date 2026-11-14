@@ -149,16 +149,19 @@ function analyzeRuleFallback(content) {
     pmVerdict = '화기작업 즉시 중단, 불티비산방지포 및 소화기 2대 전진 배치 후 재개';
   } else if (text.includes('전기') || text.includes('분전') || text.includes('누전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부')) {
     const isLivePart = text.includes('충전부') || text.includes('노출');
+    const isGroundBolt = text.includes('접지선') && (text.includes('고정') || text.includes('볼트') || text.includes('용량'));
     item = '분전반';
     law = isLivePart ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)' : '안전보건규칙 제302조(전기 기계·기구의 접지)';
     hazardType = '감전';
     severity = '중부적합';
     mgmtCauses = ['불안전 상태', '계획 미이행'];
     holdPoint = false;
-    photoBanner = isLivePart ? '가설컨테이너 분전함 차단기 충전부 노출' : '임시 분전함 누전차단기 및 접지 불량';
+    photoBanner = isLivePart
+      ? '분전함 차단기 충전부 노출'
+      : (isGroundBolt ? '접지선 볼트 고정 불량 및 용량 부족' : '임시 분전함 누전차단기 및 접지 불량');
     analysis = isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 누전차단기 불량';
     pmVerdict = '해당 차단기 전원 즉시 차단 및 충전부 방호커버·접지선 체결 완료 후 통전';
-    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '설비·전기공사', workMethod: '설치조립작업', agentMajor: '전기시설', agentMid: '누전차단기', agentMinor: isLivePart ? '분전함' : '누전차단기', condition: '안전방호장치의 결함 (미설치·해체·불량)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '가설전기공사', workMethod: '설치조립작업', agentMajor: '전기시설', agentMid: '누전차단기', agentMinor: isLivePart ? '분전함' : '누전차단기', condition: '안전방호장치의 결함 (미설치·해체·불량)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
   } else if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
     const isWindow = /pl\s*창호|창호|유리/i.test(text);
     item = '운반장비';
@@ -167,10 +170,10 @@ function analyzeRuleFallback(content) {
     severity = '중부적합';
     mgmtCauses = ['계획 미이행', '불안전 행동'];
     holdPoint = true;
-    photoBanner = isWindow ? 'PL창호 유리 하역 중 지게차 근접 충돌 우려' : '지게차 자재 하역 중 유도원·근로자 근접 충돌 우려';
+    photoBanner = (isWindow || text.includes('유도원')) ? '유도원·근로자 지게차 근접 작업' : '지게차 하역 중 근로자 근접 작업';
     analysis = '지게차 자재 하역작업 중 유도원 및 근로자가 안전거리(5m) 미확보 상태로 장비에 근접하여 충돌 위험';
     pmVerdict = '지게차 유도원 안전거리 확보 기준 재교육 및 하역장소 통제 모니터링 강화';
-    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: isWindow ? 'PL창호공사' : '양중 및 운반작업', workMethod: '하역운반작업', agentMajor: '건설장비', agentMid: '운반장비', agentMinor: '지게차', condition: '해당없음', action: '위험장소 접근 (출입통제 구역 진입 등)', rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성', rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합', stakeholder: '협력사 근로자' };
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: isWindow ? '창호공사(PL)' : '양중 및 운반작업', workMethod: '하역운반작업', agentMajor: '건설장비', agentMid: '운반장비', agentMinor: '지게차', condition: '해당없음', action: '위험장소 접근 (출입통제 구역 진입 등)', rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성', rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합', stakeholder: '협력사 근로자' };
   } else if (text.includes('알폼') || text.includes('al form') || text.includes('alform') || text.includes('알루미늄 거푸집')) {
     item = '알폼';
     law = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
@@ -354,12 +357,14 @@ function buildFallbackCleanedFields(rawOcr, fb) {
 }
 
 const TAXONOMY_STANDARD_PROMPT = `
-[건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 표준 목록 내에서만 선택할 것]
-1. 공종 (workGroup): ["거푸집동바리공사", "가설공사", "철근콘크리트공사", "철골공사", "토공사", "기초공사", "양중작업", "마감공사", "설비·전기공사", "해체공사", "공통"] 중 선택.
-   - 갱폼, 알폼, 유로폼, 대형 벽체 거푸집, 전도방지 파이프, 동바리, 서포트 등 거푸집류는 반드시 "거푸집동바리공사" (절대 비계/전기시설로 분류 금지!)
-   - 비계, 낙하물방지망 등은 "가설공사"
-   - 전기, 전선, 누전차단기 등은 "설비·전기공사"
-2. 작업방법 (workMethod): ["설치조립작업", "해체작업", "양중작업", "굴착작업", "하역운반작업", "고소작업", "가공조립작업", "운전조정작업", "중량물취급작업"] 중 선택.
+[건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 분류표(작업분류표.jpg) 내에서만 선택할 것]
+1. 공종 (workGroup): ["비계공사", "안전시설공사", "가설공사(타워크레인)", "가설공사(건설용리프트)", "흙막이/차수공사", "터파기공사", "굴착공사", "파일공사", "거푸집동바리공사", "거푸집공사(갱폼)", "철근공사", "콘크리트공사", "철골공사", "양중 및 운반작업", "창호공사(PL)", "창호공사(AL)", "창호공사(STL)", "창호공사(목창호)", "창호공사(기타)", "유리공사", "가설전기공사", "수변전설비공사", "전선관공사", "기타전기공사", "해체/철거공사", "방수/방습공사"] 중 선택.
+   - PL창호공사, 피엘창호, 창호(PL) 관련 작업은 반드시 건축공사 세부공종인 "창호공사(PL)"로 분류
+   - 가설전기, 임시전력, 분전반, 차단기, 접지, 가설전선 관련 작업은 반드시 전기공사 세부공종인 "가설전기공사"로 분류
+   - 갱폼, 알폼, 유로폼, 대형 벽체 거푸집, 전도방지 파이프, 동바리, 서포트는 "거푸집동바리공사" 또는 "거푸집공사(갱폼)"
+   - 시스템비계, 외부비계, 작업발판, 벽이음은 "비계공사"
+2. 작업방법 (workMethod): ["굴착작업", "하역운반작업", "양중작업", "설치조립작업", "해체작업", "중량물취급작업", "고소작업", "밀폐공간작업", "협소공간작업"] 중 선택.
+   - 지게차 작업, 자재 하역, 상차·하차, 운반은 반드시 "하역운반작업"
    - 설치, 세팅, 거치, 조립은 "설치조립작업"
    - 해체, 탈형, 철거는 "해체작업"
    - 크레인/호이스트 인양은 "양중작업"
@@ -387,8 +392,9 @@ const TAXONOMY_STANDARD_PROMPT = `
     - rootCauseSystem (안전시스템): ["협력업체 안전관리계획 검토/승인 절차 미흡", "Hold Point(승인점검) 절차 미이행", "공정 간 간섭사항 사전 검토 체계 부재", "안전시설물 설치/인계인수 프로세스 미흡", "표준작업절차서(SOP) 미배포 또는 현장 부적합"] 중 선택.
     - stakeholder (관리/책임주체): ["원청 시공팀", "원청 안전팀", "협력사 관리감독자", "협력사 근로자", "장비 임대/운전원"] 중 선택.
 [사진 요약 배너 photoBanner 작성 규칙]
-- 사진 상단에 들어갈 배너 문구는 반드시 완성된 명사구로 작성하고, 절대 말줄임표(...)나 미완성 문장으로 끝내지 말 것.
-- (예: "절곡부위 Gang Form 선해체 방지커버 설치 불량", "콘크리트 타설 중 계단참 AL Form 동바리 미복구", "비계 워킹타워 하부 밑둥잡이 일부 누락", "외부비계 벽이음용 버팀대 설치각도 기준 미준수")`;
+- 사진 상단 배너는 실제 위반한 핵심 사실(대상 + 결함/행동)만 12~20자 완성된 명사구로 간결히 요약할 것.
+- 절대 부적합 내용(content) 전체를 그대로 복사하거나 '~발생시 감전우려', '~하여 충돌 우려', '~방전 미흡', '2) ...' 부연 결과절 및 말줄임표(...)를 붙이지 말 것!
+- (예: "접지선 볼트 고정 불량 및 용량 부족", "유도원·근로자 지게차 근접 작업", "분전함 차단기 충전부 노출", "벽이음용 상부 버팀대 설치각도(60도↓) 불량")`;
 
 export default {
   async fetch(request, env) {
@@ -461,9 +467,13 @@ export default {
             error: errMsg || undefined,
             results: items.map(it => {
               const fb = analyzeRuleFallback(`${it.cells?.workTypeRaw || ''} ${it.cells?.content || ''}`);
+              const rawWg = String(it.cells?.workTypeRaw || '').trim();
+              const mappedWg = /pl\s*창호/i.test(rawWg)
+                ? '창호공사(PL)'
+                : (/^가설\s*전기$|^설비[·/]전기/i.test(rawWg) ? '가설전기공사' : rawWg);
               return {
                 pageIndex: it.pageIndex,
-                workGroup: (it.cells?.workTypeRaw && it.cells.workTypeRaw !== '거푸집동바리공사') ? it.cells.workTypeRaw : (fb.workGroup || it.cells?.workTypeRaw || '거푸집동바리공사'),
+                workGroup: (mappedWg && mappedWg !== '거푸집동바리공사') ? mappedWg : (fb.workGroup || mappedWg || '안전시설공사'),
                 workMethod: fb.workMethod || '설치조립작업',
                 agentMajor: fb.agentMajor || '가시설',
                 agentMid: fb.agentMid || '거푸집/동바리',
@@ -489,7 +499,7 @@ export default {
           }
 
           const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy) 전문가 AI이다.
-입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 각 페이지별로 건설안전 9x9 표준 분류코드와 산안규칙 조문을 매핑하고, 사진 상단용 16~22자 핵심 명사구 요약 배너(photoBanner: 절대 content 원문을 그대로 복사하지 말고 핵심만 축약할 것)를 생성하며, 본문 텍스트에 명백한 스캔 오탈자 어절이 있는 경우에만 typoPatches 사전({"틀린어절":"바른어절"})으로 반환하라.
+입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 각 페이지별로 건설안전 9x9 및 작업분류표(창호공사(PL), 가설전기공사 등) 표준 분류코드와 산안규칙 조문을 매핑하고, 사진 상단용 12~20자 핵심 위반 명사구 요약 배너(photoBanner: 절대 content 원문을 그대로 복사하지 말고 결과·우려 꼬리 없이 실제 위반한 핵심만 축약할 것)를 생성하며, 본문 텍스트에 명백한 스캔 오탈자 어절이 있는 경우에만 typoPatches 사전({"틀린어절":"바른어절"})으로 반환하라.
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -498,13 +508,13 @@ ${TAXONOMY_STANDARD_PROMPT}
   "results": [
     {
       "pageIndex": 1,
-      "workGroup": "장표 원문 workTypeRaw가 명확하면 그대로 유지, 없거나 불명확하면 표준 공종",
-      "workMethod": "표준 작업방법",
+      "workGroup": "작업분류표 기준 표준 공종 (PL창호공사→창호공사(PL), 가설전기→가설전기공사)",
+      "workMethod": "표준 작업방법 (지게차/하역→하역운반작업)",
       "agentMajor": "표준 기인물 대분류",
       "agentMid": "표준 기인물 중분류",
       "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
-      "photoBanner": "16~22자 핵심 명사구 요약 배너 (content 원문 복사 금지)",
+      "photoBanner": "12~20자 핵심 위반 명사구 요약 배너 (content 복사·결과/우려 꼬리·'2)' 금지)",
       "condition": "표준 불안전 상태",
       "action": "표준 불안전 행동",
       "rootCauseMgmt": "표준 법적 관리감독",
@@ -756,7 +766,7 @@ JSON 형식:
 {
   "severity": "중부적합" 또는 "경부적합",
   "type": "재해형태 1개 (예: 낙하, 붕괴, 추락, 전도, 협착, 화재, 감전)",
-  "workGroup": "표준 공종 (장표 [공종명] 원문 우선: 예 거푸집동바리공사, 비계공사)",
+  "workGroup": "작업분류표 기준 표준 공종 (PL창호공사→창호공사(PL), 가설전기→가설전기공사, 비계→비계공사)",
   "workMethod": "표준 작업방법",
   "agentMajor": "표준 기인물 대분류",
   "agentMid": "표준 기인물 중분류",
@@ -769,7 +779,7 @@ JSON 형식:
   "rootCauseSystem": "표준 안전시스템",
   "stakeholder": "표준 관리/책임주체",
   "item": "기인물/작업 명칭",
-  "photoBanner": "사진 1 상단 배너용 15~25자 구체적 미준수 문구 (원문 [사진1배너]가 있으면 정제하여 최우선 반영, 말줄임표 금지)",
+  "photoBanner": "12~20자 핵심 위반 명사구 (원문 복사·결과/우려 꼬리 및 말줄임표 금지)",
   "photo2Banner": "사진 2 상단 배너용 15~25자 구체적 미준수 문구 (원문 [사진2배너]가 있으면 정제하여 반영, 단일 사진이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 체크된 1~2개],
   "holdPoint": true 또는 false,
