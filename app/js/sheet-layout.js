@@ -865,8 +865,7 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
 
   const cropBandHorizontally = (sy0, sy1) => {
     const sh = Math.max(1, sy1 - sy0 + 1);
-    let minX = w;
-    let maxX = -1;
+    const colDark = new Int32Array(w);
     let darkPixels = 0;
     for (let y = sy0; y <= sy1; y++) {
       const rowOff = y * w;
@@ -875,12 +874,24 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
         const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
         if (lum < 195) {
           darkPixels++;
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
+          colDark[x]++;
         }
       }
     }
-    if (darkPixels < 8 || maxX - minX < 5) return null;
+    if (darkPixels < 8) return null;
+    // 1px 고립 노이즈(셀 우측/좌측 테두리 점 등)를 제외하고 실제 문자 획 밀집 열만 포함하여 빈 꼬리 트림
+    let minX = w;
+    let maxX = -1;
+    for (let x = xStart; x < xEnd; x++) {
+      let winSum = colDark[x];
+      if (x > xStart) winSum += colDark[x - 1];
+      if (x + 1 < xEnd) winSum += colDark[x + 1];
+      if (colDark[x] >= 2 || winSum >= 4) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+    if (maxX - minX < 5) return null;
     const sx0 = Math.max(0, minX - 8);
     const sx1 = Math.min(w - 1, maxX + 8);
     const sw = Math.max(8, sx1 - sx0 + 1);

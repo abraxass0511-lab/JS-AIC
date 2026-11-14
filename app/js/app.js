@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261115_v40';
-import './text-normalizer.js?v=20261115_v40';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v41';
+import './text-normalizer.js?v=20261115_v41';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -5240,6 +5240,9 @@ async function handleSaveImportedRecords() {
         ? window.SafeExcel.resolveInterviewAuthor(rec)
         : (rec.interviewAuthor || '시공관리자 및 근로자');
 
+      const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
+      const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
+
       const finalRecord = {
         site,
         productType,
@@ -5248,8 +5251,8 @@ async function handleSaveImportedRecords() {
         severity: rec.severity || '중부적합',
         subcontractor: rec.subcontractor !== undefined ? rec.subcontractor : '',
         inspectRound: rec.inspectRound || '1차',
-        inspectUser: rec.inspectUser !== undefined ? rec.inspectUser : '',
-        inspector: rec.inspectUser !== undefined ? rec.inspectUser : ((store.user && store.user.name) || '점검자'),
+        inspectUser: sheetInspectUser || loggedInUser,
+        inspector: loggedInUser,
         siteInfo: {
           progress: progressRate + '%',
           scale: siteObj.scale || '',

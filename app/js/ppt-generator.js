@@ -1083,14 +1083,14 @@
     }
     interviewOpinion = cleanOpinionText(interviewOpinion);
 
-    // 점검단 제안 분류 (복수 선택 지원)
+    // 점검단 제안 분류 (복수 선택 지원 - 본문 '재교육' 단어로 교육/코칭 오인 금지)
     let proposalItems = Array.isArray(r.proposalItems) && r.proposalItems.length > 0 ? r.proposalItems : [];
     if (proposalItems.length === 0) {
       const rawProp = (r.inspectorOpinionType || r.auditType || '').trim();
       if (/시스템\s*개선|시스템개선/i.test(rawProp)) {
         proposalItems.push({ type: '시스템 개선', sub: r.inspectorOpinionSub || '(현장모니터링 강화)' });
       }
-      if (/교육\/코칭|교육|코칭/i.test(rawProp)) {
+      if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사)\s*교육|코칭/i.test(rawProp)) {
         proposalItems.push({ type: '교육/코칭', sub: r.inspectorOpinionSub || '(근로자 교육)' });
       }
       if (/패널티|페널티/i.test(rawProp)) {
@@ -1127,21 +1127,22 @@
     }
     countermeasureContent = cleanActionPlan(countermeasureContent);
 
-    // PM 판정결과 분류 (복수 선택 지원)
+    // PM 판정결과 분류 (복수 선택 지원 - 원문 부제(이행강화방안수립 등) 우선 보존)
     let pmVerdictItems = Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0 ? r.pmVerdictItems : [];
     if (pmVerdictItems.length === 0) {
       const rawPmType = String(r.pmVerdictType || r.pmVerdict || '').trim();
+      const preservedSub = r.pmVerdictSub || r.inspectorOpinionSub || '(모니터링 강화)';
       if (/시스템\s*개선|시스템개선/i.test(rawPmType)) {
-        pmVerdictItems.push({ type: '시스템 개선', sub: '(모니터링 강화)' });
+        pmVerdictItems.push({ type: '시스템 개선', sub: preservedSub });
       }
-      if (/교육\/코칭|교육|코칭/i.test(rawPmType)) {
+      if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사)\s*교육|코칭/i.test(rawPmType)) {
         pmVerdictItems.push({ type: '교육/코칭', sub: '(근로자 교육)' });
       }
       if (/패널티|페널티/i.test(rawPmType)) {
         pmVerdictItems.push({ type: '페널티', sub: '(관리감독자 경고)' });
       }
       if (pmVerdictItems.length === 0 && (rawPlan || rawFix || rawPm)) {
-        pmVerdictItems.push({ type: '시스템 개선', sub: '(모니터링 강화)' });
+        pmVerdictItems.push({ type: '시스템 개선', sub: preservedSub });
       }
     }
     let pmVerdictType = pmVerdictItems.length > 0 ? pmVerdictItems[0].type : '';
@@ -1158,8 +1159,17 @@
     }
 
     let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
-    // 사용자 지침: 전반적인 내용과 점검자 등은 모두 등록된 데이터를 기반으로 작성 (빈칸이면 빈칸 유지)
-    let inspectorName = r.inspectUser !== undefined ? r.inspectUser : (r.inspector || r.user || '');
+    // 점검자명 정제: OCR 라벨 오인식('적검자', '점검자', 1글자 잔여 노이즈 '로') 배제 및 등록된 로그인/시트 점검자 사용
+    const sanitizeInspectorName = (val) => {
+      const s = String(val || '')
+        .replace(/^.*?(?:점\s*검\s*자|적\s*검\s*자|점\s*겸\s*자|정\s*검\s*자|서\s*검\s*자|섬\s*검\s*자)\s*[:：.;]?\s*/g, '')
+        .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!s || /^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(s) || s.length <= 1) return '';
+      return s;
+    };
+    let inspectorName = sanitizeInspectorName(r.inspectUser) || sanitizeInspectorName(r.inspector) || sanitizeInspectorName(r.user) || '';
 
     // 사진 상단 직접 행동 문구 (사용자 지시: 이미지 4, 5번 기반 구체적 미준수 행동 직시)
     const photoBanner = extractDirectAction(r);

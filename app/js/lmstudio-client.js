@@ -1127,8 +1127,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               }
               if (cfData.pmVerdict) {
                 fallbackRecord.pmVerdict = cfData.pmVerdict;
-                fallbackRecord.inspectorOpinionType = cfData.pmVerdict;
-                fallbackRecord.pmVerdictType = cfData.pmVerdict;
+                const hasSheetPropType = Boolean(
+                  fallbackRecord._hasExplicitPropType ||
+                  (Array.isArray(fallbackRecord.proposalItems) && fallbackRecord.proposalItems.length > 0 && fallbackRecord.inspectorOpinionType)
+                );
+                if (!hasSheetPropType) {
+                  fallbackRecord.inspectorOpinionType = cfData.pmVerdict;
+                }
+                if (!Array.isArray(fallbackRecord.pmVerdictItems) || fallbackRecord.pmVerdictItems.length === 0) {
+                  fallbackRecord.pmVerdictType = cfData.pmVerdict;
+                }
               }
               // 주의: 장표에서 픽셀로 직접 감지한 4대 발생요인(mgmtCauses)이 이미 있으면 AI 추론값으로 절대 덮어쓰지 않음!
               if ((!Array.isArray(fallbackRecord.mgmtCauses) || fallbackRecord.mgmtCauses.length === 0) && Array.isArray(cfData.mgmtCauses) && cfData.mgmtCauses.length > 0) {
@@ -1153,8 +1161,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 if (cf.workGroup) fallbackRecord.workGroup = cleanWorkGroup(cf.workGroup, fallbackRecord.content) || cf.workGroup;
                 if (cf.subcontractor !== undefined) fallbackRecord.subcontractor = cf.subcontractor;
                 if (cf.inspector !== undefined && cf.inspector) {
-                  fallbackRecord.inspector = cf.inspector;
-                  fallbackRecord.inspectUser = cf.inspector;
+                  const insCleaned = String(cf.inspector)
+                    .replace(/^.*?(?:점검자|적검자|점겸자|정검자|서검자|섬검자)\s*[:：.;]?\s*/g, '')
+                    .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
+                    .trim();
+                  if (insCleaned.length >= 2 && !/^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(insCleaned)) {
+                    fallbackRecord.inspector = insCleaned;
+                    fallbackRecord.inspectUser = insCleaned;
+                  }
                 }
                 if (cf.round) {
                   fallbackRecord.round = cf.round;
