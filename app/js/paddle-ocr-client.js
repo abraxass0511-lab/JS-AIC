@@ -5,8 +5,8 @@
  * - 단문 셀은 rec 직결, 다중 줄 셀은 수평 투영 줄 분할 후 rec 직결하여 페이지당 0.6~1.0초 고속 인식
  */
 
-import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v37';
-import { normalizeFieldText } from './text-normalizer.js?v=20261115_v37';
+import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v39';
+import { normalizeFieldText } from './text-normalizer.js?v=20261115_v39';
 
 const MODEL_CACHE_DB = 'SafePatrolOCRModelCache_v5';
 const MODEL_CACHE_STORE = 'assets';
@@ -191,7 +191,7 @@ export async function recognizeSingleLineCanvas(lineCanvas) {
 
   const targetH = 48;
   const scale = targetH / h;
-  const targetW = Math.min(840, Math.max(32, Math.round(w * scale)));
+  const targetW = Math.min(1920, Math.max(32, Math.round(w * scale)));
   const padX = 8;
   const totalW = targetW + padX * 2;
 

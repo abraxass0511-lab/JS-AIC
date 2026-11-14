@@ -213,12 +213,29 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/([가-힣]{2,})\s+(으로(?=\s|$)|에서(?=\s|$)|에게(?=\s|$)|에는(?=\s|$)|하도록(?=\s|$)|토록(?=\s|$)|하였음(?=\s|$)|했음(?=\s|$)|하겠음(?=\s|$)|했던(?=\s|$))/g, '$1$2')
     .replace(/([가-힣]*[가-힣](?<![해야여지서고며]))\s+(도록(?=\s|$))/g, '$1$2')
     .replace(/(이동|유도|확인|설치|점검|조치|관리|운영|시공|작업|체결|착용|확보|통제|방지|교육)\s+(하여|하고|하며|하도록)(?=\s|$)/g, '$1$2')
-    // 2. 문장 말미 OCR 영문/기호 노이즈('.w', '.e' 등) 제거
+    // 2. 문장 말미 OCR 영문/기호 노이즈('.w', '.e', 'cb', 'cYb' 등) 제거
     .replace(/([다요음함됨임]\.?)\s*[a-zA-Z|~—_]{1,3}(?=\s*$|\r?\n)/gm, '$1')
-    // 3. 쉼표(,) 뒤 한글이 바로 붙은 경우 공백 삽입 (예: 전기설비,기계,기구 -> 전기설비, 기계, 기구)
+    .replace(/([가-힣][.)]?)\s+([a-zA-Z|~—_]{1,4})(?=\s*$|\r?\n)/gm, (full, head, tok) => {
+      const lower = tok.toLowerCase();
+      const SAFE_TOKENS = new Set([
+        'm', 'cm', 'mm', 'km', 'kg', 'g', 't', 'l', 'w', 'v', 'a', 'kv', 'hz',
+        'ea', 'pl', 'al', 'stl', 'pm', 'am', 'ok', 'ng', 'na', 'pc', 'rc', 'sc',
+        'led', 'tbm', 'ptw', 'sop', 'ppe', 'pit', 'ev', 'sns', 'abc', 'acs', 'rcs',
+        'elcb', 'cctv', 'door', 'form', 'tag', 'loto', 'slip'
+      ]);
+      if (SAFE_TOKENS.has(lower)) return full;
+      // 단일 대문자 구역 표기(A, B, C...) 및 2~4자 순수 대문자 약어(PH, KS 등)는 유지
+      if (/^[A-Z]{1,4}$/.test(tok)) return full;
+      // 소문자 위주/혼합 대소문자('cb', 'cYb', 'ee', 'w') 또는 기호 노이즈 제거
+      if (/^[|~—_]+$/.test(tok) || /[a-z]/.test(tok)) return head;
+      return full;
+    })
+    // 3. 쉼표(,) 및 콜론(:) 뒤 한글이 바로 붙은 경우 공백 삽입
     .replace(/,(?=[가-힣])/g, ', ')
-    // 4. 조사 뒤 띄어쓰기 누락 복원
-    .replace(/(건은|사항은|원인은|대책은|구간은|장소는|경우는|작업은|시공관리자는|점검관리가|유지관리가|철거가|접근이|수평유지가|설치가|조치가|출입을|적격성을|안전거리를|운행경로를|운행경로에|사항으로|과정에서|위치에서|장소로|향후에는|기존에는|현장에서는)(?=[가-힣])/g, '$1 ')
+    .replace(/(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩])(?=[가-힣])/g, '$1 ')
+    .replace(/([가-힣)])\s*:\s*(?=[가-힣A-Za-z0-9])/g, '$1: ')
+    // 4. 조사·어미 뒤 띄어쓰기 누락 및 OCR 분리 어절 복원
+    .replace(/(건은|사항은|원인은|대책은|구간은|장소는|경우는|작업은|시공관리자는|점검관리가|유지관리가|철거가|접근이|수평유지가|설치가|조치가|출입을|적격성을|안전거리를|운행경로를|운행경로에|사항으로|과정에서|위치에서|장소로|향후에는|기존에는|현장에서는|부족으로|불량으로|유도하는|점검하는|작업하는|이동하는|설치하는|실수를|예정되어|불충분했던)(?=[가-힣])/g, '$1 ')
     // 5. 주요 부사/관형사/의존명사 띄어쓰기 복원
     .replace(/(면밀히|철저히|신속히|정기적으로|지속적으로|사전에|금주|차주)(?=[가-힣])/g, '$1 ')
     .replace(/(^|\s)등(?=(?:유지관리|점검|안전|관리|모든|작업|재교육|경고|보완|조치|실시))/g, '$1등 ')
@@ -263,6 +280,38 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/할권한/g, '할 권한')
     .replace(/책임이있다/g, '책임이 있다')
     .replace(/되지않아/g, '되지 않아')
+    .replace(/예\s+정되어/g, '예정되어')
+    .replace(/관\s+리하겠음/g, '관리하겠음')
+    .replace(/실수를\s*하였음/g, '실수를 하였음')
+    .replace(/(\d+동)\s*(지하\s*\d*층|지상\s*\d*층|옥상|외부|후면|전면|주변)/g, '$1 $2')
+    .replace(/(근생)\s*(주변|흙막이|상부|상가)/g, '$1 $2')
+    .replace(/(흙막이)\s*(상부|상단|하부|주변|구간)/g, '$1 $2')
+    .replace(/(주변)\s*(흙막이|정리)/g, '$1 $2')
+    .replace(/(분전반|분전함|전등)\s*(관리|접지선|Door|차단기)/gi, '$1 $2')
+    .replace(/(Door|Form|Tag)\s*([가-힣])/g, '$1 $2')
+    .replace(/(소화기)\s*(미비치)/g, '$1 $2')
+    .replace(/(개폐)\s*(불가)/g, '$1 $2')
+    .replace(/(관리|정리|점검|고정|절연)\s*(불량|미흡)(?=[가-힣(),\s]|$)/g, '$1 $2')
+    .replace(/(전수\s*점검|전수점검|부착)\s*(필요)/g, '$1 $2')
+    .replace(/(대책)\s*(수립)(?=\s|$|[,.])/g, '$1 $2')
+    .replace(/(토사\s*정리|토사정리)\s*(재\s*정비|재정비)/g, '토사 정리 재정비')
+    .replace(/(접지선)\s*(용량|누락|미연결|볼트)/g, '$1 $2')
+    .replace(/(볼트)\s*(고정)/g, '$1 $2')
+    .replace(/(누설전류)\s*(발생)/g, '$1 $2')
+    .replace(/(발생|재발)\s*시(?=[가-힣])/g, '$1 시 ')
+    .replace(/(대지로)\s*(방전)\s*(미흡)/g, '$1 $2 $3')
+    .replace(/(전선|배선)\s*(연결부|절연|손상)/g, '$1 $2')
+    .replace(/(연결부|전선)\s*(심선|충전부|절연)/g, '$1 $2')
+    .replace(/(미흡|불량|누락|미설치|미연결|미착용)(?=(?:전선|분전|접지|전등|소켓|비계|동바리|개구부|난간|충전부|심선))/g, '$1 ')
+    .replace(/(심선|금속단자부|충전부)\s*(노출)/g, '$1 $2')
+    .replace(/(소화튜브)\s*(부착)/g, '$1 $2')
+    .replace(/(점검)\s*(등)\s*(유지관리|모니터링|조치|미비)/g, '$1 $2 $3')
+    .replace(/(유도업무)\s*(재교육)/g, '$1 $2')
+    .replace(/(재교육)\s*(실시)/g, '$1 $2')
+    .replace(/(동일\s*사항)\s*(재발)/g, '동일사항 $2')
+    .replace(/(유도원)\s*(자격)/g, '$1 $2')
+    .replace(/(박탈)\s*(등)/g, '$1 $2')
+    .replace(/(유도원)\s*(통제)/g, '$1 $2')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
@@ -317,8 +366,12 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
   const ctx = String(contentText || '');
   const comb = `${w} ${ctx}`;
 
-  // 1) 이미 공식 분류표에 정확히 일치하는 명칭인 경우 (단, 기본값 오분류 '거푸집동바리공사'는 문맥 검증)
-  if (OFFICIAL_WORK_GROUPS.includes(w) && w !== '거푸집동바리공사') {
+  const isSuspiciousDefaultGroup =
+    w === '거푸집동바리공사' ||
+    (w === '가설공사(기타)' && /전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|분전반|분전함|차단기|충전부|누전|접지선|가설전선|가설전기/.test(ctx));
+
+  // 1) 이미 공식 분류표에 정확히 일치하는 명칭인 경우 (단, 기본값 오분류 '거푸집동바리공사' 및 전기 문맥의 '가설공사(기타)'는 문맥 검증)
+  if (OFFICIAL_WORK_GROUPS.includes(w) && !isSuspiciousDefaultGroup) {
     return w;
   }
 
@@ -330,7 +383,7 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
   if (/창호/.test(w)) return '창호공사(기타)';
 
   // 3) 전기공사 세부분류 (전기공사 > 가설전기공사 등)
-  if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기/i.test(w) || (/전기|분전|접지|차단기|전선/.test(w) && /가설|임시|분전반|분전함|컨테이너/.test(comb))) {
+  if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기/i.test(w) || (/전기|분전|접지|차단기|전선|전등|소켓|심선|충전부/.test(w) && /가설|임시|분전반|분전함|컨테이너|전등|소켓|심선|충전부/.test(comb))) {
     return '가설전기공사';
   }
   if (/수변전/.test(comb)) return '수변전설비공사';
@@ -341,7 +394,7 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
   if (/전등\s*전열/.test(comb)) return '전등전열설비공사';
   if (/조명\s*설비/.test(w)) return '조명설비공사';
   if (/접지|피뢰/.test(w) && !/가설|분전/.test(comb)) return '접지/피뢰설비공사';
-  if (/분전반|분전함|누전차단기|가설전선|가설전기|충전부/.test(comb)) return '가설전기공사';
+  if (/분전반|분전함|누전차단기|가설전선|가설전기|충전부|전등\s*소켓|전등\s*관리|투광등|심선\s*노출|전선\s*절연|전선\s*연결/.test(comb)) return '가설전기공사';
   if (/전기/.test(w)) return '기타전기공사';
 
   // 4) 건축/공통/토목 주요 공사 매핑
@@ -366,7 +419,7 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
     return '거푸집동바리공사';
   }
 
-  if (w && w !== '거푸집동바리공사') {
+  if (w && !isSuspiciousDefaultGroup) {
     const snapped = snapToStandardTaxonomy(w, OFFICIAL_WORK_GROUPS, 0.72, '');
     if (snapped) return snapped;
   }
@@ -374,7 +427,7 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
   // 5) 공종 셀이 비어있거나 기본값 오분류였을 때 부적합 내용(ctx)으로 추론
   if (/pl\s*창호/i.test(ctx)) return '창호공사(PL)';
   if (/유리\s*하역|유리\s*설치|유리공사/.test(ctx)) return '유리공사';
-  if (/분전반|분전함|차단기|충전부|누전|가설전선|접지선/.test(ctx)) return '가설전기공사';
+  if (/분전반|분전함|차단기|충전부|누전|가설전선|접지선|전등|소켓|투광등|심선|절연\s*불량|전선\s*연결/.test(ctx)) return '가설전기공사';
   if (/지게차|하역|운반|양중|유도로프|크레인/.test(ctx)) return '양중 및 운반작업';
   if (/비계|작업발판|말비계|벽이음|가새|밑둥잡이/.test(ctx)) return '비계공사';
   if (/갱폼|gang\s*form/i.test(ctx)) return '거푸집공사(갱폼)';
@@ -392,18 +445,63 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
  * 사진 요약 배너(photoBanner) 전용: 원인/결과/우려 서술어를 제거하고 '실제 위반한 핵심 내용'만 12~20자로 추출
  */
 export function extractCoreViolationBanner(rawBanner = '', contentText = '') {
+  const truncateBannerAtWordBoundary = (text, maxLen = 25) => {
+    let t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    // 닫히지 않은 괄호가 남아 있으면 '(' 앞까지만 잘라서 "(점" 같은 mid-word 절단 방지
+    const openIdx = t.indexOf('(');
+    const closeIdx = t.indexOf(')');
+    if (openIdx !== -1 && (closeIdx === -1 || closeIdx < openIdx)) {
+      t = t.slice(0, openIdx).trim();
+    }
+    if (t.length <= maxLen) {
+      return t.replace(/[,·/(\s]+$/, '').trim();
+    }
+    let cut = t.slice(0, maxLen);
+    const cutOpen = cut.lastIndexOf('(');
+    const cutClose = cut.lastIndexOf(')');
+    if (cutOpen !== -1 && cutOpen > cutClose) {
+      cut = cut.slice(0, cutOpen).trim();
+    } else if (t[maxLen] && !/[\s,.)]/.test(t[maxLen])) {
+      const lastSpace = cut.lastIndexOf(' ');
+      if (lastSpace >= Math.floor(maxLen * 0.45)) {
+        cut = cut.slice(0, lastSpace);
+      }
+    }
+    return cut.replace(/[,·/(\s]+$/, '').replace(/\s+(?:및|등)$/, '').trim();
+  };
+
   const cleanSingleClause = (clause) => {
     let s = normalizeKoreanSpacing(String(clause || ''))
       .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
       .replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•·\s]+/, '')
-      .replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동|\s*외부)?)\s*/i, '')
       .trim();
 
-    // 괄호 안에 실제 위반사항이 명시된 경우 (예: "협력사 가설컨테이너 반입 시 점검 불량(분전함 차단기 충전부 노출)")
-    const mParen = s.match(/^(.+?)\s*\(([^)]{5,28})\)\s*$/);
-    if (mParen && /점검\s*불량|관리\s*불량|관리\s*미흡|기준\s*미준수/.test(mParen[1]) && !/^\d+cm|^\d+도|이하|이상/.test(mParen[2])) {
-      return mParen[2].trim();
+    // 장소 콜론 접두사 제거 (예: "근생 주변 흙막이 상부: 가설분전반 관리 불량(...)", "104동 수방컨테이너: ...")
+    const colonMatch = s.match(/^([가-힣A-Za-z0-9\s/·-]{2,26}):\s*(.{5,})$/);
+    if (colonMatch && !/^(?:부적합|점검)/.test(colonMatch[1])) {
+      s = colonMatch[2].trim();
     }
+    s = s
+      .replace(/^(?:지하\s*\d+층|\d+동(?:\s*(?:후면|상가동|외부|상부|하부|옥상|주변|지하\s*\d+층))?)\s*/i, '')
+      .replace(/^[:：]\s*/, '')
+      .trim();
+
+    // 괄호 안에 실제 위반사항이 명시된 경우 (장문 괄호 포함, "(점" 절단 방지)
+    const mParen = s.match(/^(.+?)\s*\(([^)]{4,})\)\s*$/);
+    if (mParen) {
+      const head = mParen[1].trim();
+      const inner = mParen[2].trim();
+      const hasSubjectNoun = /분전반|분전함|접지선|전등|소켓|전선|차단기|비계|동바리|개구부|난간|지게차|크레인|사다리/.test(head);
+      if (/점검\s*불량|관리\s*불량|관리\s*미흡|기준\s*미준수/.test(head) && !hasSubjectNoun && !/^\d+cm|^\d+도|이하|이상/.test(inner)) {
+        return truncateBannerAtWordBoundary(inner, 25);
+      }
+      if (!/^\d+cm|^\d+도/.test(inner)) {
+        s = head;
+      }
+    }
+    // 문장 중간의 부연 설명 괄호 정리 (예: "충전부 노출(금속단자부 노출) 및 전선 절연 불량(심선 노출)")
+    s = s.replace(/\([^)]{2,24}\)/g, '').replace(/\s+/g, ' ').trim();
 
     // 1. 뒤에 붙은 결과/위험/우려절("~으로 누설전류 발생시 감전우려", "~으로 대지로 방전 미흡", "~하여 충돌 우려" 등) 제거
     s = s
@@ -447,8 +545,10 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '') {
   const isRawCopyOfContent = normBanner && normContent && normBanner.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
   const hasLongRiskClause = /[2-9]\)|②|발생\s*시|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전|으로\s*인해/.test(normBanner);
 
-  if (normBanner && !isRawCopyOfContent && !hasLongRiskClause && normBanner.length >= 5 && normBanner.length <= 23) {
-    return normBanner;
+  const isUnspacedLongBanner = normBanner.length >= 10 && !/\s/.test(normBanner);
+  const hasUnclosedParen = /\([^)]*$/.test(normBanner);
+  if (normBanner && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && normBanner.length >= 5 && normBanner.length <= 24) {
+    return truncateBannerAtWordBoundary(normBanner, 24);
   }
 
   const targetText = normalizeKoreanSpacing(String(contentText || rawBanner || ''))
@@ -472,15 +572,15 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '') {
       if (combined.length <= 24) return combined;
     }
     const combinedFull = `${p1}, ${p2}`;
-    if (combinedFull.length <= 22) return combinedFull;
-    return p1.length <= 24 ? p1 : p1.slice(0, 22).trim();
+    if (combinedFull.length <= 24) return truncateBannerAtWordBoundary(combinedFull, 24);
+    return truncateBannerAtWordBoundary(p1, 25);
   }
 
   const single = parts[0] || cleanSingleClause(targetText);
   if (single.includes('지게차') && single.includes('근접')) {
     return '유도원·근로자 지게차 근접 작업';
   }
-  return single.length <= 24 ? single : single.slice(0, 22).trim();
+  return truncateBannerAtWordBoundary(single, 25);
 }
 
 /**

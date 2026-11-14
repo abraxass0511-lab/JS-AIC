@@ -125,16 +125,24 @@
   // 9×9 핵심 작업방법(9종) 정규화 및 추론 함수
   function resolveWorkMethod(r) {
     const raw = (r.workMethod || r.workName || '').trim();
-    const text = `${raw} ${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.agentMajor || ''} ${r.agentMid || ''} ${r.photoBanner || ''}`;
+    const wg = (r.workGroup || '').trim();
+    const contentText = (r.content || '').trim();
+    const textForExcavation = `${contentText} ${r.item || ''} ${r.agent || ''}`
+      .replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' ');
+    const text = `${contentText} ${r.item || ''} ${r.agent || ''} ${r.agentMajor || ''} ${r.agentMid || ''} ${r.photoBanner || ''}`;
 
-    // 1) 구체적 작업 시그널(하역운반/양중/굴착/해체/밀폐)이 본문에 명시된 경우 기본값('설치조립작업' 등)보다 우선 적용
+    const isElectrical = wg === '가설전기공사' || /가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량|누설전류/.test(`${wg} ${text}`);
+    const isGenuineDemolition = /석면\s*해체|구조물\s*해체|비계\s*해체|동바리\s*해체|슬래브\s*철거|벽체\s*철거|철거\s*작업|해체\s*작업/.test(contentText);
+    const isGenuineExcavation = /굴착\s*작업|터파기|토류판|어스앙카|집수정\s*굴착|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(textForExcavation);
+
+    // 1) 구체적 작업 시그널(하역운반/양중/굴착/밀폐) 우선 적용 (장소성 '흙막이 상부/주변'은 제외)
     if (/하역|운반|상차|하차|지게차/.test(text)) {
       return '하역운반작업';
     }
     if (/양중|크레인|슬링|샤클|인양|호이스트|유도로프/.test(text)) {
       return '양중작업';
     }
-    if (/굴착|터파기|흙막이|사면/.test(text)) {
+    if (isGenuineExcavation) {
       return '굴착작업';
     }
     if (/밀폐|산소|질식|유해가스|맨홀|탱크/.test(text)) {
@@ -143,16 +151,25 @@
     if (/협소|피트|덕트/.test(text)) {
       return '협소공간작업';
     }
+    // 가설전기공사(분전반/접지선/전등 등)인데 AI/OCR이 해체작업·굴착작업으로 오분류한 경우 보정
+    if (isElectrical && !isGenuineDemolition && !isGenuineExcavation) {
+      if (!raw || raw === '해체작업' || raw === '굴착작업') {
+        return '설치조립작업';
+      }
+    }
+    if (raw === '굴착작업' && !isGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${r.location || ''} ${contentText}`)) {
+      return isElectrical ? '설치조립작업' : '고소작업';
+    }
     if (WORK_METHODS_9X9.includes(raw)) return raw;
 
     if (/비계|발판|고소|난간|개구부|추락|사다리|단부|달비계/.test(text)) {
       return '고소작업';
     }
+    if (isElectrical || /설치|조립|체결|조립도|세우기|골조|분전반|분전함|접지|가설전기/.test(text)) {
+      return '설치조립작업';
+    }
     if (/해체|철거/.test(text)) {
       return '해체작업';
-    }
-    if (/설치|조립|체결|조립도|세우기|골조|분전반|분전함|접지|가설전기/.test(text)) {
-      return '설치조립작업';
     }
     if (/중량물|인력운반/.test(text)) {
       return '중량물취급작업';
@@ -309,7 +326,7 @@
     if (/pl\s*창호|창호\s*\(\s*pl\s*\)|피엘\s*창호/i.test(comb)) return '창호공사(PL)';
     if (/al\s*창호|창호\s*\(\s*al\s*\)/i.test(comb)) return '창호공사(AL)';
     if (/stl\s*창호|창호\s*\(\s*stl\s*\)/i.test(comb)) return '창호공사(STL)';
-    if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기|분전함|분전반|차단기|충전부|누전|가설전선|접지선/i.test(comb)) return '가설전기공사';
+    if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기|분전함|분전반|차단기|충전부|누전|가설전선|접지선|전등\s*소켓|전등\s*관리|투광등|심선\s*노출|절연\s*불량/i.test(comb)) return '가설전기공사';
     if (cleaned && cleaned.length >= 2 && cleaned !== '거푸집동바리공사') {
       return cleaned;
     }
@@ -651,7 +668,9 @@
 
     // 말줄임표(...) 절단 또는 부적합 내용 원문과 똑같이 복사된 경우 핵심 명사구 요약으로 자동 변환
     const hasRiskTail = /[2-9]\)|②|발생\s*시|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전/.test(s);
-    const isTruncated = !s || isSameAsContent || hasRiskTail || s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5;
+    const hasUnclosedParen = /\([^)]*$/.test(s);
+    const isUnspacedLong = s.length >= 10 && !/\s/.test(s);
+    const isTruncated = !s || isSameAsContent || hasRiskTail || hasUnclosedParen || isUnspacedLong || s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5;
     if (isTruncated && normContent) {
       const c = _normSpacing(normContent);
       if (/Gang\s*Form|갱폼|선해체/i.test(c)) {
@@ -672,15 +691,30 @@
       if (c.includes('접지선') && /고정\s*불량|용량\s*부족/.test(c)) {
         return '접지선 볼트 고정 불량 및 용량 부족';
       }
-      if (c.includes('충전부') && c.includes('노출')) {
+      if ((c.includes('전등') || c.includes('소켓')) && c.includes('충전부')) {
+        return '전등 소켓 충전부 노출 및 절연 불량';
+      }
+      if (/분전반|분전함/.test(c) && c.includes('충전부') && c.includes('노출')) {
         return '분전함 차단기 충전부 노출';
       }
-      const firstLine = c.split('\n')[0].replace(/\.{2,}/g, '').replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
-      const mParen = firstLine.match(/^(.+?)\s*\(([^)]{6,30})\)\s*$/);
-      if (mParen && /불량|미흡|누락|미설치|위반/.test(mParen[1])) {
-        return mParen[2].trim();
+      if (/분전반|분전함/.test(c) && /관리\s*불량|주변\s*정리/.test(c)) {
+        return '가설분전반 관리 및 주변정리 불량';
+      }
+      let firstLine = c.split('\n')[0].replace(/\.{2,}/g, '').replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
+      const colonStrip = firstLine.match(/^[가-힣A-Za-z0-9\s/·-]{2,26}:\s*(.{5,})$/);
+      if (colonStrip && !/^(?:부적합|점검)/.test(colonStrip[1])) {
+        firstLine = colonStrip[1].trim();
+      }
+      const mParen = firstLine.match(/^(.+?)\s*\(([^)]{5,})\)\s*$/);
+      if (mParen) {
+        if (/불량|미흡|누락|미설치|위반/.test(mParen[1]) && !/분전반|분전함|접지선|전등|소켓/.test(mParen[1])) {
+          firstLine = mParen[2].trim();
+        } else {
+          firstLine = mParen[1].trim();
+        }
       }
       let summary = firstLine
+        .replace(/\([^)]{2,24}\)/g, '')
         .replace(/(?:으로|로)\s*(?:인해|인한)?\s*(?:누설전류|감전|추락|붕괴|도괴|전도|충돌|협착|낙하|비래|대지로)[\s\S]*$/g, '')
         .replace(/\s*(?:충돌|추락|감전)\s*우려[\s\S]*$/g, '')
         .replace(/(?:유도원과\s*근로자가|신호수와\s*근로자가|유도원\s*및\s*근로자가|작업자와\s*근로자가|근로자가|작업자가|유도원이)\s*/g, '')
@@ -698,7 +732,21 @@
         summary = summary.replace(/\s*(?:작업|진행)\s*중\s*/g, ' ').replace(/\s+/g, ' ').trim();
       }
       if (summary.length >= 5) {
-        return summary.substring(0, 26);
+        // 열린 괄호 또는 어절 중간 절단 방지
+        const openIdx = summary.indexOf('(');
+        const closeIdx = summary.indexOf(')');
+        if (openIdx !== -1 && (closeIdx === -1 || closeIdx < openIdx)) {
+          summary = summary.slice(0, openIdx).trim();
+        }
+        if (summary.length > 26) {
+          let cut = summary.slice(0, 26);
+          if (summary[26] && !/[\s,.)]/.test(summary[26])) {
+            const sp = cut.lastIndexOf(' ');
+            if (sp >= 12) cut = cut.slice(0, sp);
+          }
+          summary = cut.replace(/[,·/(\s]+$/, '').trim();
+        }
+        return summary;
       }
     }
 

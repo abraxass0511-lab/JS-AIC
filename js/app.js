@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261115_v37';
-import './text-normalizer.js?v=20261115_v37';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261115_v39';
+import './text-normalizer.js?v=20261115_v39';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -11,8 +11,19 @@ const WORK_METHODS_9X9 = [
 ];
 
 function resolveDisplayWorkMethod(r) {
-  if (!r) return '양중작업';
+  if (!r) return '설치조립작업';
   const wm = (r.workMethod || r.workName || '').trim();
+  const wg = (r.workGroup || '').trim();
+  const contentText = (r.content || '').trim();
+  const isElectrical = wg === '가설전기공사' || /가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량/.test(`${wg} ${contentText}`);
+  const isGenuineDemolition = /석면\s*해체|구조물\s*해체|비계\s*해체|동바리\s*해체|철거\s*작업|해체\s*작업/.test(contentText);
+  const isGenuineExcavation = /굴착\s*작업|터파기|토류판|어스앙카|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(contentText.replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' '));
+  if (isElectrical && !isGenuineDemolition && !isGenuineExcavation && (wm === '해체작업' || wm === '굴착작업' || !wm)) {
+    return '설치조립작업';
+  }
+  if (wm === '굴착작업' && !isGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${r.location || ''} ${contentText}`)) {
+    return isElectrical ? '설치조립작업' : '고소작업';
+  }
   if (WORK_METHODS_9X9.includes(wm)) return wm;
   return inferWorkMethod(r.content || wm);
 }
@@ -5007,9 +5018,11 @@ function renderImportedCards() {
 // 9×9 핵심 작업방법(9종) 추론 함수 (절대 '안전점검' 등 비표준 값 배제)
 function inferWorkMethod(text) {
   const t = String(text || '');
+  const strippedExcav = t.replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' ');
   if (t.includes('하역') || t.includes('운반') || t.includes('상차') || t.includes('하차') || t.includes('지게차')) return '하역운반작업';
   if (t.includes('양중') || t.includes('크레인') || t.includes('슬링') || t.includes('샤클') || t.includes('인양') || t.includes('호이스트') || t.includes('유도로프')) return '양중작업';
-  if (t.includes('굴착') || t.includes('터파기') || t.includes('흙막이') || t.includes('사면')) return '굴착작업';
+  if (/굴착\s*작업|터파기|토류판|어스앙카|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(strippedExcav)) return '굴착작업';
+  if (/가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량/.test(t) && !/석면\s*해체|구조물\s*해체|철거\s*작업|해체\s*작업/.test(t)) return '설치조립작업';
   if (t.includes('해체') || t.includes('철거')) return '해체작업';
   if (t.includes('동바리') || t.includes('멍에') || t.includes('거푸집') || t.includes('서포트') || t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
   if (t.includes('비계') || t.includes('발판') || t.includes('고소') || t.includes('난간') || t.includes('개구부') || t.includes('추락') || t.includes('사다리') || t.includes('단부') || t.includes('달비계')) return '고소작업';
