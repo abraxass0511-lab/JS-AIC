@@ -2,7 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v32';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v34';
+import './text-normalizer.js?v=20261114_v34';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4822,17 +4823,47 @@ async function handlePptxImportChange(e) {
   }
 }
 
+let _filterLowConfidenceOnly = false;
+
 function renderImportedCards() {
   const container = $('#importCardsContainer');
   if (!container) return;
   container.innerHTML = '';
 
+  const isLowConfRec = (r) => Array.isArray(r.lowConfidenceFields) && r.lowConfidenceFields.length > 0;
+  const lowConfCount = importedRecords.filter(isLowConfRec).length;
+
+  // 상단 [⚠️ 확인 필요 항목만 보기] 필터 바 렌더링
+  if (importedRecords.length > 0) {
+    const filterBar = document.createElement('div');
+    filterBar.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;font-size:0.78rem;';
+    filterBar.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:700;color:#1e293b;">총 ${importedRecords.length}건 추출 완료 (PaddleOCR v5 ONNX + Qwen3 배치 분류)</span>
+        <span style="color:${lowConfCount > 0 ? '#ea580c' : '#16a34a'};font-weight:700;">
+          ${lowConfCount > 0 ? `⚠️ 확인 권장 셀 포함: ${lowConfCount}건` : '✅ 전 항목 고신뢰 판독 완료'}
+        </span>
+      </div>
+      <button type="button" id="btnToggleLowConfFilter" style="padding:4px 10px;border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;border:1px solid ${_filterLowConfidenceOnly ? '#ea580c' : '#cbd5e1'};background:${_filterLowConfidenceOnly ? '#fff7ed' : '#ffffff'};color:${_filterLowConfidenceOnly ? '#c2410c' : '#475569'};">
+        ${_filterLowConfidenceOnly ? `전체 항목 보기 (${importedRecords.length}건)` : `⚠️ 확인 필요 항목만 보기 (${lowConfCount}건)`}
+      </button>
+    `;
+    filterBar.querySelector('#btnToggleLowConfFilter')?.addEventListener('click', () => {
+      _filterLowConfidenceOnly = !_filterLowConfidenceOnly;
+      renderImportedCards();
+    });
+    container.appendChild(filterBar);
+  }
+
   importedRecords.forEach((rec, idx) => {
+    const hasLowConf = isLowConfRec(rec);
+    if (_filterLowConfidenceOnly && !hasLowConf) return;
+
     const isMajor = rec.severity === '중부적합';
     const card = document.createElement('div');
     card.style.cssText = `
-      background: white; border: 1px solid ${isMajor ? '#fca5a5' : '#fde68a'};
-      border-left: 4px solid ${isMajor ? '#ef4444' : '#f59e0b'};
+      background: white; border: ${hasLowConf ? '2px solid #fb923c' : `1px solid ${isMajor ? '#fca5a5' : '#fde68a'}`};
+      border-left: 4px solid ${hasLowConf ? '#ea580c' : (isMajor ? '#ef4444' : '#f59e0b')};
       border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 0.82rem;
     `;
 
@@ -4863,6 +4894,8 @@ function renderImportedCards() {
     const displayMajor = rec.agentMajor || '가시설';
     const displayMid = isAlForm ? '특수거푸집' : (rec.agentMid || (isSpecialForm ? '특수거푸집' : '거푸집/동바리'));
     const displayMinor = isAlForm ? '알폼' : (rec.agentMinor || (isSpecialForm ? '갱폼' : ''));
+    const contentLow = rec.lowConfidenceFields?.includes('content');
+    const contentConfPct = rec.cellConfidences?.content ? Math.round(rec.cellConfidences.content.confidence * 100) : 99;
 
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -4875,38 +4908,94 @@ function renderImportedCards() {
             ${displayMajor} &gt; ${displayMid}${displayMinor ? ` &gt; ${displayMinor}` : ''}
           </span>
           <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
+          ${hasLowConf ? `<span style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">🔍 원본 대조 권장 (${rec.lowConfidenceFields.join(', ')})</span>` : ''}
         </div>
         <button type="button" class="btn btn-outline btn-load-to-form" data-idx="${idx}" style="padding: 2px 8px; font-size: 0.72rem; border-color: var(--primary); color: var(--primary);">
           ✏️ 직접입력 폼에 채우기
         </button>
       </div>
 
+      <div class="crop-loupe-preview" style="display:none;background:#0f172a;padding:6px 8px;border-radius:6px;border:1px solid #334155;">
+        <div class="crop-loupe-label" style="font-size:0.68rem;color:#93c5fd;font-weight:700;margin-bottom:4px;">🔎 원본 PDF 1:1 셀 크롭 이미지 대조 (Loupe)</div>
+        <img class="crop-loupe-img" src="" style="max-width:100%;max-height:95px;object-fit:contain;background:#fff;border-radius:4px;display:block;">
+      </div>
+
       <div style="display: flex; gap: 10px;">
         ${thumbHtml}
         <div style="flex: 1; min-width: 0;">
           <div style="margin-bottom: 4px;">
-            <label style="font-size: 0.72rem; color: #4338ca; font-weight: 700; display: block; margin-bottom: 2px;">📋 추출된 부적합 내용 (직접 수정 가능):</label>
-            <textarea class="form-control txt-import-content" rows="2" style="font-size: 0.8rem; width: 100%; border: 1px solid #a5b4fc; border-radius: 4px; padding: 4px 6px; background: #f5f3ff; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
+            <label style="font-size: 0.72rem; color: ${contentLow ? '#c2410c' : '#4338ca'}; font-weight: 700; display: block; margin-bottom: 2px;">
+              📋 추출된 부적합 내용 (클릭 시 상단에 원본 크롭 표시 · 정확도 ${contentConfPct}%):
+            </label>
+            <textarea class="form-control txt-import-content loupe-bound-field" data-crop-key="content" data-field="content" rows="2" style="font-size: 0.8rem; width: 100%; border: ${contentLow ? '2px solid #f97316' : '1px solid #a5b4fc'}; border-radius: 4px; padding: 4px 6px; background: ${contentLow ? '#fff7ed' : '#f5f3ff'}; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
           </div>
           ${(rec.rawLaw || (rec.law && filterOnlyOccupationalSafetyLaw(rec.law))) ? `
           <div style="font-size: 0.74rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
             📜 ${rec.rawLaw ? `${rec.rawLaw}${rec.law && filterOnlyOccupationalSafetyLaw(rec.law) && rec.rawLaw !== filterOnlyOccupationalSafetyLaw(rec.law) ? ` (${filterOnlyOccupationalSafetyLaw(rec.law)})` : ''}` : filterOnlyOccupationalSafetyLaw(rec.law)}
           </div>` : ''}
-          <div style="color: var(--gray-700); font-size: 0.74rem; line-height: 1.4;">
-            <strong>공종:</strong> ${rec.workGroup || '-'} | <strong>장소:</strong> ${rec.location || '-'} | <strong>협력사:</strong> ${rec.subcontractor || '(미기재)'} | <strong>원인:</strong> <span style="color:#b91c1c;font-weight:700;">${causesStr}</span>
+          <div style="color: var(--gray-700); font-size: 0.74rem; line-height: 1.4; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+            <span><strong>공종:</strong> ${rec.workGroup || '-'}</span> |
+            <span><strong>장소:</strong> <input type="text" class="loupe-bound-field" data-crop-key="loc" data-field="location" value="${rec.location || ''}" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:110px;"></span> |
+            <span><strong>협력사:</strong> <input type="text" class="loupe-bound-field" data-crop-key="sub" data-field="subcontractor" value="${rec.subcontractor || ''}" placeholder="(미기재)" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:90px;"></span> |
+            <span><strong>차수:</strong> <input type="text" class="loupe-bound-field" data-crop-key="round" data-field="inspectRound" value="${rec.inspectRound || ''}" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:78px;"></span> |
+            <span><strong>원인:</strong> <span style="color:#b91c1c;font-weight:700;">${causesStr}</span></span>
           </div>
           ${(rec.interviewOpinion || rec.auditProposal || rec.actionPlan) ? `
-          <div style="color: var(--gray-600); font-size: 0.72rem; margin-top: 3px; background: #f8fafc; padding: 4px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">
-            ${rec.interviewOpinion ? `<div>💬 <strong>관계자 의견:</strong> ${rec.interviewOpinion}</div>` : ''}
-            ${rec.auditProposal ? `<div>💡 <strong>점검자 의견(${rec.inspectorOpinionType || '시스템 개선'}):</strong> ${rec.auditProposal}</div>` : ''}
-            ${rec.actionPlan ? `<div style="white-space: pre-line;">🔧 <strong>조치내용(PM판정: ${rec.pmVerdictType || rec.pmVerdict || '시스템 개선'}):</strong>\n${rec.actionPlan}</div>` : ''}
+          <div style="color: var(--gray-600); font-size: 0.72rem; margin-top: 4px; background: #f8fafc; padding: 5px 6px; border-radius: 4px; border: 1px solid #e2e8f0; display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex;gap:4px;align-items:flex-start;">
+              <strong style="white-space:nowrap;padding-top:2px;">💬 관계자의견:</strong>
+              <input type="text" class="loupe-bound-field" data-crop-key="interview" data-field="interviewOpinion" value="${(rec.interviewOpinion || '').replace(/"/g, '&quot;')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.interview?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.interview?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
+            </div>
+            <div style="display:flex;gap:4px;align-items:flex-start;">
+              <strong style="white-space:nowrap;padding-top:2px;">💡 점검자의견:</strong>
+              <input type="text" class="loupe-bound-field" data-crop-key="propText" data-field="auditProposal" value="${(rec.auditProposal || '').replace(/"/g, '&quot;')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.propText?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.propText?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
+            </div>
+            <div style="display:flex;gap:4px;align-items:flex-start;">
+              <strong style="white-space:nowrap;padding-top:2px;">🔧 조치내용:</strong>
+              <textarea class="loupe-bound-field" data-crop-key="cm" data-field="actionPlan" rows="2" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.cm?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.cm?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;resize:vertical;">${rec.actionPlan || ''}</textarea>
+            </div>
           </div>` : ''}
         </div>
       </div>
     `;
 
-    card.querySelector('.txt-import-content')?.addEventListener('input', (e) => {
-      rec.content = e.target.value;
+    const loupeBox = card.querySelector('.crop-loupe-preview');
+    const loupeImg = card.querySelector('.crop-loupe-img');
+    const loupeLbl = card.querySelector('.crop-loupe-label');
+    const CROP_TITLE_MAP = {
+      content: '부적합 내용',
+      interview: '관계자 인터뷰(의견)',
+      propText: '점검단(HAT) 제안',
+      cm: '개선대책(조치내용)',
+      loc: '작업장소',
+      sub: '협력사',
+      round: '점검차수'
+    };
+
+    card.querySelectorAll('.loupe-bound-field').forEach((el) => {
+      el.addEventListener('focus', () => {
+        const cKey = el.dataset.cropKey;
+        const cropUrl = rec.cellCrops?.[cKey];
+        if (cropUrl && loupeBox && loupeImg) {
+          loupeImg.src = cropUrl;
+          if (loupeLbl) {
+            const confObj = rec.cellConfidences?.[cKey];
+            const confStr = confObj ? ` · 인식 확신도 ${Math.round((confObj.confidence || 0.95) * 100)}%` : '';
+            loupeLbl.textContent = `🔎 원본 PDF 1:1 셀 크롭 대조 [${CROP_TITLE_MAP[cKey] || cKey}${confStr}]`;
+          }
+          loupeBox.style.display = 'block';
+        }
+      });
+      el.addEventListener('blur', () => {
+        if (loupeBox) loupeBox.style.display = 'none';
+      });
+      el.addEventListener('input', (e) => {
+        const fKey = el.dataset.field;
+        if (fKey) {
+          rec[fKey] = e.target.value;
+          if (fKey === 'actionPlan') rec.countermeasure = e.target.value;
+        }
+      });
     });
 
     card.querySelector('.btn-load-to-form').addEventListener('click', () => {
@@ -5142,6 +5231,7 @@ async function handleSaveImportedRecords() {
         },
         content: rec.content || '부적합 사항 지적',
         photoBanner: (window.SafeExcel?.resolvePhotoBanner ? window.SafeExcel.resolvePhotoBanner(rec) : (rec.photoBanner || '현장 부적합 작업 전경')),
+        photo2Banner: rec.photo2Banner || '',
         location: (window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '')),
         workName: workMethod,
         workMethod: workMethod,

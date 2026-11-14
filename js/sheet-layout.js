@@ -19,7 +19,7 @@ function isYellow(d, k) {
 
 function isRedBanner(d, k) {
   const r = d[k], g = d[k + 1], b = d[k + 2];
-  return r > 135 && g < 135 && b < 135 && (r - g) > 30 && (r - b) > 30;
+  return r > 135 && g < 152 && b < 152 && (r - g) > 30 && (r - b) > 30;
 }
 
 function isReddishFringe(d, k) {
@@ -363,7 +363,7 @@ export function analyzeSheetLayout(img) {
   if (cmSplit < 0) cmSplit = px1 + Math.round(pw * 0.69);
 
   const pad = Math.max(4, Math.round(W * 0.0035));
-  const mRow = rect(metaX0, ly0 + 2, x1 - pad, metaSplit);
+  const mRow = rect(metaX0, ly0 + 2, x1 - 2, metaSplit);
   // 메타행 내부 5개 컬럼 수직 구분선 정밀 탐색 (협력사 | 공종명 | 작업장소 | 점검자 | 점검차수)
   const mw = mRow.w;
   const my0 = mRow.y + 3, my1 = Math.max(mRow.y + 4, mRow.y + mRow.h - 3);
@@ -383,18 +383,18 @@ export function analyzeSheetLayout(img) {
     lawCell: rect(lawX0, lawTopY, lawX1, hy1),
     checkCell: rect(x0 + fw * 0.805, lawTopY, x1, hy1),
     metaRow: mRow,
-    subCell: rect(mRow.x + 3, mRow.y + 2, mv1 - 4, metaSplit - 2),
-    workCell: rect(mv1 + 4, mRow.y + 2, mv2 - 4, metaSplit - 2),
-    locCell: rect(mv2 + 4, mRow.y + 2, mv3 - 4, metaSplit - 2),
-    userCell: rect(mv3 + 4, mRow.y + 2, mv4 - 4, metaSplit - 2),
-    roundCell: rect(mv4 + 4, mRow.y + 2, x1 - pad, metaSplit - 2),
-    contentRow: rect(metaX0, metaSplit + 2, x1 - pad, ly1),
+    subCell: rect(mRow.x + 2, mRow.y + 2, mv1 - 3, metaSplit - 2),
+    workCell: rect(mv1 + 3, mRow.y + 2, mv2 - 3, metaSplit - 2),
+    locCell: rect(mv2 + 3, mRow.y + 2, mv3 - 3, metaSplit - 2),
+    userCell: rect(mv3 + 3, mRow.y + 2, mv4 - 3, metaSplit - 2),
+    roundCell: rect(mv4 + 3, mRow.y + 2, x1 - 2, metaSplit - 2),
+    contentRow: rect(metaX0, metaSplit + 2, x1 - pad, Math.max(metaSplit + 10, ly1 - 4)),
     photoArea: rect(x0 + 8, ly1 + 10, px1 - 8, cmBot - 6),
-    interview: rect(px1 + pad, spanTop + pad, px2 - pad, interviewBottom),
-    proposalType: rect(px1 + pad, propTop + pad, propSplit - pad, propBot),
-    proposalText: rect(propSplit + pad, propTop + pad, px2 - pad, propBot),
-    countermeasure: rect(px1 + pad, cmTop + pad, cmSplit - pad, cmBot),
-    pmCell: rect(cmSplit + pad, cmTop + pad, px2 - pad, cmBot)
+    interview: rect(px1 + pad, spanTop + 3, px2 - pad, Math.max(spanTop + 12, interviewBottom - 3)),
+    proposalType: rect(px1 + pad, propTop + 2, propSplit - pad, Math.max(propTop + 10, propBot - 3)),
+    proposalText: rect(propSplit + pad, propTop + 2, px2 - pad, Math.max(propTop + 10, propBot - 3)),
+    countermeasure: rect(px1 + pad, cmTop + 3, cmSplit - pad, Math.max(cmTop + 10, cmBot - 3)),
+    pmCell: rect(cmSplit + pad, cmTop + 3, px2 - pad, Math.max(cmTop + 10, cmBot - 3))
   };
 }
 
@@ -411,7 +411,7 @@ export function findRedBanners(img, area) {
   }, minBannerH);
   for (const [a, b] of rows) {
     const h = b - a + 1;
-    if (h > img.height * 0.08) continue;
+    if (h > img.height * 0.105) continue;
     const isTopBanner = a <= area.h * 0.16;
     const isBottomBanner = b >= area.h * 0.80;
     if (!isTopBanner && !isBottomBanner) continue;
@@ -471,13 +471,15 @@ export function findPhotoBoxes(img, area, banners = []) {
   };
   const colEmpty = x => colCount(x) <= Math.max(2, mh * 0.01);
 
-  // 1) X축 기준 1차 컬럼 분리 (좌/우 2장 배치 또는 우측 참고도면 분리)
+  // 1) X축 기준 1차 컬럼 분리 (해상도 스케일 팩터 sf 반영)
+  const sf = Math.max(1, W / 1440);
+  const minGapPx = Math.max(2, Math.round(2 * sf));
   const xSegs = [];
   let s = 0, gap = 0;
   for (let x = 0; x < mw; x++) {
     if (colEmpty(x)) gap++;
     else {
-      if (gap >= 2 && x - gap > s) {
+      if (gap >= minGapPx && x - gap > s) {
         xSegs.push([s, x - gap - 1]);
         s = x;
       }
@@ -486,7 +488,7 @@ export function findPhotoBoxes(img, area, banners = []) {
   }
   xSegs.push([s, mw - 1]);
 
-  // 2차 수직 거터 분할: 상단 체크리스트/하단 배너로 인해 전체 열 기준 colEmpty()가 실패한 좁은(2~4px) 사진 간 틈새 분할
+  // 2차 수직 거터 분할: 상단 체크리스트/하단 배너로 인해 전체 열 기준 colEmpty()가 실패한 좁은 사진 간 틈새 분할
   const refinedSegs = [];
   for (const [x0, x1] of xSegs) {
     const segW = x1 - x0 + 1;
@@ -509,7 +511,7 @@ export function findPhotoBoxes(img, area, banners = []) {
         if (ratio >= 0.88) {
           if (runStart < 0) runStart = rx;
         } else {
-          if (runStart >= 0 && rx - runStart >= 2) {
+          if (runStart >= 0 && rx - runStart >= minGapPx) {
             const center = Math.floor((runStart + rx - 1) / 2);
             if (!bestGutter || (rx - runStart) > bestGutter.width) {
               bestGutter = { leftEnd: runStart - 1, rightStart: rx, width: rx - runStart, center };
@@ -518,7 +520,7 @@ export function findPhotoBoxes(img, area, banners = []) {
           runStart = -1;
         }
       }
-      if (runStart >= 0 && xScanEnd + 1 - runStart >= 2) {
+      if (runStart >= 0 && xScanEnd + 1 - runStart >= minGapPx) {
         const center = Math.floor((runStart + xScanEnd) / 2);
         if (!bestGutter || (xScanEnd + 1 - runStart) > bestGutter.width) {
           bestGutter = { leftEnd: runStart - 1, rightStart: xScanEnd + 1, width: xScanEnd + 1 - runStart, center };
@@ -531,8 +533,45 @@ export function findPhotoBoxes(img, area, banners = []) {
     }
     refinedSegs.push([x0, x1]);
   }
+
+  // 유효 폭(minSide) 이상 세그먼트만 필터링 후, 3개 이상으로 쪼개진 다분할 콜라주는 좌/우 최대 2개 박스로 병합 (3번째 사진 유실 원천 방지)
+  let validXSegs = refinedSegs.filter(([xa0, xb0]) => {
+    let xa = xa0, xb = xb0;
+    while (xa < xb && colEmpty(xa)) xa++;
+    while (xb > xa && colEmpty(xb)) xb--;
+    return (xb - xa + 1) >= minSide;
+  });
+
+  if (validXSegs.length > 2) {
+    const topBanners = banners.filter(b => (b.y - area.y) <= area.h * 0.18).sort((a, b) => a.x - b.x);
+    if (topBanners.length >= 2) {
+      const splitX = Math.round(((topBanners[0].x + topBanners[0].w) + topBanners[1].x) / 2) - area.x;
+      const leftGroup = validXSegs.filter(([xa, xb]) => (xa + xb) / 2 <= splitX);
+      const rightGroup = validXSegs.filter(([xa, xb]) => (xa + xb) / 2 > splitX);
+      if (leftGroup.length && rightGroup.length) {
+        validXSegs = [
+          [leftGroup[0][0], leftGroup[leftGroup.length - 1][1]],
+          [rightGroup[0][0], rightGroup[rightGroup.length - 1][1]]
+        ];
+      }
+    }
+    while (validXSegs.length > 2) {
+      // 중앙(0.55 * mw)에서 가장 먼 경계부터 인접 병합하여 좌/우 2개 박스로 압축
+      let bestIdx = 0;
+      let maxDist = -1;
+      for (let i = 0; i < validXSegs.length - 1; i++) {
+        const boundary = (validXSegs[i][1] + validXSegs[i + 1][0]) / 2;
+        const dist = Math.abs(boundary - mw * 0.56);
+        if (dist > maxDist) {
+          maxDist = dist;
+          bestIdx = i;
+        }
+      }
+      validXSegs.splice(bestIdx, 2, [validXSegs[bestIdx][0], validXSegs[bestIdx + 1][1]]);
+    }
+  }
   xSegs.length = 0;
-  xSegs.push(...refinedSegs);
+  xSegs.push(...validXSegs);
 
   const results = [];
   for (const [xa0, xb0] of xSegs) {
@@ -571,6 +610,33 @@ export function findPhotoBoxes(img, area, banners = []) {
     };
     while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
     while (ty1 > ty0 && isRowBlank(ty1)) ty1--;
+
+    // 우측 상단 '[ ] Hold Point 위반 (N/A)' 분리형 소형 박스 제거:
+    // 상단 9.5% 이내의 얇은 박스 아래에 순백 수평 여백이 존재하면 실제 사진 시작점까지 ty0 하향
+    const holdPointLimitY = area.y + Math.round(area.h * 0.22);
+    if (ty0 - area.y <= area.h * 0.06 && ty1 > holdPointLimitY) {
+      let blankRun = 0;
+      let firstBlankY = -1;
+      let gapEndY = -1;
+      for (let gy = ty0 + Math.round(area.h * 0.02); gy <= Math.min(ty1 - minSide, holdPointLimitY); gy++) {
+        if (isRowBlank(gy)) {
+          if (blankRun === 0) firstBlankY = gy;
+          blankRun++;
+          if (blankRun >= Math.max(4, Math.round(4 * sf))) {
+            gapEndY = gy;
+          }
+        } else if (gapEndY > 0) {
+          break;
+        } else {
+          blankRun = 0;
+        }
+      }
+      if (gapEndY > 0 && firstBlankY > 0 && (firstBlankY - ty0) <= area.h * 0.095) {
+        ty0 = gapEndY + 1;
+        while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
+      }
+    }
+
     r = rect(r.x, ty0, r.x + r.w, ty1 + 1);
 
     // 박스 내부 백색 비율 + 밝은 종이/텍스트 밴드 비율 동시 측정
@@ -671,5 +737,180 @@ export function detectCheckboxesFromLayout(img, checkCell) {
   }
   return checked.length > 0 ? checked : ['계획 미이행', '불안전 상태'];
 }
+
+/**
+ * 셀 캔버스 내의 개인정보 가림 박스(어두운 단색 직사각형 블롭) 및 잔여 테두리선을 백색으로 제거
+ * - 적색 배너(isBanner)는 어두운 적색 배경 위 흰 글씨이므로 마스킹 소거를 건너뛰고 여백만 보존
+ * @param {HTMLCanvasElement} rawCanvas - 원본 크롭된 셀 캔버스
+ * @param {number} shavePx - 테두리 절삭 픽셀 (기본 2px)
+ * @param {number} padPx - 외곽 백색 여백 픽셀 (기본 8px)
+ * @param {object} [options] - { cellKey?: string, isBanner?: boolean }
+ * @returns {HTMLCanvasElement} 전처리 완료된 클린 캔버스
+ */
+export function preprocessCellCanvas(rawCanvas, shavePx = 2, padPx = 8, options = {}) {
+  const cellKey = options.cellKey || '';
+  const isBanner = options.isBanner || cellKey === 'banner' || cellKey === 'banner2';
+  const effectiveShave = isBanner ? 0 : shavePx;
+
+  const sw = Math.max(1, rawCanvas.width - effectiveShave * 2);
+  const sh = Math.max(1, rawCanvas.height - effectiveShave * 2);
+
+  const out = document.createElement('canvas');
+  out.width = sw + padPx * 2;
+  out.height = sh + padPx * 2;
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(rawCanvas, effectiveShave, effectiveShave, sw, sh, padPx, padPx, sw, sh);
+
+  if (isBanner) return out;
+
+  const imgData = ctx.getImageData(padPx, padPx, sw, sh);
+  const data = imgData.data;
+
+  // 1) 상/하단 가장자리 잔여 수평 표 테두리선(밀도 70% 이상 행) 백색 제거
+  for (let y = 0; y < sh; y++) {
+    if (y > 5 && y < sh - 6) continue;
+    let darkRow = 0;
+    for (let x = 0; x < sw; x++) {
+      const idx = (y * sw + x) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (lum < 190) darkRow++;
+    }
+    if (darkRow / Math.max(1, sw) >= 0.70) {
+      for (let x = 0; x < sw; x++) {
+        const idx = (y * sw + x) * 4;
+        data[idx] = 255; data[idx + 1] = 255; data[idx + 2] = 255;
+      }
+    }
+  }
+
+  // 2) 개인정보 가림 박스(고밀도 암색/회색 직사각형 영역) 탐지 후 백색 마스킹
+  const checkMasking = !cellKey || ['sub', 'user', 'meta', 'interview'].includes(cellKey);
+  const WIN_W = 22, WIN_H = 12;
+  if (checkMasking && sw >= WIN_W && sh >= WIN_H) {
+    const darkMap = new Uint8Array(sw * sh);
+    for (let i = 0; i < sw * sh; i++) {
+      const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (lum < 155) darkMap[i] = 1;
+    }
+
+    for (let y = 0; y <= sh - WIN_H; y += 3) {
+      for (let x = 0; x <= sw - WIN_W; x += 3) {
+        let darkCount = 0;
+        for (let dy = 0; dy < WIN_H; dy++) {
+          const rowOffset = (y + dy) * sw + x;
+          for (let dx = 0; dx < WIN_W; dx++) {
+            darkCount += darkMap[rowOffset + dx];
+          }
+        }
+        if (darkCount / (WIN_W * WIN_H) >= 0.78) {
+          for (let dy = Math.max(0, y - 2); dy < Math.min(sh, y + WIN_H + 2); dy++) {
+            for (let dx = Math.max(0, x - 2); dx < Math.min(sw, x + WIN_W + 2); dx++) {
+              const idx = (dy * sw + dx) * 4;
+              data[idx] = 255; data[idx + 1] = 255; data[idx + 2] = 255;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, padPx, padPx);
+  return out;
+}
+
+/**
+ * 다중 줄(Multi-Line) 셀 캔버스를 수평 투영 프로파일(Horizontal Projection Profile)로 줄 단위 캔버스 배열로 분할
+ * @param {HTMLCanvasElement} cellCanvas
+ * @param {object} [options] - { isBanner?: boolean }
+ * @returns {HTMLCanvasElement[]}
+ */
+export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
+  if (!cellCanvas) return [];
+  if (options.isBanner || cellCanvas.height < 34) return [cellCanvas];
+
+  const w = cellCanvas.width;
+  const h = cellCanvas.height;
+  const ctx = cellCanvas.getContext('2d', { willReadFrequently: true });
+  const { data } = ctx.getImageData(0, 0, w, h);
+
+  const xStart = Math.min(4, Math.floor(w * 0.02));
+  const xEnd = Math.max(xStart + 1, w - xStart);
+  const spanW = xEnd - xStart;
+
+  const rowDensity = new Float32Array(h);
+  for (let y = 0; y < h; y++) {
+    let dark = 0;
+    for (let x = xStart; x < xEnd; x++) {
+      const k = (y * w + x) * 4;
+      const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+      if (lum < 195) dark++;
+    }
+    const d = dark / spanW;
+    // 가로 표 구분선(밀도 72% 초과)은 0으로 억제
+    rowDensity[y] = d > 0.72 ? 0 : d;
+  }
+
+  const rawBands = [];
+  let inBand = false;
+  let startY = 0;
+  for (let y = 0; y < h; y++) {
+    if (rowDensity[y] > 0.012 && !inBand) {
+      inBand = true;
+      startY = y;
+    } else if (rowDensity[y] <= 0.012 && inBand) {
+      inBand = false;
+      if (y - startY >= 8) rawBands.push([startY, y - 1]);
+    }
+  }
+  if (inBand && h - startY >= 8) rawBands.push([startY, h - 1]);
+
+  const merged = [];
+  for (const b of rawBands) {
+    if (merged.length && b[0] - merged[merged.length - 1][1] <= 3) {
+      merged[merged.length - 1][1] = b[1];
+    } else {
+      merged.push(b);
+    }
+  }
+
+  if (!merged.length) return [cellCanvas];
+
+  const finalSlices = [];
+  for (const [y0, y1] of merged) {
+    const bh = y1 - y0 + 1;
+    if (bh >= 44) {
+      const midStart = y0 + Math.floor(bh * 0.30);
+      const midEnd = y0 + Math.floor(bh * 0.70);
+      let minVal = 1;
+      let minY = midStart;
+      for (let y = midStart; y <= midEnd; y++) {
+        if (rowDensity[y] < minVal) {
+          minVal = rowDensity[y];
+          minY = y;
+        }
+      }
+      if (minVal < 0.045) {
+        finalSlices.push([Math.max(0, y0 - 3), Math.min(h - 1, minY + 2)]);
+        finalSlices.push([Math.max(0, minY - 1), Math.min(h - 1, y1 + 4)]);
+        continue;
+      }
+    }
+    finalSlices.push([Math.max(0, y0 - 4), Math.min(h - 1, y1 + 4)]);
+  }
+
+  return finalSlices.map(([sy0, sy1]) => {
+    const sh = Math.max(1, sy1 - sy0 + 1);
+    const lc = document.createElement('canvas');
+    lc.width = w;
+    lc.height = sh;
+    lc.getContext('2d').drawImage(cellCanvas, 0, sy0, w, sh, 0, 0, w, sh);
+    return lc;
+  });
+}
+
 
 

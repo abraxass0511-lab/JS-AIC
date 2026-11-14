@@ -1145,15 +1145,111 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return cleaned;
   }
 
+  /**
+   * [v2.0 신규] 다건 묶음(Multi-Page Batch) 표준 분류 및 핀포인트 오타 패치 (최대 8~10페이지 당 1회 호출)
+   * - PaddleOCR v5가 추출한 원문은 그대로 보존하면서, 건설안전 9x9 분류표 매핑과 typoPatches만 일괄 수신
+   */
+  async function classifyBatchRecords(records = []) {
+    if (!Array.isArray(records) || records.length === 0) return records;
+    const items = records.map((rec, idx) => ({
+      pageIndex: rec.pageNumber || rec.slideNumber || (idx + 1),
+      severityHint: rec.severity || '중부적합',
+      lockedCheckboxes: {
+        planMissing: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미수립'),
+        planNotFollowed: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미이행'),
+        unsafeAct: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('불안전 행동'),
+        unsafeCond: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('불안전 상태')
+      },
+      cells: {
+        subcontractor: rec.subcontractor || '',
+        workTypeRaw: rec.workGroup || '',
+        location: rec.location || '',
+        content: rec.content || '',
+        lawRaw: rec.rawLaw || rec.law || '',
+        interview: rec.interviewOpinion || '',
+        proposalText: rec.auditProposal || '',
+        countermeasure: rec.actionPlan || rec.countermeasure || '',
+        lowConfidenceFields: Array.isArray(rec.lowConfidenceFields) ? rec.lowConfidenceFields : []
+      }
+    }));
+
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 18000);
+      const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'batch_classify', items }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.results)) {
+          const mapByPage = new Map();
+          for (const r of data.results) {
+            if (r && r.pageIndex !== undefined) mapByPage.set(Number(r.pageIndex), r);
+          }
+          records.forEach((rec, idx) => {
+            const pKey = Number(rec.pageNumber || rec.slideNumber || (idx + 1));
+            const aiItem = mapByPage.get(pKey) || data.results[idx];
+            if (!aiItem) return;
+            const taxFields = [
+              'workMethod', 'agentMajor', 'agentMid', 'agentMinor',
+              'hazardType', 'condition', 'action',
+              'rootCauseMgmt', 'rootCauseSystem', 'stakeholder'
+            ];
+            for (const f of taxFields) {
+              if (aiItem[f]) rec[f] = aiItem[f];
+            }
+            if (aiItem.workMethod) rec.workName = aiItem.workMethod;
+            if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; }
+            if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; }
+            if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; }
+            if (!rec.type && aiItem.hazardType) rec.type = aiItem.hazardType;
+            if (aiItem.law && !rec.law) rec.law = aiItem.law;
+            if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
+              window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
+            }
+            rec._aiCleaned = true;
+            rec._aiQuotaExceeded = !!data.quotaExceeded;
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[SafePatrol] classifyBatchRecords fallback to local taxonomy:', e);
+    }
+    return records;
+  }
+
+  /**
+   * [v2.0 신규] 현장 직접 등록 모드(Guided Complete): 1줄 핵심 키워드로 부적합 개요·법규·인터뷰·대책 자동 완성
+   */
+  async function completeGuidedRecord({ memo = '', workGroup = '거푸집동바리공사', workMethod = '설치조립작업', severity = '중부적합' } = {}) {
+    try {
+      const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'guided_complete', memo, workGroup, workMethod, severity })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {}
+    return quickRuleAnalysis(`${workGroup} ${workMethod} ${memo}`);
+  }
+
   return {
     checkConnection,
     quickRuleAnalysis,
     streamAnalyzeSafetyText,
     cleanOcrRecord,
+    classifyBatchRecords,
+    completeGuidedRecord,
     getEndpoint: () => currentEndpoint,
     setEndpoint: ep => { currentEndpoint = ep; storage.setItem('sp_lmstudio_endpoint', ep); },
-    getModel: () => currentModel,
     setModel: m => { currentModel = m; storage.setItem('sp_lmstudio_model', m); },
+    getModel: () => currentModel,
     isConnected: () => isConnected
   };
 });
