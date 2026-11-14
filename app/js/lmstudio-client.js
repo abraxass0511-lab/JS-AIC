@@ -1024,6 +1024,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
    * Qwen AI를 활용한 장표 OCR 텍스트 지능형 정제 및 필드 복원 (Cloudflare 24시간 클라우드 Qwen AI 최우선 연동)
    */
   let _cfQuotaCooldownUntil = 0;
+  let _cfTransientBackoffUntil = 0;
 
   async function cleanOcrRecord(rawOcrText, fallbackRecord) {
     if (!fallbackRecord) fallbackRecord = {};
@@ -1036,10 +1037,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     }
 
     // ── [1순위] Cloudflare 24시간 상시 가동 Qwen3-30B 텍스트 하이브리드 연동 (Tesseract 원문 확보 시 Vision 생략) ──
-    if (!forceLocal && workerUrl && Date.now() >= _cfQuotaCooldownUntil) {
+    if (!forceLocal && workerUrl && Date.now() >= _cfQuotaCooldownUntil && Date.now() >= _cfTransientBackoffUntil) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 8000);
+        const timeout = setTimeout(() => ctrl.abort(), 14000);
         const rawLen = rawOcrText ? String(rawOcrText).trim().length : 0;
         const contentLen = fallbackRecord.content ? String(fallbackRecord.content).trim().length : 0;
         const hasSufficientOcr = (rawLen >= 40 || contentLen >= 10);
@@ -1276,7 +1277,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   async function classifyBatchRecords(records = []) {
     if (!Array.isArray(records) || records.length === 0) return records;
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
-    if (forceLocal || Date.now() < _cfQuotaCooldownUntil) {
+    if (forceLocal || Date.now() < _cfQuotaCooldownUntil || Date.now() < _cfTransientBackoffUntil) {
       return applyLocalTaxonomyToRecords(records);
     }
 
@@ -1304,7 +1305,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 6500);
+      const timer = setTimeout(() => ctrl.abort(), 18000);
       const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1313,12 +1314,19 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       });
       clearTimeout(timer);
       if (!res.ok) {
-        _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+        if (res.status === 429) {
+          _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+        } else {
+          _cfTransientBackoffUntil = Date.now() + 15 * 1000;
+        }
         return applyLocalTaxonomyToRecords(records);
       }
       const data = await res.json();
-      if (data?.quotaExceeded || String(data?.source || '').includes('rule')) {
+      if (data?.quotaExceeded) {
         _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+        return applyLocalTaxonomyToRecords(records);
+      }
+      if (String(data?.source || '').includes('rule')) {
         return applyLocalTaxonomyToRecords(records);
       }
       if (Array.isArray(data?.results)) {
@@ -1370,7 +1378,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         });
       }
     } catch (e) {
-      _cfQuotaCooldownUntil = Date.now() + 5 * 60 * 1000;
+      _cfTransientBackoffUntil = Date.now() + 15 * 1000;
       console.warn('[SafePatrol] classifyBatchRecords fallback to local taxonomy:', e);
       return applyLocalTaxonomyToRecords(records);
     }
