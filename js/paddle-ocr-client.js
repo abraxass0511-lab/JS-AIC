@@ -5,8 +5,8 @@
  * - 단문 셀은 rec 직결, 다중 줄 셀은 수평 투영 줄 분할 후 rec 직결하여 페이지당 0.6~1.0초 고속 인식
  */
 
-import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v36';
-import { normalizeFieldText } from './text-normalizer.js?v=20261115_v36';
+import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v37';
+import { normalizeFieldText } from './text-normalizer.js?v=20261115_v37';
 
 const MODEL_CACHE_DB = 'SafePatrolOCRModelCache_v5';
 const MODEL_CACHE_STORE = 'assets';
@@ -284,9 +284,9 @@ export async function recognizeCellWithPaddle(rawCellCanvas, cellKey = '') {
 
   const MAX_LINES_BY_KEY = {
     sub: 1, work: 1, loc: 1, user: 1, round: 1,
-    type: 2, propType: 2, pm: 2, banner: 2, banner2: 2, law: 2, refCheck: 2,
-    content: 3, propText: 3,
-    interview: 4, cm: 4
+    type: 2, propType: 2, pm: 2, banner: 2, banner2: 2, refCheck: 2,
+    content: 4, propText: 4,
+    law: 6, interview: 6, cm: 6
   };
   const maxLines = MAX_LINES_BY_KEY[cellKey] || 4;
   const isBanner = cellKey === 'banner' || cellKey === 'banner2';

@@ -40,6 +40,34 @@
   const C_SUBHEADER_TEXT = '181717';  // [의견], [점검단 제안], [PM 판정결과] 다크 차콜 (#181717)
   const C_ACCENT_BLUE = '0000FF';     // 신규 템플릿 표준 강조 순수 블루 (#0000FF)
 
+  function _getNorm() {
+    return (typeof globalThis !== 'undefined' && globalThis.SafeTextNormalizer)
+      || (typeof window !== 'undefined' && window.SafeTextNormalizer)
+      || null;
+  }
+
+  function _normSpacing(s) {
+    const norm = _getNorm();
+    return norm && typeof norm.normalizeKoreanSpacing === 'function'
+      ? norm.normalizeKoreanSpacing(s)
+      : String(s || '');
+  }
+
+  function _joinWrapped(prev, next) {
+    const norm = _getNorm();
+    if (norm && typeof norm.joinWrappedKoreanLines === 'function') {
+      return norm.joinWrappedKoreanLines(prev, next);
+    }
+    const p = String(prev || '').trim();
+    const n = String(next || '').trim();
+    if (!p) return n;
+    if (!n) return p;
+    if (/^(?:으로|로|에서|에게|에는|도록|하여|하고|하며|했던|하였음|했음|하겠음|정되어|리하겠음)/.test(n)) {
+      return `${p}${n}`;
+    }
+    return `${p} ${n}`.replace(/\s+/g, ' ');
+  }
+
   // 22대 재해발생 형태 표준 목록 (사용자 지정 이미지 2 일치)
   const STANDARD_22_ACCIDENT_TYPES = [
     '추락', '낙하', '비래', '붕괴', '도괴', '전복', '전도',
@@ -68,23 +96,37 @@
   }
 
   function cleanWorkGroup(raw, content = '') {
-    if (!raw) return '거푸집동바리공사';
-    let cleaned = String(raw)
-      .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
-      .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
-      .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    const norm = _getNorm();
+    if (norm && typeof norm.mapToStandardWorkGroup === 'function') {
+      return norm.mapToStandardWorkGroup(raw, content);
+    }
+
+    let cleaned = raw
+      ? String(raw)
+        .replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '')
+        .replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ')
+        .replace(/[^가-힣a-zA-Z0-9·()/\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      : '';
 
     const comb = `${cleaned} ${content}`;
-    if (comb.includes('비계') || /^(?:HA|HE|HEY|BEE)\s*공사$/i.test(cleaned)) return '비계공사';
+    if (/^(?:HA|HE|HEY|BEE)\s*공사$/i.test(cleaned) || comb.includes('비계')) return '비계공사';
+    if (/pl\s*창호|창호\s*\(\s*pl\s*\)|피엘\s*창호|창호.*유리/i.test(comb)) return '창호공사(PL)';
+    if (/al\s*창호|창호\s*\(\s*al\s*\)/i.test(comb)) return '창호공사(AL)';
+    if (/stl\s*창호|창호\s*\(\s*stl\s*\)/i.test(comb)) return '창호공사(STL)';
+    if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기|분전함|분전반|차단기|충전부|누전|가설전선|접지선/i.test(comb)) return '가설전기공사';
+    if (cleaned && cleaned.length >= 2 && cleaned !== '거푸집동바리공사') return cleaned;
+    if (cleaned === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(content)) return '거푸집동바리공사';
+    if (/창호/.test(comb)) return '창호공사(기타)';
+    if (/지게차|하역|운반/.test(comb)) return '양중 및 운반작업';
     if (comb.includes('거푸집') || comb.includes('동바리') || comb.includes('유로폼')) return '거푸집동바리공사';
     if (comb.includes('철근')) return '철근공사';
     if (comb.includes('콘크리트')) return '콘크리트공사';
     if (comb.includes('양중') || comb.includes('크레인')) return '양중작업';
-    if (comb.includes('토공') || comb.includes('흙막이')) return '토공사';
+    if (comb.includes('토공') || comb.includes('흙막이')) return '흙막이/차수공사';
 
-    return cleaned || '비계공사';
+    return cleaned || '안전시설공사';
   }
 
   function healSafetyKoreanLexicon(str) {
@@ -237,10 +279,10 @@
       .replace(/미설치\s*[52등중]\)?/g, '미설치 등)')
       .replace(/(?:—|->|-)\s*4월\s*11일/g, '→ 4월 11일')
       .replace(/\s+(?=→\s*4월\s*11일)/g, '\n')
-      .replace(/([^\n])\s+(?=2\)\s*)/g, '$1\n');
+      .replace(/(?:^|[^\n])\s*(?=[2-9]\)\s*[가-힣A-Za-z])/g, m => (m && m[0] && m[0] !== '\n' && !/\s/.test(m[0]) ? `${m[0]}\n` : '\n'));
 
     const lines = s.split(/\r?\n/)
-      .map(l => l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s:。ㅎ]+$/, '').trim())
+      .map(l => _normSpacing(l.replace(/^[|ㅣ¦_!~\-\s]+/, '').replace(/[|ㅣ¦_!~\-\s:。ㅎ]+$/, '').trim()))
       .filter(l => {
         if (l.length < 3) return false;
         if (/^[—\-_\s]+ee\b/i.test(l)) return false;
@@ -276,12 +318,18 @@
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (let l of rawLines) {
-      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
+      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(l);
+      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
-      items.push(text);
+      if (items.length === 0 || isBulletStart) {
+        items.push(text);
+      } else {
+        items[items.length - 1] = _joinWrapped(items[items.length - 1], text);
+      }
     }
     if (items.length === 0) return '';
-    return items.map(it => `- ${healSafetyKoreanLexicon(it)}`).join('\n');
+    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
   }
 
   function cleanProposalText(raw) {
@@ -302,11 +350,16 @@
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(line);
+      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
-      items.push(cl);
+      if (items.length === 0 || isBulletStart) {
+        items.push(cl);
+      } else {
+        items[items.length - 1] = _joinWrapped(items[items.length - 1], cl);
+      }
     }
-    return items.map(it => `- ${healSafetyKoreanLexicon(it)}`).join('\n');
+    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
   }
 
   function cleanActionPlan(raw) {
@@ -355,10 +408,10 @@
       if (items.length === 0 || isDistinctNewItem) {
         items.push(cl);
       } else {
-        items[items.length - 1] = `${items[items.length - 1]} ${cl}`.replace(/\s+/g, ' ');
+        items[items.length - 1] = _joinWrapped(items[items.length - 1], cl);
       }
     }
-    return items.map(it => `- ${healSafetyKoreanLexicon(it)}`).join('\n');
+    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
   }
 
   /**
@@ -416,10 +469,18 @@
   }
 
   function cleanBannerText(rawBanner, content) {
-    let s = String(rawBanner || '').replace(/\s+/g, ' ').trim();
+    let s = _normSpacing(String(rawBanner || '').replace(/\s+/g, ' ').trim());
     if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(content || '')) {
       return '벽이음용 상부 버팀대 설치각도(60도↓) 불량';
     }
+    const norm = _getNorm();
+    if (norm && typeof norm.extractCoreViolationBanner === 'function') {
+      const condensed = norm.extractCoreViolationBanner(s, content);
+      if (condensed && condensed.length >= 4 && !isGenericTaxonomyLabel(condensed)) {
+        return condensed;
+      }
+    }
+
     s = s
       .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
       .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
@@ -430,13 +491,25 @@
       .replace(/\s+/g, ' ')
       .trim();
 
+    // 결과/우려 꼬리 제거 및 복수 항목('1)...2)...') 핵심 위반사항만 추출
+    const cAll = _normSpacing(healSafetyKoreanLexicon(String(content || s).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim()));
+    if (/접지선/.test(cAll) && /고정\s*불량|용량\s*부족/.test(cAll)) return '접지선 볼트 고정 불량 및 용량 부족';
+    if (/지게차/.test(cAll) && /근접/.test(cAll)) return '유도원·근로자 지게차 근접 작업';
+    if (/충전부/.test(cAll) && /노출/.test(cAll)) return '분전함 차단기 충전부 노출';
+
+    if (/[2-9]\)|발생\s*시|충돌\s*우려|감전\s*우려|대지로\s*방전/.test(s)) {
+      s = s.split(/(?=[2-9]\)\s*[가-힣A-Za-z])/)[0]
+        .replace(/(?:으로|로)\s*(?:인해|인한)?\s*(?:누설전류|감전|추락|붕괴|충돌|협착|대지로)[\s\S]*$/g, '')
+        .replace(/\s*(?:충돌|추락|감전)\s*우려[\s\S]*$/g, '')
+        .trim();
+    }
+
     // 말줄임표(...) 절단 복원
     if ((s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5) && content) {
-      const c = healSafetyKoreanLexicon(String(content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
-      if (/Gang\s*Form|갱폼|선해체/i.test(c)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
-      if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-      if (/밑둥잡이|워킹타워/i.test(c)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
-      if (/버팀대|설치각도/.test(c)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+      if (/Gang\s*Form|갱폼|선해체/i.test(cAll)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+      if (/동바리|AL\s*Form|알폼/i.test(cAll) && /해체|미복구/.test(cAll)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+      if (/밑둥잡이|워킹타워/i.test(cAll)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
+      if (/버팀대|설치각도/.test(cAll)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
     }
 
     s = s.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
@@ -459,18 +532,11 @@
     if (!text) return '';
     const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     return lines.map(line => {
-      let indent = '0';
-      if (/^[-*•·▪]\s+/.test(line)) {
-        indent = '0.95em';
-      } else if (/^\d{1,2}\)\s*/.test(line)) {
-        indent = '1.45em';
-      } else if (/^→\s*/.test(line)) {
-        indent = '1.35em';
+      const m = line.match(/^([-*•·▪]\s+|\d{1,2}\)\s*|→\s*)(.+)$/);
+      if (m) {
+        return `<div style="display:flex;align-items:flex-start;margin:0;"><span style="flex:0 0 auto;white-space:pre;">${m[1]}</span><span style="flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:break-word;">${m[2]}</span></div>`;
       }
-      if (indent !== '0') {
-        return `<div style="padding-left: ${indent}; text-indent: -${indent}; margin: 0;">${line}</div>`;
-      }
-      return `<div style="margin: 0;">${line}</div>`;
+      return `<div style="margin:0;word-break:keep-all;overflow-wrap:break-word;">${line}</div>`;
     }).join('');
   }
 
@@ -483,6 +549,25 @@
       if (cleanedBanner && !isGenericTaxonomyLabel(cleanedBanner)) return cleanedBanner;
     }
     const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
+
+    const norm = _getNorm();
+    if (norm && typeof norm.extractCoreViolationBanner === 'function' && r.content && String(r.content).trim().length >= 5) {
+      const core = norm.extractCoreViolationBanner(r.photoBanner || '', r.content);
+      if (core && core.length >= 4 && !isGenericTaxonomyLabel(core) && !/미확인|전경/.test(core)) {
+        return core;
+      }
+    }
+
+    // 0-A. 지게차 근접 작업 / 접지선 / 충전부 노출 등 핵심 위반사항 우선 정밀 요약
+    if (/접지선/.test(text) && (/고정\s*불량|용량\s*부족/.test(text) || /볼트/.test(text))) {
+      return '접지선 볼트 고정 불량 및 용량 부족';
+    }
+    if (/지게차/.test(text) && /근접/.test(text)) {
+      return '유도원·근로자 지게차 근접 작업';
+    }
+    if (/충전부/.test(text) && /노출/.test(text)) {
+      return '분전함 차단기 충전부 노출';
+    }
 
     // 0. Gang Form / 갱폼 및 선해체 방지커버
     if (/Gang\s*Form|선해체|갱폼/i.test(text)) {
@@ -661,6 +746,7 @@
       .map(l => l.trim())
       .filter(Boolean);
     if (!lines.length) return [];
+    const actualIndent = indentPt === 8.5 ? Math.max(8.5, Math.round(fontSize * 0.78 * 10) / 10) : indentPt;
     return lines.map((line, idx) => {
       const m = line.match(/^[-•·∙]\s*(.+)$/);
       const isLast = idx === lines.length - 1;
@@ -671,7 +757,7 @@
             fontFace,
             fontSize,
             color,
-            bullet: { characterCode: '002D', indent: indentPt },
+            bullet: { characterCode: '002D', indent: actualIndent },
             breakLine: !isLast
           }
         };
@@ -708,15 +794,15 @@
         let w = 0;
         for (let i = 0; i < p.length; i++) {
           const code = p.charCodeAt(i);
-          if (code === 32) w += sz * 0.35;
-          else if (code > 127) w += sz * 1.02;
-          else w += sz * 0.60;
+          if (code === 32) w += sz * 0.30;
+          else if (code > 127) w += sz * 0.95;
+          else w += sz * 0.54;
         }
-        // 한국어 맑은고딕 단어 단위 줄바꿈 여유분 16% 반영
-        lines += Math.max(1, Math.ceil((w * 1.16) / availW));
+        // 한국어 맑은고딕 단어 단위 줄바꿈 여유분 7% 반영
+        lines += Math.max(1, Math.ceil((w * 1.07) / availW));
       }
-      // 한국어 맑은고딕 폰트의 실제 행간(1.35배) 정밀 반영
-      const neededH = lines * sz * 1.35 * lineSpacing;
+      // 한국어 맑은고딕 폰트의 실제 행간(1.24배) 반영
+      const neededH = lines * sz * 1.24 * lineSpacing;
       if (neededH <= availH) return sz;
       sz -= 0.5;
     }
@@ -840,7 +926,13 @@
         lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
       }
     }
-    let lawTitle = (r.rawLaw ? r.rawLaw : simplifyLawTitle(rawLawTitle, text)).trim();
+    let rawLawMerged = String(r.rawLaw || '').trim();
+    if (!lawBody && rawLawMerged.includes('\n')) {
+      const rlLines = rawLawMerged.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      rawLawMerged = rlLines[0] || '';
+      lawBody = rlLines.slice(1).join('\n').trim();
+    }
+    let lawTitle = (rawLawMerged ? rawLawMerged : simplifyLawTitle(rawLawTitle, text)).trim();
     if (/^[0-9I=;:\s]+/.test(lawTitle) && (/of\s*xi/i.test(lawTitle) || /업적/i.test(lawTitle) || lawTitle.length < 15)) {
       if (lawBody && /(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙)/.test(lawBody)) {
         const bodyLines = lawBody.split(/\r?\n/);
@@ -848,9 +940,14 @@
         lawBody = bodyLines.slice(1).join('\n').trim();
       }
     }
-    // 관련 기준 제목 보정 (비계 vs 거푸집동바리 vs 산안법 명확히 분기 - 절대 일반 '안전작업' 단어만 보고 비계로 하드코딩 금지)
+    // 관련 기준 제목 보정 (비계 vs 거푸집동바리 vs 지게차 vs 산안법 명확히 분기)
     const combinedContext = `${lawTitle} ${lawBody} ${text}`;
-    if (/(?:거푸집|동바리|갱폼|유로폼|알폼|AL\s*Form|서포트)/i.test(combinedContext)) {
+    if (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?|지게차\s*작업지침)/i.test(combinedContext) || (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /지게차/.test(combinedContext)) || (/유도자/.test(lawBody) && /운행경로/.test(lawBody))) {
+      lawTitle = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
+      if (/(?:36|3\.6)?\s*유도자/.test(lawBody) && (/(?:이\s*상비도자|진찾전원|시률입원치|계행명일살)/.test(lawBody) || /36유도자/.test(lawBody))) {
+        lawBody = '3.6 유도자\n3) 지게차 이동 시 유도자는 지게차 운전원의 시야로 확인 가능한 위치에서 장비로부터 5m 이상 안전거리를 확보해야 하고 장비의 전도·전락 및 근로자와의 충돌, 협착을 방지하기 위해 계획된 운행경로를 따라 이동하도록 유도하며 운행경로에 접근하는 관리자, 근로자 등 모든 인원의 출입을 통제해야 할 권한 및 책임이 있다.';
+      }
+    } else if (/(?:거푸집|동바리|갱폼|유로폼|알폼|AL\s*Form|서포트)/i.test(combinedContext)) {
       if (/현장\s*제작|대형\s*거푸집/.test(combinedContext)) {
         lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
       } else if (/IZSW|거푸집동바리\s*작업|동바리\s*작업/i.test(combinedContext)) {
@@ -872,24 +969,49 @@
     } else if (/현장\s*제작\s*대형\s*거푸집/.test(lawTitle)) {
       lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
     }
-    lawBody = String(lawBody || '')
-      .replace(/^\.?28\s*작업발판\s*일반사항/gm, '7.2.8 작업발판 일반사항')
-      .replace(/6\.3\.2\s*자업[^\n]*?(?=1\)|\n|$)/g, '6.3.2 작업 중 점검\n')
-      .replace(/6\.3\.1\s*(?:자업|작업)\s*전\s*점검\s*(?=\d+\))/g, '6.3.1 작업 전 점검\n')
-      .replace(/^(?:7\.1|1|\.1)\s*비계\s*조립기준\s*(?=\d|$)/gm, '7.1 비계 조립기준\n')
-      .replace(/7\.1\s*비계\s*조립기준\s*(?=\d+\))/g, '7.1 비계 조립기준\n')
-      .replace(/7\.2\.8\s*작업발판\s*일반사항\s*(?=\d+\))/g, '7.2.8 작업발판 일반사항\n')
-      .replace(/(?:^|\n)\s*9[)|ㅣ]?\s*(?=벽이음의\s*설치위치는)/g, '\n9) ')
-      .replace(/\s*10[)|ㅣ]\s*(?=비계\s*설치\s*계획)/g, '\n10) ')
-      .replace(/FEE\s*Joint/gi, '유로폼 Joint')
-      .replace(/전용철물을사용해/g, '전용철물을 사용해')
-      .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
-      .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
-      .replace(/(?:=\s*)?(?:\b[a-zA-Z]{1,3}\s+){2,}[a-zA-Z]{1,4}\s*$/gm, '')
-      .replace(/[=—\-_\s]+ee[\s\S]*$/gi, '')
-      .replace(/\s*\*\s+/g, '\n* ')
-      .replace(/\n{2,}/g, '\n')
-      .trim();
+    lawTitle = _normSpacing(lawTitle);
+
+    if (/6\.3\.2\s*작업\s*중\s*점검/.test(lawBody) && /적격성.*전기설비/.test(lawBody)) {
+      lawBody = '6.3.2 작업 중 점검\n2) 시공관리자는 적격성을 갖춘 자를 지정하여 전기설비, 기계, 기구, 공도구 등에 대해 정기적으로 점검하도록 한다.';
+    } else {
+      const preCleanedLawBody = String(lawBody || '')
+        .replace(/^\.?28\s*작업발판\s*일반사항/gm, '7.2.8 작업발판 일반사항')
+        .replace(/6\.3\.2\s*(?:자업|작업)\s*중\s*점검[^\n]*?(?=1\)|2\)|\n|$)/g, '6.3.2 작업 중 점검\n')
+        .replace(/6\.3\.1\s*(?:자업|작업)\s*전\s*점검\s*(?=\d+\))/g, '6.3.1 작업 전 점검\n')
+        .replace(/^(?:7\.1|1|\.1)\s*비계\s*조립기준\s*(?=\d|$)/gm, '7.1 비계 조립기준\n')
+        .replace(/7\.1\s*비계\s*조립기준\s*(?=\d+\))/g, '7.1 비계 조립기준\n')
+        .replace(/7\.2\.8\s*작업발판\s*일반사항\s*(?=\d+\))/g, '7.2.8 작업발판 일반사항\n')
+        .replace(/(?:^|\n)\s*9[)|ㅣ]?\s*(?=벽이음의\s*설치위치는)/g, '\n9) ')
+        .replace(/\s*10[)|ㅣ]\s*(?=비계\s*설치\s*계획)/g, '\n10) ')
+        .replace(/FEE\s*Joint/gi, '유로폼 Joint')
+        .replace(/전용철물을사용해/g, '전용철물을 사용해')
+        .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하/g, '30cm 이하')
+        .replace(/5560\s*[ㅁm7]+|5500\b|55em\b/gi, '55cm')
+        .replace(/\.([a-zA-Z]{1,2})\s*$/gm, '.')
+        .replace(/([다요음함됨임]\.?)\s*[a-zA-Z|~—_]{1,3}(?=\s*$|\r?\n)/gm, '$1')
+        .replace(/(?:=\s*)?(?:\b[a-zA-Z]{1,3}\s+){2,}[a-zA-Z]{1,4}\s*$/gm, '')
+        .replace(/[=—\-_\s]+ee[\s\S]*$/gi, '')
+        .replace(/\s*\*\s+/g, '\n* ')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
+
+      const lawBodyLines = [];
+      for (const rawLine of preCleanedLawBody.split(/\r?\n/)) {
+        const cl = rawLine.replace(/\.([a-zA-Z]{1,2})\s*$/, '.').trim();
+        if (!cl) continue;
+        const prev = lawBodyLines.length > 0 ? lawBodyLines[lawBodyLines.length - 1] : '';
+        const prevIsHeading = Boolean(prev) && !/^\d+\)/.test(prev) && (
+          /^\d+\.\d+/.test(prev) ||
+          (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자)$/.test(prev))
+        );
+        if (lawBodyLines.length > 0 && !/^(\*|\d+\)|\d+\.\d+|•|-)/.test(cl) && !prevIsHeading) {
+          lawBodyLines[lawBodyLines.length - 1] = _joinWrapped(lawBodyLines[lawBodyLines.length - 1], cl);
+        } else {
+          lawBodyLines.push(cl);
+        }
+      }
+      lawBody = lawBodyLines.map(l => _normSpacing(l)).join('\n').trim();
+    }
 
     // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
     const hasGuideline = Boolean(r.hasGuideline || (options && options.showGuideline));
@@ -1160,11 +1282,11 @@
       x: 4.8865, y: 0.4800, w: 5.5644, h: 0.6495,
       fill: { color: C_STD_CONTENT_BG }, line: { color: C_STD_CONTENT_BG, width: 0 }
     });
-    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 11, 6.8, 1.08, [2, 5, 2, 5]);
+    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 14, 6.5, 1.03, [1, 4, 1, 4]);
     slide.addText(data.lawBody, {
       x: 4.8865, y: 0.4800, w: 5.5644, h: 0.6495,
       fontFace: FONT_MALGUN, fontSize: lawBodyFontSize, color: '111111',
-      align: 'left', valign: 'top', margin: [2, 5, 2, 5], lineSpacingMultiple: 1.08
+      align: 'left', valign: 'middle', margin: [1, 4, 1, 4], lineSpacingMultiple: 1.03
     });
 
     // 5) 4대 발생요인 (TABLE #2: x = 10.6557, y = 0.1257, w = 2.5748, h = 1.0455)
@@ -1828,7 +1950,7 @@
     const glowTextShadow = '0 0 4px rgba(0,0,0,0.85), -0.5px -0.5px 1.5px rgba(0,0,0,0.85), 0.5px 0.5px 1.5px rgba(0,0,0,0.85)';
 
     const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.5644, 16, 9.5);
-    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 11, 6.8, 1.08, [1, 4, 1, 4]);
+    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 14, 6.5, 1.03, [1, 4, 1, 4]);
 
     const metaCols = [
       { label: '협력사 : ', val: data.subcontractor, x: 0.9375, w: 2.3333 },
@@ -1907,7 +2029,7 @@
         </div>
 
         <!-- 4-2. 관련기준 본문 (연청색 #dae3f3 음영 박스, 넘침 방지 동적 폰트 및 내어쓰기 적용) -->
-        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.4800)}; width: ${pctW(5.5644)}; height: ${pctH(0.6495)}; background: #dae3f3; padding: 0.2cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: flex-start; overflow: hidden;">
+        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.4800)}; width: ${pctW(5.5644)}; height: ${pctH(0.6495)}; background: #dae3f3; padding: 0.2cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: center; overflow: hidden;">
           <div style="width: 100%; font-size: ${pt(lawBodyFontSize)}; color: #111111; line-height: 1.15; word-break: keep-all;">${renderHangingLinesHTML(data.lawBody)}</div>
         </div>
 

@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261115_v36';
-import './text-normalizer.js?v=20261115_v36';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261115_v37';
+import './text-normalizer.js?v=20261115_v37';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -5007,12 +5007,12 @@ function renderImportedCards() {
 // 9×9 핵심 작업방법(9종) 추론 함수 (절대 '안전점검' 등 비표준 값 배제)
 function inferWorkMethod(text) {
   const t = String(text || '');
+  if (t.includes('하역') || t.includes('운반') || t.includes('상차') || t.includes('하차') || t.includes('지게차')) return '하역운반작업';
   if (t.includes('양중') || t.includes('크레인') || t.includes('슬링') || t.includes('샤클') || t.includes('인양') || t.includes('호이스트') || t.includes('유도로프')) return '양중작업';
-  if (t.includes('동바리') || t.includes('멍에') || t.includes('거푸집') || t.includes('서포트') || t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
-  if (t.includes('비계') || t.includes('발판') || t.includes('고소') || t.includes('난간') || t.includes('개구부') || t.includes('추락') || t.includes('사다리') || t.includes('단부') || t.includes('달비계')) return '고소작업';
   if (t.includes('굴착') || t.includes('터파기') || t.includes('흙막이') || t.includes('사면')) return '굴착작업';
   if (t.includes('해체') || t.includes('철거')) return '해체작업';
-  if (t.includes('하역') || t.includes('운반') || t.includes('상차') || t.includes('하차') || t.includes('지게차')) return '하역운반작업';
+  if (t.includes('동바리') || t.includes('멍에') || t.includes('거푸집') || t.includes('서포트') || t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
+  if (t.includes('비계') || t.includes('발판') || t.includes('고소') || t.includes('난간') || t.includes('개구부') || t.includes('추락') || t.includes('사다리') || t.includes('단부') || t.includes('달비계')) return '고소작업';
   if (t.includes('중량물') || t.includes('인력운반')) return '중량물취급작업';
   if (t.includes('밀폐') || t.includes('산소') || t.includes('질식') || t.includes('유해가스') || t.includes('맨홀') || t.includes('탱크')) return '밀폐공간작업';
   if (t.includes('협소') || t.includes('피트') || t.includes('덕트')) return '협소공간작업';
@@ -5206,7 +5206,9 @@ async function handleSaveImportedRecords() {
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
       const stakeholder = rec.stakeholder || (m9 && m9.관리책임주체) || '시공담당';
 
-      const workMethod = rec.workMethod || rec.workName || inferWorkMethod(rec.content);
+      const workMethod = window.SafeExcel?.resolveWorkMethod
+        ? window.SafeExcel.resolveWorkMethod(rec)
+        : (rec.workMethod || rec.workName || inferWorkMethod(rec.content));
       const mgmtCauses = (rec.mgmtCauses && rec.mgmtCauses.length > 0) ? rec.mgmtCauses : ['계획 미이행', '불안전 상태'];
       const condition = (rec.condition && !['계획 미이행', '불안전 상태'].includes(rec.condition))
         ? rec.condition
