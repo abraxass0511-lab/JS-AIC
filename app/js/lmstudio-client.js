@@ -1051,7 +1051,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!forceLocal && workerUrl && Date.now() >= _cfQuotaCooldownUntil) {
       try {
         const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 60000);
+        const timeout = setTimeout(() => ctrl.abort(), 8000);
         const rawLen = rawOcrText ? String(rawOcrText).trim().length : 0;
         const contentLen = fallbackRecord.content ? String(fallbackRecord.content).trim().length : 0;
         const hasSufficientOcr = (rawLen >= 40 || contentLen >= 10);
@@ -1084,16 +1084,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const cfData = await cfRes.json();
           if (cfData) {
             if (cfData.quotaExceeded) {
-              fallbackRecord._aiQuotaExceeded = true;
-              _cfQuotaCooldownUntil = Date.now() + 3 * 60 * 1000;
+              _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
             }
             if (Array.isArray(cfData.aiErrors) && cfData.aiErrors.length > 0) fallbackRecord._aiErrors = cfData.aiErrors;
             const cfContent = cfData.cleanedFields && typeof cfData.cleanedFields.content === 'string'
               ? cfData.cleanedFields.content.trim()
               : '';
-            const isRealAiSource = !!(cfData.source && !String(cfData.source).includes('rule_engine'));
+            const isRealAiSource = !!(cfData.source && !String(cfData.source).includes('rule') && !cfData.quotaExceeded);
             const hasCallerText = String(rawOcrText || fallbackRecord.content || '').trim().length >= 4;
-            const hasRealAiResult = !cfData.needsClientOcr && (isRealAiSource || cfContent.length >= 4 || (hasCallerText && !!cfData.agentMajor));
+            const hasRealAiResult = !cfData.needsClientOcr && isRealAiSource && (cfContent.length >= 4 || (hasCallerText && !!cfData.agentMajor));
             if (hasRealAiResult) {
               fallbackRecord._aiCleaned = true;
               if (cfData.agentMajor) fallbackRecord.agentMajor = cfData.agentMajor;
@@ -1237,12 +1236,60 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return cleaned;
   }
 
+  function applyLocalTaxonomyToRecords(records = []) {
+    if (!Array.isArray(records)) return records;
+    records.forEach((rec) => {
+      if (!rec) return;
+      const fullCtx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''}`;
+      const r = quickRuleAnalysis(fullCtx);
+      const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
+      if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
+        rec.workGroup = cleanWorkGroup(rawWorkFromSheet, rec.content);
+      } else if (!rec.workGroup || rec.workGroup === '거푸집동바리공사') {
+        rec.workGroup = cleanWorkGroup(r.workGroup || rec.workGroup, rec.content);
+      }
+      if (!rec.workMethod && r.workMethod) rec.workMethod = r.workMethod;
+      if (rec.workMethod) rec.workName = rec.workMethod;
+      if (r.agentMajor && (!rec.agentMajor || (rec.agentMid === '거푸집/동바리' && !/거푸집|동바리|유로폼|서포트/.test(fullCtx)))) {
+        rec.agentMajor = r.agentMajor;
+        rec.agentMid = r.agentMid;
+        rec.agentMinor = r.agentMinor;
+        rec.kind = r.agentMajor;
+        rec.item = r.agentMid;
+        rec.agent = r.agentMinor;
+        rec.matrixArea = r.agentMajor;
+        rec.matrixTarget = r.agentMid;
+        rec.matrixSpec = r.agentMinor;
+      }
+      if ((!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(fullCtx))) && r.type) {
+        rec.type = r.type;
+      }
+      const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
+      if (!rawBannerFromSheet && (!rec.photoBanner || rec.photoBanner.replace(/\s+/g, '') === (rec.content || '').replace(/\s+/g, ''))) {
+        rec.photoBanner = summarizeContentToBanner(rec.content) || r.photoBanner;
+      }
+      if (!rec.condition || rec.condition === '해당없음') rec.condition = r.condition || rec.condition;
+      if (!rec.action || rec.action === '해당없음') rec.action = r.action || rec.action;
+      if (!rec.rootCauseMgmt && r.rootCauseMgmt) rec.rootCauseMgmt = r.rootCauseMgmt;
+      if (!rec.rootCauseSystem && r.rootCauseSystem) rec.rootCauseSystem = r.rootCauseSystem;
+      if (!rec.stakeholder && r.stakeholder) rec.stakeholder = r.stakeholder;
+      if (!rec.law && r.law) rec.law = r.law;
+      rec._aiCleaned = true;
+    });
+    return records;
+  }
+
   /**
    * [v2.0 신규] 다건 묶음(Multi-Page Batch) 표준 분류 및 핀포인트 오타 패치 (최대 8~10페이지 당 1회 호출)
    * - PaddleOCR v5가 추출한 원문은 그대로 보존하면서, 건설안전 9x9 분류표 매핑과 typoPatches만 일괄 수신
    */
   async function classifyBatchRecords(records = []) {
     if (!Array.isArray(records) || records.length === 0) return records;
+    const forceLocal = storage.getItem('sp_ai_provider') === 'local';
+    if (forceLocal || Date.now() < _cfQuotaCooldownUntil) {
+      return applyLocalTaxonomyToRecords(records);
+    }
+
     const items = records.map((rec, idx) => ({
       pageIndex: rec.pageNumber || rec.slideNumber || (idx + 1),
       severityHint: rec.severity || '중부적합',
@@ -1267,7 +1314,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 18000);
+      const timer = setTimeout(() => ctrl.abort(), 6500);
       const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1275,60 +1322,67 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         signal: ctrl.signal
       });
       clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data?.results)) {
-          const mapByPage = new Map();
-          for (const r of data.results) {
-            if (r && r.pageIndex !== undefined) mapByPage.set(Number(r.pageIndex), r);
-          }
-          records.forEach((rec, idx) => {
-            const pKey = Number(rec.pageNumber || rec.slideNumber || (idx + 1));
-            const aiItem = mapByPage.get(pKey) || data.results[idx];
-            if (!aiItem) return;
-            const taxFields = [
-              'workMethod', 'agentMajor', 'agentMid', 'agentMinor',
-              'hazardType', 'condition', 'action',
-              'rootCauseMgmt', 'rootCauseSystem', 'stakeholder'
-            ];
-            for (const f of taxFields) {
-              if (aiItem[f]) rec[f] = aiItem[f];
-            }
-            // 장표 원문에 공종명이 없었거나 기본값('거푸집동바리공사')으로 잘못 들어간 경우 AI 공종 반영
-            const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
-            if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
-              rec.workGroup = rawWorkFromSheet;
-            } else if (aiItem.workGroup && (!rec.workGroup || rec.workGroup === '거푸집동바리공사')) {
-              rec.workGroup = aiItem.workGroup;
-            }
-            if (aiItem.workMethod) rec.workName = aiItem.workMethod;
-            if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; }
-            if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; }
-            if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; }
-            if (aiItem.hazardType && (!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(`${rec._rawCellTexts?.type || ''} ${rec.content || ''}`)))) {
-              rec.type = String(aiItem.hazardType).split('·')[0];
-            }
-            const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
-            if (!rawBannerFromSheet) {
-              if (aiItem.photoBanner && aiItem.photoBanner.trim() && aiItem.photoBanner.trim() !== (rec.content || '').trim()) {
-                rec.photoBanner = aiItem.photoBanner.trim();
-              } else {
-                rec.photoBanner = summarizeContentToBanner(rec.content);
-              }
-            }
-            if (aiItem.law && !rec.law) rec.law = aiItem.law;
-            if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
-              window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
-            }
-            rec._aiCleaned = true;
-            rec._aiQuotaExceeded = !!data.quotaExceeded;
-          });
+      if (!res.ok) {
+        _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+        return applyLocalTaxonomyToRecords(records);
+      }
+      const data = await res.json();
+      if (data?.quotaExceeded || String(data?.source || '').includes('rule')) {
+        _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+        return applyLocalTaxonomyToRecords(records);
+      }
+      if (Array.isArray(data?.results)) {
+        const mapByPage = new Map();
+        for (const r of data.results) {
+          if (r && r.pageIndex !== undefined) mapByPage.set(Number(r.pageIndex), r);
         }
+        records.forEach((rec, idx) => {
+          const pKey = Number(rec.pageNumber || rec.slideNumber || (idx + 1));
+          const aiItem = mapByPage.get(pKey) || data.results[idx];
+          if (!aiItem) return;
+          const taxFields = [
+            'workMethod', 'agentMajor', 'agentMid', 'agentMinor',
+            'hazardType', 'condition', 'action',
+            'rootCauseMgmt', 'rootCauseSystem', 'stakeholder'
+          ];
+          for (const f of taxFields) {
+            if (aiItem[f]) rec[f] = aiItem[f];
+          }
+          // 장표 원문에 공종명이 없었거나 기본값('거푸집동바리공사')으로 잘못 들어간 경우 AI 공종 반영
+          const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
+          if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
+            rec.workGroup = rawWorkFromSheet;
+          } else if (aiItem.workGroup && (!rec.workGroup || rec.workGroup === '거푸집동바리공사')) {
+            rec.workGroup = aiItem.workGroup;
+          }
+          if (aiItem.workMethod) rec.workName = aiItem.workMethod;
+          if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; }
+          if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; }
+          if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; }
+          if (aiItem.hazardType && (!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(`${rec._rawCellTexts?.type || ''} ${rec.content || ''}`)))) {
+            rec.type = String(aiItem.hazardType).split('·')[0];
+          }
+          const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
+          if (!rawBannerFromSheet) {
+            if (aiItem.photoBanner && aiItem.photoBanner.trim() && aiItem.photoBanner.trim() !== (rec.content || '').trim()) {
+              rec.photoBanner = aiItem.photoBanner.trim();
+            } else {
+              rec.photoBanner = summarizeContentToBanner(rec.content);
+            }
+          }
+          if (aiItem.law && !rec.law) rec.law = aiItem.law;
+          if (aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
+            window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
+          }
+          rec._aiCleaned = true;
+        });
       }
     } catch (e) {
+      _cfQuotaCooldownUntil = Date.now() + 5 * 60 * 1000;
       console.warn('[SafePatrol] classifyBatchRecords fallback to local taxonomy:', e);
+      return applyLocalTaxonomyToRecords(records);
     }
-    return records;
+    return applyLocalTaxonomyToRecords(records);
   }
 
   /**

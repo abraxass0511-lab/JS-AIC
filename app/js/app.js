@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261114_v35';
-import './text-normalizer.js?v=20261114_v35';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner } from './pptx-importer-v2.js?v=20261115_v36';
+import './text-normalizer.js?v=20261115_v36';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4810,11 +4810,6 @@ async function handlePptxImportChange(e) {
   if (importedRecords.length > 0) {
     const skipMsg = totalSkippedPages > 0 ? ` (일반 글씨 ${totalSkippedPages}장 생략)` : '';
     toast(`총 ${importedRecords.length}건의 점검장표 사진·내용을 추출했습니다!${skipMsg}`, 'success', 3500);
-    if (importedRecords.some(r => r._aiQuotaExceeded)) {
-      setTimeout(() => {
-        toast('Cloudflare AI 일일 무료 한도 소진으로 로컬 OCR/분류 모드로 자동 전환해 추출했습니다.', 'warning', 5500);
-      }, 450);
-    }
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'block';
     if ($('#importCount')) $('#importCount').textContent = importedRecords.length;
     renderImportedCards();
@@ -4889,11 +4884,14 @@ function renderImportedCards() {
 
     const causesStr = (rec.mgmtCauses && rec.mgmtCauses.length) ? rec.mgmtCauses.join(', ') : '-';
 
+    const resolvedPreviewAgent = window.SafeExcel?.resolveAgentHierarchy
+      ? window.SafeExcel.resolveAgentHierarchy(rec)
+      : null;
     const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
     const isSpecialForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
-    const displayMajor = rec.agentMajor || '가시설';
-    const displayMid = isAlForm ? '특수거푸집' : (rec.agentMid || (isSpecialForm ? '특수거푸집' : '거푸집/동바리'));
-    const displayMinor = isAlForm ? '알폼' : (rec.agentMinor || (isSpecialForm ? '갱폼' : ''));
+    const displayMajor = rec.agentMajor || (resolvedPreviewAgent && resolvedPreviewAgent.major) || '가시설';
+    const displayMid = isAlForm ? '특수거푸집' : (rec.agentMid || (resolvedPreviewAgent && resolvedPreviewAgent.mid) || (isSpecialForm ? '특수거푸집' : '안전시설'));
+    const displayMinor = isAlForm ? '알폼' : (rec.agentMinor || (resolvedPreviewAgent && resolvedPreviewAgent.minor) || (isSpecialForm ? '갱폼' : ''));
     const contentLow = rec.lowConfidenceFields?.includes('content');
     const contentConfPct = rec.cellConfidences?.content ? Math.round(rec.cellConfidences.content.confidence * 100) : 99;
 
@@ -5183,12 +5181,12 @@ async function handleSaveImportedRecords() {
   btn.textContent = `저장 중 (0/${importedRecords.length})...`;
 
   try {
-    // 현장 등록 확인
+    // 현장 등록 확인 (백그라운드 동기화로 저장 지연 제거)
     let siteObj = store.sites.find(s => s.name === site);
     if (!siteObj) {
       siteObj = { name: site, progress: progressRate + '%', scale: '', amount: '' };
       store.sites.push(siteObj);
-      await store.saveSites(store.sites);
+      store.saveSites(store.sites).catch(() => {});
       renderSites();
     }
 

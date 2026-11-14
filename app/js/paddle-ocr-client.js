@@ -5,8 +5,8 @@
  * - 단문 셀은 rec 직결, 다중 줄 셀은 수평 투영 줄 분할 후 rec 직결하여 페이지당 0.6~1.0초 고속 인식
  */
 
-import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261114_v35';
-import { normalizeFieldText } from './text-normalizer.js?v=20261114_v35';
+import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v36';
+import { normalizeFieldText } from './text-normalizer.js?v=20261115_v36';
 
 const MODEL_CACHE_DB = 'SafePatrolOCRModelCache_v5';
 const MODEL_CACHE_STORE = 'assets';
@@ -191,7 +191,7 @@ export async function recognizeSingleLineCanvas(lineCanvas) {
 
   const targetH = 48;
   const scale = targetH / h;
-  const targetW = Math.max(32, Math.round(w * scale));
+  const targetW = Math.min(840, Math.max(32, Math.round(w * scale)));
   const padX = 8;
   const totalW = targetW + padX * 2;
 
@@ -279,14 +279,21 @@ export async function recognizeSingleLineCanvas(lineCanvas) {
  */
 export async function recognizeCellWithPaddle(rawCellCanvas, cellKey = '') {
   if (!rawCellCanvas || rawCellCanvas.width < 4 || rawCellCanvas.height < 4) {
-    return { text: '', rawText: '', confidence: 1.0, minCharConfidence: 1.0, needsVisionRetry: false, lowConfidence: false };
+    return { text: '', rawText: '', lineCount: 0, confidence: 1.0, minCharConfidence: 1.0, needsVisionRetry: false, lowConfidence: false };
   }
 
+  const MAX_LINES_BY_KEY = {
+    sub: 1, work: 1, loc: 1, user: 1, round: 1,
+    type: 2, propType: 2, pm: 2, banner: 2, banner2: 2, law: 2, refCheck: 2,
+    content: 3, propText: 3,
+    interview: 4, cm: 4
+  };
+  const maxLines = MAX_LINES_BY_KEY[cellKey] || 4;
   const isBanner = cellKey === 'banner' || cellKey === 'banner2';
   const cleanCanvas = preprocessCellCanvas(rawCellCanvas, isBanner ? 0 : 2, 8, { cellKey, isBanner });
 
   const isSingleLine = SINGLE_LINE_KEYS.has(cellKey);
-  const lineCanvases = splitCanvasIntoLineCanvases(cleanCanvas, { isBanner });
+  const lineCanvases = splitCanvasIntoLineCanvases(cleanCanvas, { isBanner, maxLines });
 
   const lineTexts = [];
   const lineConfs = [];
@@ -310,6 +317,7 @@ export async function recognizeCellWithPaddle(rawCellCanvas, cellKey = '') {
   return {
     text: normalized,
     rawText: rawJoined,
+    lineCount: lineTexts.length,
     confidence: Number(avgConf.toFixed(4)),
     minCharConfidence: Number(minCharConf.toFixed(4)),
     needsVisionRetry: Boolean(normalized && (avgConf < 0.80 || minCharConf < 0.58)),
