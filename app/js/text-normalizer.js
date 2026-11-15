@@ -171,6 +171,7 @@ const DOMAIN_TYPO_MAP = [
   [/\(흥로\)/g, '(종로)'],
   [/[적서][검걸걱]단/g, '점검단'],
   [/안[선전]\s*작[업엄]\s*[지시][침심]/g, '안전작업지침'],
+  [/직[계게개]차|지[계개제]차/g, '지게차'],
   [/([다요음함됨임]\.?)\s*[a-zA-Z]{1,3}$/gm, '$1']
 ];
 
@@ -241,10 +242,13 @@ export function normalizeKoreanSpacing(str = '') {
       if (/^[|~—_]+$/.test(tok) || /[a-z]/.test(tok)) return head;
       return full;
     })
-    // 3. 쉼표(,) 및 콜론(:) 뒤 한글이 바로 붙은 경우 공백 삽입
+    // 3. 쉼표(,) 및 콜론(:) 뒤 한글이 바로 붙은 경우 공백 삽입 + 법령 본문 OCR 오타/띄어쓰기 복원
     .replace(/,(?=[가-힣])/g, ', ')
     .replace(/(\d+\)|[①②③④⑤⑥⑦⑧⑨⑩])(?=[가-힣])/g, '$1 ')
     .replace(/([가-힣)])\s*:\s*(?=[가-힣A-Za-z0-9])/g, '$1: ')
+    .replace(/([가-힣]+하기)\.\s*(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
+    .replace(/(되어야|하여야|있어야|없어야|않아야)\s*(하며|하고)(?=[,\s]|$)/g, '$1 $2')
+    .replace(/이상\s*유무(를|의|와|에|도|는|가|만|등)?/g, '이상 유무$1')
     // 4. 조사·어미 뒤 띄어쓰기 누락 및 OCR 분리 어절 복원
     .replace(/(건은|사항은|원인은|대책은|구간은|장소는|경우는|작업은|시공관리자는|점검관리가|유지관리가|철거가|접근이|수평유지가|설치가|조치가|출입을|적격성을|안전거리를|운행경로를|운행경로에|사항으로|과정에서|위치에서|장소로|향후에는|기존에는|현장에서는|부족으로|불량으로|유도하는|점검하는|작업하는|이동하는|설치하는|실수를|예정되어|불충분했던)(?=[가-힣])/g, '$1 ')
     // 5. 주요 부사/관형사/의존명사 띄어쓰기 복원
@@ -756,14 +760,87 @@ export function resolveUnifiedPhotoBanner(record = {}) {
 }
 
 /**
+ * [관련 기준] 세부 본문 OCR 오타·줄바꿈·항번호(①②③) 단일 정규화기
+ */
+export function normalizeSafetyLawBody(lawBody = '') {
+  let body = String(lawBody || '').trim();
+  if (!body) return '';
+
+  for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
+    body = body.replace(pattern, replacement);
+  }
+
+  body = body
+    // OCR 줄바꿈/구두점 노이즈('방지하기.\n위한' -> '방지하기 위한', '시작하기.\n전에' -> '시작하기 전에')
+    .replace(/([가-힣]+하기)\.\s*(?:\r?\n\s*)?(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
+    // 줄 끝에 홀로 남은 원문자('③\n구조물' -> '③ 구조물') 본문과 결합
+    .replace(/([①②③④⑤⑥⑦⑧⑨⑩])\s*\r?\n\s*(?=[가-힣A-Za-z0-9(])/g, '$1 ')
+    // 문장 종결 뒤 붙어 나온 하위 조항 원문자('한다.②', '한다.③') 줄바꿈 분리
+    .replace(/([.!?])\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1\n$2 ')
+    .replace(/(한다|않는다|된다|금지한다)\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1.\n$2 ');
+
+  const rawLines = body
+    .split(/\r?\n/)
+    .map(line => {
+      let l = line.replace(/^[|ㅣ¦!~—_=\[\]]+\s*/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
+      l = normalizeKoreanSpacing(l);
+      l = l.replace(/^([•*·▪])\s*(?=[가-힣A-Za-z0-9])/, '$1 ');
+      return l;
+    })
+    .filter(Boolean);
+
+  const merged = [];
+  for (const cl of rawLines) {
+    const prev = merged.length > 0 ? merged[merged.length - 1] : '';
+    const prevIsHeading = Boolean(prev) && !/^\d+\)/.test(prev) && (
+      (/^\d+\.\d+/.test(prev) && !/[①-⑩]/.test(prev)) ||
+      (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자|분전반)$/.test(prev))
+    );
+    const prevEndsSentence = /(?:다|함|됨|음|요|임)[.!?]$/.test(prev);
+    if (
+      merged.length > 0 &&
+      !/^(?:\*|\d+\)|\d+\.\d+|[①-⑩•\-·▪])/.test(cl) &&
+      !prevIsHeading &&
+      !prevEndsSentence
+    ) {
+      merged[merged.length - 1] = joinWrappedKoreanLines(prev, cl);
+    } else {
+      merged.push(cl);
+    }
+  }
+
+  return merged.map(l => normalizeKoreanSpacing(l)).join('\n').trim();
+}
+
+function resolveNonForkliftFallLawTitle(fallCtx = '', rawTitle = '') {
+  const c = String(fallCtx || '');
+  if (/IZ12B-107\(K\)|107\s*\(?K\)?/i.test(rawTitle)) {
+    return '안전작업지침 [IZ12B-107(K)] 추락/낙하방지시설 작업';
+  }
+  if (/안전대\s*부착|생명줄|안전대(?!\s*작업)/.test(c)) {
+    return '안전보건규칙 제44조(안전대의 부착설비 등)';
+  }
+  if (/동바리|서포트|멍에|거푸집/.test(c)) {
+    return '안전보건규칙 제332조';
+  }
+  if (/말비계|우마/.test(c)) {
+    return '안전보건규칙 제67조, 제13조';
+  }
+  if (/비계|작업발판|안전난간|단부/.test(c)) {
+    return '안전보건규칙 제56조, 제13조';
+  }
+  if (/개구부|덮개/.test(c)) {
+    return '안전보건규칙 제59조';
+  }
+  return '안전보건규칙 제38조';
+}
+
+/**
  * [관련 기준] 제목/본문 OCR 오타·코드·도메인 불일치 단일 정규화 및 방어기
  */
 export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', contextText = '' } = {}) {
-  const ctx = String(contextText || '').trim();
-  const hasForkliftCtx = /지게차|하역|유도원|운행경로|3\.?6\s*유도자/.test(ctx);
-  const isElecCtx = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/.test(ctx) && !hasForkliftCtx;
-  const isFallOrFormCtx = /(?:생명줄|안전대\s*부착|추락|낙하방지|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼|형틀)/.test(ctx) && !hasForkliftCtx;
-
+  const ctxRaw = String(contextText || '').trim();
+  const lawFallbackRaw = String(law || '').trim();
   let title = String(rawLaw || '').trim();
   let body = String(lawBody || '').trim();
 
@@ -771,9 +848,24 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     title = title.replace(pattern, replacement);
     body = body.replace(pattern, replacement);
   }
+  const ctx = ctxRaw.replace(/직[계게개]차|지[계개제]차/g, '지게차');
+  const lawClean = lawFallbackRaw.replace(/직[계게개]차|지[계개제]차/g, '지게차');
+  const isGenericPlaceholderLaw = /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/i.test(lawClean);
+  const specificLawClean = isGenericPlaceholderLaw ? '' : lawClean;
+
+  const ctxHasForklift = /지게차|하역|유도원|운행경로/.test(ctx);
+  const bodyHasForklift = /지게차|운행경로|3\.?6\s*유도자/.test(body);
+  const ctxHasElec = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/.test(ctx);
+  const bodyHasElec = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(body);
+  const ctxHasFallOrForm = /(?:생명줄|안전대\s*부착|안전대|추락|낙하방지|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼|형틀)/.test(ctx);
+  const bodyHasFallOrForm = /(?:생명줄|안전대\s*부착|안전대|추락|낙하방지|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼|형틀)/.test(body);
+
+  const hasForkliftCtx = ctxHasForklift || (!ctxHasElec && !ctxHasFallOrForm && !bodyHasElec && !bodyHasFallOrForm && bodyHasForklift);
+  const isElecCtx = (ctxHasElec || (!ctxHasForklift && bodyHasElec)) && !ctxHasForklift;
+  const isFallOrFormCtx = (ctxHasFallOrForm || (!ctxHasForklift && bodyHasFallOrForm)) && !isElecCtx && !ctxHasForklift;
 
   title = title
-    .replace(/^[|ㅣ¦!~—\-_=\[\]0-9I;:\s]*(?=안전|안선|IZ|1Z|현장|산업|산안|법)/i, '')
+    .replace(/^[|ㅣ¦!~—\-_=\[\]0-9I;:\s]*(?=안전|안선|전사|IZ|1Z|현장|산업|산안|법)/i, '')
     .replace(/(?:안[선전]|\b안\s*[선전])\s*작[업엄]\s*[지시][침심]|안전\s*삭[업엄]\s*[지시][침심]|안전\s*작업\s*시[심침]/g, '안전작업지침')
     .replace(/주탁|추탁|축락|추낙/g, '추락')
     .replace(/닥아|낙아/g, '낙하')
@@ -786,15 +878,19 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     .replace(/\s+/g, ' ')
     .trim();
 
+  if (/^[^\]]*\[(?:지게차|전기\s*작업|비계|거푸집)[^\]]*$/.test(title)) {
+    title = `${title}]`;
+  }
+
   // 도메인 충돌 및 주요 사내 안전작업지침 코드 정규화
   const fullLawCheck = `${title} ${body} ${ctx}`;
   if (isElecCtx) {
     if (/지게차|3\.?6\s*유도자|운행경로|제172조/.test(`${title} ${body}`)) {
-      title = (law && !/172조|지게차/.test(law))
-        ? law
-        : (/충전부|심선|소켓|단자부|피복|절연/.test(ctx)
+      title = (specificLawClean && !/172조|지게차/.test(specificLawClean))
+        ? specificLawClean
+        : (/충전부|심선|소켓|단자부|피복|절연/.test(`${ctx} ${body}`)
           ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
-          : (/접지/.test(ctx)
+          : (/접지/.test(`${ctx} ${body}`)
             ? '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)'
             : '안전보건규칙 제304조(누전차단기에 의한 감전방지)'));
       if (/지게차|유도자|운행경로/.test(body)) body = '';
@@ -804,8 +900,10 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
       title = '안전작업지침 [IZ12B-115(K)] 전기 작업';
     }
   } else if (isFallOrFormCtx && /지게차|3\.?6\s*유도자|운행경로|제172조/.test(`${title} ${body}`)) {
-    title = (law && !/172조|지게차/.test(law)) ? law : '';
     if (/지게차|유도자|운행경로/.test(body)) body = '';
+    title = (specificLawClean && !/172조|지게차/.test(specificLawClean))
+      ? specificLawClean
+      : resolveNonForkliftFallLawTitle(`${body} ${ctx}`, title);
   }
 
   if (/IZ12B-107\(K\)|107\s*\(?K\)?/i.test(title) || (/10[\/7]\s*\(?K\)?/i.test(title) && /추락|낙하|출입금지|안전시설|방지시설/.test(fullLawCheck))) {
@@ -818,24 +916,24 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     title = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
   }
 
-  // 잔여 심각한 OCR 깨짐(해독 불가 비단어) 차단 가드
+  // 잔여 심각한 OCR 깨짐(해독 불가 비단어/닫히지 않은 괄호) 차단 가드
   const hasCorruptTitleTokens = /(?:시심|주탁|닥아|방시시실|방지시실|작입|삭보|식보|업적|of\s*xi|\/\(K\)|\uFFFD)/.test(title) ||
-    /^[0-9I=;:\s]{3,}/.test(title);
-  if ((!title || hasCorruptTitleTokens) && law && !/지게차|172조/.test(law && !hasForkliftCtx ? law : '')) {
-    title = String(law).trim();
+    /^[0-9I=;:\s]{3,}/.test(title) ||
+    (/\[[^\]]*$/.test(title) && !/\[IZ/i.test(title));
+  if (!title || hasCorruptTitleTokens) {
+    if (specificLawClean && !(/지게차|172조/.test(specificLawClean) && !hasForkliftCtx)) {
+      title = specificLawClean;
+    } else if (isFallOrFormCtx) {
+      title = resolveNonForkliftFallLawTitle(`${body} ${ctx}`, title);
+    } else if (isElecCtx) {
+      title = '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+    } else if (lawClean && !(/지게차|172조/.test(lawClean) && !hasForkliftCtx)) {
+      title = lawClean;
+    }
   }
 
   if (body) {
-    body = body
-      .split(/\r?\n/)
-      .map(line => {
-        let l = line.replace(/^[|ㅣ¦!~—_=\[\]]+\s*/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
-        l = normalizeKoreanSpacing(l);
-        l = l.replace(/^([•*·▪])\s*(?=[가-힣A-Za-z0-9])/, '$1 ');
-        return l;
-      })
-      .filter(Boolean)
-      .join('\n');
+    body = normalizeSafetyLawBody(body);
   }
 
   return {
@@ -915,6 +1013,7 @@ if (_globalRoot) {
     stripCircledNumbers,
     normalizePhotoBannerText,
     resolveUnifiedPhotoBanner,
+    normalizeSafetyLawBody,
     normalizeSafetyLawSpec,
     OFFICIAL_WORK_GROUPS,
     mapToStandardWorkGroup,

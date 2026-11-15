@@ -301,7 +301,36 @@ function healSafetyKoreanLexicon(str) {
     .replace(/설치상소/g, '설치장소')
     .replace(/노단색\s*Mos|노란색\s*Mos|노단색/g, '노란색 마킹')
     .replace(/재교\s*육/g, '재교육')
-    .replace(/선\s*해체\s*방지/g, '선해체 방지');
+    .replace(/선\s*해체\s*방지/g, '선해체 방지')
+    // 15. 관련기준 지게차 오타('직게차'/'지계차') 및 법령 본문 OCR 오탈자/띄어쓰기 복원
+    .replace(/직[계게개]차|지[계개제]차/g, '지게차')
+    .replace(/([가-힣]+하기)\.\s*(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
+    .replace(/(되어야|하여야|있어야|없어야|않아야)\s*(하며|하고)(?=[,\s]|$)/g, '$1 $2')
+    .replace(/이상\s*유무(를|의|와|에|도|는|가|만|등)?/g, '이상 유무$1');
+}
+
+function cleanWorkerLawBody(bodyStr = '') {
+  const s = healSafetyKoreanLexicon(String(bodyStr || '').trim())
+    .replace(/([가-힣]+하기)\.\s*(?:\r?\n\s*)?(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
+    .replace(/([①②③④⑤⑥⑦⑧⑨⑩])\s*\r?\n\s*(?=[가-힣A-Za-z0-9(])/g, '$1 ')
+    .replace(/([.!?])\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1\n$2 ')
+    .replace(/(한다|않는다|된다|금지한다)\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1.\n$2 ');
+  const rawLines = s.split(/\r?\n/).map(l => l.replace(/^[|ㅣ¦!~—_=\[\]]+\s*/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const merged = [];
+  for (const cl of rawLines) {
+    const prev = merged.length > 0 ? merged[merged.length - 1] : '';
+    const prevIsHeading = Boolean(prev) && !/^\d+\)/.test(prev) && (
+      (/^\d+\.\d+/.test(prev) && !/[①-⑩]/.test(prev) && prev.length <= 32) ||
+      (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자|분전반)$/.test(prev))
+    );
+    const prevEndsSentence = /(?:다|함|됨|음|요|임)[.!?]$/.test(prev);
+    if (merged.length > 0 && !/^(?:\*|\d+\)|\d+\.\d+|[①-⑩•\-·▪])/.test(cl) && !prevIsHeading && !prevEndsSentence) {
+      merged[merged.length - 1] = `${prev} ${cl}`.replace(/\s+/g, ' ').trim();
+    } else {
+      merged.push(cl);
+    }
+  }
+  return merged.join('\n').trim();
 }
 
 function cleanLocationWorker(loc, content = '') {
@@ -527,7 +556,7 @@ export default {
    - "양중 및 운반작업", "양중작업"은 workGroup으로 절대 금지! 입력 cells.workTypeRaw에 PC공사/거푸집동바리공사 등 유효한 공종이 있으면 부적합 내용에 "양중"이 있어도 반드시 원문 공종(workGroup)을 그대로 유지하고 workMethod만 "양중작업"으로 선택하라.
    - 가설전기 분전반/접지/전등 불량은 절대 "해체작업"이나 "굴착작업"으로 분류하지 말고 "설치조립작업"으로 선택하라.
 2. 사진 상단용 12~24자 핵심 위반 명사구 요약 배너(photoBanner: 자연스러운 한국어 띄어쓰기 명사구, 원문자 번호 ①②③④와 꼬리절 '우려/방전 미흡/2)/말줄임표' 및 괄호 절단 절대 금지, 배너 오타 "노술/노습→노출", "본트→볼트", "다설→타설", "내속→내측", "단부의생명줄→단부의 생명줄" 교정)를 생성할 것.
-3. **[관련 기준] 검증 및 교정 필수**: 입력 cells.lawRaw(지침/법령 제목)와 cells.lawBody(세부 조항)가 부적합 내용(cells.content)과 일치하는지 검증하여 lawMatched(true/false)를 표기하고, 만약 OCR 오탈자("안선작업시심"→"안전작업지침", "IZ12B-10/(K)"→"IZ12B-107(K)", "주탁/닥아방시시실 작입"→"추락/낙하방지시설 작업") 또는 띄어쓰기 오류("안전시설을설치해야"→"안전시설을 설치해야")가 있거나 다른 공종의 지침(예: 전기/추락 작업인데 지게차 지침 등)이면 edits.rawLaw 및 edits.lawBody에 올바르게 교정된 한국어 제목·본문을 반드시 반환할 것!
+3. **[관련 기준] 검증 및 교정 필수**: 입력 cells.lawRaw(지침/법령 제목)와 cells.lawBody(세부 조항)가 부적합 내용(cells.content)과 일치하는지 검증하여 lawMatched(true/false)를 표기하고, 만약 OCR 오탈자("안선작업시심"→"안전작업지침", "직게차"/"지계차"→"지게차", "IZ12B-10/(K)"→"IZ12B-107(K)", "주탁/닥아방시시실 작입"→"추락/낙하방지시설 작업") 또는 띄어쓰기·문장끊김 오류("방지하기. 위한"→"방지하기 위한", "한다.②"→"한다.\n② ", "고려되어야하며"→"고려되어야 하며", "이상유무를"→"이상 유무를")가 있거나 다른 공종의 지침(예: "전사 안전작업지침 [직게차" 제목에 본문이 "7.6 ① 안전대 부착설비로 생명줄..."인 경우 → edits.rawLaw="안전보건규칙 제44조(안전대의 부착설비 등)", 전기 작업인데 지게차 지침 등)이면 edits.rawLaw 및 edits.lawBody에 올바르게 교정된 한국어 제목·본문을 반드시 반환할 것!
 4. content, location, interview, proposalText, countermeasure 중 띄어쓰기·오탈자·말단 영문 노이즈(cb, cYb, ee 등) 교정이 **실제로 필요한 필드만** edits에 담아 반환하고, 변경이 불필요한 필드는 edits에 중복 반환하지 말 것 (의미·숫자·단위·1), 2), - 및 PL/AL/Door/E/V/Gray Area 등 유효 영문·단위 100% 보존). 오탈자 어절 치환은 typoPatches에 {"원문오타단어":"정확한단어"} 형식으로만 작성할 것(예: {"흥로":"종로","노술":"노출"}, 필드명을 키로 쓰지 말 것).
 5. cells.pmVerdict가 '제재/징계' 등으로 이미 명시된 경우 [점검단 제안]으로 덮어쓰지 말 것.
 
@@ -854,8 +883,9 @@ ${TAXONOMY_STANDARD_PROMPT}
 - 여러 항목이 '- '로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우는 공백 하나로 자연스럽게 이어붙일 것
 - [점검단제안_내용]과 [개선대책]에는 판정 라벨('시스템 개선', '교육/코칭', '페널티', '(현장모니터링 강화)', '(근로자 교육)', 'PM 판정결과')을 절대 섞지 말고 오직 조치/제안 본문만 넣을 것
 - 본문 문장에 단순히 '재교육', '교육 실시'가 포함되어 있다고 해서 pmVerdict에 '교육/코칭'을 추가하지 말고, 오직 [점검단제안_판정] 또는 [PM판정결과] 칸에 실제 적힌 분류(예: '시스템 개선')만 그대로 출력할 것
-- 관련기준의 '*' 항목이 3개인 경우 각각 줄바꿈(\\n* )으로 구분할 것
-- 1차 OCR 텍스트에 섞인 자모/단어 오탈자(예: 부적함→부적합, 가관/각관, 잭배이스/잭베이스, 버팀때/버팀대, 벽의음/벽이음, 비계공ㅅ/비계공사)와 셀 테두리/영문 노이즈('HEY', 'ERE', '6/', 'OO', 'R=', 'Naas NS')는 건설안전 문맥에 맞게 완벽히 교정·제거할 것
+- 관련기준의 '*' 항목이 3개인 경우 각각 줄바꿈(\\n* )으로 구분하고, '①②③' 조항은 '한다.\n② ', '한다.\n③ ' 형태로 항목별 줄바꿈하며, '방지하기. 위한'→'방지하기 위한', '고려되어야하며'→'고려되어야 하며', '이상유무를'→'이상 유무를'로 정확히 교정할 것
+- [관련기준] 제목에 '전사 안전작업지침 [직게차' / '지계차' 등 오탈자·미완성 괄호가 있거나 본문('안전대 부착설비로 생명줄...', 비계, 거푸집, 전기작업 등)과 모순되는 지게차 제목이면 실제 본문/위반 내용에 맞는 '안전보건규칙 제44조(안전대의 부착설비 등)' 등 정확한 제목으로 교정할 것
+- 1차 OCR 텍스트에 섞인 자모/단어 오탈자(예: 부적함→부적합, 가관/각관, 잭배이스/잭베이스, 버팀때/버팀대, 벽의음/벽이음, 비계공ㅅ/비계공사, 직게차/지계차→지게차)와 셀 테두리/영문 노이즈('HEY', 'ERE', '6/', 'OO', 'R=', 'Naas NS')는 건설안전 문맥에 맞게 완벽히 교정·제거할 것
 
 JSON 형식:
 {
@@ -1074,10 +1104,13 @@ JSON 형식:
                   .replace(/\s+/g, ' ')
                   .trim();
               }
-              const postCheckCtx = `${combinedCtx} ${parsed.cleanedFields?.hazardType || ''} ${parsed.cleanedFields?.rawLaw || ''}`;
-              const isForkliftPostCtx = /지게차|유도원|유도자|하역/i.test(postCheckCtx) && !/생명줄|안전대/i.test(postCheckCtx);
-              const isElecPostCtx = (isElecCtx || /충전부|소켓|심선|전등|감전/i.test(postCheckCtx)) && !/지게차|하역|유도원|운행경로/i.test(combinedCtx);
-              if (isForkliftPostCtx && !isElecPostCtx) {
+              const postCheckCtx = healSafetyKoreanLexicon(`${combinedCtx} ${parsed.cleanedFields?.hazardType || ''} ${parsed.cleanedFields?.rawLaw || ''} ${parsed.cleanedFields?.lawBody || ''}`);
+              const nonForkliftCtxOnly = healSafetyKoreanLexicon(`${combinedCtx}`);
+              const isForkliftWorkPost = /지게차|유도원|하역|운행경로/i.test(nonForkliftCtxOnly) && !/생명줄|안전대\s*부착|가설전기|충전부|분전반/i.test(nonForkliftCtxOnly);
+              const isElecPostCtx = (isElecCtx || /충전부|소켓|심선|전등|감전|가설전기|분전반|접지선/i.test(postCheckCtx)) && !isForkliftWorkPost;
+              const isFallPostCtx = !isElecPostCtx && !isForkliftWorkPost && /생명줄|안전대\s*부착|안전대|비계|거푸집|동바리|추락/i.test(postCheckCtx);
+              const isForkliftPostCtx = (isForkliftWorkPost || (/지게차|유도자/i.test(postCheckCtx) && !isElecPostCtx && !isFallPostCtx));
+              if (isForkliftPostCtx && !isElecPostCtx && !isFallPostCtx) {
                 parsed.agentMajor = '건설장비';
                 parsed.agentMid = '하역운반장비';
                 parsed.agentMinor = '지게차';
@@ -1085,26 +1118,49 @@ JSON 형식:
                   parsed.law = '안전보건규칙 제172조(접촉의 방지)';
                 }
               }
+              if (parsed.cleanedFields && typeof parsed.cleanedFields.lawBody === 'string') {
+                parsed.cleanedFields.lawBody = cleanWorkerLawBody(parsed.cleanedFields.lawBody);
+              }
               if (isElecPostCtx) {
                 const elecLaw = /충전부|노출|소켓|심선/.test(postCheckCtx)
                   ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
                   : (/접지/.test(postCheckCtx)
                     ? '안전보건규칙 제302조(전기 기계·기구의 접지)'
                     : '안전보건규칙 제304조(누전차단기에 의한 감전방지)');
-                if (!parsed.law || /제172조|지게차/.test(String(parsed.law))) {
+                if (!parsed.law || /제172조|직?[계게개]차|지[계개제]차/.test(String(parsed.law))) {
                   parsed.law = elecLaw;
                 }
                 if (parsed.cleanedFields) {
-                  if (!parsed.cleanedFields.law || /제172조|지게차/.test(String(parsed.cleanedFields.law))) {
+                  if (!parsed.cleanedFields.law || /제172조|직?[계게개]차|지[계개제]차/.test(String(parsed.cleanedFields.law))) {
                     parsed.cleanedFields.law = elecLaw;
                   }
-                  if (typeof parsed.cleanedFields.rawLaw === 'string' && /지게차|3\.?\s*6\s*유도자/.test(parsed.cleanedFields.rawLaw)) {
+                  if (typeof parsed.cleanedFields.rawLaw === 'string' && /직?[계게개]차|지[계개제]차|3\.?\s*6\s*유도자/.test(parsed.cleanedFields.rawLaw)) {
                     parsed.cleanedFields.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
                   }
-                  if (typeof parsed.cleanedFields.lawBody === 'string' && /지게차|유도자|운행경로/.test(parsed.cleanedFields.lawBody)) {
+                  if (typeof parsed.cleanedFields.lawBody === 'string' && /직?[계게개]차|지[계개제]차|유도자|운행경로/.test(parsed.cleanedFields.lawBody)) {
                     parsed.cleanedFields.lawBody = /충전부|노출|소켓|심선/.test(postCheckCtx)
                       ? '7.2.3 충전부 방호 및 전선 절연 조치'
                       : '6.3.2 작업 중 점검: 전기 설비, 기계, 기구, 공도구 정기 점검';
+                  }
+                }
+              } else if (isFallPostCtx) {
+                const fallLaw = /생명줄|안전대/.test(postCheckCtx)
+                  ? '안전보건규칙 제44조(안전대의 부착설비 등)'
+                  : (/동바리|거푸집/.test(postCheckCtx)
+                    ? '안전보건규칙 제332조'
+                    : (/비계|작업발판|안전난간/.test(postCheckCtx) ? '안전보건규칙 제56조, 제13조' : '안전보건규칙 제38조'));
+                if (!parsed.law || /제172조|직?[계게개]차|지[계개제]차/.test(String(parsed.law))) {
+                  parsed.law = fallLaw;
+                }
+                if (parsed.cleanedFields) {
+                  if (!parsed.cleanedFields.law || /제172조|직?[계게개]차|지[계개제]차/.test(String(parsed.cleanedFields.law))) {
+                    parsed.cleanedFields.law = fallLaw;
+                  }
+                  if (typeof parsed.cleanedFields.rawLaw === 'string' && /직?[계게개]차|지[계개제]차|3\.?\s*6\s*유도자|제172조/.test(parsed.cleanedFields.rawLaw)) {
+                    parsed.cleanedFields.rawLaw = fallLaw;
+                  }
+                  if (typeof parsed.cleanedFields.lawBody === 'string' && /직?[계게개]차|지[계개제]차|유도자|운행경로/.test(parsed.cleanedFields.lawBody)) {
+                    parsed.cleanedFields.lawBody = '';
                   }
                 }
               }

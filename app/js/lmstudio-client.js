@@ -1370,20 +1370,23 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   function sanitizeDomainMismatchedLaw(rec) {
     if (!rec || typeof rec !== 'object') return rec;
     const ctx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''} ${rec.hazardType || ''}`;
-    const hasForkliftCtx = /지게차|하역|유도원|운행경로/.test(`${rec.workGroup || ''} ${rec.content || ''}`);
-    const isElec = rec.workGroup === '가설전기공사' || rec.type === '감전' || (ELECTRICAL_SIGNAL_RE.test(ctx) && !hasForkliftCtx);
-    const isOtherTrade = !isElec && !hasForkliftCtx && /(?:생명줄|안전대\s*부착|비계|동바리|거푸집|갱폼|알폼)/.test(ctx);
+    const bodyCtx = `${ctx} ${rec.lawBody || ''}`;
+    const hasForkliftCtx = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(`${rec.workGroup || ''} ${rec.content || ''}`);
+    const isElec = rec.workGroup === '가설전기공사' || rec.type === '감전' || (ELECTRICAL_SIGNAL_RE.test(bodyCtx) && !hasForkliftCtx);
+    const isOtherTrade = !isElec && !hasForkliftCtx && /(?:생명줄|안전대\s*부착|안전대|비계|동바리|거푸집|갱폼|알폼)/.test(bodyCtx);
     if (!isElec && !isOtherTrade) return rec;
 
-    const r = quickRuleAnalysis(`${rec.workGroup || ''} ${rec.content || ''}`) || {};
+    const r = quickRuleAnalysis(`${rec.workGroup || ''} ${rec.content || ''} ${rec.lawBody || ''}`) || {};
     const validLawFallback = isElec
-      ? (r.law && !/172조|지게차/.test(r.law) ? r.law : '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)')
-      : (r.law && !/172조|지게차/.test(r.law) ? r.law : '');
+      ? (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)')
+      : (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law)
+        ? r.law
+        : (/생명줄|안전대/.test(bodyCtx) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : ''));
 
-    if (rec.law && /지게차|제172조/.test(rec.law)) {
+    if (rec.law && /직?[계게개]차|지[계개제]차|제172조/.test(rec.law)) {
       if (validLawFallback) rec.law = validLawFallback;
     }
-    if (rec.rawLaw && /지게차|제172조/.test(rec.rawLaw)) {
+    if (rec.rawLaw && /직?[계게개]차|지[계개제]차|제172조/.test(rec.rawLaw)) {
       if (isElec && /(?:108\s*\(?K\)?|전기)/.test(rec.rawLaw) && /전기/.test(`${rec.rawLaw} ${rec.lawBody || ''}`)) {
         rec.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
       } else if (validLawFallback) {
@@ -1394,7 +1397,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     } else if (isElec && rec.rawLaw && /(?:108\s*\(?K\)?)/i.test(rec.rawLaw) && !/11\d|7\.2\.3|301|302|304|안전보건규칙/.test(rec.rawLaw)) {
       rec.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
     }
-    if (rec.lawBody && /유도자|지게차|운행경로/.test(rec.lawBody)) {
+    if (rec.lawBody && /유도자|직?[계게개]차|지[계개제]차|운행경로/.test(rec.lawBody)) {
       rec.lawBody = '';
     }
     return rec;
