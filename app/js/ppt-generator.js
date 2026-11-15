@@ -425,15 +425,25 @@
    */
   function simplifyLawTitle(law, text = '') {
     const s = String(law || '').trim();
+    const isElectricalCtx = /(?:가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|전기\s*작업|전기설비)/i.test(text) && !/지게차|하역|유도원|운행경로/.test(text);
     const articles = [...s.matchAll(/제\s*(\d+)\s*조/g)].map(m => `제${m[1]}조`);
-    if (articles.length > 0) {
+    if (articles.length > 0 && !(isElectricalCtx && articles.includes('제172조'))) {
       const unique = [...new Set(articles)];
       return `안전보건규칙 ${unique.join(', ')}`;
     }
-    if (s.startsWith('안전보건규칙')) return s;
+    if (s.startsWith('안전보건규칙') && !(isElectricalCtx && /172조/.test(s))) return s;
 
-    // 키워드 기반 기본 매핑
-    const comb = `${s} ${text}`;
+    // 키워드 기반 기본 매핑 (전기 작업 충전부/접지/차단기 우선 판별)
+    const comb = `${isElectricalCtx ? '' : s} ${text}`;
+    if (isElectricalCtx || comb.includes('전기') || comb.includes('누전') || comb.includes('차단기') || comb.includes('투광등') || comb.includes('충전부') || comb.includes('접지') || comb.includes('소켓') || comb.includes('분전')) {
+      if (comb.includes('충전부') || comb.includes('소켓') || comb.includes('심선')) {
+        return '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+      }
+      if (comb.includes('접지')) {
+        return '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
+      }
+      return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
+    }
     if (comb.includes('동바리') || comb.includes('서포트') || comb.includes('멍에')) {
       return '안전보건규칙 제332조';
     }
@@ -449,8 +459,8 @@
     if (comb.includes('개구부') || comb.includes('덮개')) {
       return '안전보건규칙 제59조';
     }
-    if (comb.includes('전기') || comb.includes('누전') || comb.includes('차단기') || comb.includes('투광등')) {
-      return '안전보건규칙 제304조';
+    if (comb.includes('생명줄') || comb.includes('안전대')) {
+      return '안전보건규칙 제44조(안전대의 부착설비 등)';
     }
     if (comb.includes('사다리')) {
       return '안전보건규칙 제24조';
@@ -550,15 +560,20 @@
    * 사진 1 상단 직접 행동 적색 음영 배너 문구 자동 도출 (사용자 지시: 이미지 4, 5번 기반 구체적 미준수 행동 직시)
    */
   function extractDirectAction(r) {
-    if (r.photoBanner && String(r.photoBanner).trim()) {
-      const cleanedBanner = cleanBannerText(r.photoBanner, r.content);
+    const rawPhotoBanner = (
+      /분전(?:함|반).*차단기.*충전부/.test(String(r.photoBanner || '').trim()) &&
+      /전등|소켓|조명|심선/.test(r.content || '') &&
+      !/분전함|분전반|차단기/.test(r.content || '')
+    ) ? '' : (r.photoBanner || '');
+    if (rawPhotoBanner && String(rawPhotoBanner).trim()) {
+      const cleanedBanner = cleanBannerText(rawPhotoBanner, r.content);
       if (cleanedBanner && !isGenericTaxonomyLabel(cleanedBanner)) return cleanedBanner;
     }
     const text = `${r.content || ''} ${r.action || ''} ${r.condition || ''} ${r.item || ''} ${r.workMethod || ''} ${r.workName || ''}`;
 
     const norm = _getNorm();
     if (norm && typeof norm.extractCoreViolationBanner === 'function' && r.content && String(r.content).trim().length >= 5) {
-      const core = norm.extractCoreViolationBanner(r.photoBanner || '', r.content);
+      const core = norm.extractCoreViolationBanner(rawPhotoBanner, r.content);
       if (core && core.length >= 4 && !isGenericTaxonomyLabel(core) && !/미확인|전경/.test(core)) {
         return core;
       }
@@ -572,6 +587,9 @@
       return '유도원·근로자 지게차 근접 작업';
     }
     if (/충전부/.test(text) && /노출/.test(text)) {
+      if (/전등|소켓|조명|심선|단자부/.test(text) && !/분전함|분전반|차단기/.test(text)) {
+        return '전등 소켓 충전부 노출 및 절연 불량';
+      }
       return '분전함 차단기 충전부 노출';
     }
 
@@ -974,14 +992,39 @@
     const holdPointCode = (r.holdPointCode || '').trim();
     const isHoldPoint = Boolean(holdPointCode && r.holdPoint);
 
-    // 관련 법령 및 수칙 내용 (등록된 데이터의 rawLaw / lawBody 최우선 존중)
-    let rawLawTitle = r.rawLaw || r.law || (r.basis && r.basis.law) || '';
-    let lawBody = r.lawBody || '';
-
     const rawContent = cleanContent(r.content || '');
     const text = `${rawContent} ${r.item || ''} ${r.agent || ''} ${r.workMethod || ''} ${r.workName || ''}`;
+    const domainCtx = `${text} ${r.workGroup || ''} ${r.type || ''} ${r.hazardType || ''}`;
+    const isElectricalDefect = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/i.test(domainCtx) && !/지게차|하역|유도원|운행경로/.test(text);
+    const isNonForkliftConflict = !isElectricalDefect && /(?:생명줄|안전대\s*부착|추락|비계|거푸집|동바리)/i.test(domainCtx) && !/지게차|하역|유도원|운행경로/.test(text);
+
+    // 관련 법령 및 수칙 내용 (등록된 데이터의 rawLaw / lawBody 최우선 존중, 단 공종·내용과 모순된 지게차 오배정 차단)
+    let rawLawTitle = r.rawLaw || r.law || (r.basis && r.basis.law) || '';
+    let lawBody = r.lawBody || '';
+    if (isElectricalDefect || isNonForkliftConflict) {
+      if (/지게차|제172조/.test(rawLawTitle)) {
+        rawLawTitle = (r.law && /안전보건규칙|산업안전보건/.test(r.law) && !/172조|지게차/.test(r.law))
+          ? r.law
+          : '';
+      }
+      if (/유도자|지게차|운행경로/.test(lawBody)) {
+        lawBody = '';
+      }
+    }
+
     if (!lawBody) {
-      if (text.includes('동바리') || text.includes('서포트') || text.includes('멍에')) {
+      if (isElectricalDefect) {
+        if (/전등|소켓|투광등|심선/.test(text) && !/접지선|분전함|분전반|차단기/.test(text)) {
+          rawLawTitle = rawLawTitle || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+          lawBody = '6.3.2 작업 중 점검\n2) 시공관리자는 적격성을 갖춘 자를 지정하여 전기설비, 기계, 기구, 공도구 등에 대해 정기적으로 점검하도록 한다.';
+        } else if (/접지/.test(text) && !/충전부|차단기/.test(text)) {
+          rawLawTitle = rawLawTitle || '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
+          lawBody = '• 전기기계·기구의 금속제 외함 등에는 누설전류 발생 시 감전을 방지하기 위해 적정 용량의 접지선을 볼트 등으로 견고히 연결·접지해야 한다.';
+        } else {
+          rawLawTitle = rawLawTitle || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+          lawBody = '7.2.3 가설 분전반\n• 분전반 내 차단기·접속전선 충전부는 노출되지 않도록 절연 방호조치하고, 접지상태 및 누전차단기 작동여부·소화기 비치를 정기 점검한다.';
+        }
+      } else if (text.includes('동바리') || text.includes('서포트') || text.includes('멍에')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제332조';
         lawBody = '• 파이프 서포트는 2본이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용 하지 않는다.';
       } else if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
@@ -999,6 +1042,9 @@
       } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
         lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
+      } else if (text.includes('생명줄') || text.includes('안전대')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제44조(안전대의 부착설비 등)';
+        lawBody = '추락할 위험이 있는 높이 2m 이상의 장소에서 작업할 때에는 안전대를 안전하게 걸어 사용할 수 있는 설비(생명줄)를 설치·사용해야 한다.';
       } else if (text.includes('사다리')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
         lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
@@ -1021,9 +1067,24 @@
         lawBody = bodyLines.slice(1).join('\n').trim();
       }
     }
-    // 관련 기준 제목 보정 (비계 vs 거푸집동바리 vs 지게차 vs 산안법 명확히 분기)
+    // 관련 기준 제목 보정 (비계 vs 거푸집동바리 vs 지게차 vs 산안법 명확히 분기; 전기·비지게차 장표의 108(K) 오매칭 원천 차단)
     const combinedContext = `${lawTitle} ${lawBody} ${text}`;
-    if (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?|지게차\s*작업지침)/i.test(combinedContext) || (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /지게차/.test(combinedContext)) || (/유도자/.test(lawBody) && /운행경로/.test(lawBody))) {
+    const isElecOr632Law = isElectricalDefect || /(?:전기\s*작업|전기설비|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(`${lawTitle} ${lawBody}`);
+    const isGenuineForkliftLaw = !isElecOr632Law && !isNonForkliftConflict && (
+      /지게차\s*작업지침/i.test(lawTitle) ||
+      (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?)/i.test(lawTitle) && !/(?:비계|거푸집|동바리|생명줄|안전대|추락)/.test(combinedContext)) ||
+      (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /지게차/.test(combinedContext)) ||
+      (/유도자/.test(lawBody) && /운행경로/.test(lawBody))
+    );
+    if (isElecOr632Law) {
+      if (/지게차/.test(lawTitle)) {
+        lawTitle = simplifyLawTitle(r.law && !/172조|지게차/.test(r.law) ? r.law : '', text);
+      } else if (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?)/i.test(lawTitle) && !/11\d/.test(lawTitle)) {
+        lawTitle = '안전작업지침 [IZ12B-108(K)] 전기 작업';
+      }
+    } else if (isNonForkliftConflict && /지게차/.test(lawTitle)) {
+      lawTitle = simplifyLawTitle(r.law && !/172조|지게차/.test(r.law) ? r.law : '', text);
+    } else if (isGenuineForkliftLaw) {
       lawTitle = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
       if (/(?:36|3\.6)?\s*유도자/.test(lawBody) && (/(?:이\s*상비도자|진찾전원|시률입원치|계행명일살)/.test(lawBody) || /36유도자/.test(lawBody))) {
         lawBody = '3.6 유도자\n3) 지게차 이동 시 유도자는 지게차 운전원의 시야로 확인 가능한 위치에서 장비로부터 5m 이상 안전거리를 확보해야 하고 장비의 전도·전락 및 근로자와의 충돌, 협착을 방지하기 위해 계획된 운행경로를 따라 이동하도록 유도하며 운행경로에 접근하는 관리자, 근로자 등 모든 인원의 출입을 통제해야 할 권한 및 책임이 있다.';

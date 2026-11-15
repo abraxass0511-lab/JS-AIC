@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v42';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v42';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v43';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v43';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -20,7 +20,7 @@ import {
   mapToStandardWorkGroup,
   extractCoreViolationBanner,
   splitInlineBullets
-} from './text-normalizer.js?v=20261115_v42';
+} from './text-normalizer.js?v=20261115_v43';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -49,7 +49,13 @@ export function deriveConcreteBanner(content) {
   if (firstLine.includes('지게차') && firstLine.includes('근접')) {
     return '유도원·근로자 지게차 근접 작업';
   }
+  if (/접지선/.test(firstLine) && (/고정\s*불량|용량\s*부족|볼트/.test(firstLine))) {
+    return '접지선 볼트 고정 불량 및 용량 부족';
+  }
   if (firstLine.includes('충전부') && firstLine.includes('노출')) {
+    if (/전등|소켓|조명|심선|단자부/.test(firstLine) && !/분전함|분전반|차단기/.test(firstLine)) {
+      return '전등 소켓 충전부 노출 및 절연 불량';
+    }
     return '분전함 차단기 충전부 노출';
   }
 
@@ -63,19 +69,32 @@ export function deriveConcreteBanner(content) {
  * @returns {string}
  */
 export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
-  const combined = `${lawText || ''} ${contextText || ''}`;
-  if (lawText && typeof lawText === 'string') {
-    const trimmed = lawText.trim();
-    if (/산업안전보건|안전보건규칙|산안법|산안규칙/.test(trimmed)) {
-      return trimmed;
+  const rawLawStr = String(lawText || '').trim();
+  const ctxStr = String(contextText || '').trim();
+  const combined = `${rawLawStr} ${ctxStr}`;
+  const hasForkliftInCtx = /지게차|하역|유도원|운행경로/.test(ctxStr);
+  const hasElecInCtx = /가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|절연\s*불량/.test(ctxStr || combined);
+  const hasLifelineInCtx = /생명줄|안전대\s*부착|추락|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼/.test(ctxStr);
+
+  if (rawLawStr && /산업안전보건|안전보건규칙|산안법|산안규칙/.test(rawLawStr)) {
+    const isCollisionLawMismatch = /제172조|지게차/.test(rawLawStr) && !hasForkliftInCtx && (hasElecInCtx || hasLifelineInCtx);
+    if (!isCollisionLawMismatch) {
+      return rawLawStr;
     }
   }
-  // 사내 작업지침(예: 작업지침 [IZSW-003(K)] 동바리 작업, [IZ12B-108(K)] 지게차 작업지침 등)인 경우 내용 기반 산업안전보건기준에 관한 규칙 조문 자동 매핑
-  if (/지게차|유도자|유도원|하역|운행경로/.test(combined)) {
+  // 사내 작업지침(예: [IZ12B-108(K)] 지게차 vs 전기 작업, [IZSW-003(K)] 동바리 작업)인 경우 실제 위반 문맥과 충돌하지 않을 때만 표준 조문 매핑
+  const allowForklift = !hasElecInCtx && !hasLifelineInCtx && (hasForkliftInCtx || (/지게차|유도자|유도원|운행경로/.test(combined) && !hasElecInCtx));
+  if (allowForklift && /지게차|유도자|유도원|하역|운행경로/.test(combined)) {
     return '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
   }
-  if (/충전부/.test(combined)) {
+  if (/충전부|소켓|심선/.test(combined) && (hasElecInCtx || !/통로/.test(combined))) {
     return '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+  }
+  if (/접지/.test(combined)) {
+    return '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
+  }
+  if (/누전차단기|분전함|분전반|차단기|가설전선|가설전기|전기\s*작업|전기설비/.test(combined)) {
+    return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
   }
   if (/갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(combined)) {
     return '안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)';
@@ -101,10 +120,10 @@ export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
   if (combined.includes('안전대') || combined.includes('생명줄')) {
     return '안전보건규칙 제44조(안전대의 부착설비 등)';
   }
-  if (combined.includes('통로') || combined.includes('조도') || combined.includes('전등')) {
+  if (combined.includes('통로') || combined.includes('조도')) {
     return '안전보건규칙 제22조(통로의 설치)';
   }
-  if (combined.includes('누전차단기') || combined.includes('전선') || combined.includes('분전함') || combined.includes('차단기')) {
+  if (combined.includes('전선') || combined.includes('투광등')) {
     return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
   }
   return '';
@@ -680,9 +699,29 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
 
   if (rawLines.length === 0) return { title: fallbackTitle, body: '' };
 
+  const contextText = typeof arguments[2] === 'string' ? arguments[2] : '';
   const joinedCheck = rawLines.join(' ');
-  // 지게차 작업지침 [IZ12B-108(K)] 3.6 유도자 복원
-  if (/108\s*\(?K\)?|지게차\s*작업\s*지침|3\.?6\s*유도자|운전원의\s*시야|계획된\s*운행경로|운행경로에\s*접근하는/.test(joinedCheck)) {
+  const combinedCheckCtx = `${joinedCheck} ${contextText}`;
+  const isElectricalLawCtx = /(?:전기\s*작업|전기설비|가설전기|분전반|분전함|접지선?|누전차단기|차단기|전등|소켓|투광등|충전부|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/i.test(combinedCheckCtx) && !/지게차|3\.?6\s*유도자|운행경로/.test(contextText);
+  const isOtherTradeLawCtx = /(?:생명줄|안전대\s*부착|비계|거푸집|동바리|갱폼|알폼)/i.test(joinedCheck) && !/지게차|3\.?6\s*유도자|운행경로/.test(contextText);
+
+  if (isElectricalLawCtx) {
+    // 전기 작업 장표의 [IZ12B-108K] 코드를 지게차로 오인하지 않고 전기 기준 원문으로 정규화 (115 등 타 번호 보존)
+    if (/지게차|3\.?6\s*유도자|운행경로/.test(joinedCheck)) {
+      const fallbackElecTitle = filterOnlyOccupationalSafetyLaw('', contextText) || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
+      return {
+        title: fallbackElecTitle,
+        body: ''
+      };
+    }
+    if (rawLines.length > 0 && /108\s*\(?K\)?/i.test(rawLines[0]) && !/11\d|7\.2\.3|301조|302조|304조|안전보건규칙/.test(rawLines[0])) {
+      rawLines[0] = '안전작업지침 [IZ12B-108(K)] 전기 작업';
+    }
+  } else if (!isOtherTradeLawCtx && (
+    /지게차\s*작업\s*지침|3\.?6\s*유도자|운전원의\s*시야|계획된\s*운행경로|운행경로에\s*접근하는/.test(joinedCheck) ||
+    (/108\s*\(?K\)?/.test(joinedCheck) && (!contextText || /지게차|하역|유도원|창호|충돌/.test(contextText)) && !/비계|거푸집|동바리|안전대|생명줄/.test(combinedCheckCtx))
+  )) {
+    // 지게차 작업지침 [IZ12B-108(K)] 3.6 유도자 복원 (실제 지게차/하역 장표일 때만)
     return {
       title: '안전작업지침 [IZ12B-108(K)] 지게차 작업지침',
       body: '3.6 유도자\n3) 지게차 이동 시 유도자는 지게차 운전원의 시야로 확인 가능한 위치에서 장비로부터 5m 이상 안전거리를 확보해야 하고 장비의 전도·전락 및 근로자와의 충돌, 협착을 방지하기 위해 계획된 운행경로를 따라 이동하도록 유도하며 운행경로에 접근하는 관리자, 근로자 등 모든 인원의 출입을 통제해야 할 권한 및 책임이 있다.'
@@ -2031,7 +2070,7 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   if (!type && allowDefaults) type = '추락';
 
   const hasLawOrCtx = !!(tLaw.trim() || content || workGroup);
-  const lawParsed = parseLawCell(tLaw);
+  const lawParsed = parseLawCell(tLaw, '산업안전보건기준에 관한 규칙', `${content} ${workGroup} ${tType}`);
   const lawTitle = tLaw.trim() ? lawParsed.title : '';
   const lawBody = lawParsed.body;
   const law = hasLawOrCtx ? filterOnlyOccupationalSafetyLaw(lawTitle, `${content} ${workGroup}`) : '';
@@ -2110,8 +2149,10 @@ function enrichRecordOfflineFromContent(record) {
       if (!record.rootCauseMgmt && r.rootCauseMgmt) record.rootCauseMgmt = r.rootCauseMgmt;
       if (!record.rootCauseSystem && r.rootCauseSystem) record.rootCauseSystem = r.rootCauseSystem;
       if (!record.stakeholder && r.stakeholder) record.stakeholder = r.stakeholder;
-      if (!record.law || /안전보건기준\s*검토|^산업안전보건기준에\s*관한\s*규칙$/.test(record.law)) {
-        if (r.law) record.law = r.law;
+      if (!record.law || /안전보건기준\s*검토|^산업안전보건기준에\s*관한\s*규칙$|제172조|지게차/.test(record.law)) {
+        const cleanedLaw = filterOnlyOccupationalSafetyLaw(record.law, `${record.content || ''} ${record.workGroup || ''}`);
+        if (cleanedLaw) record.law = cleanedLaw;
+        else if (r.law && (!/제172조|지게차/.test(r.law) || /지게차|하역|유도원/.test(record.content || ''))) record.law = r.law;
       }
       if (!record.photoBanner && r.photoBanner) record.photoBanner = r.photoBanner;
       if (!record.type && r.type) record.type = r.type;

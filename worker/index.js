@@ -152,7 +152,11 @@ function analyzeRuleFallback(content) {
     const isLight = text.includes('전등') || text.includes('소켓') || text.includes('심선');
     const isGroundBolt = text.includes('접지선') && (text.includes('고정') || text.includes('볼트') || text.includes('용량'));
     item = isLight ? '전등/전선' : '분전반';
-    law = isLivePart ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)' : '안전보건규칙 제302조(전기 기계·기구의 접지)';
+    law = isLivePart
+      ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
+      : ((isGroundBolt || text.includes('접지'))
+        ? '안전보건규칙 제302조(전기 기계·기구의 접지)'
+        : '안전보건규칙 제304조(누전차단기에 의한 감전방지)');
     hazardType = '감전';
     severity = '중부적합';
     mgmtCauses = ['불안전 상태', '계획 미이행'];
@@ -164,8 +168,8 @@ function analyzeRuleFallback(content) {
         : (isGroundBolt ? '접지선 볼트 고정 불량 및 용량 부족' : '가설분전반 관리 및 접지 불량'));
     analysis = isLivePart ? '가설전등/분전반 내 충전부 방호 미흡으로 감전 위험' : '가설전기 분전반 관리·접지 및 누전차단기 점검 불량';
     pmVerdict = '해당 차단기 전원 즉시 차단 및 충전부 절연 방호·접지 보강 후 사용';
-    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '가설전기공사', workMethod: '설치조립작업', agentMajor: '전기·화기·설비', agentMid: '전기시설', agentMinor: isLivePart ? '분전함' : '누전차단기', condition: '방호장치 결함 (덮개·난간 미설치 등)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
-  } else if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '가설전기공사', workMethod: '설치조립작업', agentMajor: '전기·화기·설비', agentMid: '전기시설', agentMinor: isLight ? '가설전선/이동릴선' : (isGroundBolt ? '접지시설' : (isLivePart ? '분전함' : '누전차단기')), condition: '방호장치 결함 (덮개·난간 미설치 등)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
+  } else if ((text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) && !text.includes('생명줄') && !text.includes('안전대')) {
     const isWindow = /pl\s*창호|창호|유리/i.test(text);
     item = '운반장비';
     law = '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
@@ -387,8 +391,10 @@ const TAXONOMY_STANDARD_PROMPT = `
    - 비계: ["시스템비계", "강관비계", "틀비계", "외부비계", "달비계"]
    - 안전시설: ["안전난간", "개구부덮개", "낙하물방지망", "방호선반", "수직보호망", "안전대걸이시설"]
    - 전기시설: ["누전차단기", "가설전선/이동릴선", "분전함", "접지시설", "투광등"]
+   - 하역운반장비: ["지게차", "페이로더", "덤프트럭"] (지게차/유도원 하역 충돌 우려 시 agentMajor="건설장비", agentMid="운반장비", agentMinor="지게차")
 6. 재해 형태 (hazardType): ["추락", "낙하·비래", "붕괴·도괴", "전도", "협착", "충돌", "전복", "화재", "폭발·파열", "감전"] 중 선택.
-7. 관련 법령 (law): 산업안전보건기준에 관한 규칙 공식 조문 (예: "안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)", "안전보건규칙 제332조(거푸집동바리등의 안전조치)", "안전보건규칙 제56조(작업발판의 구조)", "안전보건규칙 제304조(누전차단기 설치 등)" 등).
+7. 관련 법령 (law): 산업안전보건기준에 관한 규칙 공식 조문 (예: "안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)", "안전보건규칙 제332조(거푸집동바리등의 안전조치)", "안전보건규칙 제56조(작업발판의 구조)", "안전보건규칙 제172조(접촉의 방지)", "안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)", "안전보건규칙 제302조(전기 기계·기구의 접지)", "안전보건규칙 제304조(누전차단기 설치 등)" 등).
+   - 공종·부적합 내용이 가설전기·분전반·접지·차단기·전등·소켓·충전부이면 절대 지게차(제172조)를 선택하지 말고 전기 조문(제301조/제302조/제304조)만 선택하라.
 8. 불안전 상태 (condition): ["방호장치 결함 (덮개·난간 미설치 등)", "물(物) 자체의 결함 (자재·부재 손상/변형)", "복장·보호구 결함", "작업환경 불량", "생산공정 결함", "배치·적재 불량", "경보·신호 체계 결함", "해당없음"] 중 선택.
 9. 불안전 행동 (action): ["보호구 미착용", "방호장치 기능 무효화", "위험구역 접근", "불안전한 동작·자세", "부적절한 작업방법", "기계·기구 무단 취급", "해당없음"] 중 선택.
 10. 근본원인 분석:
@@ -821,8 +827,9 @@ JSON 형식:
     "inspector": "교정된 점검자명 (라벨 '점검자'/'적검자' 제외, 공란이면 '')",
     "round": "교정된 점검차수 (예: '26년상 2차)",
     "content": "교정된 부적합 내용",
-    "law": "교정된 관련기준 제목/법령",
-    "rawLaw": "교정된 관련기준 본문 원문(세부 조항/항목 줄바꿈 유지)",
+    "law": "교정된 관련기준 공식 법령 (예: 안전보건규칙 제301조/제302조/제304조/제172조 등)",
+    "rawLaw": "교정된 관련기준 제목 원문 (예: 안전작업지침 [IZ12B-108(K)] 전기 작업)",
+    "lawBody": "교정된 관련기준 세부 본문 원문 (줄바꿈 유지)",
     "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 유지)",
     "auditProposal": "교정된 점검단 제안 본문 ('- ' 불릿 구분)",
     "actionPlan": "교정된 개선대책 본문 ('- ' 불릿 구분, 단순 줄바꿈 병합)"
@@ -957,6 +964,40 @@ JSON 형식:
                 }
                 if (parsed.cleanedFields.location) {
                   parsed.cleanedFields.location = cleanLocationWorker(parsed.cleanedFields.location, parsed.cleanedFields.content || content);
+                }
+              }
+              const postCheckCtx = `${combinedCtx} ${parsed.cleanedFields?.hazardType || ''} ${parsed.cleanedFields?.rawLaw || ''}`;
+              const isForkliftPostCtx = /지게차|유도원|유도자|하역/i.test(postCheckCtx) && !/생명줄|안전대/i.test(postCheckCtx);
+              const isElecPostCtx = (isElecCtx || /충전부|소켓|심선|전등|감전/i.test(postCheckCtx)) && !/지게차|하역|유도원|운행경로/i.test(combinedCtx);
+              if (isForkliftPostCtx && !isElecPostCtx) {
+                parsed.agentMajor = '건설장비';
+                parsed.agentMid = '하역운반장비';
+                parsed.agentMinor = '지게차';
+                if (!parsed.law || /제56조|작업발판/.test(String(parsed.law))) {
+                  parsed.law = '안전보건규칙 제172조(접촉의 방지)';
+                }
+              }
+              if (isElecPostCtx) {
+                const elecLaw = /충전부|노출|소켓|심선/.test(postCheckCtx)
+                  ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
+                  : (/접지/.test(postCheckCtx)
+                    ? '안전보건규칙 제302조(전기 기계·기구의 접지)'
+                    : '안전보건규칙 제304조(누전차단기에 의한 감전방지)');
+                if (!parsed.law || /제172조|지게차/.test(String(parsed.law))) {
+                  parsed.law = elecLaw;
+                }
+                if (parsed.cleanedFields) {
+                  if (!parsed.cleanedFields.law || /제172조|지게차/.test(String(parsed.cleanedFields.law))) {
+                    parsed.cleanedFields.law = elecLaw;
+                  }
+                  if (typeof parsed.cleanedFields.rawLaw === 'string' && /지게차|3\.?\s*6\s*유도자/.test(parsed.cleanedFields.rawLaw)) {
+                    parsed.cleanedFields.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
+                  }
+                  if (typeof parsed.cleanedFields.lawBody === 'string' && /지게차|유도자|운행경로/.test(parsed.cleanedFields.lawBody)) {
+                    parsed.cleanedFields.lawBody = /충전부|노출|소켓|심선/.test(postCheckCtx)
+                      ? '7.2.3 충전부 방호 및 전선 절연 조치'
+                      : '6.3.2 작업 중 점검: 전기 설비, 기계, 기구, 공도구 정기 점검';
+                  }
                 }
               }
               return new Response(JSON.stringify({
