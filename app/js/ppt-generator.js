@@ -258,6 +258,147 @@
     return cleaned;
   }
 
+  function _escHtmlText(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
+   * [발생원인 (인터뷰 결과)] 다중 의견([근로자 의견 : ...], [관리자 의견 : ...]) 및 단일 의견 레이아웃 계산
+   */
+  function resolveInterviewOpinionLayout(data) {
+    let sections = Array.isArray(data && data.interviewSections) ? data.interviewSections : [];
+    if (sections.length < 2 && data && data.interviewOpinion) {
+      const norm = _getNorm();
+      if (norm && typeof norm.parseInterviewOpinions === 'function') {
+        const parsed = norm.parseInterviewOpinions(data.interviewOpinion);
+        if (parsed && Array.isArray(parsed.sections) && parsed.sections.length >= 2) {
+          sections = parsed.sections;
+        }
+      }
+    }
+    const validSections = sections.filter(s => s && (s.title || s.text || (Array.isArray(s.items) && s.items.length > 0)));
+    if (validSections.length >= 2) {
+      const normalized = validSections.map(s => ({
+        title: String(s.title || '[의견]').trim(),
+        bodyText: String(s.text || (Array.isArray(s.items) ? s.items.map(x => `- ${String(x || '').trim()}`).join('\n') : '')).trim()
+      }));
+      const combinedBodies = normalized.map(s => s.bodyText).filter(Boolean).join('\n');
+      const totalChars = normalized.reduce((acc, s) => acc + s.title.length + s.bodyText.length, 0);
+      const lineSpacing = totalChars > 130 ? 1.04 : 1.08;
+      // 4.9213 x 1.3773 박스 내부에서 각 헤더 높이(~0.23in)를 제외한 본문 가용 높이 계산
+      const availBodyHeight = Math.max(0.55, 1.28 - (normalized.length * 0.23));
+      const fontSize = calcFitMultilineFontSize(
+        combinedBodies,
+        4.9213 - (8.5 / 72),
+        availBodyHeight,
+        10.5,
+        8.0,
+        lineSpacing,
+        [4, 8, 3, 6]
+      );
+      const headerFontSize = Math.min(12.0, Math.max(9.5, fontSize + 1.5));
+      return {
+        isMulti: true,
+        sections: normalized,
+        fontSize,
+        headerFontSize,
+        lineSpacing,
+        margin: [4, 8, 3, 6]
+      };
+    }
+
+    const singleBody = (data && data.interviewOpinion) || '';
+    const lineSpacing = singleBody.length > 110 ? 1.08 : 1.14;
+    const fontSize = calcFitMultilineFontSize(singleBody, 4.9213 - (8.5 / 72), 1.02, 12, 9.5, lineSpacing, [6, 8, 4, 6]);
+    return {
+      isMulti: false,
+      sections: [{
+        title: (data && data.interviewAuthorTitle) || '[의견 : 시공관리자 및 근로자]',
+        bodyText: singleBody
+      }],
+      fontSize,
+      headerFontSize: 14,
+      lineSpacing,
+      margin: [5, 8, 4, 6]
+    };
+  }
+
+  function buildInterviewOpinionTextRuns(data) {
+    const plan = resolveInterviewOpinionLayout(data);
+    if (!plan.isMulti) {
+      const single = plan.sections[0];
+      const intBodyRuns = buildHangingBulletRuns(single.bodyText, plan.fontSize, '111111', FONT_MALGUN, 8.5);
+      return {
+        plan,
+        runs: [
+          {
+            text: single.title,
+            options: {
+              fontSize: 14,
+              bold: true,
+              color: C_SUBHEADER_TEXT,
+              fontFace: FONT_MALGUN,
+              bullet: false,
+              breakLine: intBodyRuns.length > 0,
+              paraSpaceAfter: 5
+            }
+          },
+          ...intBodyRuns
+        ]
+      };
+    }
+
+    const runs = [];
+    plan.sections.forEach((sec, idx) => {
+      const isLast = idx === plan.sections.length - 1;
+      const bodyRuns = buildHangingBulletRuns(sec.bodyText, plan.fontSize, '111111', FONT_MALGUN, 8.5);
+      runs.push({
+        text: sec.title,
+        options: {
+          fontSize: plan.headerFontSize,
+          bold: true,
+          color: C_SUBHEADER_TEXT,
+          fontFace: FONT_MALGUN,
+          bullet: false,
+          breakLine: bodyRuns.length > 0 || !isLast,
+          paraSpaceBefore: idx > 0 ? 3 : 0,
+          paraSpaceAfter: 1
+        }
+      });
+      if (bodyRuns.length > 0) {
+        bodyRuns.forEach((run, rIdx) => {
+          const isLastRunOfSection = rIdx === bodyRuns.length - 1;
+          if (!isLast && isLastRunOfSection) {
+            runs.push({
+              ...run,
+              options: { ...(run.options || {}), breakLine: true }
+            });
+          } else {
+            runs.push(run);
+          }
+        });
+      }
+    });
+    return { plan, runs };
+  }
+
+  function renderInterviewOpinionBoxHTML(data, ptFn) {
+    const plan = resolveInterviewOpinionLayout(data);
+    if (!plan.isMulti) {
+      const single = plan.sections[0];
+      return `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #181717; margin-bottom: 0.20cqw;">${_escHtmlText(single.title)}</div>\n`
+        + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: ${plan.lineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(single.bodyText)}</div>`;
+    }
+    return plan.sections.map((sec, idx) => (
+      `          <div style="font-size: ${ptFn(plan.headerFontSize)}; font-weight: 800; color: #181717; margin-top: ${idx > 0 ? '0.16cqw' : '0'}; margin-bottom: 0.06cqw; line-height: 1.12;">${_escHtmlText(sec.title)}</div>\n`
+      + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: ${plan.lineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(sec.bodyText)}</div>`
+    )).join('\n');
+  }
+
   function cleanContent(raw) {
     if (!raw) return '';
     let rawStr = String(raw || '');
@@ -299,12 +440,10 @@
     return lines.join('\n');
   }
 
-  function cleanOpinionText(raw) {
+  function cleanOpinionText(raw, options = {}) {
     if (!raw) return '';
-    let s = healSafetyKoreanLexicon(String(raw))
+    const preCleaned = healSafetyKoreanLexicon(String(raw))
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
-      .replace(/^\s*[-•·▪]?\s*(?:관리자|근로자|작업자|담당자|관계자)\s*의견\s*[:：][^\n]*\n?/gim, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -312,6 +451,24 @@
       .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
       .replace(/\[=\]\s*oa/gi, '')
+      .trim();
+
+    const norm = _getNorm();
+    if (norm && typeof norm.parseInterviewOpinions === 'function') {
+      const parsed = norm.parseInterviewOpinions(preCleaned);
+      if (parsed && (parsed.hasMulti || (options.preserveHeaders && parsed.sections.length > 0))) {
+        return parsed.hasMulti
+          ? parsed.formatted
+          : parsed.sections.map(sec => (sec.text ? `${sec.title}\n${sec.text}` : sec.title)).join('\n');
+      }
+      if (parsed && parsed.sections && parsed.sections.length === 1 && parsed.sections[0].text) {
+        return parsed.sections[0].text;
+      }
+    }
+
+    let s = preCleaned
+      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
+      .replace(/^\s*[-•·▪]?\s*(?:관리자|근로자|작업자|담당자|관계자)\s*의견\s*[:：][^\n]*\n?/gim, '')
       .trim();
 
     // 문장 종결 후 새 항목 분리 (예: 못함 갱폼 인양팀 -> 못함\n- 갱폼 인양팀)
@@ -424,54 +581,21 @@
   }
 
   /**
-   * 관련 기준을 "안전보건규칙 제//조"로 간단하게 변환 (사용자 지시 3)
+   * 관련 기준 정제 (하드코딩 키워드 매핑 전면 제거 — 원본·학습된 지침·AI 결과만 존중)
    */
   function simplifyLawTitle(law, text = '') {
     const s = String(law || '').replace(/직[계게개]차|지[계개제]차/g, '지게차').trim();
-    const cleanText = String(text || '').replace(/직[계게개]차|지[계개제]차/g, '지게차');
-    const hasForkliftTxt = /지게차|하역|유도원|운행경로/.test(cleanText);
-    const isElectricalCtx = /(?:가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|전기\s*작업|전기설비)/i.test(cleanText) && !hasForkliftTxt;
-    const isFallOrFormCtx = !isElectricalCtx && !hasForkliftTxt && /(?:생명줄|안전대\s*부착|안전대|추락|비계|거푸집|동바리)/i.test(cleanText);
+    if (!s) return '';
+    const norm = _getNorm();
+    if (norm && typeof norm.normalizeSafetyLawSpec === 'function') {
+      const spec = norm.normalizeSafetyLawSpec({ rawLaw: s, contextText: text });
+      return spec.title || '';
+    }
     const articles = [...s.matchAll(/제\s*(\d+)\s*조/g)].map(m => `제${m[1]}조`);
-    if (articles.length > 0 && !((isElectricalCtx || isFallOrFormCtx) && articles.includes('제172조'))) {
-      const unique = [...new Set(articles)];
-      return `안전보건규칙 ${unique.join(', ')}`;
+    if (articles.length > 0 && /^(?:산업)?안전보건(?:기준에\s*관한\s*)?규칙/.test(s)) {
+      return `안전보건규칙 ${[...new Set(articles)].join(', ')}`;
     }
-    if (s.startsWith('안전보건규칙') && !((isElectricalCtx || isFallOrFormCtx) && /172조/.test(s))) return s;
-
-    // 키워드 기반 기본 매핑 (전기 작업 충전부/접지/차단기 우선 판별)
-    const comb = `${(isElectricalCtx || isFallOrFormCtx) ? '' : s} ${cleanText}`;
-    if (isElectricalCtx || comb.includes('전기') || comb.includes('누전') || comb.includes('차단기') || comb.includes('투광등') || comb.includes('충전부') || comb.includes('접지') || comb.includes('소켓') || comb.includes('분전')) {
-      if (comb.includes('충전부') || comb.includes('소켓') || comb.includes('심선')) {
-        return '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-      }
-      if (comb.includes('접지')) {
-        return '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
-      }
-      return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
-    }
-    if (comb.includes('동바리') || comb.includes('서포트') || comb.includes('멍에')) {
-      return '안전보건규칙 제332조';
-    }
-    if (comb.includes('양중') || comb.includes('줄걸이') || comb.includes('크레인') || comb.includes('호이스트') || comb.includes('수평양중')) {
-      return '안전보건규칙 제38조, 제171조';
-    }
-    if (comb.includes('말비계') || comb.includes('우마')) {
-      return '안전보건규칙 제67조, 제13조';
-    }
-    if (comb.includes('생명줄') || /안전대\s*부착/.test(comb) || (comb.includes('안전대') && !comb.includes('비계') && !comb.includes('작업발판') && !comb.includes('안전난간'))) {
-      return '안전보건규칙 제44조(안전대의 부착설비 등)';
-    }
-    if (comb.includes('비계') || comb.includes('난간') || comb.includes('작업발판') || comb.includes('안전난간') || comb.includes('단부')) {
-      return '안전보건규칙 제56조, 제13조';
-    }
-    if (comb.includes('개구부') || comb.includes('덮개')) {
-      return '안전보건규칙 제59조';
-    }
-    if (comb.includes('사다리')) {
-      return '안전보건규칙 제24조';
-    }
-    return '안전보건규칙 제38조';
+    return s;
   }
 
   /**
@@ -492,9 +616,18 @@
 
   function cleanBannerText(rawBanner, content) {
     const norm = _getNorm();
+    const stripSecondItem = (txt = '') => (norm && typeof norm.stripBannerSecondItemTail === 'function')
+      ? norm.stripBannerSecondItemTail(txt)
+      : String(txt || '')
+          .replace(/(?:^|\r?\n|\s+|(?<=[가-힣A-Za-z.)\]]))\s*(?<![0-9(])[2-9]\)\s*[\s\S]*$/g, '')
+          .replace(/(?:\r?\n|\s+)\s*[2-9]\.\s+(?=[가-힣A-Za-z\[])[\s\S]*$/g, '')
+          .replace(/(?<=.{4})\s*[②③④⑤⑥⑦⑧⑨⑩][\s\S]*$/g, '')
+          .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s+/, '')
+          .replace(/^1\)\s*/, '')
+          .trim();
     const stripCircled = (str) => (norm && typeof norm.stripCircledNumbers === 'function')
-      ? norm.stripCircledNumbers(str)
-      : String(str || '').replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ').replace(/\s+/g, ' ').trim();
+      ? norm.stripCircledNumbers(stripSecondItem(str))
+      : stripSecondItem(str).replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ').replace(/\s+/g, ' ').trim();
     let s = stripCircled(_normSpacing(String(rawBanner || '').replace(/\s+/g, ' ').trim()));
     if (/벽의음|6055|버팀대|설치각도/.test(s) && /버팀대/.test(content || '')) {
       return '벽이음용 상부 버팀대 설치각도(60도↓) 불량';
@@ -517,13 +650,14 @@
       .trim();
 
     // 결과/우려 꼬리 제거 및 복수 항목('1)...2)...') 핵심 위반사항만 추출
-    const cAll = _normSpacing(healSafetyKoreanLexicon(String(content || s).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim()));
+    const cAll = stripSecondItem(_normSpacing(healSafetyKoreanLexicon(String(content || s).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim())));
     if (/접지선/.test(cAll) && /고정\s*불량|용량\s*부족/.test(cAll)) return '접지선 볼트 고정 불량 및 용량 부족';
     if (/지게차/.test(cAll) && /근접/.test(cAll)) return '유도원·근로자 지게차 근접 작업';
     if (/충전부/.test(cAll) && /노출/.test(cAll)) return '분전함 차단기 충전부 노출';
 
+    s = stripSecondItem(s);
     if (/[2-9]\)|발생\s*시|충돌\s*우려|감전\s*우려|대지로\s*방전/.test(s)) {
-      s = s.split(/(?=[2-9]\)\s*[가-힣A-Za-z])/)[0]
+      s = stripSecondItem(s.split(/(?=[2-9]\)\s*[가-힣A-Za-z])/)[0])
         .replace(/(?:으로|로)\s*(?:인해|인한)?\s*(?:누설전류|감전|추락|붕괴|충돌|협착|대지로)[\s\S]*$/g, '')
         .replace(/\s*(?:충돌|추락|감전)\s*우려[\s\S]*$/g, '')
         .trim();
@@ -1018,73 +1152,15 @@
     const isElectricalDefect = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/i.test(`${domainCtx} ${r.lawBody || ''}`) && !hasForkliftWork;
     const isNonForkliftConflict = !isElectricalDefect && !hasForkliftWork && /(?:생명줄|안전대\s*부착|안전대|추락|비계|거푸집|동바리)/i.test(`${domainCtx} ${r.lawBody || ''}`);
 
-    // 관련 법령 및 수칙 내용 (AI 검증·등록 데이터의 rawLaw / law / lawBody 최우선 존중, 공종·내용 모순만 방어)
-    let rawLawTitle = r.rawLaw || r.law || (r.basis && r.basis.law) || '';
-    let lawBody = r.lawBody || '';
-    if (isCraneLift && !hasFormworkAssemblyDefect && /제332조|거푸집동바리/.test(rawLawTitle)) {
-      rawLawTitle = (r.law && !/332조|거푸집동바리|172조|직?[계게개]차|지[계개제]차/.test(r.law))
-        ? r.law
-        : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-    }
-    if (isElectricalDefect || isNonForkliftConflict) {
-      if (/직?[계게개]차|지[계개제]차|제172조/.test(rawLawTitle)) {
-        rawLawTitle = (r.law && /안전보건규칙|산업안전보건/.test(r.law) && !/172조|직?[계게개]차|지[계개제]차/.test(r.law))
-          ? r.law
-          : '';
-      }
-      if (/유도자|직?[계게개]차|지[계개제]차|운행경로/.test(lawBody)) {
-        lawBody = '';
-      }
-    }
-
-    if (!lawBody) {
-      if (isElectricalDefect) {
-        if (/전등|소켓|투광등|심선/.test(text) && !/접지선|분전함|분전반|차단기/.test(text)) {
-          rawLawTitle = rawLawTitle || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-          lawBody = '6.3.2 작업 중 점검\n2) 시공관리자는 적격성을 갖춘 자를 지정하여 전기설비, 기계, 기구, 공도구 등에 대해 정기적으로 점검하도록 한다.';
-        } else if (/접지/.test(text) && !/충전부|차단기/.test(text)) {
-          rawLawTitle = rawLawTitle || '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
-          lawBody = '- 전기기계·기구의 금속제 외함 등에는 누설전류 발생 시 감전을 방지하기 위해 적정 용량의 접지선을 볼트 등으로 견고히 연결·접지해야 한다.';
-        } else {
-          rawLawTitle = rawLawTitle || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-          lawBody = '7.2.3 가설 분전반\n- 분전반 내 차단기·접속전선 충전부는 노출되지 않도록 절연 방호조치하고, 접지상태 및 누전차단기 작동여부·소화기 비치를 정기 점검한다.';
-        }
-      } else if (isCraneLift || text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-        lawBody = '- 화물은 유도로프를 통해 유도하고 무게중심을 확인하며, 길이·모양이 다른 이형자재 동시 양중 및 손으로 밀거나 당기는 행위를 금지해야 한다.';
-      } else if ((text.includes('동바리') || text.includes('서포트') || text.includes('멍에')) && hasFormworkAssemblyDefect) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
-        lawBody = '- 파이프 서포트는 2본 이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용하지 않는다.';
-      } else if (text.includes('말비계') || text.includes('우마')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제67조, 제13조';
-        lawBody = '- 말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
-      } else if (text.includes('생명줄') || /안전대\s*부착/.test(text) || (text.includes('안전대') && !text.includes('비계') && !text.includes('작업발판') && !text.includes('안전난간'))) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제44조(안전대의 부착설비 등)';
-        lawBody = '- 추락할 위험이 있는 높이 2m 이상의 장소에서 작업할 때에는 안전대를 안전하게 걸어 사용할 수 있는 설비(생명줄)를 설치·사용해야 한다.';
-      } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
-        lawBody = '- 작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
-      } else if (text.includes('개구부') || text.includes('덮개')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제59조';
-        lawBody = '- 바닥 개구부에는 충분한 강도를 가진 덮개를 뒤집히거나 벗겨지지 않도록 고정 설치하고 "추락주의" 위험표지를 부착해야 한다.';
-      } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
-        lawBody = '- 이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
-      } else if (text.includes('사다리')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
-        lawBody = '- 이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
-      } else {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제38조';
-        lawBody = '- 작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
-      }
-    }
-    let rawLawMerged = String(r.rawLaw || '').trim();
-    if (!lawBody && rawLawMerged.includes('\n')) {
-      const rlLines = rawLawMerged.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      rawLawMerged = rlLines[0] || '';
+    // 관련 법령 및 수칙 내용 (3단계 우선순위: 1순위 원본 등록 데이터 -> 2순위 학습된 SafeGuidelineMemory -> 3순위 AI 판단, 하드코딩 법령/본문 생성 전면 제거)
+    let rawLawTitle = String(r.rawLaw || r.law || (r.basis && r.basis.law) || '').trim();
+    let lawBody = String(r.lawBody || '').trim();
+    if (!lawBody && rawLawTitle.includes('\n')) {
+      const rlLines = rawLawTitle.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      rawLawTitle = rlLines[0] || '';
       lawBody = rlLines.slice(1).join('\n').trim();
     }
-    let lawTitle = (rawLawMerged ? rawLawMerged : simplifyLawTitle(rawLawTitle, text)).trim();
+    let lawTitle = rawLawTitle;
     if (/^[0-9I=;:\s]+/.test(lawTitle) && (/of\s*xi/i.test(lawTitle) || /업적/i.test(lawTitle) || lawTitle.length < 15)) {
       if (lawBody && /(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙)/.test(lawBody)) {
         const bodyLines = lawBody.split(/\r?\n/);
@@ -1094,85 +1170,22 @@
     }
     const _lawNorm = _getNorm();
     if (_lawNorm && typeof _lawNorm.normalizeSafetyLawSpec === 'function') {
-      const preHealedSpec = _lawNorm.normalizeSafetyLawSpec({
-        rawLaw: lawTitle,
-        lawBody,
-        law: r.law || simplifyLawTitle(rawLawTitle, `${text} ${lawBody}`),
-        contextText: `${text} ${r.workGroup || ''} ${r.type || ''}`
-      });
-      if (preHealedSpec.title) lawTitle = preHealedSpec.title;
-      if (preHealedSpec.body !== undefined) lawBody = preHealedSpec.body;
-    }
-    // 관련 기준 제목 보정 (비계 vs 거푸집동바리 vs 지게차 vs 산안법 명확히 분기; 전기·비지게차 장표의 108(K) 오매칭 원천 차단)
-    const combinedContext = `${lawTitle} ${lawBody} ${text}`;
-    const isElecOr632Law = isElectricalDefect || /(?:전기\s*작업|전기설비|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(`${lawTitle} ${lawBody}`);
-    const isGenuineForkliftLaw = !isElecOr632Law && !isNonForkliftConflict && (
-      /직?[계게개]차\s*작업지침|지[계개제]차\s*작업지침/i.test(lawTitle) ||
-      (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?)/i.test(lawTitle) && !/(?:비계|거푸집|동바리|생명줄|안전대|추락)/.test(combinedContext)) ||
-      (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /직?[계게개]차|지[계개제]차/.test(combinedContext)) ||
-      (/유도자/.test(lawBody) && /운행경로/.test(lawBody))
-    );
-    const hasAiVerifiedLawTitle = Boolean(
-      (r._aiVerified || r._aiCleaned) &&
-      /(?:안전보건규칙|산업안전보건|안전작업지침)/.test(lawTitle) &&
-      !(isCraneLift && !hasFormworkAssemblyDefect && /제332조|거푸집동바리/.test(lawTitle))
-    );
-    if (isElecOr632Law) {
-      if (/직?[계게개]차|지[계개제]차/.test(lawTitle)) {
-        lawTitle = simplifyLawTitle(r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '', `${text} ${lawBody}`);
-      } else if (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?)/i.test(lawTitle) && !/11\d/.test(lawTitle)) {
-        lawTitle = '안전작업지침 [IZ12B-108(K)] 전기 작업';
-      }
-    } else if (isNonForkliftConflict && /직?[계게개]차|지[계개제]차/.test(lawTitle)) {
-      lawTitle = simplifyLawTitle(r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '', `${text} ${lawBody}`);
-    } else if (isCraneLift && !hasFormworkAssemblyDefect && /제332조|거푸집동바리/.test(lawTitle)) {
-      lawTitle = (r.law && !/332조|거푸집동바리|172조/.test(r.law))
-        ? r.law
-        : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-    } else if (isGenuineForkliftLaw) {
-      lawTitle = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
-      if (/(?:36|3\.6)?\s*유도자/.test(lawBody) && (/(?:이\s*상비도자|진찾전원|시률입원치|계행명일살)/.test(lawBody) || /36유도자/.test(lawBody))) {
-        lawBody = '3.6 유도자\n3) 지게차 이동 시 유도자는 지게차 운전원의 시야로 확인 가능한 위치에서 장비로부터 5m 이상 안전거리를 확보해야 하고 장비의 전도·전락 및 근로자와의 충돌, 협착을 방지하기 위해 계획된 운행경로를 따라 이동하도록 유도하며 운행경로에 접근하는 관리자, 근로자 등 모든 인원의 출입을 통제해야 할 권한 및 책임이 있다.';
-      }
-    } else if (/IZ12B[-_\s]*107/i.test(lawTitle)) {
-      lawTitle = '안전작업지침 [IZ12B-107(K)] 추락/낙하방지시설 작업';
-    } else if (!hasAiVerifiedLawTitle && !isCraneLift && /(?:거푸집|동바리|갱폼|유로폼|알폼|AL\s*Form|서포트)/i.test(combinedContext)) {
-      if (/현장\s*제작|대형\s*거푸집/.test(combinedContext)) {
-        lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
-      } else if (/IZSW|거푸집동바리\s*작업|동바리\s*작업/i.test(combinedContext)) {
-        lawTitle = '안전작업지침 [IZSW-003(K)] 거푸집동바리 작업';
-      } else if (r.law && r.law.startsWith('안전보건규칙') && !/제332조/.test(r.law)) {
-        lawTitle = r.law;
-      } else if (/안전보건규칙/.test(lawTitle)) {
-        // 기존 법조문 제목 유지
-      } else if (hasFormworkAssemblyDefect) {
-        lawTitle = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
-      }
-    } else if (!hasAiVerifiedLawTitle && /(?:[비미]계|작업발판|가새|벽이음)/i.test(combinedContext)) {
-      if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^6\.3\.[12]\s*작업/.test(lawTitle)) {
-        lawBody = `${lawTitle.replace(/^\.?28\s*/, '7.2.8 ')}\n${lawBody}`.trim();
-        lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
-      } else if (/(?:[TErea\s]*EAM|IZ12B|1Z12B|1£Z12B|2128|10606|100K|106\(K\)|106K|106&|106\(|[비미]계\s*(?:작업|삭보|식보|&))/i.test(lawTitle)) {
-        lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
-      }
-    } else if (/현장\s*제작\s*대형\s*거푸집/.test(lawTitle)) {
-      lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
-    }
-    if (_lawNorm && typeof _lawNorm.normalizeSafetyLawSpec === 'function') {
-      const postHealedSpec = _lawNorm.normalizeSafetyLawSpec({
+      const resolvedSpec = _lawNorm.normalizeSafetyLawSpec({
         rawLaw: lawTitle,
         lawBody,
         law: r.law || '',
-        contextText: `${text} ${r.workGroup || ''} ${r.type || ''}`
+        contextText: `${text} ${r.workGroup || ''} ${r.type || ''}`,
+        workGroup: r.workGroup || '',
+        type: r.type || ''
       });
-      if (postHealedSpec.title) lawTitle = postHealedSpec.title;
-      if (postHealedSpec.body !== undefined) lawBody = postHealedSpec.body;
+      lawTitle = resolvedSpec.title || '';
+      lawBody = resolvedSpec.body !== undefined ? resolvedSpec.body : lawBody;
+    } else if (!lawTitle && r.law) {
+      lawTitle = simplifyLawTitle(r.law, `${text} ${lawBody}`);
     }
     lawTitle = _normSpacing(lawTitle);
 
-    if (/6\.3\.2\s*작업\s*중\s*점검/.test(lawBody) && /적격성.*전기설비/.test(lawBody)) {
-      lawBody = '6.3.2 작업 중 점검\n2) 시공관리자는 적격성을 갖춘 자를 지정하여 전기설비, 기계, 기구, 공도구 등에 대해 정기적으로 점검하도록 한다.';
-    } else {
+    if (lawBody) {
       const preCleanedLawBody = String(lawBody || '')
         .replace(/^\.?28\s*작업발판\s*일반사항/gm, '7.2.8 작업발판 일반사항')
         .replace(/6\.3\.2\s*(?:자업|작업)\s*중\s*점검[^\n]*?(?=1\)|2\)|\n|$)/g, '6.3.2 작업 중 점검\n')
@@ -1280,9 +1293,20 @@
     }
     const photoBannerTitle = mainContent || '부적합 현장 확인';
 
-    // 발생원인 의견 (인터뷰 결과)
-    let interviewOpinion = r.interviewOpinion || r.workerOpinion || '';
-    if (!interviewOpinion) {
+    // 발생원인 의견 (인터뷰 결과: 복수 '[근로자 의견]/[관리자 의견]' 블록 모두 보존)
+    const rawInterview = r.interviewOpinion || r.workerOpinion || '';
+    const normOp = _getNorm();
+    let interviewOpinion = rawInterview;
+    let interviewSections = Array.isArray(r.interviewOpinions) && r.interviewOpinions.length >= 2
+      ? r.interviewOpinions
+      : [];
+    if (normOp && typeof normOp.parseInterviewOpinions === 'function' && rawInterview) {
+      const parsedMulti = normOp.parseInterviewOpinions(rawInterview);
+      if (parsedMulti && parsedMulti.sections && parsedMulti.sections.length >= 2) {
+        interviewSections = parsedMulti.sections;
+      }
+    }
+    if (!interviewOpinion && interviewSections.length === 0) {
       if (text.includes('수평') || text.includes('로프간격')) {
         interviewOpinion = '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다. 양중로프를 걸 수 있는 위치가 어느 정도 적당하다고 생각되는 곳에 로프를 걸었다.';
       } else if (text.includes('양중') || text.includes('유도로프')) {
@@ -1293,7 +1317,13 @@
           : '현장 작업진행 과정에서 안전작업수칙에 대한 관리감독 및 작업자 간 소통이 미흡하여 규정 절차가 누락됨.';
       }
     }
-    interviewOpinion = cleanOpinionText(interviewOpinion);
+    interviewOpinion = cleanOpinionText(interviewOpinion, { preserveHeaders: interviewSections.length >= 2 });
+    if (interviewSections.length >= 2 && normOp && typeof normOp.parseInterviewOpinions === 'function') {
+      const reParsed = normOp.parseInterviewOpinions(interviewOpinion);
+      if (reParsed && reParsed.sections && reParsed.sections.length >= 2) {
+        interviewSections = reParsed.sections;
+      }
+    }
 
     // 점검단 제안 분류 (복수 선택 지원 - 본문 '재교육' 단어로 교육/코칭 오인 금지)
     let proposalItems = Array.isArray(r.proposalItems) && r.proposalItems.length > 0 ? r.proposalItems : [];
@@ -1399,7 +1429,9 @@
     const photoBanner = extractDirectAction(r);
     const photo2Banner = extractDirectAction2(r, photoBanner);
     const greenBanner = r.greenBanner || '';
-    const interviewAuthorTitle = r.interviewAuthorTitle || (r.interviewAuthor ? `[관리자 의견 : ${r.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]');
+    const interviewAuthorTitle = (interviewSections.length > 0 && interviewSections[0].title)
+      ? interviewSections[0].title
+      : (r.interviewAuthorTitle || (r.interviewAuthor ? `[관리자 의견 : ${r.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]'));
     const cleanedWorkGroup = cleanWorkGroup(r.workGroup || '', rawContent);
 
     return {
@@ -1430,6 +1462,7 @@
       interviewAuthor: r.interviewAuthor || '시공관리자 및 근로자',
       interviewAuthorTitle,
       interviewOpinion,
+      interviewSections,
       proposalType,
       proposalSub,
       proposalItems,
@@ -1802,27 +1835,11 @@
     });
 
     // 2) [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.3773)
-    const intLineSpacing = (data.interviewOpinion || '').length > 110 ? 1.08 : 1.14;
-    const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213 - (8.5 / 72), 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 6]);
-    const intBodyRuns = buildHangingBulletRuns(data.interviewOpinion, intSz, '111111', FONT_MALGUN, 8.5);
-    slide.addText([
-      {
-        text: data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]',
-        options: {
-          fontSize: 14,
-          bold: true,
-          color: C_SUBHEADER_TEXT,
-          fontFace: FONT_MALGUN,
-          bullet: false,
-          breakLine: intBodyRuns.length > 0,
-          paraSpaceAfter: 5
-        }
-      },
-      ...intBodyRuns
-    ], {
+    const { plan: intPlan, runs: intRuns } = buildInterviewOpinionTextRuns(data);
+    slide.addText(intRuns, {
       x: 8.2448, y: 2.8227, w: 4.9213, h: 1.3773,
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 },
-      margin: [5, 8, 4, 6], valign: 'top', lineSpacingMultiple: intLineSpacing
+      margin: intPlan.margin, valign: 'top', lineSpacingMultiple: intPlan.lineSpacing
     });
 
     // 3) [점검단 제안] 좌측 상단 셀 (SHAPE #5: x = 8.2448, y = 4.2000, w = 1.5342, h = 0.3100)
@@ -2370,8 +2387,7 @@
 
         <!-- [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.3773) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.3773)}; background: #ffffff; border: 1px solid #000000; padding: 0.30cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(14)}; font-weight: 800; color: #181717; margin-bottom: 0.20cqw;">${data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]'}</div>
-          <div style="font-size: ${pt(intSz)}; line-height: ${intLineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(data.interviewOpinion)}</div>
+${renderInterviewOpinionBoxHTML(data, pt)}
         </div>
 
         <!-- [점검단 제안] 헤더 셀 (SHAPE #5: x = 8.2448, y = 4.2000, w = 1.5342, h = 0.3100) -->

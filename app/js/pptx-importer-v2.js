@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v47';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v47';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v48';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v48';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -21,11 +21,16 @@ import {
   extractCoreViolationBanner,
   splitInlineBullets,
   stripCircledNumbers,
+  stripBannerSecondItemTail,
   normalizePhotoBannerText,
   resolveUnifiedPhotoBanner,
   normalizeSafetyLawBody,
-  normalizeSafetyLawSpec
-} from './text-normalizer.js?v=20261115_v47';
+  normalizeSafetyLawSpec,
+  hasGarbledKoreanNoise,
+  inferSafetyDomain,
+  SafeGuidelineMemory,
+  parseInterviewOpinions
+} from './text-normalizer.js?v=20261115_v48';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -41,8 +46,8 @@ export function deriveConcreteBanner(content) {
   let c = normalizeKoreanSpacing(healSafetyKoreanLexicon(content))
     .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
     .trim();
-  c = c.replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동|\s*외부)?)\s*/i, '');
-  const firstLine = c.split('\n')[0].replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
+  c = stripBannerSecondItemTail(c).replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동|\s*외부)?)\s*/i, '');
+  const firstLine = stripBannerSecondItemTail(c.split('\n')[0]).replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
   if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
   if (firstLine.includes('버팀대') && (firstLine.includes('각도') || firstLine.includes('미준수') || firstLine.includes('불량'))) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
   if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
@@ -64,11 +69,14 @@ export function deriveConcreteBanner(content) {
     return '분전함 차단기 충전부 노출';
   }
 
-  return extractCoreViolationBanner('', c) || firstLine || '';
+  return stripBannerSecondItemTail(extractCoreViolationBanner('', c) || firstLine || '');
 }
 
 /**
- * 산업안전보건법 관련 조문 필터링 및 작업지침 기반 표준 법령 자동 매핑
+ * [관련 기준] 3단계 우선순위 정규화 필터 (하드코딩 조문 임의 대입 금지)
+ * - 1순위: 원본 문서에서 추출된 유효한 관련 기준(산업안전보건법/지침/위험성평가) 보존
+ * - 2순위: 학습된 SafeGuidelineMemory 조회 보완
+ * - 3순위: 공란·손상·도메인 충돌 시 빈 값('')을 반환하여 AI(Qwen3-30B)가 산업안전보건법으로 일관 판단하도록 위임
  * @param {string} lawText
  * @param {string} contextText
  * @returns {string}
@@ -76,67 +84,20 @@ export function deriveConcreteBanner(content) {
 export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
   const rawLawStr = String(lawText || '').replace(/직[계게개]차|지[계개제]차/g, '지게차').trim();
   const ctxStr = String(contextText || '').replace(/직[계게개]차|지[계개제]차/g, '지게차').trim();
-  const combined = `${rawLawStr} ${ctxStr}`;
-  const hasForkliftInCtx = /지게차|하역|유도원|운행경로/.test(ctxStr);
-  const hasElecInCtx = /가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|절연\s*불량/.test(ctxStr || combined);
-  const hasLifelineInCtx = /생명줄|안전대\s*부착|안전대|추락|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼/.test(ctxStr);
-  const hasCraneLiftingInCtx = /크레인|타워크레인|양중물|형틀자재\s*양중|자재\s*양중|줄걸이|인양|달기구|슬링|유도로프|양중\s*(?:작업|금지|시)/.test(ctxStr || combined);
-  const hasFormworkAssemblyDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(combined);
+  if (!rawLawStr && !ctxStr) return '';
 
-  if (rawLawStr && /산업안전보건|안전보건규칙|산안법|산안규칙/.test(rawLawStr) && /제\s*\d+\s*조/.test(rawLawStr)) {
-    const isCollisionLawMismatch =
-      (/제172조|지게차/.test(rawLawStr) && !hasForkliftInCtx && (hasElecInCtx || hasLifelineInCtx)) ||
-      (/제332조|거푸집동바리/.test(rawLawStr) && hasCraneLiftingInCtx && !hasFormworkAssemblyDefect);
-    if (!isCollisionLawMismatch) {
-      return rawLawStr;
-    }
+  const spec = normalizeSafetyLawSpec({
+    rawLaw: rawLawStr,
+    lawBody: '',
+    law: '',
+    contextText: ctxStr
+  });
+  if (spec.title && !hasGarbledKoreanNoise(spec.title)) {
+    return spec.title;
   }
-  // AI가 산안법 조문을 이미 제시하지 않았을 때만 도메인 문맥 기반 최소 표준 조문 보조 매핑 (크레인/양중 vs 거푸집동바리 우선순위 보정)
-  const allowForklift = !hasElecInCtx && !hasLifelineInCtx && (hasForkliftInCtx || (/지게차|유도자|유도원|운행경로/.test(combined) && !hasElecInCtx));
-  if (allowForklift && /지게차|유도자|유도원|하역|운행경로/.test(combined)) {
-    return '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
-  }
-  if (/충전부|소켓|심선/.test(combined) && (hasElecInCtx || !/통로/.test(combined))) {
-    return '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-  }
-  if (/접지/.test(combined)) {
-    return '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
-  }
-  if (/누전차단기|분전함|분전반|차단기|가설전선|가설전기|전기\s*작업|전기설비/.test(combined)) {
-    return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
-  }
-  if (hasCraneLiftingInCtx && !hasFormworkAssemblyDefect) {
-    return '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-  }
-  if (/갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(combined)) {
-    return '안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)';
-  }
-  if (combined.includes('동바리') || combined.includes('서포트') || combined.includes('멍에')) {
-    return '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
-  }
-  if (combined.includes('양중') || combined.includes('유도로프') || combined.includes('크레인') || combined.includes('줄걸이')) {
-    return '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)';
-  }
-  if (combined.includes('말비계') || combined.includes('우마')) {
-    return '안전보건규칙 제67조(말비계의 구조)';
-  }
-  if (combined.includes('비계') || combined.includes('작업발판')) {
-    return '안전보건규칙 제56조(작업발판의 구조)';
-  }
-  if (combined.includes('개구부') || combined.includes('덮개')) {
-    return '안전보건규칙 제43조(개구부 등의 방호 조치)';
-  }
-  if (combined.includes('안전난간') || combined.includes('난간')) {
-    return '안전보건규칙 제13조(안전난간의 구조 및 요건)';
-  }
-  if (combined.includes('안전대') || combined.includes('생명줄')) {
-    return '안전보건규칙 제44조(안전대의 부착설비 등)';
-  }
-  if (combined.includes('통로') || combined.includes('조도')) {
-    return '안전보건규칙 제22조(통로의 설치)';
-  }
-  if (combined.includes('전선') || combined.includes('투광등')) {
-    return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
+  const learned = SafeGuidelineMemory.lookup({ rawLaw: rawLawStr, content: ctxStr });
+  if (learned && learned.title && !hasGarbledKoreanNoise(learned.title)) {
+    return learned.title;
   }
   return '';
 }
@@ -714,70 +675,33 @@ export function cleanWorkGroup(rawWork, contentText = '') {
   return mapToStandardWorkGroup(rawWork, contentText);
 }
 
-export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 관한 규칙') {
+export function parseLawCell(tLaw, fallbackTitle = '') {
   const rawStr = String(tLaw || '');
   const rawLines = rawStr.split(/\r?\n/)
-    .map(l => l.replace(/^[|ㅣ¦!~—\-_=\[\]]+\s*/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim())
+    .map(l => l.replace(/^[|ㅣ¦!~—\-_=]+\s*/, '').replace(/[|ㅣ¦!~—\-_=]+$/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim())
     .filter(Boolean);
 
-  if (rawLines.length === 0) return { title: fallbackTitle, body: '' };
+  if (rawLines.length === 0) return { title: '', body: '', needsAiLaw: true };
 
   const contextText = typeof arguments[2] === 'string' ? arguments[2] : '';
-  const joinedCheck = rawLines.join(' ').replace(/직[계게개]차|지[계개제]차/g, '지게차');
-  const ctxClean = String(contextText || '').replace(/직[계게개]차|지[계개제]차/g, '지게차');
-  const combinedCheckCtx = `${joinedCheck} ${ctxClean}`;
-  const isElectricalLawCtx = /(?:전기\s*작업|전기설비|가설전기|분전반|분전함|접지선?|누전차단기|차단기|전등|소켓|투광등|충전부|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/i.test(combinedCheckCtx) && !/지게차|3\.?6\s*유도자|운행경로/.test(ctxClean);
-  const isOtherTradeLawCtx = /(?:생명줄|안전대\s*부착|안전대|추락|낙하방지|비계|거푸집|동바리|갱폼|알폼)/i.test(combinedCheckCtx) && !isElectricalLawCtx && !/지게차|하역|유도원|운행경로/.test(ctxClean);
-
-  if (isElectricalLawCtx) {
-    // 전기 작업 장표의 [IZ12B-108K] 코드를 지게차로 오인하지 않고 전기 기준 원문으로 정규화 (115 등 타 번호 보존)
-    if (/지게차|3\.?6\s*유도자|운행경로/.test(joinedCheck)) {
-      const fallbackElecTitle = filterOnlyOccupationalSafetyLaw('', contextText) || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-      return {
-        title: fallbackElecTitle,
-        body: ''
-      };
-    }
-    if (rawLines.length > 0 && /108\s*\(?K\)?/i.test(rawLines[0]) && !/11\d|7\.2\.3|301조|302조|304조|안전보건규칙/.test(rawLines[0])) {
-      rawLines[0] = '안전작업지침 [IZ12B-108(K)] 전기 작업';
-    }
-  } else if (!isOtherTradeLawCtx && (
-    /지게차\s*작업\s*지침|3\.?6\s*유도자|운전원의\s*시야|계획된\s*운행경로|운행경로에\s*접근하는/.test(joinedCheck) ||
-    (/108\s*\(?K\)?/.test(joinedCheck) && (!contextText || /지게차|하역|유도원|창호|충돌/.test(contextText)) && !/비계|거푸집|동바리|안전대|생명줄/.test(combinedCheckCtx))
-  )) {
-    // 지게차 작업지침 [IZ12B-108(K)] 3.6 유도자 복원 (실제 지게차/하역 장표일 때만)
-    return {
-      title: '안전작업지침 [IZ12B-108(K)] 지게차 작업지침',
-      body: '3.6 유도자\n3) 지게차 이동 시 유도자는 지게차 운전원의 시야로 확인 가능한 위치에서 장비로부터 5m 이상 안전거리를 확보해야 하고 장비의 전도·전락 및 근로자와의 충돌, 협착을 방지하기 위해 계획된 운행경로를 따라 이동하도록 유도하며 운행경로에 접근하는 관리자, 근로자 등 모든 인원의 출입을 통제해야 할 권한 및 책임이 있다.'
-    };
-  }
-
   let titleIdx = 0;
   if (rawLines.length > 1) {
     const l0 = rawLines[0];
     const isL0Noise = (/^[0-9I=;:\s]+/.test(l0) && (/of\s*xi/i.test(l0) || /업적/i.test(l0) || l0.length < 15))
       || /거푸집공\s*업적/.test(l0);
-    const hasClearNextTitle = /(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙|안전보건규칙|안전삭업|안전작업|106|108)/i.test(rawLines[1]);
-    if (isL0Noise || (hasClearNextTitle && !/(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙|안전삭업|안전작업|106|108)/i.test(l0))) {
+    const hasClearNextTitle = /(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙|안전보건규칙|안전삭업|안전작업|106|108|110|115|IZ)/i.test(rawLines[1]);
+    if (isL0Noise || (hasClearNextTitle && !/(?:작업\s*절차|작업\s*지침|안전\s*지침|조립\s*기준|일반\s*사항|보건\s*규칙|안전삭업|안전작업|106|108|110|115|IZ)/i.test(l0))) {
       titleIdx = 1;
     }
   }
 
-  let rawTitle = (rawLines[titleIdx] || fallbackTitle).replace(/^[0-9I=;:\s]+/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').trim();
+  let rawTitle = (rawLines[titleIdx] || fallbackTitle || '').replace(/^[0-9I=;:\s]+/, '').replace(/[|ㅣ¦!~—\-_=]+$/, '').trim();
   let sliceStart = titleIdx + 1;
 
-  // 비계 안전작업지침 제목 OCR 오인식 복원 (단, 108(K) 지게차 작업지침 등 타 공종 지침은 절대 덮어쓰지 않도록 보호!)
-  if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^(?:7\.)?1\s*비계\s*조립기준/.test(rawTitle)) {
-    rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
-    sliceStart = titleIdx; // 본문 첫 줄로 보존
-  } else if (/^6\.3\.[12]\s*작업/.test(rawTitle)) {
-    rawTitle = fallbackTitle;
+  // 소제목 행('7.2.8', '6.3.2' 등)이 첫 줄로 잡힌 경우 본문 첫 줄로 복원
+  if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^(?:7\.)?1\s*비계\s*조립기준|^6\.3\.[12]\s*작업/.test(rawTitle)) {
+    rawTitle = fallbackTitle || '';
     sliceStart = titleIdx;
-  } else if (
-    /(?:10606|100K|106\(K\)|106K|106&|106\(|[비미]계\s*(?:작업|삭보|식보|&))/i.test(rawTitle) &&
-    !/지게차|108|거푸집|동바리|전기|창호|크레인|양중/i.test(rawTitle)
-  ) {
-    rawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
   } else if (/현장\s*제작\s*대형\s*거푸집/.test(rawTitle)) {
     rawTitle = '현장 제작 대형 거푸집공사 작업 절차';
   }
@@ -804,16 +728,9 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
     .replace(/\s*\*\s+/g, '\n* ')
     .trim();
 
-  if (/6\.3\.2\s*작업\s*중\s*점검/.test(rawBodyJoined) && /적격성.*전기설비/.test(rawBodyJoined)) {
-    return {
-      title: rawTitle,
-      body: '6.3.2 작업 중 점검\n2) 시공관리자는 적격성을 갖춘 자를 지정하여 전기설비, 기계, 기구, 공도구 등에 대해 정기적으로 점검하도록 한다.'
-    };
-  }
-
   const bodyLines = [];
   for (const line of rawBodyJoined.split(/\r?\n/)) {
-    const cl = line.replace(/^[|ㅣ¦!~—\-_=\[\]]+\s*/, '').replace(/[|ㅣ¦!~—\-_=\[\]]+$/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
+    const cl = line.replace(/^[|ㅣ¦!~—\-_=]+\s*/, '').replace(/[|ㅣ¦!~—\-_=]+$/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
     if (!cl || cl.length < 2) continue;
     if (/^(?:[=—\-_\s]+ee|[a-zA-Z\s=]{5,})$/i.test(cl)) continue;
     if (/(?:협력사|공종명|작업장소|점검자|점검차수)\s*[:;：]/.test(cl)) continue;
@@ -844,24 +761,38 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
     contextText
   });
   return {
-    title: healedLaw.title !== undefined && healedLaw.title !== '' ? healedLaw.title : rawResult.title,
-    body: healedLaw.body !== undefined ? healedLaw.body : rawResult.body
+    title: healedLaw.title !== undefined && healedLaw.title !== '' ? healedLaw.title : '',
+    body: healedLaw.body !== undefined ? healedLaw.body : rawResult.body,
+    needsAiLaw: Boolean(healedLaw.needsAiLaw)
   };
 }
 
-export function cleanOpinionText(raw) {
+export function cleanOpinionText(raw, options = {}) {
   if (!raw) return '';
   let rawStr = String(raw || '');
-    rawStr = rawStr.replace(/\s+[a-z]\s*\d+\s*\{[\s\S]*$/i, '');
-    rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
-    rawStr = rawStr.replace(/\.{3,}[가-힣a-zA-Z0-9\s.]*$/g, '');
-    rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
-    let s = healSafetyKoreanLexicon(rawStr)
+  rawStr = rawStr.replace(/\s+[a-z]\s*\d+\s*\{[\s\S]*$/i, '');
+  rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
+  rawStr = rawStr.replace(/\.{3,}[가-힣a-zA-Z0-9\s.]*$/g, '');
+  rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
+  const preCleaned = healSafetyKoreanLexicon(rawStr)
     .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-    .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
     .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
     .replace(/^[^\n]*?=\s*-\s*/, '- ')
+    .trim();
+
+  const parsedMulti = parseInterviewOpinions(preCleaned);
+  if (parsedMulti.hasMulti || (options.preserveHeaders && parsedMulti.sections.length > 0)) {
+    return parsedMulti.hasMulti
+      ? parsedMulti.formatted
+      : parsedMulti.sections.map(sec => (sec.text ? `${sec.title}\n${sec.text}` : sec.title)).join('\n');
+  }
+  if (parsedMulti.sections.length === 1 && parsedMulti.sections[0].text) {
+    return parsedMulti.sections[0].text;
+  }
+
+  let s = preCleaned
+    .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
     .trim();
 
   // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
@@ -1530,19 +1461,26 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
   const mLaw = txt.match(/(?:작업지침\s*\[[^\]]+\][^\n]+|산업안전보건[^\n]+|안전보건규칙[^\n]+|산안법[^\n]+)/);
   if (mLaw) rawLaw = mLaw[0].trim();
 
-  // 발생원인 관리자 의견 저자
+  // 발생원인 인터뷰 결과 (단일·복수 '[역할 의견 : 작성자]' 모두 보존)
   let interviewAuthor = '시공관리자 및 근로자';
-  const mAuthor = txt.match(/\[\s*(?:관리자\s*의견|의견)\s*[:：]\s*([^\]]+)\]/i);
-  if (mAuthor && mAuthor[1]) {
-    interviewAuthor = mAuthor[1].replace(/의견\s*$/, '').trim();
-  }
-  const interviewAuthorTitle = mAuthor ? `[관리자 의견 : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
-
-  // 관계자 의견 추출: [HAT 제안], [점검단 제안], 시스템 개선, 교육/코칭이 관계자 의견에 혼입되지 않도록 원천 차단
+  let interviewAuthorTitle = '[의견 : 시공관리자 및 근로자]';
   let interviewOpinion = '';
-  const mOp = txt.match(/(?:\[[^\]]*의견[^\]]*\]\s*)([\s\S]*?)(?=(?:[블를클\[(]\s*)?(?:점검단|HAT)\s*제안|시스템\s*개선|교육\/코칭|개선대책|$)/i);
+  let interviewOpinions = [];
+  const mOp = txt.match(/((?:\[[^\]]*(?:의견|면담|인터뷰)[^\]]*\]\s*[\s\S]*?))(?=(?:[블를클\[(]\s*)?(?:점검단|HAT)\s*제안|시스템\s*개선|교육\/코칭|개선대책|$)/i);
   if (mOp && mOp[1]) {
-    interviewOpinion = cleanOpinionText(mOp[1]);
+    const parsedOp = parseInterviewOpinions(mOp[1]);
+    interviewOpinions = parsedOp.sections || [];
+    if (parsedOp.hasMulti) {
+      interviewAuthor = parsedOp.authorsText || interviewAuthor;
+      interviewAuthorTitle = parsedOp.primaryTitle || interviewAuthorTitle;
+      interviewOpinion = parsedOp.formatted;
+    } else if (parsedOp.sections.length === 1) {
+      interviewAuthor = parsedOp.sections[0].author || parsedOp.sections[0].role || interviewAuthor;
+      interviewAuthorTitle = parsedOp.sections[0].title || interviewAuthorTitle;
+      interviewOpinion = parsedOp.sections[0].text || cleanOpinionText(mOp[1]);
+    } else {
+      interviewOpinion = cleanOpinionText(mOp[1]);
+    }
   }
 
   // 점검자 의견 구분 (복수 선택 지원: 시스템 개선, 교육/코칭, 페널티)
@@ -1595,13 +1533,24 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
   });
   const pmVerdictSub = pmVerdictItems.map(it => it.sub).filter(Boolean).join(', ');
 
-  const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
+  const lawSpec = normalizeSafetyLawSpec({
+    rawLaw,
+    lawBody: '',
+    law: '',
+    contextText: `${content} ${workGroup}`,
+    workGroup,
+    type
+  });
+  const finalRawLaw = lawSpec.title || rawLaw;
+  const law = filterOnlyOccupationalSafetyLaw(finalRawLaw, `${content} ${workGroup}`);
 
   return {
     severity,
     type,
     law,
-    rawLaw,
+    rawLaw: finalRawLaw,
+    lawBody: lawSpec.body || '',
+    _needsAiLaw: Boolean(lawSpec.needsAiLaw),
     subcontractor,
     workGroup,
     location,
@@ -1613,6 +1562,7 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     interviewAuthor,
     interviewAuthorTitle,
     interviewOpinion,
+    interviewOpinions,
     inspectorOpinionType,
     auditProposal,
     actionPlan,
@@ -1788,14 +1738,134 @@ function buildStripDataUrlFromSpecs(canvas, validSpecs, maxW, totalH) {
   return stripCanvas.toDataURL('image/jpeg', 0.80);
 }
 
+const REFERENCE_IMAGE_TEXT_RE = /(?:유사\s*사[고교]\s*사례?|사고\s*사례|재해\s*사례|추락\s*높이|설치\s*기준|작업\s*지침|표준\s*안전|표준도|올바른\s*예|KOSHA|안전보건공단|안전보건규칙|보강\s*예|시공\s*기준|시공\s*가이드|참고\s*사진|참고\s*자료|개선\s*사례|적용\s*예시|안전\s*대책\s*예)/i;
+const STRICT_REF_ONLY_RE = /(?:유사\s*사[고교]\s*사례?|사고\s*사례|재해\s*사례|올바른\s*예|표준도|KOSHA|안전보건공단|시공\s*가이드)/i;
+
+function upscaleCanvas(srcCanvas, factor = 2) {
+  if (!srcCanvas || factor <= 1) return srcCanvas;
+  const dst = document.createElement('canvas');
+  dst.width = Math.max(1, Math.round(srcCanvas.width * factor));
+  dst.height = Math.max(1, Math.round(srcCanvas.height * factor));
+  const ctx = dst.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(srcCanvas, 0, 0, dst.width, dst.height);
+  return dst;
+}
+
+function invertGrayscaleCanvas(srcCanvas) {
+  const dst = document.createElement('canvas');
+  dst.width = Math.max(1, srcCanvas.width);
+  dst.height = Math.max(1, srcCanvas.height);
+  const ctx = dst.getContext('2d');
+  ctx.drawImage(srcCanvas, 0, 0);
+  try {
+    const img = ctx.getImageData(0, 0, dst.width, dst.height);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      // 밝은 흰색 글씨(>175)를 진한 검정(0)으로, 어두운/중간 배경(<=175)을 백색(255)으로 반전하여 유색 배너 백색 글씨 OCR 인식률 극대화
+      const val = lum >= 175 ? 15 : (lum >= 120 ? Math.max(20, 255 - lum) : 250);
+      d[i] = val;
+      d[i + 1] = val;
+      d[i + 2] = val;
+    }
+    ctx.putImageData(img, 0, 0);
+  } catch (_) { /* ignore tainted canvas */ }
+  return dst;
+}
+
 /**
- * 각 셀을 원본(1.0x) 해상도 그대로 크롭하여 3-Worker 병렬 풀로 정밀 OCR 수행 +
- * 필요 시(Selective Vision Rescue 발동 시에만) Cloudflare Vision AI 전송용 압축 스트립 이미지 생성
+ * 디지털 PDF 텍스트 아이템(캔버스 픽셀 좌표 투영 완료)에서 특정 셀 박스 내부 텍스트를 줄·어순 정렬 복원
+ */
+function extractTextFromDigitalItems(digitalItems, box, padX = 1, padY = 1) {
+  if (!Array.isArray(digitalItems) || digitalItems.length === 0 || !box) return '';
+  const xMin = box.x - padX;
+  const xMax = box.x + box.w + padX;
+  const yMin = box.y - padY;
+  const yMax = box.y + box.h + padY;
+
+  const hits = digitalItems.filter(it => it && it.cx >= xMin && it.cx <= xMax && it.cy >= yMin && it.cy <= yMax);
+  if (hits.length === 0) return '';
+
+  const sorted = [...hits].sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+  const lines = [];
+  for (const it of sorted) {
+    const tol = Math.max(4, (it.h || 12) * 0.52);
+    const lastLine = lines.length > 0 ? lines[lines.length - 1] : null;
+    if (lastLine && Math.abs(it.cy - lastLine.anchorCy) <= tol) {
+      lastLine.items.push(it);
+      lastLine.anchorCy = (lastLine.anchorCy * (lastLine.items.length - 1) + it.cy) / lastLine.items.length;
+    } else {
+      lines.push({ anchorCy: it.cy, items: [it] });
+    }
+  }
+
+  return lines.map(line => {
+    line.items.sort((a, b) => a.x0 - b.x0 || a.cx - b.cx);
+    let lineStr = '';
+    let prev = null;
+    for (const it of line.items) {
+      const token = String(it.str || '');
+      if (!token) continue;
+      if (prev && lineStr && !/\s$/.test(lineStr) && !/^\s/.test(token)) {
+        const gap = it.x0 - prev.x1;
+        const spaceThresh = Math.max(1.5, Math.min(prev.h || 12, it.h || 12) * 0.14);
+        if (gap > spaceThresh) {
+          lineStr += ' ';
+        }
+      }
+      lineStr += token;
+      prev = it;
+    }
+    return lineStr.trim();
+  }).filter(Boolean).join('\n').trim();
+}
+
+/**
+ * 후보 사진 영역이 '유사 사고사례', '표준안전기준', '올바른 예' 등 참고/도판 이미지인지 판별 (PDF·이미지·PPTX 공용)
+ */
+async function isReferenceOrCaseStudyBox(canvas, box, digitalItems = [], allowBroadKeywords = true) {
+  if (!canvas || !box || box.w < 24 || box.h < 24) return false;
+  const rx = allowBroadKeywords ? REFERENCE_IMAGE_TEXT_RE : STRICT_REF_ONLY_RE;
+
+  if (Array.isArray(digitalItems) && digitalItems.length > 0) {
+    const topDigital = extractTextFromDigitalItems(digitalItems, {
+      x: box.x,
+      y: box.y,
+      w: box.w,
+      h: Math.round(box.h * 0.55)
+    }, 4, 4);
+    if (topDigital && rx.test(topDigital)) return true;
+  }
+
+  try {
+    await initPaddleOcr();
+    const headerH = Math.min(180, Math.max(36, Math.round(box.h * 0.40)));
+    const topHeaderRect = { x: box.x, y: box.y, w: box.w, h: headerH };
+    const topCanvas = cropCanvas(canvas, topHeaderRect);
+    const refOcr = await recognizeCellWithPaddle(topCanvas, 'refCheck');
+    if (refOcr?.text && rx.test(refOcr.text)) return true;
+
+    // 올리브/청색/암색 배너 위의 백색 윤곽선 글씨('유사 사고사례') 반전 OCR 보조 판독
+    const stripH = Math.min(95, Math.max(28, Math.round(box.h * 0.22)));
+    const stripCanvas = cropCanvas(canvas, { x: box.x, y: box.y, w: box.w, h: stripH });
+    const invCanvas = invertGrayscaleCanvas(stripCanvas.width < 420 ? upscaleCanvas(stripCanvas, 2) : stripCanvas);
+    const invOcr = await recognizeCellWithPaddle(invCanvas, 'refCheck');
+    if (invOcr?.text && rx.test(invOcr.text)) return true;
+  } catch (_) { /* ignore OCR reference check failure */ }
+
+  return false;
+}
+
+/**
+ * 각 셀을 디지털 PDF 좌표 텍스트 우선 추출 + 미보유/이미지 셀만 PaddleOCR ONNX 정밀 수행
  */
 async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
   const result = {};
   const cellCrops = {};
   const cellConfidences = {};
+  const cellDigitalUsed = {};
   const lowConfidenceFields = [];
   const validSpecs = [];
   const LABEL_MAP = {
@@ -1849,7 +1919,7 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
   }
 
   if (validSpecs.length === 0) {
-    return { texts: result, stripDataUrl: '', validSpecs: [], stripMaxW: maxW, stripTotalH: totalH, cellCrops, cellConfidences, lowConfidenceFields };
+    return { texts: result, stripDataUrl: '', validSpecs: [], stripMaxW: maxW, stripTotalH: totalH, cellCrops, cellConfidences, lowConfidenceFields, cellDigitalUsed };
   }
 
   let stripDataUrl = '';
@@ -1860,6 +1930,28 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
   // 각 셀 원본 크롭 생성 (1:1 검수 루페용 DataURL은 UI 바인딩된 7개 필드만 인코딩하여 메인 스레드 지연 제거)
   const LOUPE_KEYS = new Set(['content', 'interview', 'propText', 'cm', 'loc', 'sub', 'round']);
   const ocrTargets = validSpecs.filter(s => s.key !== 'check' && s.key !== 'meta');
+  const digitalItems = Array.isArray(options.digitalItems) ? options.digitalItems : [];
+  const hasPositionedDigital = digitalItems.length >= 25;
+  const IMAGE_ONLY_MAYBE_KEYS = new Set(['banner', 'banner2']);
+
+  let digitalContentHitCount = 0;
+  if (hasPositionedDigital) {
+    for (const s of ocrTargets) {
+      const box = { x: s.sx, y: s.sy, w: s.sw, h: s.sh };
+      const padY = (s.key === 'banner' || s.key === 'banner2') ? 2 : 1;
+      const dTxt = extractTextFromDigitalItems(digitalItems, box, 1, padY);
+      if (dTxt) {
+        result[s.key] = dTxt;
+        cellDigitalUsed[s.key] = true;
+        if (['content', 'law', 'interview', 'cm', 'propText'].includes(s.key)) {
+          digitalContentHitCount++;
+        }
+        cellConfidences[s.key] = { confidence: 1.0, minCharConfidence: 1.0, lowConfidence: false, needsVisionRetry: false };
+      }
+    }
+  }
+  const sheetUsesPositionedDigital = hasPositionedDigital && digitalContentHitCount >= 2;
+
   for (const s of ocrTargets) {
     try {
       const c = cropCanvas(canvas, { x: s.sx, y: s.sy, w: s.sw, h: s.sh });
@@ -1878,6 +1970,12 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
         await initPaddleOcr();
         let cellIdx = 0;
         for (const s of ocrTargets) {
+          if (cellDigitalUsed[s.key]) continue;
+          // 디지털 텍스트 레이어가 본문/기준에 정상 매핑된 문서에서 비어 있는 일반 셀/점검자/협력사 셀은 OCR 생략 (속도 극대화 + 빈 라벨 오인식 원천 방지)
+          if (sheetUsesPositionedDigital && !IMAGE_ONLY_MAYBE_KEYS.has(s.key)) {
+            cellConfidences[s.key] = { confidence: 1.0, minCharConfidence: 1.0, lowConfidence: false, needsVisionRetry: false };
+            continue;
+          }
           if (!s._cropCanvas) continue;
           // 협력사/점검자 우측 값 영역이 완전 공백이면 ONNX 추론 자체를 건너뛰어 속도 향상 및 '적검자'/'로' 라벨 오인식 원천 차단
           if ((s.key === 'user' || s.key === 'sub') && !hasMetaValueInk(s._cropCanvas, s.key === 'user' ? 0.37 : 0.38)) {
@@ -1885,7 +1983,10 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
             cellConfidences[s.key] = { confidence: 1.0, minCharConfidence: 1.0, lowConfidence: false, needsVisionRetry: false };
             continue;
           }
-          const pRes = await recognizeCellWithPaddle(s._cropCanvas, s.key);
+          const ocrInputCanvas = (s.key === 'law' && s.sw < 950 && s.sh < 140)
+            ? upscaleCanvas(s._cropCanvas, 2)
+            : s._cropCanvas;
+          const pRes = await recognizeCellWithPaddle(ocrInputCanvas, s.key);
           result[s.key] = pRes.text || '';
           cellConfidences[s.key] = {
             confidence: pRes.confidence,
@@ -1909,6 +2010,7 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
 
     if (!paddleSucceeded && window.Tesseract) {
       await Promise.all(ocrTargets.map(async (s) => {
+        if (cellDigitalUsed[s.key]) return;
         try {
           const isBanner = s.key === 'banner' || s.key === 'banner2';
           const pad = (!isBanner && s.sw > 30 && s.sh > 24) ? 2 : 0;
@@ -1942,7 +2044,7 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     result.meta = `협력사 : ${subV} 공종명 : ${workV} 작업장소 : ${locV} 점검자 : ${userV} 점검차수 : ${roundV}`;
   }
 
-  return { texts: result, stripDataUrl, validSpecs, stripMaxW: maxW, stripTotalH: totalH, cellCrops, cellConfidences, lowConfidenceFields };
+  return { texts: result, stripDataUrl, validSpecs, stripMaxW: maxW, stripTotalH: totalH, cellCrops, cellConfidences, lowConfidenceFields, cellDigitalUsed };
 }
 
 export function parseVerdictItemsFromText(txt, monitoringDefault = '(현장모니터링 강화)') {
@@ -2082,17 +2184,25 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   }
 
   let interviewAuthor = '시공관리자 및 근로자';
-  let interviewRoleLabel = '관리자 의견';
-  const mAuthor = tInterview.match(/\[\s*(?:([가-힣a-zA-Z\s]{1,12}?)\s*의견|의견)\s*[:;：]?\s*([^\]]*)\]/i);
-  if (mAuthor) {
-    const rolePrefix = (mAuthor[1] || '').trim();
-    const targetName = (mAuthor[2] || '').replace(/의견\s*$/, '').trim();
-    if (rolePrefix) interviewRoleLabel = `${rolePrefix} 의견`;
-    if (targetName) interviewAuthor = targetName;
-    else if (rolePrefix) interviewAuthor = rolePrefix;
+  let interviewAuthorTitle = '[의견 : 시공관리자 및 근로자]';
+  let interviewOpinion = '';
+  let interviewOpinions = [];
+  const preCleanedInterview = cleanOpinionText(tInterview, { preserveHeaders: true });
+  const parsedOp = parseInterviewOpinions(preCleanedInterview || tInterview);
+  if (parsedOp.sections.length >= 2) {
+    interviewOpinions = parsedOp.sections;
+    interviewAuthor = parsedOp.authorsText || interviewAuthor;
+    interviewAuthorTitle = parsedOp.primaryTitle || interviewAuthorTitle;
+    interviewOpinion = parsedOp.formatted;
+  } else if (parsedOp.sections.length === 1) {
+    const sec0 = parsedOp.sections[0];
+    interviewOpinions = parsedOp.sections;
+    interviewAuthor = sec0.author || sec0.role || interviewAuthor;
+    interviewAuthorTitle = sec0.title || interviewAuthorTitle;
+    interviewOpinion = sec0.text || normalizeFieldText(cleanOpinionText(tInterview), 'interview');
+  } else {
+    interviewOpinion = normalizeFieldText(cleanOpinionText(tInterview), 'interview');
   }
-  const interviewAuthorTitle = mAuthor ? `[${interviewRoleLabel} : ${interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]';
-  const interviewOpinion = normalizeFieldText(cleanOpinionText(tInterview.replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')), 'interview');
 
   // 주의: 점검단 제안 본문(tPropText)의 '재교육하여' 등에 교육/코칭이 오인되지 않도록 오직 판정 셀(tPropType)만 파싱
   const rawPropItems = tPropType.trim() ? parseVerdictItemsFromText(tPropType, '(현장모니터링 강화)') : [];
@@ -2144,11 +2254,11 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   }
   if (!type && allowDefaults) type = '추락';
 
-  const hasLawOrCtx = !!(tLaw.trim() || content || workGroup);
-  const lawParsed = parseLawCell(tLaw, '산업안전보건기준에 관한 규칙', `${content} ${workGroup} ${tType}`);
-  const lawTitle = tLaw.trim() ? lawParsed.title : '';
-  const lawBody = lawParsed.body;
-  const law = hasLawOrCtx ? filterOnlyOccupationalSafetyLaw(lawTitle, `${content} ${workGroup}`) : '';
+  const lawParsed = parseLawCell(tLaw, '', `${content} ${workGroup} ${tType}`);
+  const lawTitle = lawParsed.title || '';
+  const lawBody = lawParsed.body || '';
+  const law = filterOnlyOccupationalSafetyLaw(lawTitle, `${content} ${workGroup}`);
+  const _needsAiLaw = Boolean(lawParsed.needsAiLaw || !lawTitle || !lawBody);
 
   return {
     severity,
@@ -2169,6 +2279,7 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     interviewAuthor,
     interviewAuthorTitle,
     interviewOpinion,
+    interviewOpinions,
     proposalItems,
     inspectorOpinionType,
     inspectorOpinionSub,
@@ -2183,7 +2294,8 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     _hasExplicitPmVerdict: hasExplicitPmVerdict,
     law,
     rawLaw: lawTitle,
-    lawBody
+    lawBody,
+    _needsAiLaw
   };
 }
 
@@ -2225,10 +2337,9 @@ function enrichRecordOfflineFromContent(record) {
       if (!record.rootCauseMgmt && r.rootCauseMgmt) record.rootCauseMgmt = r.rootCauseMgmt;
       if (!record.rootCauseSystem && r.rootCauseSystem) record.rootCauseSystem = r.rootCauseSystem;
       if (!record.stakeholder && r.stakeholder) record.stakeholder = r.stakeholder;
-      if (!record.law || /안전보건기준\s*검토|^산업안전보건기준에\s*관한\s*규칙$|제172조|지게차/.test(record.law)) {
+      if (!record.law && !record.rawLaw) {
         const cleanedLaw = filterOnlyOccupationalSafetyLaw(record.law, `${record.content || ''} ${record.workGroup || ''}`);
         if (cleanedLaw) record.law = cleanedLaw;
-        else if (r.law && (!/제172조|지게차/.test(r.law) || /지게차|하역|유도원/.test(record.content || ''))) record.law = r.law;
       }
       if (!record.photoBanner && r.photoBanner) record.photoBanner = r.photoBanner;
       if (!record.type && r.type) record.type = r.type;
@@ -2281,7 +2392,7 @@ function enrichRecordOfflineFromContent(record) {
  * 단일 점검장표 캔버스를 분석하여 사진 추출 + 텍스트/체크박스/Qwen AI 정제를 수행
  */
 export async function parseSheetCanvas(canvas, options = {}) {
-  const { digitalText = '', pageNumber = 1, sourceName = '' } = options;
+  const { digitalText = '', digitalItems = [], pageNumber = 1, sourceName = '' } = options;
 
   // 0. 고정밀 셀 레이아웃 분석
   let layout = null;
@@ -2294,34 +2405,30 @@ export async function parseSheetCanvas(canvas, options = {}) {
     console.warn('analyzeSheetLayout error:', e);
   }
 
-  // 레이아웃 인식 성공 시: 셀별 1.0x 병렬 OCR + Vision/Qwen 하이브리드 정제 + 현장 실물 사진 분리 추출
+  // 레이아웃 인식 성공 시: 디지털 PDF 좌표 텍스트 우선 추출 + 미보유 셀만 PaddleOCR + '유사 사고사례' 도판 제거
   if (layout && layout.ok) {
     const imgData = sharedImgData || canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
     const banners = findRedBanners(imgData, layout.photoArea);
     const photoBoxes = findPhotoBoxes(imgData, layout.photoArea, banners);
 
-    // [Step 4.2] 2차 PaddleOCR 키워드·줄수 보강 필터: 고유 적색 배너가 없고 백색/줄무늬 비율이 높은 문서 의심 상자만 상단 32% 고속 스캔
+    // [Step 4.2] '유사 사고사례' · 참고도판 전수 정밀 필터 (백색 비율 게이트 해제, 디지털 텍스트 + 정상/반전 상단 OCR 통합)
     if (photoBoxes.length >= 2) {
-      for (const b of photoBoxes) {
-        if (!b.isReference && !b.hasOwnBanner && b.whiteRatio >= 0.36 && b.whiteRowFrac >= 0.075) {
-          try {
-            await initPaddleOcr();
-            const topHeaderRect = { x: b.x, y: b.y, w: b.w, h: Math.min(120, Math.round(b.h * 0.32)) };
-            const boxCanvas = cropCanvas(canvas, topHeaderRect);
-            const refOcr = await recognizeCellWithPaddle(boxCanvas, 'refCheck');
-            if (
-              refOcr &&
-              /(?:설치기준|작업지침|표준안전|표준도|올바른\s*예|KOSHA|안전보건공단|안전보건규칙|보강\s*예|시공기준)/i.test(refOcr.text)
-            ) {
-              b.isReference = true;
-            }
-          } catch (e) {}
+      for (let idx = 0; idx < photoBoxes.length; idx++) {
+        const b = photoBoxes[idx];
+        if (b.isReference) continue;
+        const allowBroad = !(idx === 0 && b.hasOwnBanner);
+        if (await isReferenceOrCaseStudyBox(canvas, b, digitalItems, allowBroad)) {
+          b.isReference = true;
         }
+      }
+    } else if (photoBoxes.length === 1 && !photoBoxes[0].isReference) {
+      if (await isReferenceOrCaseStudyBox(canvas, photoBoxes[0], digitalItems, false)) {
+        photoBoxes[0].isReference = true;
       }
     }
 
     let realPhotoBoxes = photoBoxes.filter(b => !b.isReference);
-    if (realPhotoBoxes.length === 0 && photoBoxes.length > 0) {
+    if (realPhotoBoxes.length === 0 && photoBoxes.length > 0 && !photoBoxes[0].isReference) {
       realPhotoBoxes = [[...photoBoxes].sort((a, b) => a.whiteRatio - b.whiteRatio)[0]];
     }
 
@@ -2362,8 +2469,9 @@ export async function parseSheetCanvas(canvas, options = {}) {
       stripTotalH,
       cellCrops,
       cellConfidences,
-      lowConfidenceFields
-    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText, digitalText, buildStrip: false });
+      lowConfidenceFields,
+      cellDigitalUsed
+    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText, digitalText, digitalItems, buildStrip: false });
     const hadCellText = Object.values(cellTexts).some(v => v && String(v).trim().length > 0);
     const parsedFields = parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, hadCellText);
     if (photos.length <= 1) {
@@ -2381,17 +2489,19 @@ export async function parseSheetCanvas(canvas, options = {}) {
       cellCrops,
       cellConfidences,
       lowConfidenceFields,
+      _cellDigitalUsed: cellDigitalUsed,
       _rawCellTexts: cellTexts,
       _fullSheetContext: fullSheetContext,
       _hasDigitalText: hasDigitalText,
       _sourceFile: sourceName
     };
 
-    // 단건/다건 모두 초고속 배치 분류기(classifyBatchRecords)로 통일 + 필요한 저신뢰 페이지만 지연(Lazy) 스트립 생성 후 Selective Vision Rescue 실행
+    // 단건/다건 모두 초고속 배치 분류기(classifyBatchRecords)로 통일 + 래스터 OCR 셀이 깨졌거나 저신뢰일 때만 Selective Vision Rescue 실행
+    const usedDigitalAll = Boolean(cellDigitalUsed?.content && cellDigitalUsed?.law && cellDigitalUsed?.interview);
     const triggerVision = Boolean(
-      !hasDigitalText &&
+      !usedDigitalAll &&
       !window.SafeLocalAI?.isQuotaCoolingDown?.() &&
-      shouldTriggerVisionRescue(cellTexts, cellConfidences, parsedFields, hasDigitalText)
+      shouldTriggerVisionRescue(cellTexts, cellConfidences, parsedFields, cellDigitalUsed)
     );
 
     if (triggerVision && window.SafeLocalAI && typeof window.SafeLocalAI.cleanOcrRecord === 'function') {
@@ -2399,7 +2509,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
         const lazyStrip = initialStripDataUrl || buildStripDataUrlFromSpecs(canvas, validSpecs, stripMaxW, stripTotalH);
         if (lazyStrip) {
           record._stripImageBase64 = lazyStrip;
-          console.log(`[SafePatrol] Selective Vision Rescue 실행 (p.${pageNumber}, lowConf=${lowConfidenceFields?.join(',') || 'content'})`);
+          console.log(`[SafePatrol] Selective Vision Rescue 실행 (p.${pageNumber}, lowConf=${lowConfidenceFields?.join(',') || 'law/content'})`);
           record = await window.SafeLocalAI.cleanOcrRecord(fullSheetContext || parsedFields.content || '', record, { forceVision: true });
         }
       } catch (vErr) {
@@ -2593,6 +2703,72 @@ export async function parseImage(file) {
     pageNumber: 1,
     sourceName: file.name || '이미지 장표'
   });
+}
+
+/**
+ * PDF.js textContent.items를 캔버스 회전(0/90/180/270) 후의 픽셀 좌표로 정밀 투영
+ */
+export function projectPdfTextItems(textContent, viewport, origW, origH, rotationDeg = 0, Util = null) {
+  const pdfUtil = Util || (typeof window !== 'undefined' ? window.pdfjsLib?.Util : null);
+  const scale = viewport?.scale || 1.8;
+  const vtx = viewport?.transform || [scale, 0, 0, -scale, 0, origH];
+  const multiplyTx = (m1, m2) => (
+    pdfUtil && typeof pdfUtil.transform === 'function'
+      ? pdfUtil.transform(m1, m2)
+      : [
+          m1[0] * m2[0] + m1[2] * m2[1],
+          m1[1] * m2[0] + m1[3] * m2[1],
+          m1[0] * m2[2] + m1[2] * m2[3],
+          m1[1] * m2[2] + m1[3] * m2[3],
+          m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+          m1[1] * m2[4] + m1[3] * m2[5] + m1[5]
+        ]
+  );
+
+  const items = [];
+  for (const it of (textContent?.items || [])) {
+    const str = String(it?.str || '');
+    if (!str.trim() || !Array.isArray(it?.transform) || it.transform.length !== 6) continue;
+    const tx = multiplyTx(vtx, it.transform);
+    const baseLen = Math.hypot(tx[0], tx[1]) || 1;
+    const ux = tx[0] / baseLen;
+    const uy = tx[1] / baseLen;
+    const charH = Math.max(6, Math.hypot(tx[2], tx[3]) || ((it.height || 10) * scale) || 12);
+    const itemW = Math.max(2, (it.width || 0) * scale);
+
+    const cx0 = tx[4] + ux * (itemW * 0.5) + tx[2] * 0.35;
+    const cy0 = tx[5] + uy * (itemW * 0.5) + tx[3] * 0.35;
+
+    let cx = cx0;
+    let cy = cy0;
+    let w = itemW;
+    let h = charH;
+    if (rotationDeg === 270) {
+      cx = cy0;
+      cy = origW - cx0;
+      w = charH;
+      h = itemW;
+    } else if (rotationDeg === 90) {
+      cx = origH - cy0;
+      cy = cx0;
+      w = charH;
+      h = itemW;
+    } else if (rotationDeg === 180) {
+      cx = origW - cx0;
+      cy = origH - cy0;
+    }
+    items.push({
+      str,
+      cx,
+      cy,
+      x0: cx - w * 0.5,
+      x1: cx + w * 0.5,
+      y0: cy - h * 0.5,
+      y1: cy + h * 0.5,
+      h: charH
+    });
+  }
+  return items;
 }
 
 /**
@@ -2839,30 +3015,41 @@ export async function parsePDF(file, onProgress = () => {}) {
   const renderPageForSheet = async (pNum) => {
     const page = await pdfDoc.getPage(pNum);
     const viewport = page.getViewport({ scale: 1.8 });
+    const origW = viewport.width;
+    const origH = viewport.height;
     let pageCanvas = document.createElement('canvas');
-    pageCanvas.width = viewport.width;
-    pageCanvas.height = viewport.height;
+    pageCanvas.width = origW;
+    pageCanvas.height = origH;
     const pCtx = pageCanvas.getContext('2d');
     const [, textContent] = await Promise.all([
       page.render({ canvasContext: pCtx, viewport }).promise,
       page.getTextContent().catch(() => ({ items: [] }))
     ]);
 
-    // 가로 정방향 정규화 (270도 우선 확인하여 불필요한 2중 회전 생략)
+    // 가로 정방향 정규화 (회전각 추적하여 디지털 텍스트 아이템 좌표도 동일하게 투영)
+    let rotationDeg = 0;
     if (pageCanvas.height > pageCanvas.width) {
       const c270 = rotateCanvas(pageCanvas, 270);
       const sig270 = measureHeaderSignature(c270);
       if (sig270.isSheet) {
         pageCanvas = c270;
+        rotationDeg = 270;
       } else {
         const c90 = rotateCanvas(pageCanvas, 90);
-        pageCanvas = sig270.score >= measureHeaderSignature(c90).score ? c270 : c90;
+        if (sig270.score >= measureHeaderSignature(c90).score) {
+          pageCanvas = c270;
+          rotationDeg = 270;
+        } else {
+          pageCanvas = c90;
+          rotationDeg = 90;
+        }
       }
     }
 
+    const digitalItems = projectPdfTextItems(textContent, viewport, origW, origH, rotationDeg, pdfjsLib.Util);
     const digitalText = (textContent?.items || []).map(it => it.str || '').join(' ');
     const sig = measureHeaderSignature(pageCanvas);
-    return { pNum, pageCanvas, digitalText, sig };
+    return { pNum, pageCanvas, digitalText, digitalItems, sig };
   };
 
   const aiPromises = [];
@@ -2931,6 +3118,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
       const rec = await parseSheetCanvas(pageCanvas, {
         digitalText,
+        digitalItems: item.digitalItems || [],
         pageNumber: pNum,
         sourceName: `${file.name} (p.${pNum})`,
         lastKnownLocation,
@@ -3045,16 +3233,18 @@ export async function parsePDF(file, onProgress = () => {}) {
 
 /**
  * Selective Vision Rescue 판단기:
- * 브라우저 PaddleOCR 결과가 고신뢰도·정상 텍스트이면 Vision API를 호출하지 않아 무료 할당량(10,000 Neurons/일)을 보존하고,
- * 흐린 스캔·저신뢰·심한 자모/영문 혼입이 감지된 페이지만 선별적으로 Cloudflare Vision OCR 정밀 복원을 실행합니다.
+ * - 디지털 좌표 텍스트가 사용된 셀은 Vision 호출 생략
+ * - 래스터 OCR 결과의 관련기준(law)이나 부적합내용(content)에 심각한 한글 깨짐·비단어가 남은 경우에만 선별적 Vision Rescue 발동
  */
-export function shouldTriggerVisionRescue(cellTexts = {}, cellConfidences = {}, parsedFields = {}, hasDigitalText = false) {
-  if (hasDigitalText) return false;
-  const content = String(parsedFields.content || cellTexts.content || '').trim();
-  if (!content || content.replace(/\s+/g, '').length < 6) return true;
+export function shouldTriggerVisionRescue(cellTexts = {}, cellConfidences = {}, parsedFields = {}, digitalFlagOrMap = false) {
+  const digitalMap = (digitalFlagOrMap && typeof digitalFlagOrMap === 'object') ? digitalFlagOrMap : null;
+  if (!digitalMap && digitalFlagOrMap === true) return false;
+  if (digitalMap && digitalMap.content && digitalMap.law && digitalMap.interview) return false;
 
-  // 6pt 관련기준(law) 셀은 1차로 normalizeSafetyLawSpec으로 복원하고, 그래도 심하게 깨진 비정상 토큰이 남은 저신뢰 경우에만 Vision Rescue 대상에 포함
-  const coreKeys = ['content', 'interview', 'propText', 'cm'];
+  const content = String(parsedFields.content || cellTexts.content || '').trim();
+  if (!digitalMap?.content && (!content || content.replace(/\s+/g, '').length < 6)) return true;
+
+  const coreKeys = ['content', 'interview', 'propText', 'cm'].filter(k => !digitalMap?.[k]);
   const retryCount = coreKeys.filter((k) => Boolean(cellConfidences?.[k]?.needsVisionRetry)).length;
   const rawLawText = String(parsedFields.rawLaw || cellTexts.law || '').trim();
   const normalizedLaw = normalizeSafetyLawSpec({
@@ -3063,21 +3253,88 @@ export function shouldTriggerVisionRescue(cellTexts = {}, cellConfidences = {}, 
     law: parsedFields.law || '',
     contextText: content
   });
-  const hasCorruptLawToken = Boolean(cellConfidences?.law?.needsVisionRetry) &&
+  const lawIsRaster = !digitalMap?.law;
+  const hasCorruptLawToken = lawIsRaster &&
     rawLawText.length >= 6 &&
-    /(?:안선작업|시심|주탁|닥아|방시시실|작입|IZ12B-10\/|\?{2,}|[가-힣]*\?[가-힣]*|\uFFFD)/.test(normalizedLaw.title || '');
+    (hasGarbledKoreanNoise(normalizedLaw.title || rawLawText) ||
+      (Boolean(cellConfidences?.law?.needsVisionRetry) && /(?:안선작업|시심|주탁|닥아|방시시실|작입|IZ12B-10\/|\?{2,}|[가-힣]*\?[가-힣]*|\uFFFD)/.test(normalizedLaw.title || rawLawText)));
+  if (hasCorruptLawToken && Boolean(cellConfidences?.law?.lowConfidence || hasGarbledKoreanNoise(rawLawText))) return true;
   if (retryCount >= 3) return true;
   if (retryCount >= 2 && (Boolean(cellConfidences?.content?.needsVisionRetry) || hasCorruptLawToken)) return true;
 
-  const contentCorrupted = /\uFFFD|\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))|[A-Za-z]{2,}(?=[가-힣])|[가-힣](?=[a-z]{2,})/.test(content)
-    || /[가-힣]{16,}/.test(content);
-  if (cellConfidences?.content?.needsVisionRetry && contentCorrupted) return true;
+  const contentCorrupted = !digitalMap?.content && (
+    /\uFFFD|\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))|[A-Za-z]{2,}(?=[가-힣])|[가-힣](?=[a-z]{2,})/.test(content) ||
+    /[가-힣]{16,}/.test(content)
+  );
+  if (!digitalMap?.content && cellConfidences?.content?.needsVisionRetry && contentCorrupted) return true;
 
   return false;
 }
 
+async function decodeDataUrlToCanvasForRefCheck(dataUrl) {
+  if (typeof document === 'undefined' || typeof Image === 'undefined' || !dataUrl) return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = Math.max(1, img.naturalWidth || img.width || 1);
+        const h = Math.max(1, img.naturalHeight || img.height || 1);
+        const scale = w > 900 ? (900 / w) : 1;
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(w * scale));
+        c.height = Math.max(1, Math.round(h * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c);
+      } catch (_) {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+function parsePptxSlideShapes(xmlText = '') {
+  const pics = [];
+  const spRefRects = [];
+  const picBlocks = xmlText.match(/<p:pic\b[\s\S]*?<\/p:pic>/g) || [];
+  for (let idx = 0; idx < picBlocks.length; idx++) {
+    const blk = picBlocks[idx];
+    const mEmbed = blk.match(/r:embed="([^"]+)"/);
+    if (!mEmbed) continue;
+    const mOff = blk.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/);
+    const mExt = blk.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/);
+    pics.push({
+      rId: mEmbed[1],
+      order: idx,
+      x: mOff ? parseInt(mOff[1], 10) : idx * 1000000,
+      y: mOff ? parseInt(mOff[2], 10) : 0,
+      cx: mExt ? parseInt(mExt[1], 10) : 0,
+      cy: mExt ? parseInt(mExt[2], 10) : 0,
+      hasCoords: Boolean(mOff && mExt)
+    });
+  }
+  const spBlocks = xmlText.match(/<p:sp\b[\s\S]*?<\/p:sp>/g) || [];
+  for (const blk of spBlocks) {
+    const spText = [...blk.matchAll(/<a:t>([^<]+)<\/a:t>/g)].map(m => m[1]).join(' ').trim();
+    if (!spText || !REFERENCE_IMAGE_TEXT_RE.test(spText)) continue;
+    const mOff = blk.match(/<a:off\s+x="(-?\d+)"\s+y="(-?\d+)"/);
+    const mExt = blk.match(/<a:ext\s+cx="(\d+)"\s+cy="(\d+)"/);
+    if (mOff && mExt) {
+      spRefRects.push({
+        text: spText,
+        x: parseInt(mOff[1], 10),
+        y: parseInt(mOff[2], 10),
+        cx: parseInt(mExt[1], 10),
+        cy: parseInt(mExt[2], 10)
+      });
+    }
+  }
+  return { pics, spRefRects };
+}
+
 /**
- * PPTX (.pptx) 슬라이드 초정밀 파서 (일반 텍스트 슬라이드 자동 생략 포함)
+ * PPTX (.pptx) 슬라이드 초정밀 파서 (일반 텍스트 슬라이드 자동 생략 및 '유사 사고사례' 이미지 필터링 포함)
  * @param {File} file - 업로드된 .pptx 파일
  * @returns {Promise<Array<object>>}
  */
@@ -3116,27 +3373,77 @@ export async function parsePPTX(file) {
 
     const parsed = parseStructuredTextFromSheet(fullText, ['계획 미이행', '불안전 상태']);
 
-    // 슬라이드 내 사진 추출 (Hold Point 아이콘 등 소형 이미지 제외)
-    const photos = [];
+    // 슬라이드 내 사진 추출 (<p:pic> 좌표 순 정렬 + '유사 사고사례'/참고도판 텍스트·이미지 필터)
+    const candidatePhotos = [];
     const relsPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`;
     if (zip.file(relsPath)) {
       const relsXml = await zip.file(relsPath).async('string');
-      const imgRels = [...relsXml.matchAll(/Type="[^"]*\/image"\s+Target="([^"]+)"/g)].map(m => m[1]);
+      const relMap = new Map();
+      const relTags = relsXml.match(/<Relationship\b[^>]+>/g) || [];
+      for (const tag of relTags) {
+        if (!/Type="[^"]*\/image"/.test(tag)) continue;
+        const mId = tag.match(/Id="([^"]+)"/);
+        const mTgt = tag.match(/Target="([^"]+)"/);
+        if (mId && mTgt) relMap.set(mId[1], mTgt[1]);
+      }
 
-      for (const target of imgRels) {
+      const { pics, spRefRects } = parsePptxSlideShapes(xmlText);
+      const isPicOverlaidByRefText = (pic) => {
+        if (!pic.hasCoords || spRefRects.length === 0) return false;
+        const pX1 = pic.x + pic.cx;
+        const pY1 = pic.y + pic.cy;
+        return spRefRects.some(sp => {
+          const sX1 = sp.x + sp.cx;
+          const sY1 = sp.y + sp.cy;
+          const interX = Math.max(0, Math.min(pX1, sX1) - Math.max(pic.x, sp.x));
+          const overlapRatioX = interX / Math.max(1, Math.min(pic.cx, sp.cx));
+          const verticalNear = sp.y <= pic.y + Math.round(pic.cy * 0.5) && sY1 >= pic.y - 450000;
+          return overlapRatioX >= 0.35 && verticalNear;
+        });
+      };
+
+      const orderedPics = pics.length > 0
+        ? [...pics].sort((a, b) => (a.x - b.x) || (a.y - b.y))
+        : Array.from(relMap.keys()).map((rId, order) => ({ rId, order, hasCoords: false }));
+
+      const seenTargets = new Set();
+      for (const pic of orderedPics) {
+        if (isPicOverlaidByRefText(pic)) continue;
+        const target = relMap.get(pic.rId);
+        if (!target) continue;
         const normalizedPath = target.replace(/^\.\.\//, 'ppt/');
+        if (seenTargets.has(normalizedPath)) continue;
+        seenTargets.add(normalizedPath);
         const imgFile = zip.file(normalizedPath);
-        if (imgFile) {
-          const uint8 = await imgFile.async('uint8array');
-          if (uint8.byteLength < 8000) continue; // 아이콘 등 초소형 이미지 제외
-          const base64 = await imgFile.async('base64');
-          const ext = normalizedPath.split('.').pop().toLowerCase();
-          const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-          photos.push(`data:${mime};base64,${base64}`);
-        }
+        if (!imgFile) continue;
+        const uint8 = await imgFile.async('uint8array');
+        if (uint8.byteLength < 8000) continue; // 아이콘 등 초소형 이미지 제외
+        const base64 = await imgFile.async('base64');
+        const ext = normalizedPath.split('.').pop().toLowerCase();
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+        candidatePhotos.push(`data:${mime};base64,${base64}`);
       }
     }
 
+    const photos = [];
+    for (let idx = 0; idx < candidatePhotos.length; idx++) {
+      const dataUrl = candidatePhotos[idx];
+      let isRefImg = false;
+      if (candidatePhotos.length >= 2 || idx >= 1) {
+        const imgCanvas = await decodeDataUrlToCanvasForRefCheck(dataUrl);
+        if (imgCanvas) {
+          isRefImg = await isReferenceOrCaseStudyBox(
+            imgCanvas,
+            { x: 0, y: 0, w: imgCanvas.width, h: imgCanvas.height },
+            [],
+            idx >= 1
+          );
+        }
+      }
+      if (!isRefImg) photos.push(dataUrl);
+    }
+
+    const cleanPhotos = photos.slice(0, 2);
     parsedRecords.push({
       slideNumber,
       ...parsed,
@@ -3145,9 +3452,10 @@ export async function parsePPTX(file) {
       condition: parsed.mgmtCauses.includes('불안전 상태') ? '물(物) 자체의 결함 (자재·부재 손상)' : '해당없음',
       action: parsed.mgmtCauses.includes('불안전 행동') ? '불안전한 동작·자세' : '해당없음',
       holdPoint: false,
-      photos: photos.length > 0 ? photos : [],
-      photo1: photos[0] || null,
-      photo2: photos[1] || null
+      photos: cleanPhotos,
+      photo1: cleanPhotos[0] || null,
+      photo2: cleanPhotos[1] || null,
+      photo2Banner: cleanPhotos.length > 1 ? parsed.photo2Banner : ''
     });
   }
 
