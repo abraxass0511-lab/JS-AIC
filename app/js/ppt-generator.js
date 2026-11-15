@@ -2591,8 +2591,27 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     return insights;
   }
 
-  // ── 회의용 PPT 프레젠테이션 파일 생성 (100% 맑은 고딕 서식) ──
+  function resolveTemplateEngine() {
+    if (typeof window !== 'undefined' && window.SafePPTTemplateEngine) return window.SafePPTTemplateEngine;
+    if (typeof globalThis !== 'undefined' && globalThis.SafePPTTemplateEngine) return globalThis.SafePPTTemplateEngine;
+    if (typeof require === 'function') {
+      try { return require('./ppt-template-engine.js'); } catch (_) { }
+    }
+    return null;
+  }
+
+  // ── [관리자용] 보고서 PPT 프레젠테이션 생성 (템플릿 OOXML 우선 + PptxGenJS 폴백) ──
   async function generatePresentation(options = {}) {
+    const tplEngine = resolveTemplateEngine();
+    if (tplEngine && tplEngine.buildManagerPptxBlob) {
+      try {
+        return await tplEngine.buildManagerPptxBlob(options);
+      } catch (tplErr) {
+        if (options.strictTemplate) throw tplErr;
+        console.warn('관리자용 템플릿 기반 PPT 생성 실패, 기본 레이아웃으로 폴백:', tplErr);
+      }
+    }
+
     const PptxClass = (typeof window !== 'undefined' && window.PptxGenJS) || (typeof PptxGenJS !== 'undefined' ? PptxGenJS : null);
     if (!PptxClass) {
       throw new Error('PptxGenJS 라이브러리가 로드되지 않았습니다.');
@@ -2741,7 +2760,7 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     });
 
     const safeMonthStr = (month || '전체기간').replace(/[\s~:\/\\]+/g, '_');
-    const filename = `안전회의_패트롤부적합분석_${safeMonthStr}_${siteName}.pptx`;
+    const filename = `관리자용_부적합보고서_${safeMonthStr}_${siteName}.pptx`;
     const pptxBlob = await pptx.write({ outputType: 'blob' });
     const mimeBlob = new Blob([pptxBlob], {
       type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
@@ -2769,6 +2788,15 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     return { blob: mimeBlob, filename };
   }
 
+  // ── [근로자용] TBM Letter PPT 프레젠테이션 생성 ──
+  async function generateWorkerPresentation(options = {}) {
+    const tplEngine = resolveTemplateEngine();
+    if (!tplEngine || !tplEngine.buildWorkerPptxBlob) {
+      throw new Error('PPT 템플릿 생성 엔진(SafePPTTemplateEngine)이 로드되지 않았습니다.');
+    }
+    return await tplEngine.buildWorkerPptxBlob(options);
+  }
+
   return {
     generateInspectionSheetPPT,
     renderInspectionSheetHTML,
@@ -2776,6 +2804,7 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     inferRecordSeverity,
     addInspectionSheetSlide,
     generatePresentation,
+    generateWorkerPresentation,
     extractInsights
   };
 });

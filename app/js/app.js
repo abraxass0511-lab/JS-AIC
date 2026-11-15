@@ -2315,76 +2315,122 @@ function bindEvents() {
     downloadBatchJangpyoPPT(records, this, `${records.length}건`);
   });
 
-  // ── 회의용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
-  $('#btnDownloadPPT').addEventListener('click', async () => {
-    const filterSite = $('#selExportSite').value;
-    const btn = $('#btnDownloadPPT');
+  function shiftIsoDateDays(isoDate, deltaDays) {
+    const dt = new Date(`${isoDate}T00:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return isoDate;
+    dt.setUTCDate(dt.getUTCDate() + deltaDays);
+    return dt.toISOString().slice(0, 10);
+  }
 
+  function prevMonthBucket(bucket) {
+    const m = String(bucket || '').match(/^(\d{4})-(\d{2})$/);
+    if (!m) return '';
+    let y = Number(m[1]);
+    let mo = Number(m[2]) - 1;
+    if (mo <= 0) { y -= 1; mo = 12; }
+    return `${y}-${String(mo).padStart(2, '0')}`;
+  }
+
+  async function collectExportReportPayload(filterSite) {
+    const applySite = (list) => (filterSite !== 'all' ? (list || []).filter(r => r.site === filterSite) : (list || []));
+    const allRecords = await store.listAll().catch(() => []);
+    let records = [];
+    let priorRecords = null;
+    let month = '';
+    let rangeStart = '';
+    let rangeEnd = '';
+    let periodLabel = '';
+    let filePeriodLabel = '';
+
+    if (exportPeriodMode === 'all') {
+      records = applySite(allRecords);
+      periodLabel = '전체 누적 기간';
+      filePeriodLabel = '전체누적';
+    } else if (exportPeriodMode === 'month') {
+      const bucket = $('#selExportMonth').value;
+      if (!bucket) {
+        toast('대상 월을 선택해주세요.', 'danger');
+        return null;
+      }
+      month = bucket;
+      periodLabel = bucket;
+      filePeriodLabel = bucket;
+      records = applySite(await store.listMonth(bucket));
+      const prevB = prevMonthBucket(bucket);
+      if (prevB) {
+        priorRecords = applySite(await store.listMonth(prevB).catch(() => []));
+      }
+    } else {
+      const start = $('#txtExportStartDate').value;
+      const end = $('#txtExportEndDate').value;
+      if (!start || !end) {
+        toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
+        return null;
+      }
+      rangeStart = start;
+      rangeEnd = end;
+      periodLabel = `${start} ~ ${end}`;
+      filePeriodLabel = `${start}_${end}`;
+      records = applySite(await store.listPeriod(start, end));
+      const sMs = Date.parse(`${start}T00:00:00Z`);
+      const eMs = Date.parse(`${end}T00:00:00Z`);
+      if (!Number.isNaN(sMs) && !Number.isNaN(eMs) && eMs >= sMs) {
+        const spanDays = Math.max(1, Math.round((eMs - sMs) / 86400000) + 1);
+        const prevEnd = shiftIsoDateDays(start, -1);
+        const prevStart = shiftIsoDateDays(prevEnd, -(spanDays - 1));
+        priorRecords = applySite(await store.listPeriod(prevStart, prevEnd).catch(() => []));
+      }
+    }
+
+    if (!records.length) {
+      toast('PPT를 생성할 점검 데이터가 없습니다.', 'danger');
+      return null;
+    }
+
+    return {
+      records,
+      allRecords,
+      priorRecords,
+      sites: store.sites || [],
+      siteName: filterSite === 'all' ? '전 현장 종합' : filterSite,
+      siteLabel: filterSite === 'all' ? '전체 현장 통합' : filterSite,
+      periodMode: exportPeriodMode,
+      month,
+      rangeStart,
+      rangeEnd,
+      periodLabel,
+      filePeriodLabel,
+      inspector: (store.user && store.user.name) || '안전관리자',
+      loadPhotoBase64: (path) => resolvePhotoBase64ForPPT(path)
+    };
+  }
+
+  async function runPptDownload(kind) {
+    const isWorker = kind === 'worker';
+    const btn = $(isWorker ? '#btnDownloadWorkerPPT' : '#btnDownloadPPT');
+    if (!btn) return;
+    const origText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'PPT 프레젠테이션 제작 중...';
+    btn.textContent = isWorker ? '근로자용 TBM PPT 제작 중...' : '관리자용 보고서 PPT 제작 중...';
 
     try {
-      let records = [];
-      let periodLabel = '';
-
-      if (exportPeriodMode === 'all') {
-        records = await store.listAll();
-        periodLabel = '전체 누적 기간';
-      } else if (exportPeriodMode === 'month') {
-        const bucket = $('#selExportMonth').value;
-        if (!bucket) {
-          toast('대상 월을 선택해주세요.', 'danger');
-          btn.disabled = false;
-          btn.textContent = '📑 회의용 분석 PPT (.pptx) 다운로드';
-          return;
-        }
-        records = await store.listMonth(bucket);
-        periodLabel = bucket;
-      } else {
-        const start = $('#txtExportStartDate').value;
-        const end = $('#txtExportEndDate').value;
-        if (!start || !end) {
-          toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
-          btn.disabled = false;
-          btn.textContent = '📑 회의용 분석 PPT (.pptx) 다운로드';
-          return;
-        }
-        records = await store.listPeriod(start, end);
-        periodLabel = `${start} ~ ${end}`;
-      }
-
-      if (filterSite !== 'all') {
-        records = records.filter(r => r.site === filterSite);
-      }
-      if (!records.length) {
-        toast('PPT를 생성할 점검 데이터가 없습니다.', 'danger');
-        btn.disabled = false;
-        btn.textContent = '📑 회의용 분석 PPT (.pptx) 다운로드';
-        return;
-      }
-
-      await window.SafePPT.generatePresentation({
-        records,
-        siteName: filterSite === 'all' ? '전 현장 종합' : filterSite,
-        month: periodLabel,
-        inspector: (store.user && store.user.name) || '안전관리자',
-        loadPhotoBase64: async (path) => {
-          const blob = await store.photoBlob(path);
-          const buf = await blob.arrayBuffer();
-          const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-          return `image/jpeg;base64,${base64}`;
-        }
-      });
-
-      toast('회의용 PPT가 성공적으로 다운로드되었습니다.', 'success');
+      const payload = await collectExportReportPayload($('#selExportSite').value);
+      if (!payload) return;
+      const fn = isWorker ? window.SafePPT.generateWorkerPresentation : window.SafePPT.generatePresentation;
+      await fn({ ...payload, download: true });
+      toast(isWorker ? '근로자용 TBM PPT가 성공적으로 다운로드되었습니다.' : '관리자용 보고서 PPT가 성공적으로 다운로드되었습니다.', 'success');
     } catch (e) {
       console.error(e);
       toast(`PPT 생성 실패: ${e.message}`, 'danger');
     } finally {
       btn.disabled = false;
-      btn.textContent = '📑 회의용 분석 PPT (.pptx) 다운로드';
+      btn.textContent = origText;
     }
-  });
+  }
+
+  // ── 관리자용 / 근로자용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
+  $('#btnDownloadPPT')?.addEventListener('click', () => runPptDownload('manager'));
+  $('#btnDownloadWorkerPPT')?.addEventListener('click', () => runPptDownload('worker'));
 
   // Fix Action Dialog
   $('#btnCancelFix').addEventListener('click', () => { $('#fixModal').style.display = 'none'; });
@@ -3454,66 +3500,28 @@ function initEmailExportHandlers() {
     }
   });
 
-  // 3) 회의용 PPT 이메일 발송
-  $('#btnEmailPPT')?.addEventListener('click', async () => {
-    const filterSite = $('#selExportSite').value;
-    const siteLabel = filterSite === 'all' ? '전체 현장 통합' : filterSite;
-    let periodLabel = '전체 기간';
-    let records = [];
-    const btn = $('#btnEmailPPT');
+  async function runPptEmail(kind) {
+    const isWorker = kind === 'worker';
+    const btn = $(isWorker ? '#btnEmailWorkerPPT' : '#btnEmailPPT');
+    if (!btn) return;
     btn.disabled = true;
     btn.textContent = 'PPT 생성 중...';
 
     try {
-      if (exportPeriodMode === 'all') {
-        records = await store.listAll();
-        periodLabel = '전체누적';
-      } else if (exportPeriodMode === 'month') {
-        const m = $('#selExportMonth').value;
-        if (!m) {
-          toast('대상 월을 선택해주세요.', 'danger');
-          return;
-        }
-        records = await store.listMonth(m);
-        periodLabel = m;
-      } else {
-        const start = $('#txtExportStartDate').value;
-        const end = $('#txtExportEndDate').value;
-        if (!start || !end) {
-          toast('시작일과 종료일을 모두 입력해주세요.', 'danger');
-          return;
-        }
-        records = await store.listPeriod(start, end);
-        periodLabel = `${start}_${end}`;
-      }
-      if (filterSite !== 'all') {
-        records = records.filter(r => r.site === filterSite);
-      }
-      if (!records.length) {
-        toast('선택한 기간에 등록된 부적합 데이터가 없습니다.', 'danger');
-        return;
-      }
-
-      // 핸드폰에 저장하지 않고(download: false) 메모리에서 PPT 생성
-      const { blob, filename } = await window.SafePPT.generatePresentation({
-        records,
-        siteName: filterSite === 'all' ? '전 현장 종합' : filterSite,
-        month: periodLabel,
-        inspector: (store.user && store.user.name) || '안전관리자',
-        download: false,
-        loadPhotoBase64: async (path) => {
-          const b = await store.photoBlob(path);
-          const buf = await b.arrayBuffer();
-          const base64 = btoa(new Uint8Array(buf).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-          return `image/jpeg;base64,${base64}`;
-        }
+      const payload = await collectExportReportPayload($('#selExportSite').value);
+      if (!payload) return;
+      const fn = isWorker ? window.SafePPT.generateWorkerPresentation : window.SafePPT.generatePresentation;
+      const { blob, filename } = await fn({
+        ...payload,
+        month: payload.filePeriodLabel,
+        download: false
       });
 
-      const total = records.length;
-      const unfixed = records.filter(r => r.status !== '조치완료').length;
-
-      const subject = `[SafePatrol] ${siteLabel} 안전회의용 패트롤 분석 PPT (${periodLabel})`;
-      const body = `안녕하세요,\n\nSafePatrol 데이터 기반 [안전회의용 패트롤 부적합 분석 PPT] 자료를 공유드립니다.\n\n- 대상 현장: ${siteLabel}\n- 대상 기간: ${periodLabel}\n- 총 분석 건수: ${total}건 (미조치: ${unfixed}건)\n- 작성일자: ${todayStr()}\n\n※ 첨부된 PPT 프레젠테이션(.pptx) 파일을 확인해 주시기 바랍니다.`;
+      const total = payload.records.length;
+      const unfixed = payload.records.filter(r => r.status !== '조치완료').length;
+      const docTitle = isWorker ? '근로자용 TBM Letter PPT' : '관리자용 패트롤 부적합 보고서 PPT';
+      const subject = `[SafePatrol] ${payload.siteLabel} ${docTitle} (${payload.periodLabel})`;
+      const body = `안녕하세요,\n\nSafePatrol 데이터 기반 [${docTitle}] 자료를 공유드립니다.\n\n- 대상 현장: ${payload.siteLabel}\n- 대상 기간: ${payload.periodLabel}\n- 총 분석 건수: ${total}건 (미조치: ${unfixed}건)\n- 작성일자: ${todayStr()}\n\n※ 첨부된 PPT 프레젠테이션(.pptx) 파일을 확인해 주시기 바랍니다.`;
 
       await shareOrEmailFile({
         blob,
@@ -3528,7 +3536,11 @@ function initEmailExportHandlers() {
       btn.disabled = false;
       btn.textContent = '📧 메일 발송';
     }
-  });
+  }
+
+  // 3) 관리자용 / 근로자용 PPT 이메일 발송
+  $('#btnEmailPPT')?.addEventListener('click', () => runPptEmail('manager'));
+  $('#btnEmailWorkerPPT')?.addEventListener('click', () => runPptEmail('worker'));
 }
 
 // ── 🤖 LM Studio 로컬 Qwen AI 연동 모듈 초기화 ──
