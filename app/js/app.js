@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v44';
-import './text-normalizer.js?v=20261115_v44';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v45';
+import './text-normalizer.js?v=20261115_v45';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -5250,24 +5250,30 @@ async function handleSaveImportedRecords() {
       const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
       const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
 
-      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자) 오배정 및 관련기준 오타 최종 정규화
+      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자 / [직게차) 오배정 및 관련기준 오타 최종 정규화
       const recCtxForLaw = `${resolvedWorkGroup} ${rec.content || ''} ${resolvedType}`;
-      const hasForkliftInRecCtx = /지게차|하역|유도원|운행경로/.test(recCtxForLaw);
+      const recCtxWithLawBody = `${recCtxForLaw} ${rec.lawBody || ''}`;
+      const hasForkliftInRecCtx = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(recCtxForLaw);
       const isNonForkliftConflictInRec = !hasForkliftInRecCtx && (
         resolvedWorkGroup === '가설전기공사' ||
         resolvedType === '감전' ||
-        /가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|생명줄|안전대\s*부착|비계|동바리|거푸집/.test(recCtxForLaw)
+        /가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|생명줄|안전대\s*부착|안전대|비계|동바리|거푸집/.test(recCtxWithLawBody)
       );
-      const resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law, `${rec.content || ''} ${resolvedWorkGroup}`);
+      let resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law, `${rec.content || ''} ${resolvedWorkGroup}`);
+      if (isNonForkliftConflictInRec && /직?[계게개]차|지[계개제]차|172조/.test(resolvedStdLaw || '')) {
+        resolvedStdLaw = /생명줄|안전대/.test(recCtxWithLawBody)
+          ? '안전보건규칙 제44조(안전대의 부착설비 등)'
+          : '';
+      }
       let sanitizedRawLaw = rec.rawLaw || '';
       let sanitizedLawBody = rec.lawBody || '';
       if (isNonForkliftConflictInRec) {
-        if (/지게차|제172조/.test(sanitizedRawLaw)) {
-          sanitizedRawLaw = resolvedStdLaw || '';
+        if (/직?[계게개]차|지[계개제]차|제172조/.test(sanitizedRawLaw)) {
+          sanitizedRawLaw = resolvedStdLaw || (/생명줄|안전대/.test(recCtxWithLawBody) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : '');
         } else if (resolvedWorkGroup === '가설전기공사' && /108\s*\(?K\)?/i.test(sanitizedRawLaw) && !/11\d|7\.2\.3|301|302|304|안전보건규칙/.test(sanitizedRawLaw)) {
           sanitizedRawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
         }
-        if (/유도자|지게차|운행경로/.test(sanitizedLawBody)) {
+        if (/유도자|직?[계게개]차|지[계개제]차|운행경로/.test(sanitizedLawBody)) {
           sanitizedLawBody = '';
         }
       }

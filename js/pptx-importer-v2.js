@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v44';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v44';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v45';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v45';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -23,8 +23,9 @@ import {
   stripCircledNumbers,
   normalizePhotoBannerText,
   resolveUnifiedPhotoBanner,
+  normalizeSafetyLawBody,
   normalizeSafetyLawSpec
-} from './text-normalizer.js?v=20261115_v44';
+} from './text-normalizer.js?v=20261115_v45';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -73,14 +74,14 @@ export function deriveConcreteBanner(content) {
  * @returns {string}
  */
 export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
-  const rawLawStr = String(lawText || '').trim();
-  const ctxStr = String(contextText || '').trim();
+  const rawLawStr = String(lawText || '').replace(/직[계게개]차|지[계개제]차/g, '지게차').trim();
+  const ctxStr = String(contextText || '').replace(/직[계게개]차|지[계개제]차/g, '지게차').trim();
   const combined = `${rawLawStr} ${ctxStr}`;
   const hasForkliftInCtx = /지게차|하역|유도원|운행경로/.test(ctxStr);
   const hasElecInCtx = /가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|절연\s*불량/.test(ctxStr || combined);
-  const hasLifelineInCtx = /생명줄|안전대\s*부착|추락|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼/.test(ctxStr);
+  const hasLifelineInCtx = /생명줄|안전대\s*부착|안전대|추락|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼/.test(ctxStr);
 
-  if (rawLawStr && /산업안전보건|안전보건규칙|산안법|산안규칙/.test(rawLawStr)) {
+  if (rawLawStr && /산업안전보건|안전보건규칙|산안법|산안규칙/.test(rawLawStr) && /제\s*\d+\s*조/.test(rawLawStr)) {
     const isCollisionLawMismatch = /제172조|지게차/.test(rawLawStr) && !hasForkliftInCtx && (hasElecInCtx || hasLifelineInCtx);
     if (!isCollisionLawMismatch) {
       return rawLawStr;
@@ -715,10 +716,11 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
   if (rawLines.length === 0) return { title: fallbackTitle, body: '' };
 
   const contextText = typeof arguments[2] === 'string' ? arguments[2] : '';
-  const joinedCheck = rawLines.join(' ');
-  const combinedCheckCtx = `${joinedCheck} ${contextText}`;
-  const isElectricalLawCtx = /(?:전기\s*작업|전기설비|가설전기|분전반|분전함|접지선?|누전차단기|차단기|전등|소켓|투광등|충전부|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/i.test(combinedCheckCtx) && !/지게차|3\.?6\s*유도자|운행경로/.test(contextText);
-  const isOtherTradeLawCtx = /(?:생명줄|안전대\s*부착|비계|거푸집|동바리|갱폼|알폼)/i.test(joinedCheck) && !/지게차|3\.?6\s*유도자|운행경로/.test(contextText);
+  const joinedCheck = rawLines.join(' ').replace(/직[계게개]차|지[계개제]차/g, '지게차');
+  const ctxClean = String(contextText || '').replace(/직[계게개]차|지[계개제]차/g, '지게차');
+  const combinedCheckCtx = `${joinedCheck} ${ctxClean}`;
+  const isElectricalLawCtx = /(?:전기\s*작업|전기설비|가설전기|분전반|분전함|접지선?|누전차단기|차단기|전등|소켓|투광등|충전부|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/i.test(combinedCheckCtx) && !/지게차|3\.?6\s*유도자|운행경로/.test(ctxClean);
+  const isOtherTradeLawCtx = /(?:생명줄|안전대\s*부착|안전대|추락|낙하방지|비계|거푸집|동바리|갱폼|알폼)/i.test(combinedCheckCtx) && !isElectricalLawCtx && !/지게차|하역|유도원|운행경로/.test(ctxClean);
 
   if (isElectricalLawCtx) {
     // 전기 작업 장표의 [IZ12B-108K] 코드를 지게차로 오인하지 않고 전기 기준 원문으로 정규화 (115 등 타 번호 보존)
@@ -815,8 +817,10 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
       /^\d+\.\d+/.test(prev) ||
       (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자)$/.test(prev))
     );
-    if (bodyLines.length > 0 && !/^(\*|\d+\)|\d+\.\d+|•|-)/.test(cl) && !prevIsHeading) {
-      bodyLines[bodyLines.length - 1] = joinWrappedKoreanLines(bodyLines[bodyLines.length - 1], cl);
+    const prevBodyLine = bodyLines.length > 0 ? bodyLines[bodyLines.length - 1] : '';
+    const prevEndsSentence = /(?:다|함|됨|음|요|임)[.!?]$/.test(prevBodyLine);
+    if (bodyLines.length > 0 && !/^(?:\*|\d+\)|\d+\.\d+|[①-⑩•\-·▪])/.test(cl) && !prevIsHeading && !prevEndsSentence) {
+      bodyLines[bodyLines.length - 1] = joinWrappedKoreanLines(prevBodyLine, cl);
     } else {
       bodyLines.push(cl);
     }
@@ -824,7 +828,7 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
 
   const rawResult = {
     title: normalizeKoreanSpacing(rawTitle),
-    body: bodyLines.map(l => normalizeKoreanSpacing(l)).join('\n')
+    body: normalizeSafetyLawBody(bodyLines.map(l => normalizeKoreanSpacing(l)).join('\n'))
   };
   const healedLaw = normalizeSafetyLawSpec({
     rawLaw: rawResult.title,
@@ -833,8 +837,8 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
     contextText
   });
   return {
-    title: healedLaw.title || rawResult.title,
-    body: healedLaw.body || rawResult.body
+    title: healedLaw.title !== undefined && healedLaw.title !== '' ? healedLaw.title : rawResult.title,
+    body: healedLaw.body !== undefined ? healedLaw.body : rawResult.body
   };
 }
 

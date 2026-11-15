@@ -427,17 +427,20 @@
    * 관련 기준을 "안전보건규칙 제//조"로 간단하게 변환 (사용자 지시 3)
    */
   function simplifyLawTitle(law, text = '') {
-    const s = String(law || '').trim();
-    const isElectricalCtx = /(?:가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|전기\s*작업|전기설비)/i.test(text) && !/지게차|하역|유도원|운행경로/.test(text);
+    const s = String(law || '').replace(/직[계게개]차|지[계개제]차/g, '지게차').trim();
+    const cleanText = String(text || '').replace(/직[계게개]차|지[계개제]차/g, '지게차');
+    const hasForkliftTxt = /지게차|하역|유도원|운행경로/.test(cleanText);
+    const isElectricalCtx = /(?:가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|전기\s*작업|전기설비)/i.test(cleanText) && !hasForkliftTxt;
+    const isFallOrFormCtx = !isElectricalCtx && !hasForkliftTxt && /(?:생명줄|안전대\s*부착|안전대|추락|비계|거푸집|동바리)/i.test(cleanText);
     const articles = [...s.matchAll(/제\s*(\d+)\s*조/g)].map(m => `제${m[1]}조`);
-    if (articles.length > 0 && !(isElectricalCtx && articles.includes('제172조'))) {
+    if (articles.length > 0 && !((isElectricalCtx || isFallOrFormCtx) && articles.includes('제172조'))) {
       const unique = [...new Set(articles)];
       return `안전보건규칙 ${unique.join(', ')}`;
     }
-    if (s.startsWith('안전보건규칙') && !(isElectricalCtx && /172조/.test(s))) return s;
+    if (s.startsWith('안전보건규칙') && !((isElectricalCtx || isFallOrFormCtx) && /172조/.test(s))) return s;
 
     // 키워드 기반 기본 매핑 (전기 작업 충전부/접지/차단기 우선 판별)
-    const comb = `${isElectricalCtx ? '' : s} ${text}`;
+    const comb = `${(isElectricalCtx || isFallOrFormCtx) ? '' : s} ${cleanText}`;
     if (isElectricalCtx || comb.includes('전기') || comb.includes('누전') || comb.includes('차단기') || comb.includes('투광등') || comb.includes('충전부') || comb.includes('접지') || comb.includes('소켓') || comb.includes('분전')) {
       if (comb.includes('충전부') || comb.includes('소켓') || comb.includes('심선')) {
         return '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
@@ -456,14 +459,14 @@
     if (comb.includes('말비계') || comb.includes('우마')) {
       return '안전보건규칙 제67조, 제13조';
     }
+    if (comb.includes('생명줄') || /안전대\s*부착/.test(comb) || (comb.includes('안전대') && !comb.includes('비계') && !comb.includes('작업발판') && !comb.includes('안전난간'))) {
+      return '안전보건규칙 제44조(안전대의 부착설비 등)';
+    }
     if (comb.includes('비계') || comb.includes('난간') || comb.includes('작업발판') || comb.includes('안전난간') || comb.includes('단부')) {
       return '안전보건규칙 제56조, 제13조';
     }
     if (comb.includes('개구부') || comb.includes('덮개')) {
       return '안전보건규칙 제59조';
-    }
-    if (comb.includes('생명줄') || comb.includes('안전대')) {
-      return '안전보건규칙 제44조(안전대의 부착설비 등)';
     }
     if (comb.includes('사다리')) {
       return '안전보건규칙 제24조';
@@ -1009,19 +1012,20 @@
     const rawContent = cleanContent(r.content || '');
     const text = `${rawContent} ${r.item || ''} ${r.agent || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     const domainCtx = `${text} ${r.workGroup || ''} ${r.type || ''} ${r.hazardType || ''}`;
-    const isElectricalDefect = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/i.test(domainCtx) && !/지게차|하역|유도원|운행경로/.test(text);
-    const isNonForkliftConflict = !isElectricalDefect && /(?:생명줄|안전대\s*부착|추락|비계|거푸집|동바리)/i.test(domainCtx) && !/지게차|하역|유도원|운행경로/.test(text);
+    const hasForkliftWork = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(text);
+    const isElectricalDefect = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/i.test(`${domainCtx} ${r.lawBody || ''}`) && !hasForkliftWork;
+    const isNonForkliftConflict = !isElectricalDefect && !hasForkliftWork && /(?:생명줄|안전대\s*부착|안전대|추락|비계|거푸집|동바리)/i.test(`${domainCtx} ${r.lawBody || ''}`);
 
     // 관련 법령 및 수칙 내용 (등록된 데이터의 rawLaw / lawBody 최우선 존중, 단 공종·내용과 모순된 지게차 오배정 차단)
     let rawLawTitle = r.rawLaw || r.law || (r.basis && r.basis.law) || '';
     let lawBody = r.lawBody || '';
     if (isElectricalDefect || isNonForkliftConflict) {
-      if (/지게차|제172조/.test(rawLawTitle)) {
-        rawLawTitle = (r.law && /안전보건규칙|산업안전보건/.test(r.law) && !/172조|지게차/.test(r.law))
+      if (/직?[계게개]차|지[계개제]차|제172조/.test(rawLawTitle)) {
+        rawLawTitle = (r.law && /안전보건규칙|산업안전보건/.test(r.law) && !/172조|직?[계게개]차|지[계개제]차/.test(r.law))
           ? r.law
           : '';
       }
-      if (/유도자|지게차|운행경로/.test(lawBody)) {
+      if (/유도자|직?[계게개]차|지[계개제]차|운행경로/.test(lawBody)) {
         lawBody = '';
       }
     }
@@ -1047,6 +1051,9 @@
       } else if (text.includes('말비계') || text.includes('우마')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제67조, 제13조';
         lawBody = '말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
+      } else if (text.includes('생명줄') || /안전대\s*부착/.test(text) || (text.includes('안전대') && !text.includes('비계') && !text.includes('작업발판') && !text.includes('안전난간'))) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제44조(안전대의 부착설비 등)';
+        lawBody = '추락할 위험이 있는 높이 2m 이상의 장소에서 작업할 때에는 안전대를 안전하게 걸어 사용할 수 있는 설비(생명줄)를 설치·사용해야 한다.';
       } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
         lawBody = '작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
@@ -1056,9 +1063,6 @@
       } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
         lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
-      } else if (text.includes('생명줄') || text.includes('안전대')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제44조(안전대의 부착설비 등)';
-        lawBody = '추락할 위험이 있는 높이 2m 이상의 장소에서 작업할 때에는 안전대를 안전하게 걸어 사용할 수 있는 설비(생명줄)를 설치·사용해야 한다.';
       } else if (text.includes('사다리')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
         lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
@@ -1086,7 +1090,7 @@
       const preHealedSpec = _lawNorm.normalizeSafetyLawSpec({
         rawLaw: lawTitle,
         lawBody,
-        law: r.law || simplifyLawTitle(rawLawTitle, text),
+        law: r.law || simplifyLawTitle(rawLawTitle, `${text} ${lawBody}`),
         contextText: `${text} ${r.workGroup || ''} ${r.type || ''}`
       });
       if (preHealedSpec.title) lawTitle = preHealedSpec.title;
@@ -1096,19 +1100,19 @@
     const combinedContext = `${lawTitle} ${lawBody} ${text}`;
     const isElecOr632Law = isElectricalDefect || /(?:전기\s*작업|전기설비|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(`${lawTitle} ${lawBody}`);
     const isGenuineForkliftLaw = !isElecOr632Law && !isNonForkliftConflict && (
-      /지게차\s*작업지침/i.test(lawTitle) ||
+      /직?[계게개]차\s*작업지침|지[계개제]차\s*작업지침/i.test(lawTitle) ||
       (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?)/i.test(lawTitle) && !/(?:비계|거푸집|동바리|생명줄|안전대|추락)/.test(combinedContext)) ||
-      (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /지게차/.test(combinedContext)) ||
+      (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /직?[계게개]차|지[계개제]차/.test(combinedContext)) ||
       (/유도자/.test(lawBody) && /운행경로/.test(lawBody))
     );
     if (isElecOr632Law) {
-      if (/지게차/.test(lawTitle)) {
-        lawTitle = simplifyLawTitle(r.law && !/172조|지게차/.test(r.law) ? r.law : '', text);
+      if (/직?[계게개]차|지[계개제]차/.test(lawTitle)) {
+        lawTitle = simplifyLawTitle(r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '', `${text} ${lawBody}`);
       } else if (/(?:IZ12B[-_\s]*108|108\s*\(?\s*K\s*\)?)/i.test(lawTitle) && !/11\d/.test(lawTitle)) {
         lawTitle = '안전작업지침 [IZ12B-108(K)] 전기 작업';
       }
-    } else if (isNonForkliftConflict && /지게차/.test(lawTitle)) {
-      lawTitle = simplifyLawTitle(r.law && !/172조|지게차/.test(r.law) ? r.law : '', text);
+    } else if (isNonForkliftConflict && /직?[계게개]차|지[계개제]차/.test(lawTitle)) {
+      lawTitle = simplifyLawTitle(r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '', `${text} ${lawBody}`);
     } else if (isGenuineForkliftLaw) {
       lawTitle = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
       if (/(?:36|3\.6)?\s*유도자/.test(lawBody) && (/(?:이\s*상비도자|진찾전원|시률입원치|계행명일살)/.test(lawBody) || /36유도자/.test(lawBody))) {
@@ -1180,16 +1184,29 @@
         if (!cl) continue;
         const prev = lawBodyLines.length > 0 ? lawBodyLines[lawBodyLines.length - 1] : '';
         const prevIsHeading = Boolean(prev) && !/^\d+\)/.test(prev) && (
-          /^\d+\.\d+/.test(prev) ||
-          (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자)$/.test(prev))
+          (/^\d+\.\d+/.test(prev) && !/[①-⑩]/.test(prev) && prev.length <= 32) ||
+          (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자|분전반)$/.test(prev))
         );
-        if (lawBodyLines.length > 0 && !/^(\*|\d+\)|\d+\.\d+|•|-)/.test(cl) && !prevIsHeading) {
-          lawBodyLines[lawBodyLines.length - 1] = _joinWrapped(lawBodyLines[lawBodyLines.length - 1], cl);
+        const prevEndsSentence = /(?:다|함|됨|음|요|임)[.!?]$/.test(prev);
+        if (lawBodyLines.length > 0 && !/^(?:\*|\d+\)|\d+\.\d+|[①-⑩•\-·▪])/.test(cl) && !prevIsHeading && !prevEndsSentence) {
+          lawBodyLines[lawBodyLines.length - 1] = _joinWrapped(prev, cl);
         } else {
           lawBodyLines.push(cl);
         }
       }
       lawBody = lawBodyLines.map(l => _normSpacing(l)).join('\n').trim();
+      if (_lawNorm && typeof _lawNorm.normalizeSafetyLawBody === 'function') {
+        lawBody = _lawNorm.normalizeSafetyLawBody(lawBody);
+      } else {
+        lawBody = lawBody
+          .replace(/직[계게개]차|지[계개제]차/g, '지게차')
+          .replace(/([가-힣]+하기)\.\s*(?:\r?\n\s*)?(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
+          .replace(/([①②③④⑤⑥⑦⑧⑨⑩])\s*\r?\n\s*(?=[가-힣A-Za-z0-9(])/g, '$1 ')
+          .replace(/([.!?])\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1\n$2 ')
+          .replace(/(되어야|하여야|있어야|없어야|않아야)\s*(하며|하고)(?=[,\s]|$)/g, '$1 $2')
+          .replace(/이상\s*유무(를|의|와|에|도|는|가|만|등)?/g, '이상 유무$1')
+          .trim();
+      }
     }
 
     // 사용자 지시: "특별한 언급이 없으면 원본사진처럼 사진만 넣어 굳이 줄걸이 책임자의 책임을 넣을 필요 없어"
