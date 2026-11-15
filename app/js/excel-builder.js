@@ -56,17 +56,34 @@
     return `${p} ${n}`.replace(/\s+/g, ' ');
   }
 
-  // 표준 공종 분류 (분류표 인자/작업분류표.jpg 기반)
-  const WORK_GROUPS = [
-    '가설공사', '가설공사(타워크레인)', '가설공사(건설용리프트)', '비계공사', '안전시설공사',
-    '토공사', '흙막이/차수공사', '터파기공사', '굴착공사', '파일공사',
-    '기초공사', '철근콘크리트공사', '거푸집동바리공사', '거푸집공사(갱폼)', '철근공사', '콘크리트공사', '철골공사',
-    '양중공사', '양중 및 운반작업', '마감공사',
-    '창호공사(PL)', '창호공사(AL)', '창호공사(STL)', '창호공사(목창호)', '창호공사(기타)', '유리공사',
-    '설비·전기공사', '가설전기공사', '수변전설비공사', '전선관공사', '케이블트레이공사', '구내통신설비공사', '정보통신설비공사',
-    '전등전열설비공사', '조명설비공사', '접지/피뢰설비공사', '기타전기공사',
-    '해체공사', '해체/철거공사', '방수/방습공사', '도장공사', '돌(석)공사', '타일공사', '수장공사', '토목·조경·포장', '공통'
-  ];
+  // 표준 공종 분류 (분류표 인자/작업분류표.jpg 공식 분류표 100% 일치)
+  const WORK_GROUPS = (_getNorm() && Array.isArray(_getNorm().OFFICIAL_WORK_GROUPS) && _getNorm().OFFICIAL_WORK_GROUPS.length > 0)
+    ? _getNorm().OFFICIAL_WORK_GROUPS
+    : [
+      '현장관리', '청소',
+      '가설공사(안전시설물)', '가설공사(기타)', '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(건설장비)',
+      '비계공사', '철거공사(구조물)', '철거공사(석면)', 'PC공사', '거푸집동바리공사', '거푸집공사(갱폼)', '거푸집공사(특수폼: ACS, RCS등)',
+      '철근공사', '철골공사', '데크플레이트공사', '조적공사', '미장공사', '견출공사', '방수공사', '타일공사', '석공사',
+      '커튼월공사', '창호공사(STL)', '창호공사(AL)', '창호공사(PL)', '창호공사(목창호)', '창호공사(기타)',
+      '외장판넬공사', '유리공사', '코킹공사', '수장공사', '인테리어공사', '흡음/내화/단열공사', '금속공사', '잡철공사',
+      '지붕/홈통공사', '도장공사', '가구공사', '도배공사', '차별화공사', '기타마감공사', '건축공사(기타)',
+      '가설전기공사', '수변전설비공사', '전선Tray, Duct설치공사', 'Busduct설치공사', 'MCC분전반설치공사',
+      '전선관공사', '전선설치공사', '전등공사', '전열공사', '접지공사', '피뢰침공사', '전기공사(기타)',
+      '장비설치공사(전기)', '유도등공사', '통신공사', '엘리베이터공사', '에스컬레이터공사', '자동제어공사',
+      '전력간선공사', '자동화재탐지설비공사', '소방설비공사(기타)', '방송설비공사', 'CCTV공사',
+      '전력제어공사', '동력공사', '예비전력설비공사',
+      '설비공사(기타)', '배관공사(옥외)', '배관공사(기계실)', '배관공사(냉난방)', '배관공사(소화)', '배관공사(가스)', '배관공사(위생)', '배관공사(기타)',
+      '장비설치공사(설비)', '일반덕트공사', '위생기구설치공사', '보온공사', '가스, PCW공사', '지열공사', '시운전/점검',
+      '정화조공사', '재생에너지설비공사', '수영장/사우나설비공사', '에어컨/환기공사', '모듈공사', '특수설비공사',
+      '시스템실링공사', '어세스플로어공사', '파이프렉공사',
+      '배관공사', '터빈공사(가스)', '터빈공사(증기)', '탱크공사', '보일러공사', '탈황설비공사', '집진설비공사',
+      '암모니아설비공사', '석탄이송설비공사', '석탄저장설비공사', '석탄미분설비공사', '연돌공사', '보조보일러공사',
+      '지장물이설공사', '터파기공사', '발파공사', '부지정지공사', '사면안정화공사', '연약지반처리공사',
+      '가시설공사', '흙막이/차수공사', '배수공사', '기설말뚝공사', '현장타설말뚝공사', '기타말뚝공사',
+      '배수및관로공사', '오수공사', '토목부대설비공사', '공동구공사', '옹벽공사',
+      '포장공사(아스팔트)', '포장공사(콘크리트)', '포장공사(기타)',
+      '조경식재공사', '조경시설물공사', '기타'
+    ];
 
   // 건설안전점검 9×9 기반 작업방법 (9대 핵심 작업)
   const WORK_METHODS_9X9 = [
@@ -74,8 +91,8 @@
     '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
   ];
 
-  // 점검자 의견 3대 분류
-  const INSPECTOR_OPINION_TYPES = ['페널티', '시스템 개선', '교육/코칭'];
+  // 점검자 의견 / PM 판정 분류 (4대 표준 유형)
+  const INSPECTOR_OPINION_TYPES = ['페널티', '시스템 개선', '교육/코칭', '제재/징계'];
 
   // 유형 표준 22대 분류 매핑 함수 (과거 단문형 및 서술형 데이터 호환 + 문맥 교차 검증)
   function mapAccidentType(raw, content = '') {
@@ -269,7 +286,7 @@
     return '';
   }
 
-  // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티' - 복수 선택 시 모두 포함)
+  // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티', '제재/징계' - 복수 선택 시 모두 포함)
   function getInspectorOpinionType(r) {
     if (Array.isArray(r.proposalItems) && r.proposalItems.length > 0) {
       return r.proposalItems.map(p => p.type).join(', ');
@@ -281,6 +298,7 @@
       if (rawType.includes('시스템')) parts.push('시스템 개선');
       if (rawType.includes('교육') || rawType.includes('코칭')) parts.push('교육/코칭');
       if (rawType.includes('페널티') || rawType.includes('패널티') || rawType.includes('벌점') || rawType.includes('시정명령')) parts.push('페널티');
+      if (rawType.includes('제재') || rawType.includes('징계')) parts.push('제재/징계');
       if (parts.length > 0) return parts.join(', ');
       return rawType;
     }
@@ -293,11 +311,14 @@
     if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
       parts.push('시스템 개선');
     }
-    if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사|안전)\s*교육|코칭|TBM/.test(auditText)) {
+    if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사|작업팀|안전)\s*교육|코칭|TBM/.test(auditText)) {
       parts.push('교육/코칭');
     }
-    if (/벌점|페널티|과태료|고발|퇴출|자격\s*박탈/.test(auditText)) {
+    if (/벌점|페널티|패널티|과태료|고발|퇴출|자격\s*박탈/.test(auditText)) {
       parts.push('페널티');
+    }
+    if (/제재|징계/.test(auditText)) {
+      parts.push('제재/징계');
     }
 
     if (parts.length > 0) return parts.join(', ');
@@ -319,6 +340,7 @@
         .replace(/\s+/g, ' ')
         .trim()
       : '';
+    if (cleaned === '양중 및 운반작업' || cleaned === '양중작업' || cleaned === '공통') cleaned = '';
 
     const ctx = String(content || '');
     const comb = `${cleaned} ${ctx}`;
@@ -327,22 +349,23 @@
     if (/al\s*창호|창호\s*\(\s*al\s*\)/i.test(comb)) return '창호공사(AL)';
     if (/stl\s*창호|창호\s*\(\s*stl\s*\)/i.test(comb)) return '창호공사(STL)';
     if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기|분전함|분전반|차단기|충전부|누전|가설전선|접지선|전등\s*소켓|전등\s*관리|투광등|심선\s*노출|절연\s*불량/i.test(comb)) return '가설전기공사';
+    if (/^p\.?c\s*(?:공사|작업)?$|^피씨\s*공사$|프리캐스트/i.test(cleaned)) return 'PC공사';
+    const hasElecOrWinCtx = /창호|pl\s*창호|분전반|분전함|차단기|충전부|누전|가설전선|접지선|전등|소켓|심선/.test(ctx);
+    const hasFormCtx = /형틀|거푸집|동바리|유로폼|알폼|갱폼|서포트/.test(ctx);
+    if (cleaned === '거푸집동바리공사' && (hasFormCtx || !hasElecOrWinCtx)) {
+      return '거푸집동바리공사';
+    }
     if (cleaned && cleaned.length >= 2 && cleaned !== '거푸집동바리공사') {
       return cleaned;
     }
-    if (cleaned === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(ctx)) {
-      return '거푸집동바리공사';
-    }
-    if (/창호|유리/i.test(comb)) return '창호공사(PL)';
-    if (/지게차|하역|운반/i.test(comb)) return '양중 및 운반작업';
-    if (comb.includes('거푸집') || comb.includes('동바리') || comb.includes('유로폼') || comb.includes('전도방지')) return '거푸집동바리공사';
-    if (comb.includes('비계')) return '비계공사';
-    if (comb.includes('철근')) return '철근공사';
-    if (comb.includes('콘크리트')) return '콘크리트공사';
-    if (comb.includes('양중') || comb.includes('크레인')) return '양중작업';
-    if (comb.includes('토공') || comb.includes('흙막이')) return '흙막이/차수공사';
+    if (/p\.?c\s*공사|피씨\s*공사|프리캐스트|pc\s*(?:기둥|보|슬래브|부재)/i.test(ctx)) return 'PC공사';
+    if (hasFormCtx) return '거푸집동바리공사';
+    if (/비계/.test(comb)) return '비계공사';
+    if (/지게차|하역|운반|양중|크레인/.test(comb)) return '가설공사(건설장비)';
+    if (/철근/.test(comb)) return '철근공사';
+    if (/토공|흙막이/.test(comb)) return '흙막이/차수공사';
 
-    return cleaned || '안전시설공사';
+    return cleaned || '건축공사(기타)';
   }
 
   // 협력사 노이즈('HEY 비계공사', '원영건업', '공종명' 등) 원천 차단 함수 (공란이면 철저히 공란 유지)
@@ -612,7 +635,7 @@
     if (!raw) return '';
     let s = healSafetyKoreanLexicon(String(raw))
       .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+      .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사|작업팀|해당\s*작업팀)\s*교육\s*\)|\(\s*해당\s*작업팀\s*대기\s*\)|\(관리감독자\s*경고\)/gi, '')
       .replace(/^(?:[-•*·▪\s]*)(?:De\s*T=?\s*©?|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으|-?\s*SHE\s*SEA)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
       .replace(/De\s*T=?\s*©?|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으|SHE\s*SEA/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
@@ -639,14 +662,19 @@
     return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
   }
 
-  // 사진 요약(배너) 자동 복구 함수 (엑셀 공란 및 '58벽의음용상부0버팀대8설치각도(6055) (불량' 노이즈 원천 배제, 단일 배너 '①' 미포함)
-    function resolvePhotoBanner(r) {
+  // 사진 요약(배너) 단일 통합 복구 함수 (SafeTextNormalizer.resolveUnifiedPhotoBanner 우선 -> PPT/엑셀 100% 일치, ①② 원문자 배지 제거)
+  function resolvePhotoBanner(r) {
+    const norm = _getNorm();
+    if (norm && typeof norm.resolveUnifiedPhotoBanner === 'function') {
+      const unified = norm.resolveUnifiedPhotoBanner(r);
+      if (unified) return unified;
+    }
+
     let s = '';
     if (r && r.photoBanner && String(r.photoBanner).trim()) {
-      s = healSafetyKoreanLexicon(String(r.photoBanner).replace(/\s+/g, ' ').trim());
+      s = healSafetyKoreanLexicon(String(r.photoBanner).replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ').replace(/\s+/g, ' ').trim());
       s = s
-        .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
-        .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
+        .replace(/^[123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
         .replace(/벽의음/g, '벽이음')
         .replace(/상부0버팀대8/g, '상부 버팀대 ')
         .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
@@ -654,30 +682,28 @@
         .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ↓↑\s/()\-.,]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      s = healSafetyKoreanLexicon(s);
+      s = _normSpacing(healSafetyKoreanLexicon(s));
     }
 
     const normContent = r && r.content
-      ? healSafetyKoreanLexicon(String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim())
+      ? _normSpacing(healSafetyKoreanLexicon(String(r.content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim()))
       : '';
     const isSameAsContent = s && normContent && s.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
 
-    const norm = _getNorm();
     const isLocOnlyBanner = (txt) => !!(norm && typeof norm.isLocationOnlyBanner === 'function' && norm.isLocationOnlyBanner(txt, r && r.location));
     if (s && isLocOnlyBanner(s)) {
       s = '';
     }
     if (norm && typeof norm.extractCoreViolationBanner === 'function') {
-      const condensed = norm.extractCoreViolationBanner(s, normContent);
+      const condensed = norm.extractCoreViolationBanner(s, normContent, r && r.location);
       if (condensed && condensed.length >= 4 && !/미확인|전경/.test(condensed) && !isLocOnlyBanner(condensed)) {
         s = condensed;
       }
     }
 
-    // 말줄임표(...) 절단 또는 부적합 내용 원문과 똑같이 복사된 경우 핵심 명사구 요약으로 자동 변환
     const hasRiskTail = /[2-9]\)|②|발생\s*시|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전/.test(s);
     const hasUnclosedParen = /\([^)]*$/.test(s);
-    const isUnspacedLong = s.length >= 10 && !/\s/.test(s);
+    const isUnspacedLong = s.length >= 12 && !/\s/.test(s);
     const isTruncated = !s || isLocOnlyBanner(s) || isSameAsContent || hasRiskTail || hasUnclosedParen || isUnspacedLong || s.endsWith('...') || s.endsWith('…') || s.endsWith('..') || /\.\.\.$/.test(s) || s.length < 5;
     if (isTruncated && normContent) {
       const c = _normSpacing(normContent);
@@ -740,7 +766,6 @@
         summary = summary.replace(/\s*(?:작업|진행)\s*중\s*/g, ' ').replace(/\s+/g, ' ').trim();
       }
       if (summary.length >= 5) {
-        // 열린 괄호 또는 어절 중간 절단 방지
         const openIdx = summary.indexOf('(');
         const closeIdx = summary.indexOf(')');
         if (openIdx !== -1 && (closeIdx === -1 || closeIdx < openIdx)) {
@@ -783,8 +808,8 @@
     }
     let cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
-      .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:협력사|근로자)\s*교육\s*\)|\(관리감독자\s*경고\)/g, '')
+      .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|패널티|페널티/gi, '')
+      .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:협력사|근로자|작업팀|해당\s*작업팀)\s*교육\s*\)|\(\s*해당\s*작업팀\s*대기\s*\)|\(관리감독자\s*경고\)/g, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,}|pee\s+1\s+ea[\s\S]*$|—\.\.\.—[\s\S]*$|\d{8,}[\s\S]*$)/gi, '')
       .replace(/\[\s*(?:1\s*디\s*HO|HARK\s*EH)[^\]]*\]/gi, '')
       .replace(/\b(?:DI\s*EL|Naas\s*NS|Nw\s*NE|Chol\s*iodo\s*ER|mem\s*)\b\s*\|*/gi, '')
@@ -810,7 +835,7 @@
       const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]\s*/.test(line);
       let cl = line.replace(/^[\s|ㅣ¦_!~—\-*•·.&]+/, '').replace(/[\s|ㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
-      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
+      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
         return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
@@ -826,21 +851,26 @@
     return items.length > 0 ? items.map(l => `- ${_normSpacing(healSafetyKoreanLexicon(l))}`).join('\n') : '(미조치)';
   }
 
-  // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티' - 복수 지원)
+  // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티', '제재/징계' - 복수 지원)
+  // 주의: 명시된 PM 판정결과는 절대 [점검단 제안] 값으로 덮어쓰지 않음!
   function getPmVerdictType(r) {
     if (!r) return '시스템 개선';
     if (Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0) {
       return r.pmVerdictItems.map(p => p.type).join(', ');
     }
     const raw = String(r.pmVerdictType || r.pmVerdict || '').trim();
-    if (raw) {
+    const rawSub = String(r.pmVerdictSub || '').trim();
+    const combined = `${raw} ${rawSub}`.trim();
+    if (combined) {
       const types = [];
-      if (raw.includes('시스템')) types.push('시스템 개선');
-      if (raw.includes('교육') || raw.includes('코칭')) types.push('교육/코칭');
-      if (raw.includes('페널티') || raw.includes('패널티') || raw.includes('벌점') || raw.includes('박탈')) types.push('페널티');
+      if (combined.includes('제재') || combined.includes('징계') || /해당\s*작업팀\s*대기|작업\s*중지|작업\s*대기/.test(combined)) types.push('제재/징계');
+      if (combined.includes('시스템')) types.push('시스템 개선');
+      if (combined.includes('교육') || combined.includes('코칭')) types.push('교육/코칭');
+      if (combined.includes('페널티') || combined.includes('패널티') || combined.includes('벌점') || combined.includes('박탈')) types.push('페널티');
       if (types.length > 0) return types.join(', ');
-      return raw;
+      if (raw) return raw;
     }
+    if (r._hasExplicitPmVerdict) return raw || '제재/징계';
     return getInspectorOpinionType(r);
   }
 

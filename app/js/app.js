@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v43';
-import './text-normalizer.js?v=20261115_v43';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v44';
+import './text-normalizer.js?v=20261115_v44';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -1613,9 +1613,14 @@ function populateDatalists() {
   const workMethods = (window.SafeExcel && window.SafeExcel.WORK_METHODS_9X9) || [
     '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
   ];
-  const workGroups = (window.SafeExcel && window.SafeExcel.WORK_GROUPS) || [
-    '가설공사', '토공사', '기초공사', '철근콘크리트공사', '철골공사', '양중공사', '마감공사', '설비·전기공사', '해체공사', '토목·조경·포장', '공통'
-  ];
+  const workGroups = (window.SafeTextNormalizer && Array.isArray(window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS) && window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS.length > 0)
+    ? window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS
+    : ((window.SafeExcel && window.SafeExcel.WORK_GROUPS) || [
+      '현장관리', '청소', '비계공사', 'PC공사', '거푸집동바리공사', '거푸집공사(갱폼)', '철근공사', '철골공사',
+      '창호공사(PL)', '창호공사(AL)', '창호공사(STL)', '유리공사', '가설전기공사', '수변전설비공사',
+      '흙막이/차수공사', '터파기공사', '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(건설장비)',
+      '가설공사(안전시설물)', '가설공사(기타)', '철거공사(구조물)', '건축공사(기타)', '기타'
+    ]);
   addOpts('listWorkGroups', [...new Set([...workGroups, ...tax.workTypes.list.map(w => w.group)])], 'workGroup');
   addOpts('listWorkNames', workMethods, 'workMethod');
   addOpts('listConditions', (tax9 && tax9.unsafeConditionsList) || tax.unsafeConditions.list, 'condition');
@@ -5105,7 +5110,7 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = rec.photoBanner || '';
   if ($('#txtLaw')) $('#txtLaw').value = filterOnlyOccupationalSafetyLaw(rec.law);
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
-  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '거푸집동바리공사';
+  if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
   if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
   const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
@@ -5232,7 +5237,9 @@ async function handleSaveImportedRecords() {
 
       const resolvedWorkGroup = window.SafeExcel?.cleanWorkGroup
         ? window.SafeExcel.cleanWorkGroup(rec.workGroup, rec.content)
-        : (rec.workGroup || '공통').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+        : (window.SafeTextNormalizer?.mapToStandardWorkGroup
+          ? window.SafeTextNormalizer.mapToStandardWorkGroup(rec.workGroup, rec.content)
+          : (rec.workGroup || '').replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ').replace(/\s+/g, ' ').trim());
       const resolvedType = window.SafeExcel?.mapAccidentType
         ? window.SafeExcel.mapAccidentType(rec.type, rec.content)
         : (rec.type || '추락');
@@ -5243,7 +5250,7 @@ async function handleSaveImportedRecords() {
       const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
       const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
 
-      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자) 오배정 최종 차단
+      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자) 오배정 및 관련기준 오타 최종 정규화
       const recCtxForLaw = `${resolvedWorkGroup} ${rec.content || ''} ${resolvedType}`;
       const hasForkliftInRecCtx = /지게차|하역|유도원|운행경로/.test(recCtxForLaw);
       const isNonForkliftConflictInRec = !hasForkliftInRecCtx && (
@@ -5264,6 +5271,20 @@ async function handleSaveImportedRecords() {
           sanitizedLawBody = '';
         }
       }
+      if (window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
+        const specNorm = window.SafeTextNormalizer.normalizeSafetyLawSpec({
+          rawLaw: sanitizedRawLaw,
+          lawBody: sanitizedLawBody,
+          law: resolvedStdLaw,
+          contextText: recCtxForLaw
+        });
+        if (specNorm.title) sanitizedRawLaw = specNorm.title;
+        if (specNorm.body !== undefined) sanitizedLawBody = specNorm.body;
+      }
+
+      const unifiedBanner = (window.SafeTextNormalizer?.resolveUnifiedPhotoBanner
+        ? window.SafeTextNormalizer.resolveUnifiedPhotoBanner(rec)
+        : '') || (window.SafeExcel?.resolvePhotoBanner ? window.SafeExcel.resolvePhotoBanner(rec) : '') || (rec.photoBanner || '현장 부적합 작업 전경');
 
       const finalRecord = {
         site,
@@ -5281,7 +5302,7 @@ async function handleSaveImportedRecords() {
           amount: siteObj.amount || ''
         },
         content: rec.content || '부적합 사항 지적',
-        photoBanner: (window.SafeExcel?.resolvePhotoBanner ? window.SafeExcel.resolvePhotoBanner(rec) : (rec.photoBanner || '현장 부적합 작업 전경')),
+        photoBanner: unifiedBanner,
         photo2Banner: rec.photo2Banner || '',
         location: (window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '')),
         workName: workMethod,
@@ -5311,12 +5332,13 @@ async function handleSaveImportedRecords() {
         inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
         inspectorOpinionSub: rec.inspectorOpinionSub || '',
         auditProposal: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.auditProposal || rec.inspectorOpinion || '') : (rec.auditProposal || '')),
-        actionPlan: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.actionPlan || '') : (rec.actionPlan || '')),
-        countermeasure: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.countermeasure || rec.actionPlan || '') : (rec.countermeasure || rec.actionPlan || '')),
-        pmVerdict: rec.pmVerdict || rec.inspectorOpinionType || '시스템 개선',
-        pmVerdictType: rec.pmVerdictType || rec.inspectorOpinionType || '시스템 개선',
+        actionPlan: (window.SafeExcel?.resolveActionPlanText ? window.SafeExcel.resolveActionPlanText(rec) : (rec.actionPlan || '')),
+        countermeasure: (window.SafeExcel?.resolveActionPlanText ? window.SafeExcel.resolveActionPlanText(rec) : (rec.countermeasure || rec.actionPlan || '')),
+        pmVerdict: rec.pmVerdict || rec.pmVerdictType || rec.inspectorOpinionType || '시스템 개선',
+        pmVerdictType: rec.pmVerdictType || rec.pmVerdict || rec.inspectorOpinionType || '시스템 개선',
         pmVerdictSub: rec.pmVerdictSub || '',
         pmVerdictItems: rec.pmVerdictItems || [],
+        _hasExplicitPmVerdict: Boolean(rec._hasExplicitPmVerdict || rec.pmVerdictItems?.length > 0),
         fix: rec.actionPlan ? { content: rec.actionPlan } : {},
         workPlan: '해당없음',
         rawLaw: sanitizedRawLaw,

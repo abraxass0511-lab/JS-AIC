@@ -171,6 +171,7 @@ function analyzeRuleFallback(content) {
     return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: '가설전기공사', workMethod: '설치조립작업', agentMajor: '전기·화기·설비', agentMid: '전기시설', agentMinor: isLight ? '가설전선/이동릴선' : (isGroundBolt ? '접지시설' : (isLivePart ? '분전함' : '누전차단기')), condition: '방호장치 결함 (덮개·난간 미설치 등)', action: '해당없음', rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡', rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡', stakeholder: '협력사 관리감독자' };
   } else if ((text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) && !text.includes('생명줄') && !text.includes('안전대')) {
     const isWindow = /pl\s*창호|창호|유리/i.test(text);
+    const isPc = /p\.?c\s*공사|피씨|프리캐스트|\bpc\b/i.test(text);
     item = '운반장비';
     law = '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
     hazardType = '충돌';
@@ -180,7 +181,7 @@ function analyzeRuleFallback(content) {
     photoBanner = (isWindow || text.includes('유도원')) ? '유도원·근로자 지게차 근접 작업' : '지게차 하역 중 근로자 근접 작업';
     analysis = '지게차 자재 하역작업 중 유도원 및 근로자가 안전거리(5m) 미확보 상태로 장비에 근접하여 충돌 위험';
     pmVerdict = '지게차 유도원 안전거리 확보 기준 재교육 및 하역장소 통제 모니터링 강화';
-    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: isWindow ? '창호공사(PL)' : '양중 및 운반작업', workMethod: '하역운반작업', agentMajor: '건설장비', agentMid: '운반장비', agentMinor: '지게차', condition: '해당없음', action: '위험장소 접근 (출입통제 구역 진입 등)', rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성', rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합', stakeholder: '협력사 근로자' };
+    return { severity, law, item, hazardType, mgmtCauses, holdPoint, analysis, pmVerdict, photoBanner, photo2Banner, workGroup: isWindow ? '창호공사(PL)' : (isPc ? 'PC공사' : '가설공사(건설장비)'), workMethod: '하역운반작업', agentMajor: '건설장비', agentMid: '운반장비', agentMinor: '지게차', condition: '해당없음', action: '위험장소 접근 (출입통제 구역 진입 등)', rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성', rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합', stakeholder: '협력사 근로자' };
   } else if (text.includes('알폼') || text.includes('al form') || text.includes('alform') || text.includes('알루미늄 거푸집')) {
     item = '알폼';
     law = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
@@ -364,18 +365,25 @@ function buildFallbackCleanedFields(rawOcr, fb) {
 }
 
 const TAXONOMY_STANDARD_PROMPT = `
-[건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 분류표(작업분류표.jpg) 내에서만 선택할 것]
-1. 공종 (workGroup): ["비계공사", "안전시설공사", "가설공사(타워크레인)", "가설공사(건설용리프트)", "흙막이/차수공사", "터파기공사", "굴착공사", "파일공사", "거푸집동바리공사", "거푸집공사(갱폼)", "철근공사", "콘크리트공사", "철골공사", "양중 및 운반작업", "창호공사(PL)", "창호공사(AL)", "창호공사(STL)", "창호공사(목창호)", "창호공사(기타)", "유리공사", "가설전기공사", "수변전설비공사", "전선관공사", "기타전기공사", "해체/철거공사", "방수/방습공사"] 중 선택.
+[건설안전 10대 표준 분류 체계 (Taxonomy) 선택 기준 - 반드시 아래 공식 작업분류표(작업분류표.jpg) 내에서만 선택할 것]
+1. 공종 (workGroup):
+   - 공통공사: ["현장관리", "청소"]
+   - 건축공사: ["가설공사(안전시설물)", "가설공사(기타)", "가설공사(타워크레인)", "가설공사(건설용리프트)", "가설공사(건설장비)", "비계공사", "철거공사(구조물)", "철거공사(석면)", "PC공사", "거푸집동바리공사", "거푸집공사(갱폼)", "거푸집공사(특수폼: ACS, RCS등)", "철근공사", "철골공사", "데크플레이트공사", "조적공사", "미장공사", "방수공사", "타일공사", "석공사", "커튼월공사", "창호공사(STL)", "창호공사(AL)", "창호공사(PL)", "창호공사(목창호)", "창호공사(기타)", "외장판넬공사", "유리공사", "코킹공사", "수장공사", "도장공사", "건축공사(기타)"]
+   - 전기공사: ["가설전기공사", "수변전설비공사", "전선관공사", "전선설치공사", "전등공사", "전열공사", "접지공사", "피뢰침공사", "전기공사(기타)", "통신공사"]
+   - 설비공사: ["설비공사(기타)", "배관공사(기계실)", "배관공사(냉난방)", "배관공사(소화)", "배관공사(가스)", "배관공사(위생)", "배관공사(기타)", "일반덕트공사", "보온공사"]
+   - 토목공사: ["지장물이설공사", "터파기공사", "발파공사", "부지정지공사", "사면안정화공사", "가시설공사", "흙막이/차수공사", "배수공사", "현장타설말뚝공사", "배수및관로공사", "옹벽공사", "포장공사(기타)"]
+   - [절대 금지] "양중 및 운반작업", "양중작업", "안전시설공사", "해체/철거공사", "콘크리트공사"는 작업분류표에 없는 명칭이므로 workGroup으로 절대 사용하지 말 것!
+   - [원문 공종 보존 필수] 입력 cells.workTypeRaw에 "PC공사", "거푸집동바리공사", "비계공사", "커튼월공사", "창호공사(PL)" 등 공식 분류표 공종이 이미 적혀 있으면, 내용에 "양중", "하역", "운반" 단어가 있어도 공종(workGroup)은 반드시 원문 공식 공종("PC공사", "거푸집동바리공사" 등)을 그대로 유지하고 작업방법(workMethod)만 "양중작업" 또는 "하역운반작업"으로 분류할 것!
    - PL창호공사, 피엘창호, 창호(PL) 관련 작업은 반드시 건축공사 세부공종인 "창호공사(PL)"로 분류
    - 가설전기, 임시전력, 분전반, 차단기, 접지, 가설전선, 전등 소켓, 심선 노출 관련 작업은 반드시 전기공사 세부공종인 "가설전기공사"로 분류 (임의로 "가설공사(기타)"로 분류 금지)
-   - 갱폼, 알폼, 유로폼, 대형 벽체 거푸집, 전도방지 파이프, 동바리, 서포트는 "거푸집동바리공사" 또는 "거푸집공사(갱폼)"
+   - 거푸집동바리, 형틀자재, 유로폼, 알폼, 동바리, 서포트는 "거푸집동바리공사", 갱폼은 "거푸집공사(갱폼)"
    - 시스템비계, 외부비계, 작업발판, 벽이음은 "비계공사"
 2. 작업방법 (workMethod): ["굴착작업", "하역운반작업", "양중작업", "설치조립작업", "해체작업", "중량물취급작업", "고소작업", "밀폐공간작업", "협소공간작업"] 중 선택.
    - 지게차 작업, 자재 하역, 상차·하차, 운반은 반드시 "하역운반작업"
    - 가설전기·분전반·접지선·전등·가설시설물 설치/배치/유지관리·점검 불량은 반드시 "설치조립작업" (절대 "해체작업"으로 오분류 금지! 인터뷰에 "철거 예정"이 있거나 커버가 열려 노출돼도 해체작업이 아님)
    - "굴착작업"은 실제 터파기·굴착·토사반출 작업일 때만 선택 (단순히 작업장소가 "흙막이 상부/주변"이면서 분전반·통로·난간 불량인 경우 절대 "굴착작업" 선택 금지!)
    - "해체작업"은 실제로 비계·거푸집·동바리·구조물을 철거·해체하는 작업 중 지적된 경우에만 선택
-   - 크레인/호이스트 인양은 "양중작업"
+   - 크레인/타워크레인/양중물 인양(PC부재·형틀자재 양중 포함)은 "양중작업"
 3. 기인물 대분류 (agentMajor): ["가시설", "건설장비", "작업발판", "작업장·통로", "전기·화기·설비", "양중·줄걸이", "개인보호구", "토공·구조물"] 중 선택.
 4. 기인물 중분류 (agentMid):
    - 가시설 하위: ["특수거푸집", "거푸집/동바리", "비계", "안전시설", "흙막이가시설"]
@@ -393,7 +401,7 @@ const TAXONOMY_STANDARD_PROMPT = `
    - 전기시설: ["누전차단기", "가설전선/이동릴선", "분전함", "접지시설", "투광등"]
    - 하역운반장비: ["지게차", "페이로더", "덤프트럭"] (지게차/유도원 하역 충돌 우려 시 agentMajor="건설장비", agentMid="운반장비", agentMinor="지게차")
 6. 재해 형태 (hazardType): ["추락", "낙하·비래", "붕괴·도괴", "전도", "협착", "충돌", "전복", "화재", "폭발·파열", "감전"] 중 선택.
-7. 관련 법령 (law): 산업안전보건기준에 관한 규칙 공식 조문 (예: "안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)", "안전보건규칙 제332조(거푸집동바리등의 안전조치)", "안전보건규칙 제56조(작업발판의 구조)", "안전보건규칙 제172조(접촉의 방지)", "안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)", "안전보건규칙 제302조(전기 기계·기구의 접지)", "안전보건규칙 제304조(누전차단기 설치 등)" 등).
+7. 관련 법령 (law): 산업안전보건기준에 관한 규칙 공식 조문 (예: "안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)", "안전보건규칙 제332조(거푸집동바리등의 안전조치)", "안전보건규칙 제42조(추락의 방지)", "안전보건규칙 제56조(작업발판의 구조)", "안전보건규칙 제172조(접촉의 방지)", "안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)", "안전보건규칙 제302조(전기 기계·기구의 접지)", "안전보건규칙 제304조(누전차단기 설치 등)" 등).
    - 공종·부적합 내용이 가설전기·분전반·접지·차단기·전등·소켓·충전부이면 절대 지게차(제172조)를 선택하지 말고 전기 조문(제301조/제302조/제304조)만 선택하라.
 8. 불안전 상태 (condition): ["방호장치 결함 (덮개·난간 미설치 등)", "물(物) 자체의 결함 (자재·부재 손상/변형)", "복장·보호구 결함", "작업환경 불량", "생산공정 결함", "배치·적재 불량", "경보·신호 체계 결함", "해당없음"] 중 선택.
 9. 불안전 행동 (action): ["보호구 미착용", "방호장치 기능 무효화", "위험구역 접근", "불안전한 동작·자세", "부적절한 작업방법", "기계·기구 무단 취급", "해당없음"] 중 선택.
@@ -403,8 +411,9 @@ const TAXONOMY_STANDARD_PROMPT = `
     - stakeholder (관리/책임주체): ["원청 시공팀", "원청 안전팀", "협력사 관리감독자", "협력사 근로자", "장비 임대/운전원"] 중 선택.
 [사진 요약 배너 photoBanner 작성 규칙]
 - 사진 상단 배너는 실제 위반한 핵심 사실(대상 + 결함/행동)만 12~24자 완성된 한국어 띄어쓰기 명사구로 간결히 요약할 것 (괄호가 중간에 끊기거나 글자가 잘리는 일이 절대 없게 완성문으로 작성).
+- 사진 번호 원문자 기호(①, ②, ③, ④ 등)나 숫자 배지는 photoBanner에서 반드시 완전히 제거할 것!
 - 절대 부적합 내용(content) 전체를 그대로 복사하거나 '~발생시 감전우려', '~하여 충돌 우려', '~방전 미흡', '2) ...' 부연 결과절 및 말줄임표(...)를 붙이지 말 것!
-- (예: "접지선 볼트 고정 불량 및 용량 부족", "유도원·근로자 지게차 근접 작업", "분전함 차단기 충전부 노출", "가설분전반 관리 및 주변정리 불량", "전등 소켓 충전부 노출 및 절연 불량")`;
+- (예: "접지선 볼트 고정 불량 및 용량 부족", "유도원·근로자 지게차 근접 작업", "분전함 차단기 충전부 노출", "가설분전반 관리 및 주변정리 불량", "전등 소켓 충전부 노출 및 절연 불량", "지하층 슬래브 단부의 생명줄 처짐 과다")`;
 
 export default {
   async fetch(request, env) {
@@ -476,26 +485,30 @@ export default {
             quotaExceeded: quota,
             error: errMsg || undefined,
             results: items.map(it => {
-              const fb = analyzeRuleFallback(`${it.cells?.workTypeRaw || ''} ${it.cells?.content || ''}`);
-              const rawWg = String(it.cells?.workTypeRaw || '').trim();
+              const rawWg = String(it.cells?.workTypeRaw || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
+              const fb = analyzeRuleFallback(`${rawWg} ${it.cells?.content || ''}`);
               const mappedWg = /pl\s*창호/i.test(rawWg)
                 ? '창호공사(PL)'
-                : (/^가설\s*전기$|^설비[·/]전기/i.test(rawWg) ? '가설전기공사' : rawWg);
+                : (/^가설\s*전기$|^설비[·/]전기/i.test(rawWg)
+                  ? '가설전기공사'
+                  : (/^p\.?c\s*(?:공사|작업)?$|^피씨\s*공사$/i.test(rawWg) ? 'PC공사' : rawWg));
+              const isInvalidWg = !mappedWg || mappedWg === '양중 및 운반작업' || mappedWg === '공통';
               return {
                 pageIndex: it.pageIndex,
-                workGroup: (mappedWg && mappedWg !== '거푸집동바리공사') ? mappedWg : (fb.workGroup || mappedWg || '안전시설공사'),
+                workGroup: (!isInvalidWg ? mappedWg : (fb.workGroup || '건축공사(기타)')),
                 workMethod: fb.workMethod || '설치조립작업',
                 agentMajor: fb.agentMajor || '가시설',
                 agentMid: fb.agentMid || '거푸집/동바리',
                 agentMinor: fb.agentMinor || '유로폼',
                 hazardType: fb.hazardType || '추락',
-                photoBanner: fb.photoBanner || '',
+                photoBanner: String(fb.photoBanner || '').replace(/[\u2460-\u2487\u2776-\u277F]/g, '').trim(),
                 condition: fb.condition || '안전시설 미비/불량',
                 action: fb.action || '해당없음',
                 rootCauseMgmt: fb.rootCauseMgmt || '관리감독자 직무 미이행 (점검·확인 누락)',
                 rootCauseSystem: fb.rootCauseSystem || '작업계획서·위험성평가 미수립/부실',
                 stakeholder: fb.stakeholder || '원청 관리감독자 + 협력사 소장',
                 law: fb.law || '안전보건규칙 제42조(추락의 방지)',
+                lawMatched: true,
                 typoPatches: {}
               };
             })
@@ -509,10 +522,14 @@ export default {
           }
 
           const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy)·한국어 OCR 교정 전문가 AI이다.
-입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 다음 3가지를 동시에 수행하라:
-1. 건설안전 9x9 및 작업분류표(창호공사(PL), 가설전기공사 등) 표준 분류코드와 산안규칙 조문을 정확히 매핑할 것 (가설전기 분전반/접지/전등 불량은 절대 "해체작업"이나 "굴착작업"으로 분류하지 말고 "설치조립작업"으로 선택).
-2. 사진 상단용 12~24자 핵심 위반 명사구 요약 배너(photoBanner: 반드시 자연스러운 띄어쓰기 포함 완성 명사구, content 복사·결과/우려 꼬리·'2)'·말줄임표 및 괄호 중간 절단 절대 금지, 배너 OCR 오타 "노술/노습→노출", "본트→볼트", "다설→타설", "내속→내측" 교정)를 생성할 것.
-3. 입력 필드 중 띄어쓰기·오탈자·말단 영문 노이즈(cb, cYb, ee 등) 교정이 **실제로 필요한 필드만** edits에 담아 반환하고, 변경이 불필요한 필드는 edits에 절대 중복 반환하지 말 것 (의미·숫자·단위·1), 2), - 및 PL/AL/Door/E/V/Gray Area 등 유효 영문·단위 100% 보존). 오탈자 어절 치환은 typoPatches에 {"원문오타단어":"정확한단어"} 형식으로만 작성할 것(예: {"흥로":"종로","노술":"노출"}, 필드명을 키로 쓰지 말 것).
+입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 다음 4가지를 동시에 수행하라:
+1. 건설안전 9x9 및 작업분류표(작업분류표.jpg: PC공사, 거푸집동바리공사, 창호공사(PL), 가설전기공사 등) 표준 분류코드와 산안규칙 조문을 정확히 매핑할 것:
+   - "양중 및 운반작업", "양중작업"은 workGroup으로 절대 금지! 입력 cells.workTypeRaw에 PC공사/거푸집동바리공사 등 유효한 공종이 있으면 부적합 내용에 "양중"이 있어도 반드시 원문 공종(workGroup)을 그대로 유지하고 workMethod만 "양중작업"으로 선택하라.
+   - 가설전기 분전반/접지/전등 불량은 절대 "해체작업"이나 "굴착작업"으로 분류하지 말고 "설치조립작업"으로 선택하라.
+2. 사진 상단용 12~24자 핵심 위반 명사구 요약 배너(photoBanner: 자연스러운 한국어 띄어쓰기 명사구, 원문자 번호 ①②③④와 꼬리절 '우려/방전 미흡/2)/말줄임표' 및 괄호 절단 절대 금지, 배너 오타 "노술/노습→노출", "본트→볼트", "다설→타설", "내속→내측", "단부의생명줄→단부의 생명줄" 교정)를 생성할 것.
+3. **[관련 기준] 검증 및 교정 필수**: 입력 cells.lawRaw(지침/법령 제목)와 cells.lawBody(세부 조항)가 부적합 내용(cells.content)과 일치하는지 검증하여 lawMatched(true/false)를 표기하고, 만약 OCR 오탈자("안선작업시심"→"안전작업지침", "IZ12B-10/(K)"→"IZ12B-107(K)", "주탁/닥아방시시실 작입"→"추락/낙하방지시설 작업") 또는 띄어쓰기 오류("안전시설을설치해야"→"안전시설을 설치해야")가 있거나 다른 공종의 지침(예: 전기/추락 작업인데 지게차 지침 등)이면 edits.rawLaw 및 edits.lawBody에 올바르게 교정된 한국어 제목·본문을 반드시 반환할 것!
+4. content, location, interview, proposalText, countermeasure 중 띄어쓰기·오탈자·말단 영문 노이즈(cb, cYb, ee 등) 교정이 **실제로 필요한 필드만** edits에 담아 반환하고, 변경이 불필요한 필드는 edits에 중복 반환하지 말 것 (의미·숫자·단위·1), 2), - 및 PL/AL/Door/E/V/Gray Area 등 유효 영문·단위 100% 보존). 오탈자 어절 치환은 typoPatches에 {"원문오타단어":"정확한단어"} 형식으로만 작성할 것(예: {"흥로":"종로","노술":"노출"}, 필드명을 키로 쓰지 말 것).
+5. cells.pmVerdict가 '제재/징계' 등으로 이미 명시된 경우 [점검단 제안]으로 덮어쓰지 말 것.
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -521,19 +538,20 @@ ${TAXONOMY_STANDARD_PROMPT}
   "results": [
     {
       "pageIndex": 1,
-      "workGroup": "표준 공종",
+      "workGroup": "작업분류표 공식 공종",
       "workMethod": "표준 작업방법",
       "agentMajor": "표준 기인물 대분류",
       "agentMid": "표준 기인물 중분류",
       "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
-      "photoBanner": "12~24자 완성된 띄어쓰기 핵심 위반 명사구",
+      "photoBanner": "12~24자 완성된 띄어쓰기 핵심 위반 명사구(원문자 제외)",
       "condition": "표준 불안전 상태",
       "action": "표준 불안전 행동",
       "rootCauseMgmt": "표준 법적 관리감독",
       "rootCauseSystem": "표준 안전시스템",
       "stakeholder": "표준 관리/책임주체",
       "law": "안전보건규칙 제OO조(조항명)",
+      "lawMatched": true,
       "edits": {},
       "typoPatches": {}
     }
@@ -545,7 +563,7 @@ ${TAXONOMY_STANDARD_PROMPT}
                 { role: 'system', content: batchSystemPrompt },
                 { role: 'user', content: `${JSON.stringify(items)}\n/no_think` }
               ],
-              max_tokens: 2048,
+              max_tokens: 2400,
               temperature: 0.05
             });
             const raw = (typeof qRes?.response === 'string' && qRes.response) || qRes?.choices?.[0]?.message?.content || '';
@@ -555,21 +573,62 @@ ${TAXONOMY_STANDARD_PROMPT}
             if (sIdx !== -1 && eIdx > sIdx) {
               const parsedBatch = JSON.parse(cleaned.slice(sIdx, eIdx + 1));
               if (Array.isArray(parsedBatch?.results)) {
-                const cleanedResults = parsedBatch.results.map((item) => {
+                const normalizeWorkerLawTitle = (s) => String(s || '')
+                  .replace(/(?:안[선전]|\b안\s*[선전])\s*작[업엄]\s*[지시][침심]|안전\s*작업\s*시[심침]/g, '안전작업지침')
+                  .replace(/주탁|추탁|축락|추낙/g, '추락')
+                  .replace(/닥아|낙아/g, '낙하')
+                  .replace(/방시시실|방지시실|방시시설|방지시설/g, '방지시설')
+                  .replace(/작입|삭업|자업(?=\s|$)/g, '작업')
+                  .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*10[\/7](\s*\(?K\)?)\s*\]?/gi, '[IZ12B-107(K)]')
+                  .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*(\d{3})\s*\(?\s*K\s*\)?\s*\]?/gi, '[IZ12B-$1(K)]')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                const cleanedResults = parsedBatch.results.map((item, resIdx) => {
                   if (!item || typeof item !== 'object') return item;
                   const out = { ...item };
-                  if (typeof out.photoBanner === 'string' && out.photoBanner.includes('\uFFFD')) {
-                    out.photoBanner = '';
+                  const srcItem = items.find((b) => Number(b?.pageIndex) === Number(out.pageIndex)) || items[resIdx] || {};
+                  const srcCells = srcItem.cells || {};
+                  const srcCtx = `${srcCells.workTypeRaw || ''} ${srcCells.content || ''} ${out.workGroup || ''}`;
+                  const isSrcElec = /전기|전선|분전반|분전함|누전|차단기|접지|전등|소켓|심선|충전부|감전/.test(srcCtx) && !/지게차|유도원|하역|운행경로/.test(srcCtx);
+                  const hasSrcLaw = Boolean(String(srcCells.lawRaw || '').trim() || String(srcCells.lawBody || '').trim());
+                  if (out.workGroup === '양중 및 운반작업' || out.workGroup === '양중작업' || out.workGroup === '안전시설공사' || out.workGroup === '콘크리트공사') {
+                    out.workGroup = '';
+                  }
+                  if (typeof out.photoBanner === 'string') {
+                    out.photoBanner = out.photoBanner.includes('\uFFFD')
+                      ? ''
+                      : out.photoBanner.replace(/[\u2460-\u2487\u2776-\u277F]/g, '').replace(/\s+/g, ' ').trim();
                   }
                   const rawEdits = (out.edits && typeof out.edits === 'object')
                     ? out.edits
                     : ((out.fixedFields && typeof out.fixedFields === 'object') ? out.fixedFields : null);
                   if (rawEdits) {
                     const ff = {};
+                    const origLawNorm = srcCells.lawRaw ? normalizeWorkerLawTitle(String(srcCells.lawRaw)) : '';
                     for (const [k, v] of Object.entries(rawEdits)) {
-                      if (typeof v === 'string' && v.trim() && !v.includes('\uFFFD')) {
-                        ff[k] = v;
+                      if (typeof v !== 'string' || !v.trim() || v.includes('\uFFFD')) continue;
+                      if (k === 'rawLaw' || k === 'lawRaw' || k === 'lawBody') {
+                        if (!hasSrcLaw) continue;
+                        if (isSrcElec && /지게차|유도자|운행경로/.test(v)) continue;
+                        if (k === 'lawBody') {
+                          if (!String(srcCells.lawBody || '').trim()) continue;
+                          ff.lawBody = v.replace(/•([^\s])/g, '• $1').replace(/([을를이가은는에로])(설치|준수|착용|확보|관리|실시|금지)(해야|하여야|한다|할\s*것)/g, '$1 $2$3').trim();
+                        } else {
+                          const normCandidate = normalizeWorkerLawTitle(v);
+                          if (/\[?\s*I?Z\d/i.test(origLawNorm) && (!/\[?\s*I?Z\d/i.test(normCandidate) || normCandidate.length < origLawNorm.length * 0.65)) {
+                            ff.rawLaw = origLawNorm;
+                          } else {
+                            ff.rawLaw = normCandidate;
+                          }
+                        }
+                        continue;
                       }
+                      ff[k] = (k === 'photoBanner' || k === 'banner')
+                        ? v.replace(/[\u2460-\u2487\u2776-\u277F]/g, '').trim()
+                        : v;
+                    }
+                    if (!ff.rawLaw && origLawNorm && origLawNorm !== String(srcCells.lawRaw || '').trim()) {
+                      ff.rawLaw = origLawNorm;
                     }
                     out.edits = ff;
                     out.fixedFields = ff;
@@ -965,6 +1024,55 @@ JSON 형식:
                 if (parsed.cleanedFields.location) {
                   parsed.cleanedFields.location = cleanLocationWorker(parsed.cleanedFields.location, parsed.cleanedFields.content || content);
                 }
+                if (typeof parsed.cleanedFields.photoBanner === 'string') {
+                  parsed.cleanedFields.photoBanner = parsed.cleanedFields.photoBanner
+                    .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                }
+                if (typeof parsed.cleanedFields.rawLaw === 'string') {
+                  parsed.cleanedFields.rawLaw = parsed.cleanedFields.rawLaw
+                    .replace(/안\s*[선전]\s*작\s*업\s*[시지]\s*[심침]/g, '안전작업지침')
+                    .replace(/\[?\s*I[Z2][1Il]2B[\s\-]*10[\/lI\|]\s*\(?\s*K\s*\)?\s*\]?/gi, '[IZ12B-107(K)]')
+                    .replace(/주탁\s*\/\s*[닥딱]아방[시사][시실][실설]\s*작[입업]/g, '추락/낙하방지시설 작업')
+                    .replace(/안전작업지침\s*\[/g, '안전작업지침 [')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                }
+                if (typeof parsed.cleanedFields.lawBody === 'string') {
+                  parsed.cleanedFields.lawBody = parsed.cleanedFields.lawBody
+                    .replace(/•([^\s])/g, '• $1')
+                    .replace(/([을를이가은는에로])(설치|준수|착용|확보|관리|실시|금지)(해야|하여야|한다|할\s*것)/g, '$1 $2$3')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                }
+              }
+              const invalidWorkerWorkGroups = new Set([
+                '양중 및 운반작업', '양중및운반작업', '양중작업', '양중공사',
+                '안전시설공사', '해체/철거공사', '콘크리트공사',
+                '공통', '공통공사', '건축공사', '전기공사', '설비공사', '토목공사', '미분류'
+              ]);
+              const sanitizeWg = (wg) => {
+                const trimmed = String(wg || '').trim();
+                return (!trimmed || invalidWorkerWorkGroups.has(trimmed)) ? '' : trimmed;
+              };
+              const explicitWorkTypeRaw = sanitizeWg(body.workTypeRaw || body.cleanedFields?.workGroup || '');
+              let cleanParsedWg = sanitizeWg(parsed.workGroup);
+              if (!cleanParsedWg) {
+                cleanParsedWg = explicitWorkTypeRaw || sanitizeWg(quickFallback.workGroup) || (/pc|프리캐스트|자재낙하|유도로프/i.test(combinedCtx) ? 'PC공사' : '가설공사(안전시설물)');
+              }
+              parsed.workGroup = cleanParsedWg;
+              if (typeof parsed.photoBanner === 'string') {
+                parsed.photoBanner = parsed.photoBanner
+                  .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+              }
+              if (typeof parsed.photo2Banner === 'string') {
+                parsed.photo2Banner = parsed.photo2Banner
+                  .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
               }
               const postCheckCtx = `${combinedCtx} ${parsed.cleanedFields?.hazardType || ''} ${parsed.cleanedFields?.rawLaw || ''}`;
               const isForkliftPostCtx = /지게차|유도원|유도자|하역/i.test(postCheckCtx) && !/생명줄|안전대/i.test(postCheckCtx);

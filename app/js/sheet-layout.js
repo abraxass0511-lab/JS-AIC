@@ -898,6 +898,26 @@ export function preprocessCellCanvas(rawCanvas, shavePx = 2, padPx = 8, options 
     }
   }
 
+  // 3) [관련 기준] 셀 연파랑 음영 박스(#D9E1F2) 배경 백색화 및 얇은 세리프 텍스트 대비 보강
+  if (cellKey === 'law') {
+    const pxCount = sw * sh;
+    for (let i = 0; i < pxCount; i++) {
+      const k = i * 4;
+      const r = data[k], g = data[k + 1], b = data[k + 2];
+      const maxC = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const isBlueTintBg = b >= r + 4 && lum >= 158;
+      if (lum >= 190 || (isBlueTintBg && (maxC - minC) <= 55)) {
+        data[k] = 255; data[k + 1] = 255; data[k + 2] = 255;
+      } else {
+        const v = Math.max(0, Math.min(220, Math.round((lum - 35) * 1.18)));
+        data[k] = v; data[k + 1] = v; data[k + 2] = v;
+      }
+      data[k + 3] = 255;
+    }
+  }
+
   ctx.putImageData(imgData, padPx, padPx);
   return out;
 }
