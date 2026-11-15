@@ -2797,6 +2797,16 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     return await tplEngine.buildWorkerPptxBlob(options);
   }
 
+  // ── [관리자용] 인터랙티브 상세 분석 HTML 보고서 생성 ──
+  async function generateManagerDetailHtml(options = {}) {
+    const htmlGen = (typeof window !== 'undefined' && window.SafeHtmlReport)
+      || (typeof globalThis !== 'undefined' && globalThis.SafeHtmlReport);
+    if (!htmlGen || !htmlGen.buildManagerDetailHtmlBlob) {
+      throw new Error('HTML 상세 보고서 생성 엔진(SafeHtmlReport)이 로드되지 않았습니다.');
+    }
+    return await htmlGen.buildManagerDetailHtmlBlob(options);
+  }
+
   return {
     generateInspectionSheetPPT,
     renderInspectionSheetHTML,
@@ -2805,6 +2815,7 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     addInspectionSheetSlide,
     generatePresentation,
     generateWorkerPresentation,
+    generateManagerDetailHtml,
     extractInsights
   };
 });
