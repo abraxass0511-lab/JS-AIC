@@ -172,6 +172,19 @@ const DOMAIN_TYPO_MAP = [
   [/[적서][검걸걱]단/g, '점검단'],
   [/안[선전]\s*작[업엄]\s*[지시][침심]/g, '안전작업지침'],
   [/직[계게개]차|지[계개제]차/g, '지게차'],
+  [/판개(?=\s|$)/g, '판재'],
+  [/작업시(?=\s|$)/g, '작업 시'],
+  [/양중\s*시양중/g, '양중 시 양중'],
+  [/시양중(?=\s|$)/g, '시 양중'],
+  [/이맞지않는/g, '이 맞지 않는'],
+  [/크레인맞음/g, '크레인 맞음'],
+  [/\)지침/g, ') 지침'],
+  [/양중을\s*무게중심/g, '양중물 무게중심'],
+  [/무게중심확인/g, '무게중심 확인'],
+  [/길이\s*모양\s*이\s*다른\s*(?=[가-힣])|길이모양이다른\s*(?=[가-힣])|길이모양이다른/g, '길이·모양이 다른 '],
+  [/이형자재(?=[가-힣])/g, '이형자재 '],
+  [/양중글지|양중금지/g, '양중 금지'],
+  [/글지(?=\s|[.,!?]|$)/g, '금지'],
   [/([다요음함됨임]\.?)\s*[a-zA-Z]{1,3}$/gm, '$1']
 ];
 
@@ -601,13 +614,18 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
         .trim();
     }
 
-    // 3. 서술형 어미를 명사형 위반 문구로 변환
+    // 3. 서술형·미완성 어미를 완결형 명사/종결 문구로 변환
     s = s
       .replace(/(?:을|를)\s*미설치(?:하여|함)?$/g, ' 미설치')
       .replace(/(?:이|가)\s*설치되지\s*않[아음]$/g, ' 미설치')
       .replace(/(?:이|가)\s*되지\s*않[아음]$/g, ' 미실시')
       .replace(/(?:을|를)\s*사용하지\s*않[아음]$/g, ' 미사용')
       .replace(/에\s*근접$/g, ' 근접 작업')
+      .replace(/상태로$/g, '상태')
+      .replace(/수평이\s*맞지\s*않는$/g, '수평이 맞지 않음')
+      .replace(/(?:되지|하지|맞지|않)\s*않는$/g, (m) => m.replace(/않는$/, '않음'))
+      .replace(/([가-힣])없는$/g, '$1 없음')
+      .replace(/\s+없는$/g, ' 없음')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -618,8 +636,8 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   if (!source) return '';
 
   // 만약 원본 사진 배너가 이미 짧은 실제 위반 문구(예: "벽이음용 상부 버팀대 설치각도(60도↓) 불량", "협력사 가설컨테이너 반입시 점검 불량")이고
-  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환 (원문자 배지 ①②③ 선·후행 제거)
-  const normBanner = stripCircledNumbers(normalizeKoreanSpacing(String(rawBanner || '')))
+  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환 (원문자 배지 ①②③ 및 내부 배지 숫자 제거)
+  const normBanner = normalizePhotoBannerText(String(rawBanner || ''), contentText, locationText)
     .replace(/^[\d)\s]+/, '')
     .trim();
   const normContent = stripCircledNumbers(normalizeKoreanSpacing(String(contentText || '')))
@@ -630,7 +648,8 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
 
   const isUnspacedLongBanner = normBanner.length >= 12 && !/\s/.test(normBanner);
   const hasUnclosedParen = /\([^)]*$/.test(normBanner);
-  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && normBanner.length >= 5 && normBanner.length <= 28) {
+  const hasIncompleteTail = /(?:상태로|않는|없는|하는|되는|있는)$/.test(normBanner);
+  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && !hasIncompleteTail && normBanner.length >= 5 && normBanner.length <= 28) {
     return truncateBannerAtWordBoundary(normBanner, 28);
   }
 
@@ -685,6 +704,14 @@ export function splitInlineBullets(text = '') {
 export function stripCircledNumbers(text = '') {
   return String(text || '')
     .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+    // 황색 사진 번호 배지(1, 2, 3...)가 한국어 어절 사이에 붙은 노이즈 제거 (예: '과다1생명줄' -> '과다 생명줄')
+    .replace(/([가-힣])([1-5])([가-힣]{2,})/g, (m, p1, d, p3) => {
+      if (p1 === '제') return m;
+      if (/^(?:차|층|동|번|단|개|인|선|호|일|월|년|회|종|조|항|급|점|매|본|배|종류|구간|코어|단계|면|열|줄|차수|톤|미터|센티|킬로|시간|개월|주|명|곳|회차|차량)/.test(p3)) {
+        return m;
+      }
+      return `${p1} ${p3}`;
+    })
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -700,7 +727,7 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
     .replace(/상부0버팀대8/g, '상부 버팀대 ')
     .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
     .replace(/6\/『|6\//g, 'E/V')
-    .replace(/\s+[12]$/, '')
+    .replace(/\s+[1-5]$/, '')
     .replace(/\(\s*$/, '')
     .trim();
   if (!s) return '';
@@ -710,7 +737,16 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
   }
   s = normalizeKoreanSpacing(s)
     .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
-    .replace(/\s+[12]$/, '')
+    .replace(/([가-힣])([1-5])([가-힣]{2,})/g, (m, p1, d, p3) => (
+      (p1 === '제' || /^(?:차|층|동|번|단|개|인|선|호|일|월|년|회|종|조|항|급|점|매|본|배|종류|구간|코어|단계|면|열|줄|차수|톤|미터|센티|킬로)/.test(p3))
+        ? m
+        : `${p1} ${p3}`
+    ))
+    .replace(/상태로$/g, '상태')
+    .replace(/수평이\s*맞지\s*않는$/g, '수평이 맞지 않음')
+    .replace(/(?:되지|하지|맞지)\s*않는$/g, (m) => m.replace(/않는$/, '않음'))
+    .replace(/([가-힣])\s*없는$/g, '$1 없음')
+    .replace(/\s+[1-5]$/, '')
     .replace(/[.·,\s]+$/, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -771,8 +807,19 @@ export function normalizeSafetyLawBody(lawBody = '') {
   }
 
   body = body
+    .replace(/크레인맞음/g, '크레인 맞음')
+    .replace(/(\([^)]+\))\s*지침\s*(?=[가-힣A-Za-z0-9])/g, '$1 지침\n- ')
+    .replace(/\)지침/g, ') 지침')
+    .replace(/양중을\s*무게중심/g, '양중물 무게중심')
+    .replace(/무게중심확인/g, '무게중심 확인')
+    .replace(/길이\s*모양\s*이\s*다른\s*(?=[가-힣])|길이모양이다른\s*(?=[가-힣])|길이모양이다른/g, '길이·모양이 다른 ')
+    .replace(/이형자재(?=[가-힣])/g, '이형자재 ')
+    .replace(/양중글지|양중금지/g, '양중 금지')
+    .replace(/글지(?=\s|[.,!?]|$)/g, '금지')
     // OCR 줄바꿈/구두점 노이즈('방지하기.\n위한' -> '방지하기 위한', '시작하기.\n전에' -> '시작하기 전에')
     .replace(/([가-힣]+하기)\.\s*(?:\r?\n\s*)?(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
+    // 문장 종결/금지 뒤 인라인 불릿 분리
+    .replace(/(?<=[.!?]|다|함|됨|음|금지)\s+([•*▪-])\s+(?=[가-힣A-Za-z0-9(\[])/g, '\n$1 ')
     // 줄 끝에 홀로 남은 원문자('③\n구조물' -> '③ 구조물') 본문과 결합
     .replace(/([①②③④⑤⑥⑦⑧⑨⑩])\s*\r?\n\s*(?=[가-힣A-Za-z0-9(])/g, '$1 ')
     // 문장 종결 뒤 붙어 나온 하위 조항 원문자('한다.②', '한다.③') 줄바꿈 분리
@@ -784,7 +831,8 @@ export function normalizeSafetyLawBody(lawBody = '') {
     .map(line => {
       let l = line.replace(/^[|ㅣ¦!~—_=\[\]]+\s*/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
       l = normalizeKoreanSpacing(l);
-      l = l.replace(/^([•*·▪])\s*(?=[가-힣A-Za-z0-9])/, '$1 ');
+      l = l.replace(/^([*▪])\s*(?=[가-힣A-Za-z0-9])/, '- ');
+      l = l.replace(/^([•·-])\s*(?=[가-힣A-Za-z0-9])/, '$1 ');
       return l;
     })
     .filter(Boolean);
@@ -794,7 +842,7 @@ export function normalizeSafetyLawBody(lawBody = '') {
     const prev = merged.length > 0 ? merged[merged.length - 1] : '';
     const prevIsHeading = Boolean(prev) && !/^\d+\)/.test(prev) && (
       (/^\d+\.\d+/.test(prev) && !/[①-⑩]/.test(prev)) ||
-      (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자|분전반)$/.test(prev))
+      (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자|분전반|지침)$/.test(prev))
     );
     const prevEndsSentence = /(?:다|함|됨|음|요|임)[.!?]$/.test(prev);
     if (
@@ -809,7 +857,18 @@ export function normalizeSafetyLawBody(lawBody = '') {
     }
   }
 
-  return merged.map(l => normalizeKoreanSpacing(l)).join('\n').trim();
+  // 한 문서 내 불릿 기호(*, •, ·, ▪, -) 혼용 시 단일 표준 '-' 불릿으로 통일 (단일 '•' 양식은 호환 유지)
+  const hasHyphenOrStarBullet = merged.some(l => /^-\s/.test(l));
+  const hasDotBullet = merged.some(l => /^[•·]\s/.test(l));
+  const unified = merged.map(l => {
+    let out = normalizeKoreanSpacing(l);
+    if (hasHyphenOrStarBullet && hasDotBullet) {
+      out = out.replace(/^[•·]\s+/, '- ');
+    }
+    return out;
+  });
+
+  return unified.join('\n').trim();
 }
 
 function resolveNonForkliftFallLawTitle(fallCtx = '', rawTitle = '') {
@@ -914,6 +973,15 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     title = '안전작업지침 [IZSW-003(K)] 거푸집동바리 작업';
   } else if (/(?:IZ12B-108\(K\)|지게차\s*작업지침)/i.test(title) && !isElecCtx && !isFallOrFormCtx && hasForkliftCtx) {
     title = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
+  }
+
+  // 크레인/양중 작업 위반인데 공종명('거푸집동바리공사') 때문에 제332조(거푸집동바리)가 잘못 배정된 경우 교정
+  const isCraneLiftingMismatch = /(?:크레인|타워크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|자재\s*양중|형틀자재\s*양중)/.test(`${body} ${ctx}`) &&
+    !/(?:동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도))/.test(`${body} ${ctx}`);
+  if (isCraneLiftingMismatch && /제332조|거푸집동바리/.test(title)) {
+    title = (specificLawClean && !/332조|거푸집동바리/.test(specificLawClean))
+      ? specificLawClean
+      : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
   }
 
   // 잔여 심각한 OCR 깨짐(해독 불가 비단어/닫히지 않은 괄호) 차단 가드

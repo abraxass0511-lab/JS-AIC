@@ -1013,12 +1013,19 @@
     const text = `${rawContent} ${r.item || ''} ${r.agent || ''} ${r.workMethod || ''} ${r.workName || ''}`;
     const domainCtx = `${text} ${r.workGroup || ''} ${r.type || ''} ${r.hazardType || ''}`;
     const hasForkliftWork = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(text);
+    const isCraneLift = /(?:크레인|타워크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|형틀자재\s*양중|자재\s*양중)/.test(`${text} ${r.lawBody || ''}`);
+    const hasFormworkAssemblyDefect = /(?:동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도))/.test(`${text} ${r.lawBody || ''}`);
     const isElectricalDefect = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/i.test(`${domainCtx} ${r.lawBody || ''}`) && !hasForkliftWork;
     const isNonForkliftConflict = !isElectricalDefect && !hasForkliftWork && /(?:생명줄|안전대\s*부착|안전대|추락|비계|거푸집|동바리)/i.test(`${domainCtx} ${r.lawBody || ''}`);
 
-    // 관련 법령 및 수칙 내용 (등록된 데이터의 rawLaw / lawBody 최우선 존중, 단 공종·내용과 모순된 지게차 오배정 차단)
+    // 관련 법령 및 수칙 내용 (AI 검증·등록 데이터의 rawLaw / law / lawBody 최우선 존중, 공종·내용 모순만 방어)
     let rawLawTitle = r.rawLaw || r.law || (r.basis && r.basis.law) || '';
     let lawBody = r.lawBody || '';
+    if (isCraneLift && !hasFormworkAssemblyDefect && /제332조|거푸집동바리/.test(rawLawTitle)) {
+      rawLawTitle = (r.law && !/332조|거푸집동바리|172조|직?[계게개]차|지[계개제]차/.test(r.law))
+        ? r.law
+        : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
+    }
     if (isElectricalDefect || isNonForkliftConflict) {
       if (/직?[계게개]차|지[계개제]차|제172조/.test(rawLawTitle)) {
         rawLawTitle = (r.law && /안전보건규칙|산업안전보건/.test(r.law) && !/172조|직?[계게개]차|지[계개제]차/.test(r.law))
@@ -1037,38 +1044,38 @@
           lawBody = '6.3.2 작업 중 점검\n2) 시공관리자는 적격성을 갖춘 자를 지정하여 전기설비, 기계, 기구, 공도구 등에 대해 정기적으로 점검하도록 한다.';
         } else if (/접지/.test(text) && !/충전부|차단기/.test(text)) {
           rawLawTitle = rawLawTitle || '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)';
-          lawBody = '• 전기기계·기구의 금속제 외함 등에는 누설전류 발생 시 감전을 방지하기 위해 적정 용량의 접지선을 볼트 등으로 견고히 연결·접지해야 한다.';
+          lawBody = '- 전기기계·기구의 금속제 외함 등에는 누설전류 발생 시 감전을 방지하기 위해 적정 용량의 접지선을 볼트 등으로 견고히 연결·접지해야 한다.';
         } else {
           rawLawTitle = rawLawTitle || '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-          lawBody = '7.2.3 가설 분전반\n• 분전반 내 차단기·접속전선 충전부는 노출되지 않도록 절연 방호조치하고, 접지상태 및 누전차단기 작동여부·소화기 비치를 정기 점검한다.';
+          lawBody = '7.2.3 가설 분전반\n- 분전반 내 차단기·접속전선 충전부는 노출되지 않도록 절연 방호조치하고, 접지상태 및 누전차단기 작동여부·소화기 비치를 정기 점검한다.';
         }
-      } else if (text.includes('동바리') || text.includes('서포트') || text.includes('멍에')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제332조';
-        lawBody = '• 파이프 서포트는 2본이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용 하지 않는다.';
-      } else if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
-        rawLawTitle = rawLawTitle || '안전보건규칙 제38조, 제171조';
-        lawBody = '화물은 유도로프를 통해 유도하고 손으로 밀거나 당기는 행위를 금지하며 화물의 양중높이에 따라 적정한 길이를 가진 유도로프를 사용해야 한다.';
+      } else if (isCraneLift || text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('호이스트') || text.includes('유도로프') || text.includes('수평양중')) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
+        lawBody = '- 화물은 유도로프를 통해 유도하고 무게중심을 확인하며, 길이·모양이 다른 이형자재 동시 양중 및 손으로 밀거나 당기는 행위를 금지해야 한다.';
+      } else if ((text.includes('동바리') || text.includes('서포트') || text.includes('멍에')) && hasFormworkAssemblyDefect) {
+        rawLawTitle = rawLawTitle || '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
+        lawBody = '- 파이프 서포트는 2본 이상 이어서 사용하거나 이중 서포트(이중 동바리)로 사용하지 않는다.';
       } else if (text.includes('말비계') || text.includes('우마')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제67조, 제13조';
-        lawBody = '말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
+        lawBody = '- 말비계는 평탄하고 견고한 바닥에 전도방지조치를 하고, 단부 및 모서리 구간에는 안전난간대 등 추락방지조치를 설치해야 한다.';
       } else if (text.includes('생명줄') || /안전대\s*부착/.test(text) || (text.includes('안전대') && !text.includes('비계') && !text.includes('작업발판') && !text.includes('안전난간'))) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제44조(안전대의 부착설비 등)';
-        lawBody = '추락할 위험이 있는 높이 2m 이상의 장소에서 작업할 때에는 안전대를 안전하게 걸어 사용할 수 있는 설비(생명줄)를 설치·사용해야 한다.';
+        lawBody = '- 추락할 위험이 있는 높이 2m 이상의 장소에서 작업할 때에는 안전대를 안전하게 걸어 사용할 수 있는 설비(생명줄)를 설치·사용해야 한다.';
       } else if (text.includes('비계') || text.includes('난간') || text.includes('작업발판') || text.includes('안전난간') || text.includes('단부')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제56조, 제13조';
-        lawBody = '작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
+        lawBody = '- 작업발판은 틈새가 없도록 전면 설치하고, 발판 단부에는 상부난간대 및 중간난간대를 견고히 설치하여 근로자 추락을 방지해야 한다.';
       } else if (text.includes('개구부') || text.includes('덮개')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제59조';
-        lawBody = '바닥 개구부에는 충분한 강도를 가진 덮개를 뒤집히거나 벗겨지지 않도록 고정 설치하고 "추락주의" 위험표지를 부착해야 한다.';
+        lawBody = '- 바닥 개구부에는 충분한 강도를 가진 덮개를 뒤집히거나 벗겨지지 않도록 고정 설치하고 "추락주의" 위험표지를 부착해야 한다.';
       } else if (text.includes('전기') || text.includes('조명') || text.includes('투광등') || text.includes('차단기') || text.includes('전선')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제304조';
-        lawBody = '이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
+        lawBody = '- 이동형 전열기구 및 투광등 연결 전선에는 감전방지용 누전차단기를 접속하고 전선 피복 손상 여부를 사전 점검해야 한다.';
       } else if (text.includes('사다리')) {
         rawLawTitle = rawLawTitle || '안전보건규칙 제24조';
-        lawBody = '이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
+        lawBody = '- 이동식 사다리는 평탄한 바닥에 전도방지조치를 하고 최상부 발판 작업 금지 및 안전모·안전대를 필히 착용해야 한다.';
       } else {
         rawLawTitle = rawLawTitle || '안전보건규칙 제38조';
-        lawBody = '작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
+        lawBody = '- 작업 시작 전 위험요인을 사전 조사하고 작업계획서를 작성하여 그 계획에 따라 안전하게 작업을 지휘·감독해야 한다.';
       }
     }
     let rawLawMerged = String(r.rawLaw || '').trim();
@@ -1105,6 +1112,11 @@
       (/(?:3\.?6|36)\s*유도자/.test(combinedContext) && /직?[계게개]차|지[계개제]차/.test(combinedContext)) ||
       (/유도자/.test(lawBody) && /운행경로/.test(lawBody))
     );
+    const hasAiVerifiedLawTitle = Boolean(
+      (r._aiVerified || r._aiCleaned) &&
+      /(?:안전보건규칙|산업안전보건|안전작업지침)/.test(lawTitle) &&
+      !(isCraneLift && !hasFormworkAssemblyDefect && /제332조|거푸집동바리/.test(lawTitle))
+    );
     if (isElecOr632Law) {
       if (/직?[계게개]차|지[계개제]차/.test(lawTitle)) {
         lawTitle = simplifyLawTitle(r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '', `${text} ${lawBody}`);
@@ -1113,6 +1125,10 @@
       }
     } else if (isNonForkliftConflict && /직?[계게개]차|지[계개제]차/.test(lawTitle)) {
       lawTitle = simplifyLawTitle(r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '', `${text} ${lawBody}`);
+    } else if (isCraneLift && !hasFormworkAssemblyDefect && /제332조|거푸집동바리/.test(lawTitle)) {
+      lawTitle = (r.law && !/332조|거푸집동바리|172조/.test(r.law))
+        ? r.law
+        : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
     } else if (isGenuineForkliftLaw) {
       lawTitle = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
       if (/(?:36|3\.6)?\s*유도자/.test(lawBody) && (/(?:이\s*상비도자|진찾전원|시률입원치|계행명일살)/.test(lawBody) || /36유도자/.test(lawBody))) {
@@ -1120,19 +1136,19 @@
       }
     } else if (/IZ12B[-_\s]*107/i.test(lawTitle)) {
       lawTitle = '안전작업지침 [IZ12B-107(K)] 추락/낙하방지시설 작업';
-    } else if (/(?:거푸집|동바리|갱폼|유로폼|알폼|AL\s*Form|서포트)/i.test(combinedContext)) {
+    } else if (!hasAiVerifiedLawTitle && !isCraneLift && /(?:거푸집|동바리|갱폼|유로폼|알폼|AL\s*Form|서포트)/i.test(combinedContext)) {
       if (/현장\s*제작|대형\s*거푸집/.test(combinedContext)) {
         lawTitle = '현장 제작 대형 거푸집공사 작업 절차';
       } else if (/IZSW|거푸집동바리\s*작업|동바리\s*작업/i.test(combinedContext)) {
         lawTitle = '안전작업지침 [IZSW-003(K)] 거푸집동바리 작업';
-      } else if (r.law && r.law.startsWith('안전보건규칙')) {
+      } else if (r.law && r.law.startsWith('안전보건규칙') && !/제332조/.test(r.law)) {
         lawTitle = r.law;
       } else if (/안전보건규칙/.test(lawTitle)) {
         // 기존 법조문 제목 유지
-      } else {
+      } else if (hasFormworkAssemblyDefect) {
         lawTitle = '안전보건규칙 제332조(거푸집동바리등의 안전조치)';
       }
-    } else if (/(?:[비미]계|작업발판|가새|벽이음)/i.test(combinedContext)) {
+    } else if (!hasAiVerifiedLawTitle && /(?:[비미]계|작업발판|가새|벽이음)/i.test(combinedContext)) {
       if (/^\.?28\s*작업발판|^7\.2\.8\s*작업발판|^6\.3\.[12]\s*작업/.test(lawTitle)) {
         lawBody = `${lawTitle.replace(/^\.?28\s*/, '7.2.8 ')}\n${lawBody}`.trim();
         lawTitle = '안전작업지침 [IZ12B-106(K)] 비계 작업';
@@ -1174,7 +1190,7 @@
         .replace(/([다요음함됨임]\.?)\s*[a-zA-Z|~—_]{1,3}(?=\s*$|\r?\n)/gm, '$1')
         .replace(/(?:=\s*)?(?:\b[a-zA-Z]{1,3}\s+){2,}[a-zA-Z]{1,4}\s*$/gm, '')
         .replace(/[=—\-_\s]+ee[\s\S]*$/gi, '')
-        .replace(/\s*\*\s+/g, '\n* ')
+        .replace(/\s*\*\s+/g, '\n- ')
         .replace(/\n{2,}/g, '\n')
         .trim();
 

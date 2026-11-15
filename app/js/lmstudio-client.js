@@ -1373,15 +1373,30 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const bodyCtx = `${ctx} ${rec.lawBody || ''}`;
     const hasForkliftCtx = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(`${rec.workGroup || ''} ${rec.content || ''}`);
     const isElec = rec.workGroup === '가설전기공사' || rec.type === '감전' || (ELECTRICAL_SIGNAL_RE.test(bodyCtx) && !hasForkliftCtx);
-    const isOtherTrade = !isElec && !hasForkliftCtx && /(?:생명줄|안전대\s*부착|안전대|비계|동바리|거푸집|갱폼|알폼)/.test(bodyCtx);
+    const isCraneLift = /크레인|타워크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|형틀자재\s*양중|자재\s*양중/.test(bodyCtx);
+    const hasGenuineFormworkDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(ctx);
+    const isOtherTrade = !isElec && !hasForkliftCtx && (isCraneLift || /(?:생명줄|안전대\s*부착|안전대|비계|동바리|거푸집|갱폼|알폼)/.test(bodyCtx));
     if (!isElec && !isOtherTrade) return rec;
+
+    if (isCraneLift && !hasGenuineFormworkDefect) {
+      if (rec.law && /제332조|거푸집동바리/.test(rec.law)) {
+        rec.law = '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
+      }
+      if (rec.rawLaw && /제332조|거푸집동바리/.test(rec.rawLaw)) {
+        rec.rawLaw = (rec.law && !/332조|거푸집동바리/.test(rec.law))
+          ? rec.law
+          : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
+      }
+    }
 
     const r = quickRuleAnalysis(`${rec.workGroup || ''} ${rec.content || ''} ${rec.lawBody || ''}`) || {};
     const validLawFallback = isElec
       ? (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)')
-      : (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law)
-        ? r.law
-        : (/생명줄|안전대/.test(bodyCtx) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : ''));
+      : (isCraneLift && !hasGenuineFormworkDefect
+        ? '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)'
+        : (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law)
+          ? r.law
+          : (/생명줄|안전대/.test(bodyCtx) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : '')));
 
     if (rec.law && /직?[계게개]차|지[계개제]차|제172조/.test(rec.law)) {
       if (validLawFallback) rec.law = validLawFallback;
@@ -1409,6 +1424,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     records.forEach((rec) => {
       if (!rec) return;
       sanitizeDomainMismatchedLaw(rec);
+      const isAiAuthored = preserveAiFields && Boolean(rec._aiCleaned || rec._aiVerified);
       const fullCtx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''}`;
       const r = quickRuleAnalysis(fullCtx) || {};
       const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
@@ -1419,14 +1435,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       } else {
         rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
       }
-      if (!preserveAiFields || !rec.workMethod) {
+      if (!isAiAuthored && (!preserveAiFields || !rec.workMethod)) {
         if ((!rec.workMethod || (rec.workMethod === '설치조립작업' && /하역운반작업|양중작업|굴착작업|해체작업/.test(r.workMethod || ''))) && r.workMethod) {
           rec.workMethod = r.workMethod;
         }
       }
       rec.workMethod = sanitizeWorkMethod(rec.workMethod, rec.workGroup, rec.content, rec.location) || r.workMethod || rec.workMethod;
       if (rec.workMethod) rec.workName = rec.workMethod;
-      if (r.agentMajor && (!rec.agentMajor || (rec.agentMid === '거푸집/동바리' && !/거푸집|동바리|유로폼|서포트/.test(fullCtx)))) {
+      if (!isAiAuthored && r.agentMajor && (!rec.agentMajor || (rec.agentMid === '거푸집/동바리' && !/거푸집|동바리|유로폼|서포트/.test(fullCtx)))) {
         rec.agentMajor = r.agentMajor;
         rec.agentMid = r.agentMid;
         rec.agentMinor = r.agentMinor;
@@ -1437,7 +1453,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         rec.matrixTarget = r.agentMid;
         rec.matrixSpec = r.agentMinor;
       }
-      if ((!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(fullCtx))) && r.type) {
+      if (!isAiAuthored && (!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(fullCtx))) && r.type) {
         rec.type = r.type;
       }
       if (
@@ -1447,12 +1463,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       ) {
         rec.photoBanner = '';
       }
-      if (!preserveAiFields || !rec.photoBanner) {
+      if (!isAiAuthored && (!preserveAiFields || !rec.photoBanner)) {
         const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
         const isStaleRawBanner = /분전(?:함|반).*차단기.*충전부/.test(rawBannerFromSheet) &&
           /전등|소켓|조명|심선/.test(rec.content || '') &&
           !/분전함|분전반|차단기/.test(rec.content || '');
         rec.photoBanner = cleanBannerText((isStaleRawBanner ? '' : rawBannerFromSheet) || rec.photoBanner, rec.content, rec.location) || r.photoBanner || '';
+      } else if (rec.photoBanner) {
+        rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location) || rec.photoBanner;
       }
       if (!rec.condition || rec.condition === '해당없음') rec.condition = r.condition || rec.condition;
       if (!rec.action || rec.action === '해당없음') rec.action = r.action || rec.action;
@@ -1567,11 +1585,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               const v = rawVal.trim();
               const orig = String(rec[key] || '').trim();
               if (!v || /\uFFFD/.test(v) || isFieldKeyLiteral(v)) return;
-              if (!orig) return;
-              if (key === 'rawLaw' && /\[?\s*I?Z\d/i.test(orig) && !/\[?\s*I?Z\d/i.test(v)) return;
+              if (!orig && !['rawLaw', 'lawBody', 'law', 'photoBanner'].includes(key)) return;
               const vCompactLen = v.replace(/\s+/g, '').length;
               const oCompactLen = orig.replace(/\s+/g, '').length;
-              if (oCompactLen > 0 && (vCompactLen < oCompactLen * 0.40 || vCompactLen > oCompactLen * maxRatio)) return;
+              const minRatio = (key === 'rawLaw' || key === 'lawBody') ? 0.25 : 0.40;
+              if (oCompactLen > 0 && (vCompactLen < oCompactLen * minRatio || vCompactLen > oCompactLen * maxRatio)) return;
               const normFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
                 ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, key === 'interviewOpinion' ? 'interview' : key)
                 : (s) => s;
@@ -1587,7 +1605,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             applyFixedField('interviewOpinion', ff.interview || ff.interviewOpinion, cleanOpinionText);
             applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
             applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
-            applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw, null, null, 2.8);
+            applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw || aiItem.rawLaw, null, null, 2.8);
             applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
           }
           const rawBannerOrigBeforePatch = String(rec._rawCellTexts?.banner || rec.photoBanner || '').trim();
@@ -1602,9 +1620,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
           rec.workMethod = sanitizeWorkMethod(rec.workMethod || aiItem.workMethod, rec.workGroup, rec.content, rec.location);
           if (rec.workMethod) rec.workName = rec.workMethod;
-          if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; }
-          if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; }
-          if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; }
+          if (aiItem.agentMajor) { rec.kind = aiItem.agentMajor; rec.matrixArea = aiItem.agentMajor; rec.agentMajor = aiItem.agentMajor; }
+          if (aiItem.agentMid) { rec.item = aiItem.agentMid; rec.matrixTarget = aiItem.agentMid; rec.agentMid = aiItem.agentMid; }
+          if (aiItem.agentMinor) { rec.agent = aiItem.agentMinor; rec.matrixSpec = aiItem.agentMinor; rec.agentMinor = aiItem.agentMinor; }
           if (aiItem.hazardType && (!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(`${rec._rawCellTexts?.type || ''} ${rec.content || ''}`)))) {
             rec.type = String(aiItem.hazardType).split('·')[0];
           }
@@ -1615,39 +1633,28 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const rawBannerFromSheet = normBannerFn(rawBannerOrig);
           const aiBanner = normBannerFn(String(aiItem.photoBanner || aiPatchObj?.photoBanner || aiPatchObj?.banner || '').trim());
           const hasUsefulSpaces = (s) => /\s/.test(s) || s.length < 10;
-          const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s);
+          const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s) || /(?:상태로|않는|없는|하는|되는|있는)$/.test(String(s || '').trim());
           const isLocBanner = (s) => typeof window !== 'undefined' && window.SafeTextNormalizer?.isLocationOnlyBanner?.(s, rec.location);
-          const bannerConf = Number(rec._cellConfidences?.banner?.confidence ?? 1.0);
-          const rawHasSuspectedTypo = hasTypoPatchForBanner || /노[술줄습솔]|본트|다설|내속|흥로|책베이스/.test(rawBannerOrig);
+          const isGenericAiBanner = (s) => /^(?:안전기준\s*미준수|현장\s*부적합\s*작업\s*전경|안전시설\s*불량)$/.test(String(s || '').trim());
           const canUseAiBanner = Boolean(
-            aiBanner && !isLocBanner(aiBanner) && !/\uFFFD/.test(aiBanner) &&
+            aiBanner && !isLocBanner(aiBanner) && !isGenericAiBanner(aiBanner) && !/\uFFFD/.test(aiBanner) &&
             aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner) && aiBanner.length >= 4
           );
-          const isAiRefinementOfRaw = (() => {
-            if (!canUseAiBanner || !rawBannerFromSheet) return false;
-            const aC = aiBanner.replace(/\s+/g, '');
-            const rC = rawBannerFromSheet.replace(/\s+/g, '');
-            if (aC === rC) return true;
-            if (typeof window !== 'undefined' && window.SafeTextNormalizer?.levenshteinDistance) {
-              const dist = window.SafeTextNormalizer.levenshteinDistance(aC, rC);
-              return dist <= Math.max(2, Math.floor(Math.max(aC.length, rC.length) * 0.25));
-            }
-            return false;
-          })();
           if (rec._visionCleaned && rec.photoBanner && !isLocBanner(rec.photoBanner)) {
             rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location);
-          } else if (canUseAiBanner && (bannerConf < 0.90 || rawHasSuspectedTypo || isAiRefinementOfRaw || !rawBannerFromSheet || isLocBanner(rawBannerFromSheet) || !hasUsefulSpaces(rawBannerFromSheet) || isTruncatedRawBanner(rawBannerFromSheet))) {
-            rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location);
+          } else if (canUseAiBanner) {
+            // AI가 유효한 요약 배너를 생성한 경우 raw OCR 잔존 오타/절단보다 AI 판단 결과를 최우선 채택
+            rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location) || aiBanner;
           } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet) && hasUsefulSpaces(rawBannerFromSheet) && !isTruncatedRawBanner(rawBannerFromSheet)) {
             rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
-          } else if (canUseAiBanner) {
-            rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location);
           } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet)) {
             rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
           } else {
             rec.photoBanner = summarizeContentToBanner(rec.content);
           }
-          if (aiItem.law && (!rec.law || aiItem.lawMatched === false)) rec.law = aiItem.law;
+          if (aiItem.law && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(String(aiItem.law).trim())) {
+            rec.law = aiItem.law;
+          }
           if (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
             const specFixed = window.SafeTextNormalizer.normalizeSafetyLawSpec({
               rawLaw: rec.rawLaw || '',
@@ -1687,12 +1694,207 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return quickRuleAnalysis(`${workGroup} ${workMethod} ${memo}`);
   }
 
+  /**
+   * [v3.0 신규] 등록 전 AI 최종 검증 게이트(Pre-Save QA)
+   * - 오탈자, 띄어쓰기, 사진 요약 완결성, 대한민국 산업안전보건법 관련기준, 분류 일치 여부를 등록 직전 AI로 전수 검증·교정
+   */
+  async function verifyRecordsBeforeSave(records = [], onProgress = null) {
+    if (!Array.isArray(records) || records.length === 0) {
+      return { ok: true, records: [], modifiedCount: 0, source: 'empty', quotaExceeded: false };
+    }
+    const norm = typeof window !== 'undefined' ? window.SafeTextNormalizer : null;
+    const applySurfacePolish = (rec) => {
+      if (!rec || typeof rec !== 'object') return false;
+      const beforeSnap = JSON.stringify([
+        rec.photoBanner, rec.content, rec.location, rec.law, rec.rawLaw,
+        rec.lawBody, rec.interviewOpinion, rec.auditProposal, rec.actionPlan
+      ]);
+      rec.workGroup = cleanWorkGroup(rec.workGroup || '', rec.content || '') || rec.workGroup || '';
+      rec.workMethod = sanitizeWorkMethod(rec.workMethod || rec.workName, rec.workGroup, rec.content, rec.location) || rec.workMethod || '';
+      if (rec.workMethod) rec.workName = rec.workMethod;
+      if (norm?.normalizeFieldText) {
+        if (rec.content) rec.content = norm.normalizeFieldText(rec.content, 'content');
+        if (rec.location) rec.location = cleanLocation(norm.normalizeFieldText(rec.location, 'location'), rec.content) || rec.location;
+        if (rec.interviewOpinion) rec.interviewOpinion = cleanOpinionText(norm.normalizeFieldText(rec.interviewOpinion, 'interview'));
+        if (rec.auditProposal) rec.auditProposal = cleanProposalText(norm.normalizeFieldText(rec.auditProposal, 'proposalText'));
+        if (rec.actionPlan) {
+          rec.actionPlan = cleanActionPlan(norm.normalizeFieldText(rec.actionPlan, 'actionPlan'));
+          rec.countermeasure = rec.actionPlan;
+        }
+      }
+      if (rec.photoBanner) {
+        rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location) || rec.photoBanner;
+      }
+      if (norm?.normalizeSafetyLawSpec) {
+        const spec = norm.normalizeSafetyLawSpec({
+          rawLaw: rec.rawLaw || '',
+          lawBody: rec.lawBody || '',
+          law: rec.law || '',
+          contextText: `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''}`
+        });
+        if (rec.rawLaw && spec.title) rec.rawLaw = spec.title;
+        if (typeof rec.lawBody === 'string' && spec.body !== undefined) rec.lawBody = spec.body;
+      }
+      sanitizeDomainMismatchedLaw(rec);
+      const afterSnap = JSON.stringify([
+        rec.photoBanner, rec.content, rec.location, rec.law, rec.rawLaw,
+        rec.lawBody, rec.interviewOpinion, rec.auditProposal, rec.actionPlan
+      ]);
+      return beforeSnap !== afterSnap;
+    };
+
+    const forceLocal = storage.getItem('sp_ai_provider') === 'local';
+    let usedAi = false;
+    let quotaExceeded = false;
+    let modifiedCount = 0;
+
+    if (!forceLocal && Date.now() >= _cfQuotaCooldownUntil && Date.now() >= _cfTransientBackoffUntil) {
+      const CHUNK_SIZE = 8;
+      for (let start = 0; start < records.length; start += CHUNK_SIZE) {
+        const chunk = records.slice(start, start + CHUNK_SIZE);
+        if (typeof onProgress === 'function') {
+          onProgress(`🤖 AI 최종 검증 중 (${Math.min(start + chunk.length, records.length)}/${records.length})...`);
+        }
+        const items = chunk.map((rec, localIdx) => ({
+          pageIndex: rec.pageNumber || rec.slideNumber || (start + localIdx + 1),
+          workGroup: rec.workGroup || '',
+          workMethod: rec.workMethod || rec.workName || '',
+          type: rec.type || '',
+          photoBanner: rec.photoBanner || '',
+          content: rec.content || '',
+          location: rec.location || '',
+          subcontractor: rec.subcontractor || '',
+          inspectRound: rec.inspectRound || '',
+          law: rec.law || '',
+          rawLaw: rec.rawLaw || '',
+          lawBody: rec.lawBody || '',
+          interviewOpinion: rec.interviewOpinion || '',
+          auditProposal: rec.auditProposal || '',
+          actionPlan: rec.actionPlan || rec.countermeasure || '',
+          pmVerdict: rec.pmVerdictType || rec.pmVerdict || ''
+        }));
+
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 25000);
+          const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'verify_review', items }),
+            signal: ctrl.signal
+          });
+          clearTimeout(timer);
+          if (!res.ok) {
+            if (res.status === 429) _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+            else _cfTransientBackoffUntil = Date.now() + 15 * 1000;
+            break;
+          }
+          const data = await res.json();
+          if (data?.quotaExceeded) {
+            quotaExceeded = true;
+            _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+            break;
+          }
+          if (Array.isArray(data?.results)) {
+            if (data.source === 'qwen3_30b_verify') usedAi = true;
+            chunk.forEach((rec, localIdx) => {
+              const targetPage = rec.pageNumber || rec.slideNumber || (start + localIdx + 1);
+              const aiRes = data.results.find(r => Number(r?.pageIndex) === Number(targetPage)) || data.results[localIdx];
+              if (!aiRes || typeof aiRes !== 'object') return;
+              const beforeStr = JSON.stringify([
+                rec.workGroup, rec.workMethod, rec.type, rec.photoBanner,
+                rec.content, rec.location, rec.law, rec.rawLaw, rec.lawBody,
+                rec.interviewOpinion, rec.auditProposal, rec.actionPlan
+              ]);
+              const corr = (aiRes.corrections && typeof aiRes.corrections === 'object') ? aiRes.corrections : {};
+              const candWorkGroup = corr.workGroup || aiRes.workGroup;
+              if (candWorkGroup && typeof candWorkGroup === 'string') {
+                const mappedWg = cleanWorkGroup(candWorkGroup, rec.content);
+                if (mappedWg) rec.workGroup = mappedWg;
+              }
+              const candWorkMethod = corr.workMethod || aiRes.workMethod;
+              if (candWorkMethod && typeof candWorkMethod === 'string') {
+                const sanWm = sanitizeWorkMethod(candWorkMethod, rec.workGroup, rec.content, rec.location);
+                if (sanWm) { rec.workMethod = sanWm; rec.workName = sanWm; }
+              }
+              const candType = corr.hazardType || corr.type || aiRes.hazardType;
+              if (candType && typeof candType === 'string' && !/\uFFFD/.test(candType)) {
+                rec.type = candType.split('·')[0].trim();
+              }
+              const candBanner = corr.photoBanner || aiRes.photoBanner;
+              if (candBanner && typeof candBanner === 'string' && !/\uFFFD/.test(candBanner) && !isFieldKeyLiteral(candBanner)) {
+                const normalizedBanner = cleanBannerText(candBanner, rec.content, rec.location) || candBanner;
+                if (normalizedBanner.length >= 4 && (!norm?.isLocationOnlyBanner?.(normalizedBanner, rec.location))) {
+                  rec.photoBanner = normalizedBanner;
+                }
+              }
+              const candLaw = corr.law || aiRes.law;
+              if (candLaw && typeof candLaw === 'string' && !/\uFFFD/.test(candLaw) && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(candLaw.trim())) {
+                rec.law = healSafetyKoreanLexicon(candLaw.trim());
+              }
+              const candRawLaw = corr.rawLaw || aiRes.rawLaw;
+              if (candRawLaw && typeof candRawLaw === 'string' && !/\uFFFD/.test(candRawLaw) && !isFieldKeyLiteral(candRawLaw)) {
+                rec.rawLaw = healSafetyKoreanLexicon(candRawLaw.trim());
+              }
+              const candLawBody = corr.lawBody || aiRes.lawBody;
+              if (candLawBody && typeof candLawBody === 'string' && !/\uFFFD/.test(candLawBody) && !isFieldKeyLiteral(candLawBody)) {
+                rec.lawBody = norm?.normalizeSafetyLawBody ? norm.normalizeSafetyLawBody(candLawBody) : healSafetyKoreanLexicon(candLawBody.trim());
+              }
+              if (typeof corr.content === 'string' && corr.content.trim() && !/\uFFFD/.test(corr.content)) rec.content = cleanContent(corr.content);
+              if (typeof corr.location === 'string' && corr.location.trim() && !/\uFFFD/.test(corr.location)) rec.location = cleanLocation(corr.location, rec.content);
+              if (typeof corr.interviewOpinion === 'string' && corr.interviewOpinion.trim()) rec.interviewOpinion = cleanOpinionText(corr.interviewOpinion);
+              if (typeof corr.auditProposal === 'string' && corr.auditProposal.trim()) rec.auditProposal = cleanProposalText(corr.auditProposal);
+              if (typeof corr.actionPlan === 'string' && corr.actionPlan.trim()) {
+                rec.actionPlan = cleanActionPlan(corr.actionPlan);
+                rec.countermeasure = rec.actionPlan;
+              }
+              if (typeof corr.subcontractor === 'string' && !/\uFFFD/.test(corr.subcontractor)) rec.subcontractor = corr.subcontractor.trim();
+              if (typeof corr.inspectRound === 'string' && corr.inspectRound.trim()) rec.inspectRound = corr.inspectRound.trim();
+
+              applySurfacePolish(rec);
+              rec._aiVerified = true;
+              rec._aiVerifySource = data.source || 'qwen3_30b_verify';
+              rec._aiVerifyIssues = Array.isArray(aiRes.issues) ? aiRes.issues : [];
+              const afterStr = JSON.stringify([
+                rec.workGroup, rec.workMethod, rec.type, rec.photoBanner,
+                rec.content, rec.location, rec.law, rec.rawLaw, rec.lawBody,
+                rec.interviewOpinion, rec.auditProposal, rec.actionPlan
+              ]);
+              if (beforeStr !== afterStr) modifiedCount++;
+            });
+          }
+        } catch (err) {
+          _cfTransientBackoffUntil = Date.now() + 15 * 1000;
+          console.warn('[SafePatrol] verifyRecordsBeforeSave fallback:', err);
+          break;
+        }
+      }
+    }
+
+    records.forEach((rec) => {
+      if (!rec._aiVerified) {
+        if (applySurfacePolish(rec)) modifiedCount++;
+        rec._aiVerified = true;
+        rec._aiVerifySource = 'local_normalizer';
+      }
+    });
+
+    return {
+      ok: true,
+      records,
+      modifiedCount,
+      source: usedAi ? 'qwen3_30b_verify' : 'local_normalizer',
+      quotaExceeded
+    };
+  }
+
   return {
     checkConnection,
     quickRuleAnalysis,
     streamAnalyzeSafetyText,
     cleanOcrRecord,
     classifyBatchRecords,
+    verifyRecordsBeforeSave,
     isQuotaCoolingDown,
     completeGuidedRecord,
     getEndpoint: () => currentEndpoint,

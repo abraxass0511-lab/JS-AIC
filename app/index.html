@@ -19,11 +19,11 @@
   <!-- Config -->
   <script src="js/config.js?v=20261004_2"></script>
   <!-- App logic & Modules -->
-  <script src="js/classifier.js?v=20261115_v45"></script>
-  <script src="js/excel-builder.js?v=20261115_v45"></script>
+  <script src="js/classifier.js?v=20261115_v46"></script>
+  <script src="js/excel-builder.js?v=20261115_v46"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-generator.js?v=20261115_v45"></script>
-  <script src="js/lmstudio-client.js?v=20261115_v45"></script>
+  <script src="js/ppt-generator.js?v=20261115_v46"></script>
+  <script src="js/lmstudio-client.js?v=20261115_v46"></script>
 </head>
 
 <body>
@@ -145,22 +145,31 @@
 
           <!-- 파싱된 장표 목록 미리보기 컨테이너 -->
           <div id="importPreviewArea" style="display: none; margin-bottom: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-              <span style="font-weight: 700; font-size: 0.88rem; color: var(--gray-800);">
-                추출된 부적합 장표 (<span id="importCount">0</span>건)
-              </span>
-              <span style="font-size: 0.75rem; color: var(--gray-500);">내용 확인 후 일괄 저장하세요</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: var(--gray-800);">
+                  추출된 부적합 장표 (<span id="importCount">0</span>건)
+                </span>
+                <span id="importAiVerifyBadge" style="font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;">
+                  🤖 등록 전 AI 최종 검증 대기
+                </span>
+              </div>
+              <span style="font-size: 0.75rem; color: var(--gray-500);">오타·띄어쓰기·사진요약·산안법 관련기준 확인 후 저장하세요</span>
             </div>
             <div id="importCardsContainer"
               style="display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding-right: 2px;">
               <!-- 동적 주입 -->
             </div>
-            <div style="display: flex; gap: 8px; margin-top: 12px;">
+            <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+              <button type="button" id="btnVerifyImportedRecords" class="btn btn-outline"
+                style="flex: 1.2; padding: 12px; font-weight: 700; border: 1.5px solid #2563eb; color: #1d4ed8; background: #eff6ff;">
+                🤖 등록 전 AI 최종 검증
+              </button>
               <button type="button" id="btnSaveImportedRecords" class="btn btn-primary"
                 style="flex: 2; padding: 12px; font-weight: 700;">
-                📥 전체 대장에 일괄 저장하기
+                📥 AI 검증 후 전체 대장 저장하기
               </button>
-              <button type="button" id="btnClearImported" class="btn btn-secondary" style="flex: 1; padding: 12px;">
+              <button type="button" id="btnClearImported" class="btn btn-secondary" style="flex: 0.8; padding: 12px;">
                 초기화
               </button>
             </div>
@@ -1395,7 +1404,7 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261115_v45"></script>
+  <script type="module" src="js/app.js?v=20261115_v46"></script>
 </body>
 
 </html>

@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v45';
-import './text-normalizer.js?v=20261115_v45';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v46';
+import './text-normalizer.js?v=20261115_v46';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -1831,6 +1831,7 @@ function bindEvents() {
 
   // ── PPT / 장표 파일 임포트 ──
   $('#filePptxImport')?.addEventListener('change', handlePptxImportChange);
+  $('#btnVerifyImportedRecords')?.addEventListener('click', () => handleVerifyImportedRecords({ silent: false }));
   $('#btnSaveImportedRecords')?.addEventListener('click', handleSaveImportedRecords);
   $('#btnClearImported')?.addEventListener('click', () => {
     importedRecords = [];
@@ -2117,9 +2118,19 @@ function bindEvents() {
 
     const btn = $('#btnSubmitRecord');
     btn.disabled = true;
-    btn.textContent = '저장 중...';
+    btn.textContent = '🤖 등록 전 AI 최종 검증 중...';
 
     try {
+      if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
+        try {
+          await window.SafeLocalAI.verifyRecordsBeforeSave([record]);
+          if (record.law && record.basis) record.basis.law = record.law;
+          if (record.workMethod) record.workName = record.workMethod;
+        } catch (vErr) {
+          console.warn('Manual pre-save AI verify fallback:', vErr);
+        }
+      }
+      btn.textContent = '저장 중...';
       await store.saveRecord(record, media, msg => { btn.textContent = msg; });
       saveSiteMetaCache(site, progressVal, productTypeVal);
       
@@ -4911,6 +4922,11 @@ function renderImportedCards() {
     const contentLow = rec.lowConfidenceFields?.includes('content');
     const contentConfPct = rec.cellConfidences?.content ? Math.round(rec.cellConfidences.content.confidence * 100) : 99;
 
+    const escapeAttr = (v) => String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const verifiedBadgeHtml = rec._aiVerified
+      ? `<span style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">✅ AI 검증 완료${rec._aiVerifyIssues?.length ? ` (${rec._aiVerifyIssues.length}건 교정)` : ''}</span>`
+      : `<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">⏳ AI 검증 대기</span>`;
+
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -4921,6 +4937,7 @@ function renderImportedCards() {
           <span style="font-size: 0.71rem; background: #f1f5f9; color: #334155; padding: 1px 6px; border-radius: 4px; font-weight: 600;">
             ${displayMajor} &gt; ${displayMid}${displayMinor ? ` &gt; ${displayMinor}` : ''}
           </span>
+          ${verifiedBadgeHtml}
           <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
           ${hasLowConf ? `<span style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">🔍 원본 대조 권장 (${rec.lowConfidenceFields.join(', ')})</span>` : ''}
         </div>
@@ -4937,32 +4954,40 @@ function renderImportedCards() {
       <div style="display: flex; gap: 10px;">
         ${thumbHtml}
         <div style="flex: 1; min-width: 0;">
+          <div style="margin-bottom: 4px; display:flex; gap:6px; align-items:center;">
+            <strong style="font-size:0.71rem; color:#991b1b; white-space:nowrap;">🖼️ 사진 요약:</strong>
+            <input type="text" class="loupe-bound-field" data-crop-key="banner" data-field="photoBanner" value="${escapeAttr(rec.photoBanner || '')}" placeholder="AI 검증 시 자동 요약" style="flex:1;font-size:0.75rem;padding:2px 6px;border:1px solid #fecaca;border-radius:4px;background:#fef2f2;color:#7f1d1d;font-weight:700;">
+          </div>
           <div style="margin-bottom: 4px;">
             <label style="font-size: 0.72rem; color: ${contentLow ? '#c2410c' : '#4338ca'}; font-weight: 700; display: block; margin-bottom: 2px;">
               📋 추출된 부적합 내용 (클릭 시 상단에 원본 크롭 표시 · 정확도 ${contentConfPct}%):
             </label>
             <textarea class="form-control txt-import-content loupe-bound-field" data-crop-key="content" data-field="content" rows="2" style="font-size: 0.8rem; width: 100%; border: ${contentLow ? '2px solid #f97316' : '1px solid #a5b4fc'}; border-radius: 4px; padding: 4px 6px; background: ${contentLow ? '#fff7ed' : '#f5f3ff'}; font-weight: 600; color: #1e1b4b; resize: vertical;">${rec.content || ''}</textarea>
           </div>
-          ${(rec.rawLaw || (rec.law && filterOnlyOccupationalSafetyLaw(rec.law))) ? `
-          <div style="font-size: 0.74rem; color: #1e40af; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 4px;">
-            📜 ${rec.rawLaw ? `${rec.rawLaw}${rec.law && filterOnlyOccupationalSafetyLaw(rec.law) && rec.rawLaw !== filterOnlyOccupationalSafetyLaw(rec.law) ? ` (${filterOnlyOccupationalSafetyLaw(rec.law)})` : ''}` : filterOnlyOccupationalSafetyLaw(rec.law)}
-          </div>` : ''}
+          <div style="font-size: 0.73rem; color: #1e40af; background: #eff6ff; padding: 4px 6px; border-radius: 4px; border: 1px solid #dbeafe; margin-bottom: 4px; display:flex; flex-direction:column; gap:3px;">
+            <div style="display:flex;gap:4px;align-items:center;">
+              <strong style="white-space:nowrap;">📜 관련기준:</strong>
+              <input type="text" class="loupe-bound-field" data-crop-key="law" data-field="rawLaw" value="${escapeAttr(rec.rawLaw || filterOnlyOccupationalSafetyLaw(rec.law) || '')}" placeholder="산업안전보건법 관련기준 (AI 자동 검증)" style="flex:1;font-size:0.72rem;padding:1px 5px;border:1px solid #bfdbfe;border-radius:3px;background:#fff;color:#1e3a8a;font-weight:700;">
+            </div>
+            <textarea class="loupe-bound-field" data-crop-key="lawBody" data-field="lawBody" rows="2" placeholder="세부 기준 내용 (AI 검증 시 자동 보완)" style="width:100%;font-size:0.70rem;padding:2px 5px;border:1px solid #dbeafe;border-radius:3px;background:#fff;color:#1e40af;resize:vertical;">${rec.lawBody || ''}</textarea>
+          </div>
           <div style="color: var(--gray-700); font-size: 0.74rem; line-height: 1.4; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
             <span><strong>공종:</strong> ${rec.workGroup || '-'}</span> |
-            <span><strong>장소:</strong> <input type="text" class="loupe-bound-field" data-crop-key="loc" data-field="location" value="${rec.location || ''}" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:110px;"></span> |
-            <span><strong>협력사:</strong> <input type="text" class="loupe-bound-field" data-crop-key="sub" data-field="subcontractor" value="${rec.subcontractor || ''}" placeholder="(미기재)" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:90px;"></span> |
-            <span><strong>차수:</strong> <input type="text" class="loupe-bound-field" data-crop-key="round" data-field="inspectRound" value="${rec.inspectRound || ''}" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:78px;"></span> |
+            <span><strong>작업방법:</strong> ${rec.workMethod || '-'}</span> |
+            <span><strong>장소:</strong> <input type="text" class="loupe-bound-field" data-crop-key="loc" data-field="location" value="${escapeAttr(rec.location || '')}" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:110px;"></span> |
+            <span><strong>협력사:</strong> <input type="text" class="loupe-bound-field" data-crop-key="sub" data-field="subcontractor" value="${escapeAttr(rec.subcontractor || '')}" placeholder="(미기재)" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:90px;"></span> |
+            <span><strong>차수:</strong> <input type="text" class="loupe-bound-field" data-crop-key="round" data-field="inspectRound" value="${escapeAttr(rec.inspectRound || '')}" style="font-size:0.73rem;padding:1px 4px;border:1px solid #cbd5e1;border-radius:3px;width:78px;"></span> |
             <span><strong>원인:</strong> <span style="color:#b91c1c;font-weight:700;">${causesStr}</span></span>
           </div>
           ${(rec.interviewOpinion || rec.auditProposal || rec.actionPlan) ? `
           <div style="color: var(--gray-600); font-size: 0.72rem; margin-top: 4px; background: #f8fafc; padding: 5px 6px; border-radius: 4px; border: 1px solid #e2e8f0; display:flex; flex-direction:column; gap:4px;">
             <div style="display:flex;gap:4px;align-items:flex-start;">
               <strong style="white-space:nowrap;padding-top:2px;">💬 관계자의견:</strong>
-              <input type="text" class="loupe-bound-field" data-crop-key="interview" data-field="interviewOpinion" value="${(rec.interviewOpinion || '').replace(/"/g, '&quot;')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.interview?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.interview?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
+              <input type="text" class="loupe-bound-field" data-crop-key="interview" data-field="interviewOpinion" value="${escapeAttr(rec.interviewOpinion || '')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.interview?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.interview?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
             </div>
             <div style="display:flex;gap:4px;align-items:flex-start;">
               <strong style="white-space:nowrap;padding-top:2px;">💡 점검자의견:</strong>
-              <input type="text" class="loupe-bound-field" data-crop-key="propText" data-field="auditProposal" value="${(rec.auditProposal || '').replace(/"/g, '&quot;')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.propText?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.propText?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
+              <input type="text" class="loupe-bound-field" data-crop-key="propText" data-field="auditProposal" value="${escapeAttr(rec.auditProposal || '')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.propText?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.propText?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
             </div>
             <div style="display:flex;gap:4px;align-items:flex-start;">
               <strong style="white-space:nowrap;padding-top:2px;">🔧 조치내용:</strong>
@@ -4977,7 +5002,10 @@ function renderImportedCards() {
     const loupeImg = card.querySelector('.crop-loupe-img');
     const loupeLbl = card.querySelector('.crop-loupe-label');
     const CROP_TITLE_MAP = {
+      banner: '사진 요약(배너)',
       content: '부적합 내용',
+      law: '관련 기준 제목',
+      lawBody: '관련 기준 내용',
       interview: '관계자 인터뷰(의견)',
       propText: '점검단(HAT) 제안',
       cm: '개선대책(조치내용)',
@@ -5008,6 +5036,7 @@ function renderImportedCards() {
         if (fKey) {
           rec[fKey] = e.target.value;
           if (fKey === 'actionPlan') rec.countermeasure = e.target.value;
+          if (fKey === 'rawLaw' && !rec.law) rec.law = e.target.value;
         }
       });
     });
@@ -5018,6 +5047,22 @@ function renderImportedCards() {
 
     container.appendChild(card);
   });
+
+  const verifyBadge = $('#importAiVerifyBadge');
+  if (verifyBadge) {
+    const allVerified = importedRecords.length > 0 && importedRecords.every(r => r._aiVerified);
+    if (allVerified) {
+      verifyBadge.textContent = `✅ AI 최종 검증 완료 (${importedRecords.length}건)`;
+      verifyBadge.style.background = '#ecfdf5';
+      verifyBadge.style.color = '#047857';
+      verifyBadge.style.borderColor = '#a7f3d0';
+    } else {
+      verifyBadge.textContent = '🤖 등록 전 AI 최종 검증 대기';
+      verifyBadge.style.background = '#eff6ff';
+      verifyBadge.style.color = '#1d4ed8';
+      verifyBadge.style.borderColor = '#bfdbfe';
+    }
+  }
 }
 
 // 9×9 핵심 작업방법(9종) 추론 함수 (절대 '안전점검' 등 비표준 값 배제)
@@ -5176,6 +5221,48 @@ function loadImportedRecordToManualForm(rec) {
   toast('선택한 장표 내용이 직접 입력 폼에 채워졌습니다. 확인 후 저장하세요.', 'info');
 }
 
+// ── 등록 전 AI 최종 검증 게이트(Pre-Save QA) ──
+async function handleVerifyImportedRecords({ silent = false } = {}) {
+  if (!importedRecords.length) {
+    if (!silent) toast('검증할 장표 데이터가 없습니다.', 'danger');
+    return { ok: true, modifiedCount: 0 };
+  }
+  const verifyBtn = $('#btnVerifyImportedRecords');
+  const prevBtnText = verifyBtn ? verifyBtn.textContent : '';
+  if (verifyBtn) {
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = '🤖 AI 최종 검증 중...';
+  }
+  try {
+    let result = { ok: true, modifiedCount: 0, source: 'local' };
+    if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
+      result = await window.SafeLocalAI.verifyRecordsBeforeSave(importedRecords, (msg) => {
+        if (verifyBtn) verifyBtn.textContent = msg;
+      });
+    }
+    renderImportedCards();
+    if (!silent) {
+      toast(
+        result.modifiedCount > 0
+          ? `🤖 AI 최종 검증 완료! 총 ${importedRecords.length}건 중 ${result.modifiedCount}건의 오타·띄어쓰기·사진요약·산안법 관련기준을 자동 교정했습니다.`
+          : `✅ AI 최종 검증 완료! 총 ${importedRecords.length}건 모두 양호합니다.`,
+        'success',
+        3800
+      );
+    }
+    return result;
+  } catch (err) {
+    console.warn('Pre-save verify error:', err);
+    if (!silent) toast('AI 검증 중 일시적 오류가 발생하여 로컬 정제만 반영되었습니다.', 'warning');
+    return { ok: false, modifiedCount: 0 };
+  } finally {
+    if (verifyBtn) {
+      verifyBtn.disabled = false;
+      verifyBtn.textContent = prevBtnText || '🤖 등록 전 AI 최종 검증';
+    }
+  }
+}
+
 // ── 파싱된 전체 장표 대장에 일괄 저장 ──
 async function handleSaveImportedRecords() {
   if (!importedRecords.length) {
@@ -5196,9 +5283,17 @@ async function handleSaveImportedRecords() {
 
   const btn = $('#btnSaveImportedRecords');
   btn.disabled = true;
-  btn.textContent = `저장 중 (0/${importedRecords.length})...`;
+  btn.textContent = `🤖 AI 최종 검증 및 저장 준비 중 (${importedRecords.length}건)...`;
 
   try {
+    if (window.SafeLocalAI?.verifyRecordsBeforeSave && importedRecords.some(r => !r._aiVerified)) {
+      const verifyRes = await window.SafeLocalAI.verifyRecordsBeforeSave(importedRecords, msg => { btn.textContent = msg; });
+      renderImportedCards();
+      if (verifyRes?.modifiedCount > 0) {
+        toast(`🤖 저장 전 AI 최종 검증으로 ${verifyRes.modifiedCount}건의 문구·사진요약·산안법 기준을 자동 교정했습니다.`, 'info', 3000);
+      }
+    }
+    btn.textContent = `저장 중 (0/${importedRecords.length})...`;
     // 현장 등록 확인 (백그라운드 동기화로 저장 지연 제거)
     let siteObj = store.sites.find(s => s.name === site);
     if (!siteObj) {
@@ -5218,7 +5313,7 @@ async function handleSaveImportedRecords() {
       const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
       const isFormwork = !isGangForm && /거푸집|동바리|벽체|전도방지|유로폼|합판|서포트/i.test(`${fullCtxText} ${rec.agent || ''} ${rec.item || ''}`);
       const matrixArea = rec.agentMajor || (resolvedAgent && resolvedAgent.major) || rec.matrixArea || rec.kind || (isGangForm || isFormwork ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
-      const matrixTarget = isAlForm ? '특수거푸집' : (rec.agentMid || (resolvedAgent && resolvedAgent.mid) || rec.matrixTarget || rec.item || (isGangForm ? '특수거푸집' : (isFormwork ? '거푸집/동바리' : (m9 && m9.점검대상9x9) || '안전시설')));
+      const matrixTarget = rec.agentMid || (resolvedAgent && resolvedAgent.mid) || rec.matrixTarget || rec.item || (isAlForm || isGangForm ? '특수거푸집' : (isFormwork ? '거푸집/동바리' : (m9 && m9.점검대상9x9) || '안전시설'));
       const matrixSpec = rec.agentMinor || (resolvedAgent && resolvedAgent.minor) || rec.matrixSpec || rec.agent || (isAlForm ? '알폼' : (isGangForm ? '갱폼' : (m9 && m9.가시설세부사양) || (matrixTarget === '특수거푸집' ? '갱폼' : (matrixTarget === '거푸집/동바리' ? '유로폼' : matrixTarget))));
       const rootCauseMgmt = rec.rootCauseMgmt || (m9 && m9.근본원인_관리감독) || '작업계획 미이행/부족';
       const rootCauseSystem = rec.rootCauseSystem || (m9 && m9.근본원인_안전시스템) || '확인: 일일점검 미실시';
@@ -5250,16 +5345,21 @@ async function handleSaveImportedRecords() {
       const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
       const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
 
-      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자 / [직게차) 오배정 및 관련기준 오타 최종 정규화
+      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자) 및 크레인·양중 vs 제332조(거푸집동바리) 오배정 차단
       const recCtxForLaw = `${resolvedWorkGroup} ${rec.content || ''} ${resolvedType}`;
       const recCtxWithLawBody = `${recCtxForLaw} ${rec.lawBody || ''}`;
       const hasForkliftInRecCtx = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(recCtxForLaw);
+      const isCraneLiftInRec = /크레인|타워크레인|양중물|형틀자재\s*양중|줄걸이|유도로프|이형자재\s*양중/.test(recCtxWithLawBody);
+      const hasFormworkDefectInRec = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(recCtxForLaw);
       const isNonForkliftConflictInRec = !hasForkliftInRecCtx && (
         resolvedWorkGroup === '가설전기공사' ||
         resolvedType === '감전' ||
         /가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|생명줄|안전대\s*부착|안전대|비계|동바리|거푸집/.test(recCtxWithLawBody)
       );
-      let resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law, `${rec.content || ''} ${resolvedWorkGroup}`);
+      let resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law || rec.rawLaw, `${rec.content || ''} ${resolvedWorkGroup}`);
+      if (isCraneLiftInRec && !hasFormworkDefectInRec && /제332조|거푸집동바리/.test(resolvedStdLaw || '')) {
+        resolvedStdLaw = '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
+      }
       if (isNonForkliftConflictInRec && /직?[계게개]차|지[계개제]차|172조/.test(resolvedStdLaw || '')) {
         resolvedStdLaw = /생명줄|안전대/.test(recCtxWithLawBody)
           ? '안전보건규칙 제44조(안전대의 부착설비 등)'
@@ -5267,6 +5367,9 @@ async function handleSaveImportedRecords() {
       }
       let sanitizedRawLaw = rec.rawLaw || '';
       let sanitizedLawBody = rec.lawBody || '';
+      if (isCraneLiftInRec && !hasFormworkDefectInRec && /제332조|거푸집동바리/.test(sanitizedRawLaw)) {
+        sanitizedRawLaw = resolvedStdLaw || '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
+      }
       if (isNonForkliftConflictInRec) {
         if (/직?[계게개]차|지[계개제]차|제172조/.test(sanitizedRawLaw)) {
           sanitizedRawLaw = resolvedStdLaw || (/생명줄|안전대/.test(recCtxWithLawBody) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : '');
@@ -5345,6 +5448,8 @@ async function handleSaveImportedRecords() {
         pmVerdictSub: rec.pmVerdictSub || '',
         pmVerdictItems: rec.pmVerdictItems || [],
         _hasExplicitPmVerdict: Boolean(rec._hasExplicitPmVerdict || rec.pmVerdictItems?.length > 0),
+        _aiCleaned: Boolean(rec._aiCleaned),
+        _aiVerified: Boolean(rec._aiVerified),
         fix: rec.actionPlan ? { content: rec.actionPlan } : {},
         workPlan: '해당없음',
         rawLaw: sanitizedRawLaw,
