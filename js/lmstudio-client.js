@@ -899,7 +899,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!txt) return '';
     let s = healSafetyKoreanLexicon(String(txt))
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -909,9 +908,24 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/\[=\]\s*oa/gi, '')
       .trim();
 
+    const norm = (typeof window !== 'undefined' && window.SafeTextNormalizer) ? window.SafeTextNormalizer : null;
+    if (norm && typeof norm.parseInterviewOpinions === 'function') {
+      const parsed = norm.parseInterviewOpinions(s);
+      if (parsed && Array.isArray(parsed.sections)) {
+        if (parsed.sections.length >= 2 && parsed.formatted) {
+          return parsed.formatted;
+        }
+        if (parsed.sections.length === 1 && parsed.sections[0].text) {
+          return parsed.sections[0].text;
+        }
+      }
+    }
+
+    s = s.replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '');
+
     // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
-    s = (typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets)
-      ? window.SafeTextNormalizer.splitInlineBullets(s)
+    s = (norm && norm.splitInlineBullets)
+      ? norm.splitInlineBullets(s)
       : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -925,15 +939,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (items.length === 0 || isBulletStart) {
         items.push(text);
       } else {
-        items[items.length - 1] = window.SafeTextNormalizer?.joinWrappedKoreanLines
-          ? window.SafeTextNormalizer.joinWrappedKoreanLines(items[items.length - 1], text)
+        items[items.length - 1] = norm?.joinWrappedKoreanLines
+          ? norm.joinWrappedKoreanLines(items[items.length - 1], text)
           : `${items[items.length - 1]} ${text}`.replace(/\s+/g, ' ');
       }
     }
     if (items.length === 0) return '';
     return items.map(it => {
       const h = healSafetyKoreanLexicon(it);
-      return `- ${window.SafeTextNormalizer?.normalizeKoreanSpacing ? window.SafeTextNormalizer.normalizeKoreanSpacing(h) : h}`;
+      return `- ${norm?.normalizeKoreanSpacing ? norm.normalizeKoreanSpacing(h) : h}`;
     }).join('\n');
   }
 
@@ -1078,6 +1092,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       fallbackRecord._aiQuotaExceeded = true;
     }
 
+    const preLawState = resolveLawWithTieredMemory(fallbackRecord);
+
     // ── [1순위] Cloudflare 24시간 상시 가동 하이브리드 연동 (Selective Vision Rescue 지원) ──
     if (!forceLocal && workerUrl && !isQuotaCoolingDown()) {
       try {
@@ -1106,6 +1122,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             auditProposal: fallbackRecord.auditProposal || '',
             actionPlan: fallbackRecord.actionPlan || '',
             rawLaw: fallbackRecord.rawLaw || '',
+            lawBody: fallbackRecord.lawBody || '',
+            law: fallbackRecord.law || '',
+            needsAiLaw: preLawState.needAi,
+            hasGarbledLaw: preLawState.garbled,
+            guidelineCode: preLawState.spec?.code || '',
+            lawPriorityTier: preLawState.priorityTier,
             productType: fallbackRecord.productType || '공동주택',
             progressRate: 35
           }),
@@ -1215,6 +1237,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 if (cf.interviewOpinion && !isFieldKeyLiteral(cf.interviewOpinion)) {
                   const op = cleanOpinionText(normField(cf.interviewOpinion, 'interview')) || cf.interviewOpinion;
                   if (op && !isFieldKeyLiteral(op)) fallbackRecord.interviewOpinion = op;
+                  syncParsedOpinionsOnRecord(fallbackRecord);
                 }
                 if (cf.auditProposal && !isFieldKeyLiteral(cf.auditProposal)) {
                   const prop = cleanProposalText(normField(cf.auditProposal, 'auditProposal')) || cf.auditProposal;
@@ -1227,42 +1250,41 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                     fallbackRecord.countermeasure = cleanedPlan;
                   }
                 }
-                if (cf.law && !isFieldKeyLiteral(cf.law)) {
-                  fallbackRecord.law = cf.law;
-                  if (!fallbackRecord.rawLaw) fallbackRecord.rawLaw = cf.law;
-                }
-                if (cf.rawLaw && !isFieldKeyLiteral(cf.rawLaw)) {
-                  const rawLawStr = String(cf.rawLaw).trim();
-                  if (!cf.lawBody && rawLawStr.includes('\n')) {
-                    const rlLines = rawLawStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-                    if (/^\d+\.\d+|^\d+\)|^[•\-*]/.test(rlLines[0] || '') && cf.law) {
-                      fallbackRecord.rawLaw = cf.law;
-                      fallbackRecord.lawBody = rawLawStr;
+                if (preLawState.priorityTier !== 'original_valid') {
+                  if (cf.law && !isFieldKeyLiteral(cf.law)) {
+                    fallbackRecord.law = cf.law;
+                    if (!fallbackRecord.rawLaw) fallbackRecord.rawLaw = cf.law;
+                  }
+                  if (cf.rawLaw && !isFieldKeyLiteral(cf.rawLaw)) {
+                    const rawLawStr = String(cf.rawLaw).trim();
+                    if (!cf.lawBody && rawLawStr.includes('\n')) {
+                      const rlLines = rawLawStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                      if (/^\d+\.\d+|^\d+\)|^[•\-*]/.test(rlLines[0] || '') && cf.law) {
+                        fallbackRecord.rawLaw = cf.law;
+                        fallbackRecord.lawBody = rawLawStr;
+                      } else {
+                        fallbackRecord.rawLaw = rlLines[0] || fallbackRecord.rawLaw;
+                        fallbackRecord.lawBody = rlLines.slice(1).join('\n').trim();
+                      }
                     } else {
-                      fallbackRecord.rawLaw = rlLines[0] || fallbackRecord.rawLaw;
-                      fallbackRecord.lawBody = rlLines.slice(1).join('\n').trim();
+                      fallbackRecord.rawLaw = rawLawStr;
                     }
-                  } else {
-                    fallbackRecord.rawLaw = rawLawStr;
+                  }
+                  if (cf.lawBody && !isFieldKeyLiteral(cf.lawBody)) fallbackRecord.lawBody = cf.lawBody;
+                  if (!cf.rawLaw && !cf.lawBody && cfData.visionText) {
+                    const lawSecMatch = String(cfData.visionText).match(/\[관련기준\]\s*([\s\S]*?)(?=\n\[[가-힣A-Za-z0-9_/]+\]|$)/);
+                    if (lawSecMatch && lawSecMatch[1] && lawSecMatch[1].trim().length >= 12) {
+                      fallbackRecord.rawLaw = lawSecMatch[1].trim();
+                    }
+                  }
+                } else {
+                  if (cf.lawBody && !isFieldKeyLiteral(cf.lawBody) && String(cf.lawBody).length >= String(fallbackRecord.lawBody || '').length * 0.7) {
+                    fallbackRecord.lawBody = cf.lawBody;
                   }
                 }
-                if (cf.lawBody && !isFieldKeyLiteral(cf.lawBody)) fallbackRecord.lawBody = cf.lawBody;
-                if (!cf.rawLaw && !cf.lawBody && cfData.visionText) {
-                  const lawSecMatch = String(cfData.visionText).match(/\[관련기준\]\s*([\s\S]*?)(?=\n\[[가-힣A-Za-z0-9_/]+\]|$)/);
-                  if (lawSecMatch && lawSecMatch[1] && lawSecMatch[1].trim().length >= 12) {
-                    fallbackRecord.rawLaw = lawSecMatch[1].trim();
-                  }
-                }
-                sanitizeDomainMismatchedLaw(fallbackRecord);
-                if (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
-                  const normalizedSpec = window.SafeTextNormalizer.normalizeSafetyLawSpec({
-                    rawLaw: fallbackRecord.rawLaw || '',
-                    lawBody: fallbackRecord.lawBody || '',
-                    law: fallbackRecord.law || '',
-                    contextText: `${fallbackRecord.workGroup || ''} ${fallbackRecord.content || ''} ${fallbackRecord.type || ''}`
-                  });
-                  if (normalizedSpec.title) fallbackRecord.rawLaw = normalizedSpec.title;
-                  if (normalizedSpec.body !== undefined) fallbackRecord.lawBody = normalizedSpec.body;
+                const resolvedAfterOcr = resolveLawWithTieredMemory(fallbackRecord);
+                if (!resolvedAfterOcr.needAi && fallbackRecord.rawLaw && fallbackRecord.lawBody) {
+                  getGuidelineMemory()?.learnFromRecord?.(fallbackRecord, 'ai_ocr_clean');
                 }
               }
               if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText || wantVision)) {
@@ -1324,6 +1346,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
     // ── [3순위] 10가지 요구사항 전수 무결성 정제 필터 적용 ──
     const cleanedContent = cleanContent(fallbackRecord.content);
+    const cleanedOpinion = cleanOpinionText(fallbackRecord.interviewOpinion);
+    const parsedMulti = getNormHelper()?.parseInterviewOpinions?.(cleanedOpinion);
     const cleaned = {
       ...fallbackRecord,
       subcontractor: cleanSubcontractor(fallbackRecord.subcontractor),
@@ -1331,9 +1355,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       location: cleanLocation(fallbackRecord.location, cleanedContent),
       content: cleanedContent,
       photoBanner: cleanBannerText(fallbackRecord.photoBanner, cleanedContent),
-      interviewAuthor: fallbackRecord.interviewAuthor || '시공관리자 및 근로자',
-      interviewAuthorTitle: fallbackRecord.interviewAuthorTitle || `[관리자 의견 : ${fallbackRecord.interviewAuthor || '시공관리자 및 근로자'}]`,
-      interviewOpinion: cleanOpinionText(fallbackRecord.interviewOpinion),
+      interviewAuthor: (parsedMulti?.hasMulti && parsedMulti.authorsText) ? parsedMulti.authorsText : (fallbackRecord.interviewAuthor || '시공관리자 및 근로자'),
+      interviewAuthorTitle: (parsedMulti?.hasMulti && parsedMulti.primaryTitle) ? parsedMulti.primaryTitle : (fallbackRecord.interviewAuthorTitle || `[관리자 의견 : ${fallbackRecord.interviewAuthor || '시공관리자 및 근로자'}]`),
+      interviewOpinion: cleanedOpinion,
+      interviewOpinions: (parsedMulti?.sections && parsedMulti.sections.length >= 2) ? parsedMulti.sections : (fallbackRecord.interviewOpinions || []),
       auditProposal: cleanProposalText(fallbackRecord.auditProposal),
       actionPlan: cleanActionPlan(fallbackRecord.actionPlan),
       countermeasure: cleanActionPlan(fallbackRecord.actionPlan || fallbackRecord.countermeasure),
@@ -1343,6 +1368,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       severity: fallbackRecord.severity || ((fallbackRecord._aiCleaned || cleanedContent) ? '중부적합' : ''),
       type: fallbackRecord.type || ((fallbackRecord._aiCleaned || cleanedContent) ? '붕괴' : '')
     };
+
+    const finalOcrLawState = resolveLawWithTieredMemory(cleaned);
+    if (!finalOcrLawState.needAi && cleaned.rawLaw && cleaned.lawBody) {
+      getGuidelineMemory()?.learnFromRecord?.(cleaned, 'ai_ocr_clean');
+    }
 
     return cleaned;
   }
@@ -1373,54 +1403,113 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return wm;
   }
 
+  function getNormHelper() {
+    if (typeof window !== 'undefined' && window.SafeTextNormalizer) return window.SafeTextNormalizer;
+    if (typeof globalThis !== 'undefined' && globalThis.SafeTextNormalizer) return globalThis.SafeTextNormalizer;
+    return null;
+  }
+
+  function getGuidelineMemory() {
+    if (typeof window !== 'undefined' && window.SafeGuidelineMemory) return window.SafeGuidelineMemory;
+    if (typeof globalThis !== 'undefined' && globalThis.SafeGuidelineMemory) return globalThis.SafeGuidelineMemory;
+    return null;
+  }
+
+  function resolveLawWithTieredMemory(rec) {
+    if (!rec || typeof rec !== 'object') return { spec: null, needAi: false, garbled: false, priorityTier: 'needs_ai_law' };
+    const norm = getNormHelper();
+    const mem = getGuidelineMemory();
+    const ctxText = `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''} ${rec.hazardType || ''}`;
+    const rawLawForCheck = rec.rawLaw || '';
+    const lawBodyForCheck = rec.lawBody || '';
+    const garbledTitle = Boolean(norm && typeof norm.hasGarbledKoreanNoise === 'function' && norm.hasGarbledKoreanNoise(rawLawForCheck));
+    const garbledBody = Boolean(norm && typeof norm.hasGarbledKoreanNoise === 'function' && norm.hasGarbledKoreanNoise(lawBodyForCheck));
+    const garbled = garbledTitle || garbledBody;
+    const spec = norm && typeof norm.normalizeSafetyLawSpec === 'function'
+      ? norm.normalizeSafetyLawSpec({
+          rawLaw: rawLawForCheck,
+          lawBody: lawBodyForCheck,
+          law: rec.law || '',
+          contextText: ctxText,
+          workGroup: rec.workGroup || '',
+          type: rec.type || rec.hazardType || ''
+        })
+      : { title: rawLawForCheck, body: lawBodyForCheck, needsAiLaw: !rawLawForCheck || !lawBodyForCheck, code: '' };
+
+    // 1순위: 원본이 깨짐·도메인 모순 없이 완전하면 그대로 유지 + 지침 저장소 학습
+    if (!spec.needsAiLaw && !garbled && spec.title && spec.body) {
+      rec.rawLaw = spec.title;
+      rec.lawBody = spec.body;
+      if (!rec.law) rec.law = spec.title;
+      rec._needsAiLaw = false;
+      rec._hasGarbledLaw = false;
+      rec._lawSource = rec._lawSource || 'original_valid';
+      mem?.learnFromRecord?.(rec, rec._lawSource);
+      return { spec, needAi: false, garbled: false, priorityTier: rec._lawSource };
+    }
+
+    // 2순위: 원본 공란/깨짐/모순 시 학습된 안전작업지침 조회
+    if (mem && typeof mem.lookup === 'function') {
+      const learned = mem.lookup({
+        rawLaw: rawLawForCheck || spec.title || '',
+        lawBody: lawBodyForCheck || spec.body || '',
+        content: rec.content || '',
+        workGroup: rec.workGroup || '',
+        type: rec.type || rec.hazardType || ''
+      });
+      if (learned && learned.title && (learned.body || spec.body)) {
+        rec.rawLaw = learned.title;
+        if (!rec.law || spec.mismatchReason || garbledTitle) rec.law = learned.law || learned.title;
+        if (!rec.lawBody || garbledBody || spec.mismatchReason) rec.lawBody = learned.body || spec.body || '';
+        rec._needsAiLaw = false;
+        rec._hasGarbledLaw = false;
+        rec._lawSource = 'learned_guideline';
+        return { spec: { ...spec, title: rec.rawLaw, body: rec.lawBody, needsAiLaw: false }, needAi: false, garbled: false, priorityTier: 'learned_guideline' };
+      }
+    }
+
+    // 3순위: 하드코딩 조문을 지어내지 않고 모순된 값만 제거한 뒤 AI 판단 플래그 활성화
+    if (spec.mismatchReason) {
+      if (!spec.title) {
+        if (rec.law && /(?:직?[계게개]차|지[계개제]차|제172조|유도자|제332조|거푸집동바리)/.test(rec.law)) {
+          rec.law = '';
+        }
+        // 지침 코드([IZ12B-...])와 깨진 원문 힌트는 AI 복원용으로 보존 가능(단, 비지침 도메인 모순은 비움)
+        if (!(spec.code && garbledTitle)) {
+          rec.rawLaw = '';
+        }
+      } else {
+        rec.rawLaw = spec.title;
+      }
+      if (!spec.body && rec.lawBody && /유도자|직?[계게개]차|지[계개제]차|운행경로/.test(rec.lawBody)) {
+        rec.lawBody = '';
+      }
+    } else {
+      if (spec.title && !garbledTitle) rec.rawLaw = spec.title;
+      if (typeof rec.lawBody === 'string' && spec.body && !garbledBody) rec.lawBody = spec.body;
+    }
+
+    const needAi = Boolean(spec.needsAiLaw || garbled || !rec.law || !rec.rawLaw || !rec.lawBody);
+    rec._needsAiLaw = needAi;
+    rec._hasGarbledLaw = garbled;
+    return { spec, needAi, garbled, priorityTier: needAi ? 'needs_ai_law' : 'original_valid' };
+  }
+
+  function syncParsedOpinionsOnRecord(rec) {
+    const norm = getNormHelper();
+    if (!rec || !rec.interviewOpinion || !norm || typeof norm.parseInterviewOpinions !== 'function') return;
+    const parsed = norm.parseInterviewOpinions(rec.interviewOpinion);
+    if (parsed && Array.isArray(parsed.sections) && parsed.sections.length >= 2) {
+      rec.interviewOpinions = parsed.sections;
+      rec.interviewOpinion = parsed.formatted || rec.interviewOpinion;
+      if (parsed.authorsText) rec.interviewAuthor = parsed.authorsText;
+      if (parsed.primaryTitle) rec.interviewAuthorTitle = parsed.primaryTitle;
+    }
+  }
+
   function sanitizeDomainMismatchedLaw(rec) {
     if (!rec || typeof rec !== 'object') return rec;
-    const ctx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''} ${rec.hazardType || ''}`;
-    const bodyCtx = `${ctx} ${rec.lawBody || ''}`;
-    const hasForkliftCtx = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(`${rec.workGroup || ''} ${rec.content || ''}`);
-    const isElec = rec.workGroup === '가설전기공사' || rec.type === '감전' || (ELECTRICAL_SIGNAL_RE.test(bodyCtx) && !hasForkliftCtx);
-    const isCraneLift = /크레인|타워크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|형틀자재\s*양중|자재\s*양중/.test(bodyCtx);
-    const hasGenuineFormworkDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(ctx);
-    const isOtherTrade = !isElec && !hasForkliftCtx && (isCraneLift || /(?:생명줄|안전대\s*부착|안전대|비계|동바리|거푸집|갱폼|알폼)/.test(bodyCtx));
-    if (!isElec && !isOtherTrade) return rec;
-
-    if (isCraneLift && !hasGenuineFormworkDefect) {
-      if (rec.law && /제332조|거푸집동바리/.test(rec.law)) {
-        rec.law = '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-      }
-      if (rec.rawLaw && /제332조|거푸집동바리/.test(rec.rawLaw)) {
-        rec.rawLaw = (rec.law && !/332조|거푸집동바리/.test(rec.law))
-          ? rec.law
-          : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-      }
-    }
-
-    const r = quickRuleAnalysis(`${rec.workGroup || ''} ${rec.content || ''} ${rec.lawBody || ''}`) || {};
-    const validLawFallback = isElec
-      ? (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law) ? r.law : '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)')
-      : (isCraneLift && !hasGenuineFormworkDefect
-        ? '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)'
-        : (r.law && !/172조|직?[계게개]차|지[계개제]차/.test(r.law)
-          ? r.law
-          : (/생명줄|안전대/.test(bodyCtx) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : '')));
-
-    if (rec.law && /직?[계게개]차|지[계개제]차|제172조/.test(rec.law)) {
-      if (validLawFallback) rec.law = validLawFallback;
-    }
-    if (rec.rawLaw && /직?[계게개]차|지[계개제]차|제172조/.test(rec.rawLaw)) {
-      if (isElec && /(?:108\s*\(?K\)?|전기)/.test(rec.rawLaw) && /전기/.test(`${rec.rawLaw} ${rec.lawBody || ''}`)) {
-        rec.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
-      } else if (validLawFallback) {
-        rec.rawLaw = validLawFallback;
-      } else {
-        rec.rawLaw = '';
-      }
-    } else if (isElec && rec.rawLaw && /(?:108\s*\(?K\)?)/i.test(rec.rawLaw) && !/11\d|7\.2\.3|301|302|304|안전보건규칙/.test(rec.rawLaw)) {
-      rec.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
-    }
-    if (rec.lawBody && /유도자|직?[계게개]차|지[계개제]차|운행경로/.test(rec.lawBody)) {
-      rec.lawBody = '';
-    }
+    resolveLawWithTieredMemory(rec);
     return rec;
   }
 
@@ -1429,7 +1518,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const preserveAiFields = Boolean(options.preserveAiFields);
     records.forEach((rec) => {
       if (!rec) return;
-      sanitizeDomainMismatchedLaw(rec);
+      resolveLawWithTieredMemory(rec);
+      syncParsedOpinionsOnRecord(rec);
       const isAiAuthored = preserveAiFields && Boolean(rec._aiCleaned || rec._aiVerified);
       const fullCtx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''}`;
       const r = quickRuleAnalysis(fullCtx) || {};
@@ -1483,7 +1573,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (!rec.rootCauseMgmt && r.rootCauseMgmt) rec.rootCauseMgmt = r.rootCauseMgmt;
       if (!rec.rootCauseSystem && r.rootCauseSystem) rec.rootCauseSystem = r.rootCauseSystem;
       if (!rec.stakeholder && r.stakeholder) rec.stakeholder = r.stakeholder;
-      if (!rec.law && r.law) rec.law = r.law;
+      // AI 검증 예정(preserveAiFields)이 아닌 오프라인 폴백에서도 안전작업지침 학습 여부를 먼저 확인하고, 없을 때만 최소 보조
+      if (!preserveAiFields && !rec.law && !rec._needsAiLaw && r.law) rec.law = r.law;
       rec._aiCleaned = true;
     });
     return records;
@@ -1500,30 +1591,38 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       return applyLocalTaxonomyToRecords(records);
     }
 
-    const items = records.map((rec, idx) => ({
-      pageIndex: rec.pageNumber || rec.slideNumber || (idx + 1),
-      severityHint: rec.severity || '중부적합',
-      lockedCheckboxes: {
-        planMissing: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미수립'),
-        planNotFollowed: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미이행'),
-        unsafeAct: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('불안전 행동'),
-        unsafeCond: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('불안전 상태')
-      },
-      cells: {
-        subcontractor: rec.subcontractor || '',
-        workTypeRaw: rec.workGroup || '',
-        location: rec.location || '',
-        content: rec.content || '',
-        banner: rec._rawCellTexts?.banner || rec.photoBanner || '',
-        lawRaw: rec.rawLaw || rec.law || '',
-        lawBody: rec.lawBody || '',
-        pmVerdict: rec.pmVerdictType || rec.pmVerdict || '',
-        interview: rec.interviewOpinion || '',
-        proposalText: rec.auditProposal || '',
-        countermeasure: rec.actionPlan || rec.countermeasure || '',
-        lowConfidenceFields: Array.isArray(rec.lowConfidenceFields) ? rec.lowConfidenceFields : []
-      }
-    }));
+    const tierStates = records.map(rec => resolveLawWithTieredMemory(rec));
+    const items = records.map((rec, idx) => {
+      const ts = tierStates[idx] || {};
+      return {
+        pageIndex: rec.pageNumber || rec.slideNumber || (idx + 1),
+        severityHint: rec.severity || '중부적합',
+        needsAiLaw: Boolean(ts.needAi),
+        hasGarbledLaw: Boolean(ts.garbled),
+        guidelineCode: ts.spec?.code || '',
+        lawPriorityTier: ts.priorityTier || 'needs_ai_law',
+        lockedCheckboxes: {
+          planMissing: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미수립'),
+          planNotFollowed: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미이행'),
+          unsafeAct: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('불안전 행동'),
+          unsafeCond: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('불안전 상태')
+        },
+        cells: {
+          subcontractor: rec.subcontractor || '',
+          workTypeRaw: rec.workGroup || '',
+          location: rec.location || '',
+          content: rec.content || '',
+          banner: rec._rawCellTexts?.banner || rec.photoBanner || '',
+          lawRaw: rec.rawLaw || rec.law || '',
+          lawBody: rec.lawBody || '',
+          pmVerdict: rec.pmVerdictType || rec.pmVerdict || '',
+          interview: rec.interviewOpinion || '',
+          proposalText: rec.auditProposal || '',
+          countermeasure: rec.actionPlan || rec.countermeasure || '',
+          lowConfidenceFields: Array.isArray(rec.lowConfidenceFields) ? rec.lowConfidenceFields : []
+        }
+      };
+    });
 
     try {
       const ctrl = new AbortController();
@@ -1609,10 +1708,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             applyFixedField('location', ff.location, null);
             applyFixedField('content', ff.content, cleanContent);
             applyFixedField('interviewOpinion', ff.interview || ff.interviewOpinion, cleanOpinionText);
+            syncParsedOpinionsOnRecord(rec);
             applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
             applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
-            applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw || aiItem.rawLaw, null, null, 2.8);
-            applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
+            const recTierState = tierStates[idx] || {};
+            if (recTierState.priorityTier !== 'original_valid') {
+              applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw || aiItem.rawLaw, null, null, 2.8);
+              applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
+            } else if (ff.lawBody && String(ff.lawBody).length >= String(rec.lawBody || '').length * 0.7) {
+              applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
+            }
           }
           const rawBannerOrigBeforePatch = String(rec._rawCellTexts?.banner || rec.photoBanner || '').trim();
           const hasTypoPatchForBanner = Boolean(
@@ -1658,18 +1763,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           } else {
             rec.photoBanner = summarizeContentToBanner(rec.content);
           }
-          if (aiItem.law && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(String(aiItem.law).trim())) {
-            rec.law = aiItem.law;
+          const recTierForLaw = tierStates[idx] || {};
+          if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law) {
+            if (aiItem.law && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(String(aiItem.law).trim())) {
+              rec.law = aiItem.law;
+              if (!rec.rawLaw) rec.rawLaw = aiItem.law;
+            }
           }
-          if (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
-            const specFixed = window.SafeTextNormalizer.normalizeSafetyLawSpec({
-              rawLaw: rec.rawLaw || '',
-              lawBody: rec.lawBody || '',
-              law: rec.law || '',
-              contextText: `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''}`
-            });
-            if (rec.rawLaw && specFixed.title) rec.rawLaw = specFixed.title;
-            if (typeof rec.lawBody === 'string' && specFixed.body !== undefined) rec.lawBody = specFixed.body;
+          const finalLawState = resolveLawWithTieredMemory(rec);
+          if (!finalLawState.needAi && rec.rawLaw && rec.lawBody) {
+            getGuidelineMemory()?.learnFromRecord?.(rec, 'ai_batch');
           }
           rec._aiCleaned = true;
         });
@@ -1734,17 +1837,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (rec.photoBanner) {
         rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location) || rec.photoBanner;
       }
-      if (norm?.normalizeSafetyLawSpec) {
-        const spec = norm.normalizeSafetyLawSpec({
-          rawLaw: rec.rawLaw || '',
-          lawBody: rec.lawBody || '',
-          law: rec.law || '',
-          contextText: `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''}`
-        });
-        if (rec.rawLaw && spec.title) rec.rawLaw = spec.title;
-        if (typeof rec.lawBody === 'string' && spec.body !== undefined) rec.lawBody = spec.body;
+      syncParsedOpinionsOnRecord(rec);
+      const lawRes = resolveLawWithTieredMemory(rec);
+      if (!lawRes.needAi && rec.rawLaw && rec.lawBody) {
+        getGuidelineMemory()?.learnFromRecord?.(rec, rec._aiVerifySource || 'verified');
       }
-      sanitizeDomainMismatchedLaw(rec);
       const afterSnap = JSON.stringify([
         rec.photoBanner, rec.content, rec.location, rec.inspectRound, rec.law, rec.rawLaw,
         rec.lawBody, rec.interviewOpinion, rec.auditProposal, rec.actionPlan
@@ -1764,24 +1861,32 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         if (typeof onProgress === 'function') {
           onProgress(`🤖 AI 최종 검증 중 (${Math.min(start + chunk.length, records.length)}/${records.length})...`);
         }
-        const items = chunk.map((rec, localIdx) => ({
-          pageIndex: rec.pageNumber || rec.slideNumber || (start + localIdx + 1),
-          workGroup: rec.workGroup || '',
-          workMethod: rec.workMethod || rec.workName || '',
-          type: rec.type || '',
-          photoBanner: rec.photoBanner || '',
-          content: rec.content || '',
-          location: rec.location || '',
-          subcontractor: rec.subcontractor || '',
-          inspectRound: rec.inspectRound || '',
-          law: rec.law || '',
-          rawLaw: rec.rawLaw || '',
-          lawBody: rec.lawBody || '',
-          interviewOpinion: rec.interviewOpinion || '',
-          auditProposal: rec.auditProposal || '',
-          actionPlan: rec.actionPlan || rec.countermeasure || '',
-          pmVerdict: rec.pmVerdictType || rec.pmVerdict || ''
-        }));
+        const chunkLawStates = chunk.map(rec => resolveLawWithTieredMemory(rec));
+        const items = chunk.map((rec, localIdx) => {
+          const st = chunkLawStates[localIdx] || {};
+          return {
+            pageIndex: rec.pageNumber || rec.slideNumber || (start + localIdx + 1),
+            workGroup: rec.workGroup || '',
+            workMethod: rec.workMethod || rec.workName || '',
+            type: rec.type || '',
+            photoBanner: rec.photoBanner || '',
+            content: rec.content || '',
+            location: rec.location || '',
+            subcontractor: rec.subcontractor || '',
+            inspectRound: rec.inspectRound || '',
+            law: rec.law || '',
+            rawLaw: rec.rawLaw || '',
+            lawBody: rec.lawBody || '',
+            needsAiLaw: Boolean(st.needAi),
+            hasGarbledLaw: Boolean(st.garbled),
+            guidelineCode: st.spec?.code || '',
+            lawPriorityTier: st.priorityTier || 'needs_ai_law',
+            interviewOpinion: rec.interviewOpinion || '',
+            auditProposal: rec.auditProposal || '',
+            actionPlan: rec.actionPlan || rec.countermeasure || '',
+            pmVerdict: rec.pmVerdictType || rec.pmVerdict || ''
+          };
+        });
 
         try {
           const ctrl = new AbortController();
@@ -1837,21 +1942,39 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   rec.photoBanner = normalizedBanner;
                 }
               }
+              const recLawState = chunkLawStates[localIdx] || {};
+              const preserveOrigTitle = recLawState.priorityTier === 'original_valid' && /지침|IZ12B/i.test(rec.rawLaw || '');
               const candLaw = corr.law || aiRes.law;
               if (candLaw && typeof candLaw === 'string' && !/\uFFFD/.test(candLaw) && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(candLaw.trim())) {
-                rec.law = healSafetyKoreanLexicon(candLaw.trim());
+                if (!preserveOrigTitle || !rec.law) {
+                  rec.law = healSafetyKoreanLexicon(candLaw.trim());
+                }
               }
               const candRawLaw = corr.rawLaw || aiRes.rawLaw;
               if (candRawLaw && typeof candRawLaw === 'string' && !/\uFFFD/.test(candRawLaw) && !isFieldKeyLiteral(candRawLaw)) {
-                rec.rawLaw = healSafetyKoreanLexicon(candRawLaw.trim());
+                const cleanedCandTitle = healSafetyKoreanLexicon(candRawLaw.trim());
+                if (!preserveOrigTitle || /지침|IZ12B/i.test(cleanedCandTitle)) {
+                  rec.rawLaw = cleanedCandTitle;
+                }
+              }
+              if (recLawState.needAi && rec.law && !rec.rawLaw) {
+                rec.rawLaw = rec.law;
+              } else if (recLawState.needAi && rec.rawLaw && !rec.law) {
+                rec.law = rec.rawLaw;
               }
               const candLawBody = corr.lawBody || aiRes.lawBody;
               if (candLawBody && typeof candLawBody === 'string' && !/\uFFFD/.test(candLawBody) && !isFieldKeyLiteral(candLawBody)) {
-                rec.lawBody = norm?.normalizeSafetyLawBody ? norm.normalizeSafetyLawBody(candLawBody) : healSafetyKoreanLexicon(candLawBody.trim());
+                const healedBody = norm?.normalizeSafetyLawBody ? norm.normalizeSafetyLawBody(candLawBody) : healSafetyKoreanLexicon(candLawBody.trim());
+                if (!preserveOrigTitle || healedBody.length >= String(rec.lawBody || '').length * 0.7) {
+                  rec.lawBody = healedBody;
+                }
               }
               if (typeof corr.content === 'string' && corr.content.trim() && !/\uFFFD/.test(corr.content)) rec.content = cleanContent(corr.content);
               if (typeof corr.location === 'string' && corr.location.trim() && !/\uFFFD/.test(corr.location)) rec.location = cleanLocation(corr.location, rec.content);
-              if (typeof corr.interviewOpinion === 'string' && corr.interviewOpinion.trim()) rec.interviewOpinion = cleanOpinionText(corr.interviewOpinion);
+              if (typeof corr.interviewOpinion === 'string' && corr.interviewOpinion.trim()) {
+                rec.interviewOpinion = cleanOpinionText(corr.interviewOpinion);
+                syncParsedOpinionsOnRecord(rec);
+              }
               if (typeof corr.auditProposal === 'string' && corr.auditProposal.trim()) rec.auditProposal = cleanProposalText(corr.auditProposal);
               if (typeof corr.actionPlan === 'string' && corr.actionPlan.trim()) {
                 rec.actionPlan = cleanActionPlan(corr.actionPlan);
@@ -1866,6 +1989,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               rec._aiVerified = true;
               rec._aiVerifySource = data.source || 'qwen3_30b_verify';
               rec._aiVerifyIssues = Array.isArray(aiRes.issues) ? aiRes.issues : [];
+              if (!rec._needsAiLaw && rec.rawLaw && rec.lawBody) {
+                getGuidelineMemory()?.learnFromRecord?.(rec, 'ai_verified');
+              }
               const afterStr = JSON.stringify([
                 rec.workGroup, rec.workMethod, rec.type, rec.photoBanner,
                 rec.content, rec.location, rec.inspectRound, rec.law, rec.rawLaw, rec.lawBody,

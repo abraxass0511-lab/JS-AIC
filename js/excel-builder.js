@@ -573,16 +573,29 @@
       .join('\n');
   }
 
-  // 관계자 구분(작성자) 정밀 추출 함수 ('[근로자 의견: 해당 근로자]' 등 본문 내 헤더에서도 자동 복원)
+  // 관계자 구분(작성자) 정밀 추출 함수 (단일·복수 '[역할 의견 : 작성자]' 모두 추출)
   function resolveInterviewAuthor(r) {
     if (!r) return '시공관리자 및 근로자';
+    const norm = _getNorm();
     const rawOp = String(r.interviewOpinion || r.workerOpinion || '');
-    const mHeader = rawOp.match(/\[\s*(?:([가-힣a-zA-Z\s]{1,12}?)\s*의견|의견)\s*[:;：]?\s*([^\]]*)\]/i);
-    if (mHeader) {
-      const rolePrefix = (mHeader[1] || '').trim();
-      const targetName = (mHeader[2] || '').replace(/의견\s*$/, '').trim();
-      if (targetName) return targetName;
-      if (rolePrefix) return rolePrefix;
+    if (norm && typeof norm.parseInterviewOpinions === 'function') {
+      const parsed = norm.parseInterviewOpinions(rawOp);
+      if (parsed && parsed.authorsText) return parsed.authorsText;
+    }
+    const headers = [...rawOp.matchAll(/\[\s*(?:([가-힣a-zA-Z\s]{1,12}?)\s*의견|의견)\s*[:;：]?\s*([^\]]*)\]/gi)];
+    if (headers.length > 0) {
+      const authors = [];
+      for (const mHeader of headers) {
+        const rolePrefix = (mHeader[1] || '').trim();
+        const targetName = (mHeader[2] || '').replace(/의견\s*$/, '').trim();
+        const label = targetName || rolePrefix;
+        if (label && !authors.includes(label)) authors.push(label);
+      }
+      if (authors.length > 0) return authors.join(', ');
+    }
+    if (Array.isArray(r.interviewOpinions) && r.interviewOpinions.length > 0) {
+      const list = r.interviewOpinions.map(s => s.author || s.role).filter(Boolean);
+      if (list.length > 0) return Array.from(new Set(list)).join(', ');
     }
     const auth = String(r.interviewAuthor || '').trim();
     if (auth && auth !== '시공관리자 및 근로자' && auth !== '협력사 시공관리자') {
@@ -591,12 +604,11 @@
     return auth || '시공관리자 및 근로자';
   }
 
-  // 관계자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 및 '-' 불릿 보존 함수
+  // 관계자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 및 복수 의견/불릿 보존 함수
   function cleanOpinionText(raw) {
     if (!raw) return '';
-    let s = healSafetyKoreanLexicon(String(raw))
+    const preCleaned = healSafetyKoreanLexicon(String(raw))
       .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
-      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -604,6 +616,21 @@
       .replace(/\[\s*(?:HAA|HAT|점검단)[\s\S]*?\]/gi, '')
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클|ㅣ¦_!~—\-]+$/g, '')
       .replace(/\[=\]\s*oa/gi, '')
+      .trim();
+
+    const norm = _getNorm();
+    if (norm && typeof norm.parseInterviewOpinions === 'function') {
+      const parsed = norm.parseInterviewOpinions(preCleaned);
+      if (parsed && parsed.hasMulti && parsed.formatted) {
+        return parsed.formatted;
+      }
+      if (parsed && parsed.sections && parsed.sections.length === 1 && parsed.sections[0].text) {
+        return parsed.sections[0].text;
+      }
+    }
+
+    let s = preCleaned
+      .replace(/\[\s*(?:[가-힣a-zA-Z\s]{0,15}?의견|의견|면담|인터뷰)[^\]]*\]/gi, '')
       .trim();
 
     // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함, 코드 하이픈 'IZ12B-108' 비분할)
@@ -662,17 +689,30 @@
     return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
   }
 
-  // 사진 요약(배너) 단일 통합 복구 함수 (SafeTextNormalizer.resolveUnifiedPhotoBanner 우선 -> PPT/엑셀 100% 일치, ①② 원문자 배지 제거)
+  // 사진 요약(배너) 단일 통합 복구 함수 (SafeTextNormalizer.resolveUnifiedPhotoBanner 우선 -> PPT/엑셀 100% 일치, ①② 및 '2) ...' 꼬리 완전 제거)
   function resolvePhotoBanner(r) {
     const norm = _getNorm();
+    const stripSecondItem = (txt = '') => {
+      if (norm && typeof norm.stripBannerSecondItemTail === 'function') {
+        return norm.stripBannerSecondItemTail(txt);
+      }
+      return String(txt || '')
+        .replace(/(?:^|\r?\n|\s+|(?<=[가-힣A-Za-z.)\]]))\s*(?<![0-9(])[2-9]\)\s*[\s\S]*$/g, '')
+        .replace(/(?:\r?\n|\s+)\s*[2-9]\.\s+(?=[가-힣A-Za-z\[])[\s\S]*$/g, '')
+        .replace(/(?<=.{4})\s*[②③④⑤⑥⑦⑧⑨⑩][\s\S]*$/g, '')
+        .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s+/, '')
+        .replace(/^1\)\s*/, '')
+        .trim();
+    };
     if (norm && typeof norm.resolveUnifiedPhotoBanner === 'function') {
-      const unified = norm.resolveUnifiedPhotoBanner(r);
+      const unified = stripSecondItem(norm.resolveUnifiedPhotoBanner(r));
       if (unified) return unified;
     }
 
     let s = '';
     if (r && r.photoBanner && String(r.photoBanner).trim()) {
-      s = healSafetyKoreanLexicon(String(r.photoBanner).replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ').replace(/\s+/g, ' ').trim());
+      s = stripSecondItem(String(r.photoBanner));
+      s = healSafetyKoreanLexicon(s.replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ').replace(/\s+/g, ' ').trim());
       s = s
         .replace(/^[123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
         .replace(/벽의음/g, '벽이음')
@@ -682,7 +722,7 @@
         .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ↓↑\s/()\-.,]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      s = _normSpacing(healSafetyKoreanLexicon(s));
+      s = stripSecondItem(_normSpacing(healSafetyKoreanLexicon(s)));
     }
 
     const normContent = r && r.content
@@ -734,7 +774,7 @@
       if (/분전반|분전함/.test(c) && /관리\s*불량|주변\s*정리/.test(c)) {
         return '가설분전반 관리 및 주변정리 불량';
       }
-      let firstLine = c.split('\n')[0].replace(/\.{2,}/g, '').replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
+      let firstLine = stripSecondItem(c.split('\n')[0]).replace(/\.{2,}/g, '').replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•\s]+/, '').trim();
       const colonStrip = firstLine.match(/^[가-힣A-Za-z0-9\s/·-]{2,26}:\s*(.{5,})$/);
       if (colonStrip && !/^(?:부적합|점검)/.test(colonStrip[1])) {
         firstLine = colonStrip[1].trim();
@@ -791,7 +831,7 @@
       if (/AL\s*Form|알폼|동바리/i.test(s) && /계단참/.test(s) && !s.includes('미복구')) {
         return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
       }
-      return s;
+      return stripSecondItem(s);
     }
 
     return '현장 부적합 작업 전경';
@@ -1053,7 +1093,7 @@
     ['부적합 분류', '기인물(소)', 18, 'agentsMinor', r => resolveAgentHierarchy(r).minor],
 
     // [관련근거]
-    ['관련근거', '산업안전보건법', 24, 'laws', r => r.law || (r.basis && r.basis.law) || ''],
+    ['관련근거', '산업안전보건법', 24, 'laws', r => r.law || r.rawLaw || (r.basis && r.basis.law) || ''],
 
     // [불안전 상황]
     ['불안전 상황', '상태', 18, 'conditions', r => resolveCondition(r)],

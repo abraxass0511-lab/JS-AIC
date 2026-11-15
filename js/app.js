@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v47';
-import './text-normalizer.js?v=20261115_v47';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v48';
+import './text-normalizer.js?v=20261115_v48';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -2154,6 +2154,7 @@ function bindEvents() {
           FieldFrequencyManager.recordSavedRecord(record);
           populateDatalists();
         }
+        window.SafeGuidelineMemory?.learnFromRecord?.(record, 'user_saved');
       } catch (freqErr) {
         console.warn('FieldFrequency update error:', freqErr);
       }
@@ -4393,6 +4394,9 @@ async function renderRecordList(triggerSync = true) {
       FieldFrequencyManager.seedFromRecords(currentLoadedRecords);
       populateDatalists();
     }
+    if (currentLoadedRecords.length > 0) {
+      window.SafeGuidelineMemory?.seedFromRecords?.(currentLoadedRecords);
+    }
   } catch (seedErr) {
     console.warn('FieldFrequency seeding error:', seedErr);
   }
@@ -5001,7 +5005,7 @@ function renderImportedCards() {
           <div style="color: var(--gray-600); font-size: 0.72rem; margin-top: 4px; background: #f8fafc; padding: 5px 6px; border-radius: 4px; border: 1px solid #e2e8f0; display:flex; flex-direction:column; gap:4px;">
             <div style="display:flex;gap:4px;align-items:flex-start;">
               <strong style="white-space:nowrap;padding-top:2px;">💬 관계자의견:</strong>
-              <input type="text" class="loupe-bound-field" data-crop-key="interview" data-field="interviewOpinion" value="${escapeAttr(rec.interviewOpinion || '')}" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.interview?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.interview?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;">
+              <textarea class="loupe-bound-field" data-crop-key="interview" data-field="interviewOpinion" rows="3" style="flex:1;font-size:0.72rem;padding:2px 5px;border:1px solid ${rec.cellConfidences?.interview?.lowConfidence ? '#f97316' : '#cbd5e1'};background:${rec.cellConfidences?.interview?.lowConfidence ? '#fff7ed' : '#fff'};border-radius:3px;resize:vertical;">${escapeAttr(rec.interviewOpinion || '')}</textarea>
             </div>
             <div style="display:flex;gap:4px;align-items:flex-start;">
               <strong style="white-space:nowrap;padding-top:2px;">💡 점검자의견:</strong>
@@ -5362,55 +5366,60 @@ async function handleSaveImportedRecords() {
       const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
       const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
 
-      // 공종·내용과 모순되는 지게차([IZ12B-108(K)] 지게차 작업지침 / 3.6 유도자) 및 크레인·양중 vs 제332조(거푸집동바리) 오배정 차단
+      // 3단계 관련기준 우선순위 적용 (1순위 원본 -> 2순위 학습된 지침 저장소 -> 3순위 AI 판단 결과, 클라이언트 하드코딩 조문 지어내기 금지)
       const recCtxForLaw = `${resolvedWorkGroup} ${rec.content || ''} ${resolvedType}`;
-      const recCtxWithLawBody = `${recCtxForLaw} ${rec.lawBody || ''}`;
-      const hasForkliftInRecCtx = /직?[계게개]차|지[계개제]차|하역|유도원|운행경로/.test(recCtxForLaw);
-      const isCraneLiftInRec = /크레인|타워크레인|양중물|형틀자재\s*양중|줄걸이|유도로프|이형자재\s*양중/.test(recCtxWithLawBody);
-      const hasFormworkDefectInRec = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(recCtxForLaw);
-      const isNonForkliftConflictInRec = !hasForkliftInRecCtx && (
-        resolvedWorkGroup === '가설전기공사' ||
-        resolvedType === '감전' ||
-        /가설전기|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|생명줄|안전대\s*부착|안전대|비계|동바리|거푸집/.test(recCtxWithLawBody)
-      );
-      let resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law || rec.rawLaw, `${rec.content || ''} ${resolvedWorkGroup}`);
-      if (isCraneLiftInRec && !hasFormworkDefectInRec && /제332조|거푸집동바리/.test(resolvedStdLaw || '')) {
-        resolvedStdLaw = '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-      }
-      if (isNonForkliftConflictInRec && /직?[계게개]차|지[계개제]차|172조/.test(resolvedStdLaw || '')) {
-        resolvedStdLaw = /생명줄|안전대/.test(recCtxWithLawBody)
-          ? '안전보건규칙 제44조(안전대의 부착설비 등)'
-          : '';
-      }
       let sanitizedRawLaw = rec.rawLaw || '';
       let sanitizedLawBody = rec.lawBody || '';
-      if (isCraneLiftInRec && !hasFormworkDefectInRec && /제332조|거푸집동바리/.test(sanitizedRawLaw)) {
-        sanitizedRawLaw = resolvedStdLaw || '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-      }
-      if (isNonForkliftConflictInRec) {
-        if (/직?[계게개]차|지[계개제]차|제172조/.test(sanitizedRawLaw)) {
-          sanitizedRawLaw = resolvedStdLaw || (/생명줄|안전대/.test(recCtxWithLawBody) ? '안전보건규칙 제44조(안전대의 부착설비 등)' : '');
-        } else if (resolvedWorkGroup === '가설전기공사' && /108\s*\(?K\)?/i.test(sanitizedRawLaw) && !/11\d|7\.2\.3|301|302|304|안전보건규칙/.test(sanitizedRawLaw)) {
-          sanitizedRawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
-        }
-        if (/유도자|직?[계게개]차|지[계개제]차|운행경로/.test(sanitizedLawBody)) {
-          sanitizedLawBody = '';
-        }
-      }
+      let resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law || rec.rawLaw, `${rec.content || ''} ${resolvedWorkGroup}`);
       if (window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
-        const specNorm = window.SafeTextNormalizer.normalizeSafetyLawSpec({
+        let specNorm = window.SafeTextNormalizer.normalizeSafetyLawSpec({
           rawLaw: sanitizedRawLaw,
           lawBody: sanitizedLawBody,
-          law: resolvedStdLaw,
-          contextText: recCtxForLaw
+          law: resolvedStdLaw || rec.law || '',
+          contextText: recCtxForLaw,
+          workGroup: resolvedWorkGroup,
+          type: resolvedType
         });
-        if (specNorm.title) sanitizedRawLaw = specNorm.title;
-        if (specNorm.body !== undefined) sanitizedLawBody = specNorm.body;
+        if (specNorm.needsAiLaw && window.SafeGuidelineMemory?.lookup) {
+          const learned = window.SafeGuidelineMemory.lookup({
+            rawLaw: sanitizedRawLaw,
+            lawBody: sanitizedLawBody,
+            content: rec.content || '',
+            workGroup: resolvedWorkGroup,
+            type: resolvedType
+          });
+          if (learned && learned.title && (learned.body || specNorm.body)) {
+            sanitizedRawLaw = learned.title;
+            sanitizedLawBody = learned.body || specNorm.body || '';
+            resolvedStdLaw = learned.law || learned.title;
+            specNorm = { ...specNorm, title: sanitizedRawLaw, body: sanitizedLawBody, needsAiLaw: false };
+          }
+        }
+        if (!specNorm.needsAiLaw) {
+          if (specNorm.title) sanitizedRawLaw = specNorm.title;
+          if (specNorm.body !== undefined) sanitizedLawBody = specNorm.body;
+        } else {
+          if (specNorm.title) sanitizedRawLaw = specNorm.title;
+          if (specNorm.body !== undefined) sanitizedLawBody = specNorm.body;
+          if (specNorm.mismatchReason && /(?:직?[계게개]차|지[계개제]차|제172조|유도자|제332조|거푸집동바리)/.test(resolvedStdLaw || '')) {
+            resolvedStdLaw = '';
+          }
+        }
+      }
+      if (!resolvedStdLaw && sanitizedRawLaw && !window.SafeTextNormalizer?.hasGarbledKoreanNoise?.(sanitizedRawLaw)) {
+        resolvedStdLaw = sanitizedRawLaw;
       }
 
       const unifiedBanner = (window.SafeTextNormalizer?.resolveUnifiedPhotoBanner
         ? window.SafeTextNormalizer.resolveUnifiedPhotoBanner(rec)
         : '') || (window.SafeExcel?.resolvePhotoBanner ? window.SafeExcel.resolvePhotoBanner(rec) : '') || (rec.photoBanner || '현장 부적합 작업 전경');
+
+      const cleanedFinalOpinion = window.SafeExcel?.cleanOpinionText
+        ? window.SafeExcel.cleanOpinionText(rec.interviewOpinion || rec.workerOpinion || '')
+        : (rec.interviewOpinion || '');
+      const parsedFinalOpinions = window.SafeTextNormalizer?.parseInterviewOpinions
+        ? window.SafeTextNormalizer.parseInterviewOpinions(cleanedFinalOpinion)
+        : null;
 
       const finalRecord = {
         site,
@@ -5453,9 +5462,10 @@ async function handleSaveImportedRecords() {
         stakeholder,
         mgmtCauses,
         holdPoint: !!rec.holdPoint,
-        interviewAuthor: resolvedAuthor,
-        interviewAuthorTitle: rec.interviewAuthorTitle || `[의견 : ${resolvedAuthor}]`,
-        interviewOpinion: (window.SafeExcel?.cleanOpinionText ? window.SafeExcel.cleanOpinionText(rec.interviewOpinion || rec.workerOpinion || '') : (rec.interviewOpinion || '')),
+        interviewAuthor: (parsedFinalOpinions?.hasMulti && parsedFinalOpinions.authorsText) ? parsedFinalOpinions.authorsText : resolvedAuthor,
+        interviewAuthorTitle: (parsedFinalOpinions?.hasMulti && parsedFinalOpinions.primaryTitle) ? parsedFinalOpinions.primaryTitle : (rec.interviewAuthorTitle || `[의견 : ${resolvedAuthor}]`),
+        interviewOpinion: cleanedFinalOpinion,
+        interviewOpinions: (parsedFinalOpinions?.sections && parsedFinalOpinions.sections.length >= 2) ? parsedFinalOpinions.sections : (rec.interviewOpinions || []),
         proposalItems: rec.proposalItems || [],
         inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
         inspectorOpinionSub: rec.inspectorOpinionSub || '',
@@ -5506,6 +5516,11 @@ async function handleSaveImportedRecords() {
 
     const totalCount = batchItems.length;
     const savedRecs = await store.saveRecordsBatch(batchItems, msg => { btn.textContent = msg; });
+    if (window.SafeGuidelineMemory?.learnFromRecord) {
+      batchItems.forEach(item => {
+        if (item?.rec) window.SafeGuidelineMemory.learnFromRecord(item.rec, 'batch_saved');
+      });
+    }
     if (savedRecs.length > 0) {
       window._lastImportedRecordId = savedRecs[savedRecs.length - 1].id;
     }

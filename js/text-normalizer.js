@@ -540,9 +540,31 @@ export function isLocationOnlyBanner(text = '', locationText = '') {
 }
 
 /**
+ * 사진 요약 배너에서 2번 이후 하위 번호/원문자 항목 꼬리('2) ...', '3) ...', '② ...') 완전 제거
+ */
+export function stripBannerSecondItemTail(text = '') {
+  let s = String(text || '').trim();
+  if (!s) return '';
+  s = s.replace(/(?:^|\r?\n|\s+|(?<=[가-힣A-Za-z.)\]]))\s*(?<![0-9(])[2-9]\)\s*[\s\S]*$/g, '');
+  s = s.replace(/(?:\r?\n|\s+)\s*[2-9]\.\s+(?=[가-힣A-Za-z\[])[\s\S]*$/g, '');
+  s = s.replace(/(?<=.{4})\s*[②③④⑤⑥⑦⑧⑨⑩][\s\S]*$/g, '');
+  s = s.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s+/, '').replace(/^1\)\s*/, '');
+  return s.trim();
+}
+
+/**
  * 사진 요약 배너(photoBanner) 전용: 원인/결과/우려 서술어를 제거하고 '실제 위반한 핵심 내용'만 12~20자로 추출
  */
 export function extractCoreViolationBanner(rawBanner = '', contentText = '', locationText = '') {
+  const isUnusableFragment = (text) => {
+    const t = String(text || '').trim();
+    if (!t || t.length < 4) return true;
+    const stripped = t
+      .replace(/(?:에\s*있|이\s*있|가\s*있|로\s*인해|으로\s*인해|상부|하부|주변|부위|구간|작업|시공|설치|사용|상태|불량|미흡|누락|미설치|미착용)/g, '')
+      .replace(/\s+/g, '');
+    return stripped.length < 2;
+  };
+
   const truncateBannerAtWordBoundary = (text, maxLen = 25) => {
     let t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) return '';
@@ -570,7 +592,7 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   };
 
   const cleanSingleClause = (clause) => {
-    let s = normalizeKoreanSpacing(String(clause || ''))
+    let s = stripBannerSecondItemTail(normalizeKoreanSpacing(String(clause || '')))
       .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
       .replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•·\s]+/, '')
       .trim();
@@ -642,10 +664,12 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   if (!source) return '';
 
   // 만약 원본 사진 배너가 이미 짧은 실제 위반 문구(예: "벽이음용 상부 버팀대 설치각도(60도↓) 불량", "협력사 가설컨테이너 반입시 점검 불량")이고
-  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환 (원문자 배지 ①②③ 및 내부 배지 숫자 제거)
-  const normBanner = normalizePhotoBannerText(String(rawBanner || ''), contentText, locationText)
-    .replace(/^[\d)\s]+/, '')
-    .trim();
+  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환 (원문자 배지 ①②③ 및 2) 꼬리 제거)
+  const normBanner = stripBannerSecondItemTail(
+    normalizePhotoBannerText(String(rawBanner || ''), contentText, locationText)
+      .replace(/^[\d)\s]+/, '')
+      .trim()
+  );
   const normContent = stripCircledNumbers(normalizeKoreanSpacing(String(contentText || '')))
     .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
     .trim();
@@ -655,19 +679,21 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   const isUnspacedLongBanner = normBanner.length >= 12 && !/\s/.test(normBanner);
   const hasUnclosedParen = /\([^)]*$/.test(normBanner);
   const hasIncompleteTail = /(?:상태로|않는|없는|하는|되는|있는)$/.test(normBanner);
-  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && !hasIncompleteTail && normBanner.length >= 5 && normBanner.length <= 28) {
+  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && !hasIncompleteTail && !isUnusableFragment(normBanner) && normBanner.length >= 5 && normBanner.length <= 28) {
     return truncateBannerAtWordBoundary(normBanner, 28);
   }
 
-  const targetText = normalizeKoreanSpacing(String(contentText || rawBanner || ''))
-    .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
-    .trim();
+  const targetText = stripBannerSecondItemTail(
+    normalizeKoreanSpacing(String(contentText || rawBanner || ''))
+      .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
+      .trim()
+  );
 
   // 번호 항목(1) ... 2) ... 또는 줄바꿈) 분리 (공백 없이 붙은 '감전우려2)접지선'도 정확히 분리!)
   const parts = targetText
     .split(/(?:\r?\n|(?=[1-9]\)\s*[가-힣A-Za-z])|(?=[①②③④⑤⑥⑦⑧⑨⑩]))/)
     .map(p => cleanSingleClause(p))
-    .filter(p => p && p.length >= 3);
+    .filter(p => p && p.length >= 3 && !isUnusableFragment(p));
 
   if (parts.length >= 2) {
     const p1 = parts[0];
@@ -726,7 +752,8 @@ export function stripCircledNumbers(text = '') {
  * 사진 요약 배너 단일 표준 정규화 (엑셀 '사진 요약(배너)' · PPT 상단 적색 배너 100% 공용)
  */
 export function normalizePhotoBannerText(rawBanner = '', content = '', location = '') {
-  let s = stripCircledNumbers(String(rawBanner || '').trim())
+  let s = stripBannerSecondItemTail(String(rawBanner || '').trim());
+  s = stripCircledNumbers(s)
     .replace(/^[123458\s()\[\].\-_|｜]+(?=[가-힣A-Za-z])/, '')
     .replace(/^[|｜\[\]()\s]+|[|｜\[\]\s]+$/g, '')
     .replace(/벽의음/g, '벽이음')
@@ -741,7 +768,7 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
   for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
     s = s.replace(pattern, replacement);
   }
-  s = normalizeKoreanSpacing(s)
+  s = stripBannerSecondItemTail(normalizeKoreanSpacing(s))
     .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
     .replace(/([가-힣])([1-5])([가-힣]{2,})/g, (m, p1, d, p3) => (
       (p1 === '제' || /^(?:차|층|동|번|단|개|인|선|호|일|월|년|회|종|조|항|급|점|매|본|배|종류|구간|코어|단계|면|열|줄|차수|톤|미터|센티|킬로)/.test(p3))
@@ -835,7 +862,7 @@ export function normalizeSafetyLawBody(lawBody = '') {
   const rawLines = body
     .split(/\r?\n/)
     .map(line => {
-      let l = line.replace(/^[|ㅣ¦!~—_=\[\]]+\s*/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
+      let l = line.replace(/^[|ㅣ¦!~—_=]+\s*/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
       l = normalizeKoreanSpacing(l);
       l = l.replace(/^([*▪])\s*(?=[가-힣A-Za-z0-9])/, '- ');
       l = l.replace(/^([•·-])\s*(?=[가-힣A-Za-z0-9])/, '$1 ');
@@ -881,17 +908,17 @@ export function normalizeSafetyLawBody(lawBody = '') {
         .replace(/되지\s*않으며\.?$/g, '되지 않는다.')
         .replace(/(하여야|해야|되어야|있어야|없어야|않아야)\s*(?:하며|하고)\.?$/g, '$1 한다.')
         .replace(/(하여야|해야)\.?$/g, '$1 한다.')
-        .replace(/금지\s*(?:하며|하고|하여)\.?$/g, '금지한다.')
+        .replace(/금지\s*(?:하며|하고|하여|다)?\.?$/g, '금지한다.')
         .replace(/금지\s*할\s*것\.?$/g, '금지한다.')
-        .replace(/([가-힣]+)\s*금지\.?$/g, '$1 금지한다.')
+        .replace(/([가-힣]+)\s*금지(?:다)?\.?$/g, '$1 금지한다.')
         .replace(/(가능|필요|적합|충분|견고|안전|확실)하며\.?$/g, '$1하다.')
         .replace(/있으며\.?$/g, '있다.')
         .replace(/없으며\.?$/g, '없다.')
         .replace(/되며\.?$/g, '된다.')
         .replace(/([가-힣]{2,})하며\.?$/g, '$1한다.')
         .replace(/([가-힣]{2,})하고\.?$/g, '$1한다.')
-        .replace(/(확인|점검|실시|착용|사용|준수|조치|설치|체결|결속|유지|확보|관리|방지|통제|엄수|이행|수립|작성|배치|고정|보강|비치)\.?$/g, '$1한다.')
-        .replace(/필요\.?$/g, '필요하다.')
+        .replace(/(확인|점검|실시|착용|사용|준수|조치|설치|체결|결속|유지|확보|관리|방지|통제|엄수|이행|수립|작성|배치|고정|보강|비치|제거|차단|청소|정리)(?:다)?\.?$/g, '$1한다.')
+        .replace(/필요(?:다)?\.?$/g, '필요하다.')
         .replace(/\s+/g, ' ')
         .trim();
     }
@@ -912,33 +939,378 @@ export function normalizeSafetyLawBody(lawBody = '') {
   return unified.join('\n').trim();
 }
 
-function resolveNonForkliftFallLawTitle(fallCtx = '', rawTitle = '') {
-  const c = String(fallCtx || '');
-  if (/IZ12B-107\(K\)|107\s*\(?K\)?/i.test(rawTitle)) {
-    return '안전작업지침 [IZ12B-107(K)] 추락/낙하방지시설 작업';
-  }
-  if (/안전대\s*부착|생명줄|안전대(?!\s*작업)/.test(c)) {
-    return '안전보건규칙 제44조(안전대의 부착설비 등)';
-  }
-  if (/동바리|서포트|멍에|거푸집/.test(c)) {
-    return '안전보건규칙 제332조';
-  }
-  if (/말비계|우마/.test(c)) {
-    return '안전보건규칙 제67조, 제13조';
-  }
-  if (/비계|작업발판|안전난간|단부/.test(c)) {
-    return '안전보건규칙 제56조, 제13조';
-  }
-  if (/개구부|덮개/.test(c)) {
-    return '안전보건규칙 제59조';
-  }
-  return '안전보건규칙 제38조';
+const GUIDELINE_MEMORY_STORAGE_KEY = 'sp_learned_guidelines_v1';
+
+/**
+ * 한국어 OCR 심각 깨짐(비단어·고립 자모·미닫힘 괄호·혼입 잡음) 감지기
+ */
+export function hasGarbledKoreanNoise(text = '') {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  if (/\uFFFD|[ㄱ-ㅎㅏ-ㅣ]/.test(s)) return true;
+  if (/^[|ㅣ¦!~—_=;:\s]{2,}/.test(s)) return true;
+  if (/\[[^\]]*$/.test(s) || /^[^\[]*\]/.test(s)) return true;
+  if (/(?:시심|주탁|닥아|방시시실|방지시실|작입|삭보|식보|업적|화새|에빙|예빙|연상꽃|꽃가실|가실건물|직게차|지게사|지계차|of\s*xi|\/\(K\)|\[\s*직게차)/i.test(s)) return true;
+  if (/[꽃뀛뜛뿧쬫폋긘뒨듼묠붜쀠쒸쯰]/.test(s)) return true;
+  // 대괄호 [IZ...] 뒤에 1글자 이하만 남거나 비정상 짧은 파편으로 끊긴 경우
+  if (/\]\s*[가-힣A-Za-z0-9]{0,1}$/.test(s) && !/\]$/.test(s)) return true;
+  return false;
 }
 
 /**
- * [관련 기준] 제목/본문 OCR 오타·코드·도메인 불일치 단일 정규화 및 방어기
+ * 안전보건 문맥에서 핵심 위험·공종 도메인 추론
  */
-export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', contextText = '' } = {}) {
+export function inferSafetyDomain(text = '') {
+  const s = String(text || '').replace(/직[계게개]차|지[계개제]차/g, '지게차');
+  if (!s.trim()) return '';
+  if (/(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(s)) return '전기';
+  if (/(?:화재\s*예방|화재\s*감시|충전구역|소화기|소화튜브|화기\s*작업|방화포|불티\s*비산|인화성|연소|용접.*화재)/.test(s)) return '화재';
+  if (/(?:지게차|하역|유도자|운행경로|3\.?6\s*유도자)/.test(s) && !/(?:타워크레인|크레인|고리걸이|이형자재\s*양중)/.test(s)) return '지게차';
+  if (/(?:타워크레인|크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|자재\s*양중|형틀자재\s*양중|고리걸이)/.test(s) && !/(?:동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도))/.test(s)) return '양중';
+  if (/(?:동바리|서포트|멍에|장선|거푸집|갱폼|AL\s*Form|알폼|형틀|제332조)/i.test(s)) return '거푸집동바리';
+  if (/(?:비계|작업발판|밑둥잡이|워킹타워|벽이음|말비계|우마|제56조|제67조)/.test(s)) return '비계';
+  if (/(?:이동식\s*사다리|A형\s*사다리|고소작업용\s*사다리|사다리\s*(?:상부|작업|아웃트리거|전도))/.test(s)) return '사다리';
+  if (/(?:생명줄|안전대\s*부착|안전블럭|안전고리|제44조|추락|안전난간|단부)/.test(s)) return '추락안전대';
+  if (/(?:개구부|덮개|맨홀|수직구|제43조|제59조)/.test(s)) return '개구부';
+  if (/(?:굴착|흙막이|토사|붕괴|사면|지보공|제338조)/.test(s)) return '굴착';
+  return '';
+}
+
+function areSafetyDomainsConflicting(titleDomain = '', ctxDomain = '', rawTitle = '', ctxText = '') {
+  const t = String(rawTitle || '');
+  const c = String(ctxText || '');
+  if (!t || !c) return false;
+  // 지게차 규정 vs 전기/추락/거푸집/양중 등 명백한 타 도메인 문맥 충돌
+  if (/지게차|3\.?6\s*유도자|운행경로|제172조/.test(t) && ctxDomain && ctxDomain !== '지게차') return true;
+  // 전기 규정(제301~304조) vs 추락/비계/지게차/양중 문맥 충돌
+  if (/제30[1-9]조|충전부|접지|누전차단기|전기\s*작업/.test(t) && ctxDomain && ctxDomain !== '전기') return true;
+  // 제332조(거푸집동바리) vs 순수 양중작업 충돌
+  if (/제332조|거푸집동바리/.test(t) && ctxDomain === '양중') return true;
+  // 제44조(안전대 부착설비) vs 이동식 사다리 본문/문맥 충돌
+  if (/제44조|안전대\s*부착/.test(t) && (ctxDomain === '사다리' || /이동식\s*사다리|A형\s*사다리/.test(c))) return true;
+  if (titleDomain && ctxDomain && titleDomain !== ctxDomain) {
+    // 인접 추락/비계/개구부/거푸집 간 세부 규칙 혼용은 문맥상 허용하되, 이종 대분류(전기·지게차·화재·사다리·양중) 간 충돌은 차단
+    const strictGroup = new Set(['전기', '지게차', '화재', '사다리', '양중']);
+    if (strictGroup.has(titleDomain) || strictGroup.has(ctxDomain)) return true;
+  }
+  return false;
+}
+
+/**
+ * 지침 코드 정규화 추출 (예: '[IZ12B-110(K)]', 'IZSW-003(K)')
+ */
+export function extractGuidelineCode(raw = '') {
+  const s = String(raw || '')
+    .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*10[\/7](\s*\(?K\)?)\s*\]?/gi, '[IZ12B-107(K)]')
+    .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*(\d{3})\s*\(?\s*K\s*\)?\s*\]?/gi, '[IZ12B-$1(K)]')
+    .replace(/\[\s*(IZ[A-Z0-9]{1,4})[-\s_]*(\d{2,4})\s*\(?\s*([A-Z])\s*\)?\s*\]?/gi, (_, p, n, c) => `[${p.toUpperCase()}-${n}(${c.toUpperCase()})]`);
+  const m = s.match(/(?:^|[^A-Za-z0-9])(IZ[A-Z0-9]{1,5}[-\s_]*\d{2,4}\([A-Z]\))(?=$|[^A-Za-z0-9])/i);
+  if (m) return m[1].toUpperCase().replace(/\s+/g, '');
+  return '';
+}
+
+/**
+ * [2순위] 학습된 안전작업지침 메모리 저장소 (SafeGuidelineMemory)
+ * - 원본 등록 문서 또는 AI 검증 완료 문서에서 깨끗한 '[관련 기준] + 본문'을 영구 학습(localStorage + 인메모리)
+ * - OCR 오타·공란 본문 발생 시 하드코딩 대신 학습된 지침을 우선 재사용하고, 미학습 시 AI(3순위)로 위임
+ */
+export const SafeGuidelineMemory = (() => {
+  const store = new Map();
+  let loadedFromStorage = false;
+
+  const normalizeEntryKey = (code = '', domain = '', title = '') => {
+    const c = String(code || '').toUpperCase().trim();
+    const d = String(domain || '').trim();
+    if (c) return `${c}::${d || 'COMMON'}`;
+    const compactTitle = normalizeKoreanSpacing(String(title || ''))
+      .replace(/\s+/g, '')
+      .slice(0, 32);
+    return compactTitle ? `TITLE::${compactTitle}` : '';
+  };
+
+  const loadOnce = () => {
+    if (loadedFromStorage) return;
+    loadedFromStorage = true;
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem(GUIDELINE_MEMORY_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      for (const item of parsed) {
+        if (!item || !item.key || !item.title || hasGarbledKoreanNoise(item.title)) continue;
+        store.set(item.key, item);
+      }
+    } catch (_) { /* ignore storage read errors */ }
+  };
+
+  const persist = () => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const arr = Array.from(store.values())
+        .sort((a, b) => (b.count || 1) - (a.count || 1) || (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, 400);
+      localStorage.setItem(GUIDELINE_MEMORY_STORAGE_KEY, JSON.stringify(arr));
+    } catch (_) { /* ignore quota errors */ }
+  };
+
+  const tokenize = (text = '') => {
+    const clean = normalizeKoreanSpacing(String(text || ''))
+      .replace(/[^\w가-힣\s]/g, ' ')
+      .trim();
+    return new Set(clean.split(/\s+/).filter(w => w.length >= 2));
+  };
+
+  const jaccard = (setA, setB) => {
+    if (!setA.size || !setB.size) return 0;
+    let inter = 0;
+    for (const w of setA) {
+      if (setB.has(w)) inter++;
+    }
+    return inter / Math.max(1, setA.size + setB.size - inter);
+  };
+
+  const learn = ({ title = '', body = '', contextText = '', source = 'verified' } = {}) => {
+    loadOnce();
+    const cleanTitle = normalizeKoreanSpacing(String(title || '')).trim();
+    if (!cleanTitle || cleanTitle.length < 4 || hasGarbledKoreanNoise(cleanTitle)) return false;
+    if (/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙|관계법규\s*적용\s*항목)$/.test(cleanTitle)) return false;
+
+    const cleanBody = body ? normalizeSafetyLawBody(String(body || '')) : '';
+    const code = extractGuidelineCode(cleanTitle);
+    const titleDomain = inferSafetyDomain(cleanTitle);
+    const bodyDomain = inferSafetyDomain(cleanBody);
+    const ctxDomain = inferSafetyDomain(contextText);
+    const domain = titleDomain || bodyDomain || ctxDomain || '';
+
+    if (cleanBody && areSafetyDomainsConflicting(titleDomain, bodyDomain, cleanTitle, cleanBody)) return false;
+    if (contextText && areSafetyDomainsConflicting(domain, ctxDomain, cleanTitle, contextText)) return false;
+    // 법령 조문 단독(지침 코드 없음)은 본문이 함께 있을 때만 학습하여 껍데기 제목만 남는 것 방지
+    if (!code && (!cleanBody || cleanBody.length < 12)) return false;
+    // [IZ...] 코드만 있고 한글 명칭이 없으면 학습 보류
+    if (code && cleanTitle.replace(/\[[^\]]+\]/g, '').replace(/안전작업지침|전사/g, '').trim().length < 2) return false;
+
+    const key = normalizeEntryKey(code, domain, cleanTitle);
+    if (!key) return false;
+
+    const existing = store.get(key);
+    const nextBody = (cleanBody && (!existing?.body || cleanBody.length >= existing.body.length))
+      ? cleanBody
+      : (existing?.body || cleanBody || '');
+    const entry = {
+      key,
+      code,
+      title: cleanTitle,
+      body: nextBody,
+      domain,
+      source,
+      count: (existing?.count || 0) + 1,
+      updatedAt: Date.now()
+    };
+    store.set(key, entry);
+    persist();
+    return true;
+  };
+
+  const learnFromRecord = (rec, source = 'record') => {
+    if (!rec || typeof rec !== 'object') return false;
+    const rawLaw = String(rec.rawLaw || '').trim();
+    const law = String(rec.law || '').trim();
+    const candidateTitle = rawLaw || law;
+    const body = String(rec.lawBody || '').trim();
+    const ctx = [rec.workGroup, rec.type, rec.content, rec.photoBanner].filter(Boolean).join(' ');
+    return learn({ title: candidateTitle, body, contextText: ctx, source });
+  };
+
+  const seedFromRecords = (records = []) => {
+    loadOnce();
+    if (!Array.isArray(records) || !records.length) return 0;
+    let added = 0;
+    for (const r of records) {
+      if (learnFromRecord(r, 'db_seed')) added++;
+    }
+    return added;
+  };
+
+  const lookup = ({ rawLaw = '', lawBody = '', content = '', workGroup = '', type = '' } = {}) => {
+    loadOnce();
+    if (!store.size) return null;
+    const code = extractGuidelineCode(rawLaw);
+    const ctxText = [workGroup, type, content].filter(Boolean).join(' ');
+    const ctxDomain = inferSafetyDomain(`${ctxText} ${lawBody}`);
+    const bodyTokens = tokenize(lawBody);
+
+    let best = null;
+    let bestScore = 0;
+    for (const entry of store.values()) {
+      if (ctxDomain && entry.domain && areSafetyDomainsConflicting(entry.domain, ctxDomain, entry.title, `${ctxText} ${lawBody}`)) {
+        continue;
+      }
+      let score = 0;
+      if (code && entry.code && code === entry.code) {
+        score += 100;
+        if (ctxDomain && entry.domain === ctxDomain) score += 25;
+      }
+      if (bodyTokens.size >= 4 && entry.body) {
+        const sim = jaccard(bodyTokens, tokenize(entry.body));
+        if (sim >= 0.48) {
+          score += Math.round(sim * 90);
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = entry;
+      }
+    }
+    if (!best || bestScore < 50) return null;
+    return {
+      title: best.title,
+      body: best.body || '',
+      domain: best.domain || '',
+      code: best.code || '',
+      matchedBy: code && best.code === code ? 'code' : 'body',
+      score: bestScore
+    };
+  };
+
+  const getAll = () => {
+    loadOnce();
+    return Array.from(store.values());
+  };
+
+  const clear = () => {
+    store.clear();
+    loadedFromStorage = true;
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(GUIDELINE_MEMORY_STORAGE_KEY);
+    } catch (_) { /* ignore */ }
+  };
+
+  return { learn, learnFromRecord, seedFromRecords, lookup, getAll, clear };
+})();
+
+/**
+ * 발생원인 (인터뷰 결과) 복수 의견 파싱/포맷기
+ * - 예: "[근로자 의견 : 협력사 근로자]\n- ...\n[관리자 의견 : 협력사 시공관리자]\n- ..."
+ * - 단일 의견이면 기존 호환 형태('- ...' 본문 + author/title) 유지, 복수 의견이면 모든 [역할 의견 : 대상] 블록을 보존
+ */
+export function parseInterviewOpinions(raw = '') {
+  const cleanRoleHeader = (hdrText = '') => {
+    const inner = normalizeKoreanSpacing(String(hdrText || '').replace(/^\[|\]$/g, ''))
+      .replace(/^(?:발생원인|인터뷰\s*결과)\s*[:：]?\s*/i, '')
+      .trim();
+    const m = inner.match(/^([가-힣a-zA-Z\s]{1,14}?)\s*(?:의견|면담|인터뷰)\s*[:;：]?\s*(.*)$/i);
+    if (m) {
+      const role = normalizeKoreanSpacing(m[1]).trim() || '관계자';
+      const author = normalizeKoreanSpacing(m[2] || '').replace(/^[:;：\s]+|[:;：\s]+$/g, '').trim();
+      const title = author ? `[${role} 의견 : ${author}]` : `[${role} 의견]`;
+      return { title, role, author };
+    }
+    const fallbackAuthor = inner.replace(/^의견\s*[:;：]?\s*/, '').trim();
+    const title = inner.includes('의견') ? `[${inner}]` : `[관계자 의견 : ${fallbackAuthor || '현장 관계자'}]`;
+    return { title, role: '관계자', author: fallbackAuthor };
+  };
+
+  const normalizeItemsBlock = (blockText = '') => {
+    let s = String(blockText || '').trim();
+    if (!s) return [];
+    for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
+      s = s.replace(pattern, replacement);
+    }
+    s = splitInlineBullets(s);
+    const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const merged = [];
+    for (let l of rawLines) {
+      if (/^(?:발생원인|인터뷰\s*결과|점검단\s*제안|개선대책|PM\s*판정결과)\s*[:：]?$/i.test(l)) continue;
+      l = normalizeKoreanSpacing(l);
+      const isBullet = /^[-•*·▪]\s*/.test(l);
+      if (isBullet) {
+        const body = l.replace(/^[-•*·▪]\s*/, '').trim();
+        if (body) merged.push(`- ${body}`);
+      } else if (merged.length > 0 && !/^(?:\d+[.)]|[①-⑩])/.test(merged[merged.length - 1]) && !/(?:다|함|됨|음|요|임|습니다)[.!?]?$/.test(merged[merged.length - 1])) {
+        merged[merged.length - 1] = joinWrappedKoreanLines(merged[merged.length - 1], l);
+      } else {
+        merged.push(`- ${l.replace(/^[-•*·▪]\s*/, '').trim()}`);
+      }
+    }
+    return merged.filter(it => it && it !== '-' && it.length > 2);
+  };
+
+  let src = String(raw || '').trim();
+  if (!src) {
+    return { sections: [], authorsText: '', primaryTitle: '', formatted: '', hasMulti: false };
+  }
+
+  // OCR로 행 끝에 ']'가 빠졌거나 같은 줄에 두 번째 '[... 의견 ...]'가 붙은 경우 정규화
+  src = src
+    .replace(/(\[(?:[가-힣a-zA-Z\s]{1,12})?(?:의견|면담|인터뷰)\s*[:;：][^\r\n\]]+)(?=\r?\n)/g, '$1]')
+    .replace(/\s+(?=\[\s*(?:[가-힣a-zA-Z\s]{1,14}?)\s*(?:의견|면담|인터뷰)\s*[:;：\]])/g, '\n');
+
+  const headerRegex = /\[\s*([^\]\r\n]{2,40}?(?:의견|면담|인터뷰)[^\]\r\n]*)\]/gi;
+  const matches = [];
+  let m;
+  while ((m = headerRegex.exec(src)) !== null) {
+    matches.push({ index: m.index, end: headerRegex.lastIndex, rawHeader: m[0] });
+  }
+
+  const sections = [];
+  if (matches.length > 0) {
+    for (let i = 0; i < matches.length; i++) {
+      const curr = matches[i];
+      const next = matches[i + 1];
+      const sliceEnd = next ? next.index : src.length;
+      const bodyRaw = src.slice(curr.end, sliceEnd).trim();
+      const parsedHdr = cleanRoleHeader(curr.rawHeader);
+      const items = normalizeItemsBlock(bodyRaw);
+      const text = items.join('\n').trim();
+      if (!text && matches.length > 1) continue;
+      sections.push({
+        title: parsedHdr.title,
+        role: parsedHdr.role,
+        author: parsedHdr.author,
+        items,
+        text
+      });
+    }
+  }
+
+  if (sections.length === 0) {
+    const items = normalizeItemsBlock(src);
+    return {
+      sections: [],
+      authorsText: '',
+      primaryTitle: '',
+      formatted: items.join('\n').trim(),
+      hasMulti: false
+    };
+  }
+
+  const authors = [];
+  for (const sec of sections) {
+    const label = sec.author || (sec.role ? `${sec.role} 의견` : '');
+    if (label && !authors.includes(label)) authors.push(label);
+  }
+  const hasMulti = sections.length >= 2;
+  const formatted = hasMulti
+    ? sections.map(s => (s.text ? `${s.title}\n${s.text}` : s.title)).join('\n')
+    : (sections[0].text || '');
+
+  return {
+    sections,
+    authorsText: authors.join(', '),
+    primaryTitle: sections[0].title || '',
+    formatted: formatted.trim(),
+    hasMulti
+  };
+}
+
+/**
+ * [관련 기준] 3단계 우선순위 정규화 및 정합성 검수기 (하드코딩 법령 생성 전면 폐지)
+ * - 1순위: 원본 등록 데이터(rawLaw + lawBody) 보존 (OCR 오타·띄어쓰기·'- ~다.' 종결만 교정)
+ * - 2순위: 원본 제목 깨짐/본문 누락 시 학습된 SafeGuidelineMemory 우선 재사용
+ * - 3순위: 여전히 공란/깨짐/도메인 모순이면 클라이언트가 임의 법령 조문을 지어내지 않고 needsAiLaw=true로 AI(Qwen3-30B)에 위임
+ */
+export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', contextText = '', workGroup = '', type = '' } = {}) {
   const ctxRaw = String(contextText || '').trim();
   const lawFallbackRaw = String(law || '').trim();
   let title = String(rawLaw || '').trim();
@@ -949,7 +1321,7 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     body = body.replace(pattern, replacement);
   }
 
-  // [v47] 관련기준 볼드체 제목(rawLaw) 안에 본문 세부 준수사항이 혼입된 경우 헤더/본문 자동 분리
+  // 관련기준 볼드체 제목(rawLaw) 안에 본문 세부 준수사항이 혼입된 경우 헤더/본문 자동 분리
   if (title.length > 26) {
     const mergeSplitClause = (clauseText, existingBody) => {
       const clause = String(clauseText || '').replace(/^[-•*▪]\s*/, '').trim();
@@ -961,7 +1333,7 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
       }
       return existingBody ? `- ${clause}\n${existingBody}` : `- ${clause}`;
     };
-    const mGuide = title.match(/^(.{8,}?(?:지침|절차|요령|수칙))\s+(?!\[)(.{6,})$/);
+    const mGuide = title.match(/^(.{8,}?(?:지침|절차|요령|수칙|예방))\s+(?!\[)(.{6,})$/);
     if (mGuide && /(?:확인|금지|착용|설치|유도|준수|확보|점검|사용|한다|해야|양중물|작업자|근로자|출입|통제|방지|결속|기준|원칙|\d+\)|-)/.test(mGuide[2])) {
       title = mGuide[1].trim();
       body = mergeSplitClause(mGuide[2], body);
@@ -973,24 +1345,14 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
       }
     }
   }
-  const ctx = ctxRaw.replace(/직[계게개]차|지[계개제]차/g, '지게차');
+
   const lawClean = lawFallbackRaw.replace(/직[계게개]차|지[계개제]차/g, '지게차');
-  const isGenericPlaceholderLaw = /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/i.test(lawClean);
+  const isGenericPlaceholderLaw = /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙|관계법규\s*적용\s*항목)$/i.test(lawClean);
   const specificLawClean = isGenericPlaceholderLaw ? '' : lawClean;
 
-  const ctxHasForklift = /지게차|하역|유도원|운행경로/.test(ctx);
-  const bodyHasForklift = /지게차|운행경로|3\.?6\s*유도자/.test(body);
-  const ctxHasElec = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/.test(ctx);
-  const bodyHasElec = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(body);
-  const ctxHasFallOrForm = /(?:생명줄|안전대\s*부착|안전대|추락|낙하방지|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼|형틀)/.test(ctx);
-  const bodyHasFallOrForm = /(?:생명줄|안전대\s*부착|안전대|추락|낙하방지|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼|형틀)/.test(body);
-
-  const hasForkliftCtx = ctxHasForklift || (!ctxHasElec && !ctxHasFallOrForm && !bodyHasElec && !bodyHasFallOrForm && bodyHasForklift);
-  const isElecCtx = (ctxHasElec || (!ctxHasForklift && bodyHasElec)) && !ctxHasForklift;
-  const isFallOrFormCtx = (ctxHasFallOrForm || (!ctxHasForklift && bodyHasFallOrForm)) && !isElecCtx && !ctxHasForklift;
-
   title = title
-    .replace(/^[|ㅣ¦!~—\-_=\[\]0-9I;:\s]*(?=안전|안선|전사|IZ|1Z|현장|산업|산안|법)/i, '')
+    .replace(/^[|ㅣ¦!~—\-_=\]0-9I;:\s]*(?=안전|안선|전사|\[?IZ|\[?1Z|현장|산업|산안|법)/i, '')
+    .replace(/(^|\s)([1Il|]?Z1[2Z]B[-\s_]*\d{2,4}\s*\(\s*[A-Z]\s*\))\]/gi, '$1[$2]')
     .replace(/(?:안[선전]|\b안\s*[선전])\s*작[업엄]\s*[지시][침심]|안전\s*삭[업엄]\s*[지시][침심]|안전\s*작업\s*시[심침]/g, '안전작업지침')
     .replace(/주탁|추탁|축락|추낙/g, '추락')
     .replace(/닥아|낙아/g, '낙하')
@@ -998,81 +1360,78 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     .replace(/작입|삭업|자업(?=\s|$)/g, '작업')
     .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*10[\/7](\s*\(?K\)?)\s*\]?/gi, '[IZ12B-107(K)]')
     .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*(\d{3})\s*\(?\s*K\s*\)?\s*\]?/gi, '[IZ12B-$1(K)]')
+    .replace(/\[\s*(IZ[A-Z0-9]{1,4})[-\s_]*(\d{2,4})\s*\(?\s*([A-Z])\s*\)?\s*\]?/gi, (_, p, n, c) => `[${p.toUpperCase()}-${n}(${c.toUpperCase()})]`)
     .replace(/안전작업지침\s*\[/g, '안전작업지침 [')
     .replace(/\]\s*(?=[가-힣A-Za-z])/g, '] ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (/^[^\]]*\[(?:지게차|전기\s*작업|비계|거푸집)[^\]]*$/.test(title)) {
-    title = `${title}]`;
+  const ctxFull = [workGroup, type, ctxRaw].filter(Boolean).join(' ').replace(/직[계게개]차|지[계개제]차/g, '지게차');
+  const titleDomain = inferSafetyDomain(title);
+  const bodyDomain = inferSafetyDomain(body);
+  const ctxDomain = inferSafetyDomain(ctxFull) || bodyDomain;
+
+  let mismatchReason = '';
+  const bodyConflictsWithCtx = Boolean(body && ctxRaw && areSafetyDomainsConflicting(bodyDomain, inferSafetyDomain(ctxRaw), body, ctxRaw));
+  if (bodyConflictsWithCtx) {
+    body = '';
+    mismatchReason = 'body_domain_mismatch';
   }
 
-  // 도메인 충돌 및 주요 사내 안전작업지침 코드 정규화
-  const fullLawCheck = `${title} ${body} ${ctx}`;
-  if (isElecCtx) {
-    if (/지게차|3\.?6\s*유도자|운행경로|제172조/.test(`${title} ${body}`)) {
-      title = (specificLawClean && !/172조|지게차/.test(specificLawClean))
-        ? specificLawClean
-        : (/충전부|심선|소켓|단자부|피복|절연/.test(`${ctx} ${body}`)
-          ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
-          : (/접지/.test(`${ctx} ${body}`)
-            ? '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)'
-            : '안전보건규칙 제304조(누전차단기에 의한 감전방지)'));
-      if (/지게차|유도자|운행경로/.test(body)) body = '';
-    } else if (/IZ12B-108\(K\)|108\s*\(?K\)?/i.test(title) && !/11\d/.test(title)) {
-      title = '안전작업지침 [IZ12B-108(K)] 전기 작업';
-    } else if (/IZ12B-115\(K\)|115\s*\(?K\)?/i.test(title)) {
-      title = '안전작업지침 [IZ12B-115(K)] 전기 작업';
+  const titleConflictsWithCtx = Boolean(title && areSafetyDomainsConflicting(titleDomain, ctxDomain, title, `${ctxFull} ${body}`));
+  const titleConflictsWithBody = Boolean(title && body && areSafetyDomainsConflicting(titleDomain, bodyDomain, title, body));
+  const titleGarbled = hasGarbledKoreanNoise(title);
+
+  // 모순되거나 심각하게 손상된 원본 제목은 1순위로 신뢰할 수 없으므로 비우고(코드만 유지) 2순위/3순위로 넘김
+  const preservedCode = extractGuidelineCode(title);
+  if (titleConflictsWithCtx || titleConflictsWithBody) {
+    mismatchReason = mismatchReason || (titleConflictsWithBody ? 'title_body_mismatch' : 'title_ctx_mismatch');
+    title = '';
+  }
+
+  // [2순위] 학습된 SafeGuidelineMemory 조회 (원본 제목이 없거나 깨졌거나 본문이 비어있을 때만 보완, 깨끗한 1순위 원본은 절대 덮어쓰지 않음)
+  if (!title || titleGarbled || !body) {
+    const learned = SafeGuidelineMemory.lookup({
+      rawLaw: title || (preservedCode ? `[${preservedCode}]` : ''),
+      lawBody: body,
+      content: ctxRaw,
+      workGroup,
+      type
+    });
+    if (learned) {
+      if ((!title || titleGarbled) && learned.title) {
+        title = learned.title;
+      }
+      if (!body && learned.body) {
+        body = learned.body;
+      }
     }
-  } else if (isFallOrFormCtx && /지게차|3\.?6\s*유도자|운행경로|제172조/.test(`${title} ${body}`)) {
-    if (/지게차|유도자|운행경로/.test(body)) body = '';
-    title = (specificLawClean && !/172조|지게차/.test(specificLawClean))
-      ? specificLawClean
-      : resolveNonForkliftFallLawTitle(`${body} ${ctx}`, title);
   }
 
-  if (/IZ12B-107\(K\)|107\s*\(?K\)?/i.test(title) || (/10[\/7]\s*\(?K\)?/i.test(title) && /추락|낙하|출입금지|안전시설|방지시설/.test(fullLawCheck))) {
-    title = '안전작업지침 [IZ12B-107(K)] 추락/낙하방지시설 작업';
-  } else if (/IZ12B-106\(K\)/i.test(title) && !/지게차|전기|거푸집|동바리/.test(ctx)) {
-    title = '안전작업지침 [IZ12B-106(K)] 비계 작업';
-  } else if (/IZSW-003\(K\)/i.test(title) && /거푸집|동바리|형틀/.test(fullLawCheck)) {
-    title = '안전작업지침 [IZSW-003(K)] 거푸집동바리 작업';
-  } else if (/(?:IZ12B-108\(K\)|지게차\s*작업지침)/i.test(title) && !isElecCtx && !isFallOrFormCtx && hasForkliftCtx) {
-    title = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
-  }
-
-  // 크레인/양중 작업 위반인데 공종명('거푸집동바리공사') 때문에 제332조(거푸집동바리)가 잘못 배정된 경우 교정
-  const isCraneLiftingMismatch = /(?:크레인|타워크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|자재\s*양중|형틀자재\s*양중)/.test(`${body} ${ctx}`) &&
-    !/(?:동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도))/.test(`${body} ${ctx}`);
-  if (isCraneLiftingMismatch && /제332조|거푸집동바리/.test(title)) {
-    title = (specificLawClean && !/332조|거푸집동바리/.test(specificLawClean))
-      ? specificLawClean
-      : '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
-  }
-
-  // 잔여 심각한 OCR 깨짐(해독 불가 비단어/닫히지 않은 괄호) 차단 가드
-  const hasCorruptTitleTokens = /(?:시심|주탁|닥아|방시시실|방지시실|작입|삭보|식보|업적|of\s*xi|\/\(K\)|\uFFFD)/.test(title) ||
-    /^[0-9I=;:\s]{3,}/.test(title) ||
-    (/\[[^\]]*$/.test(title) && !/\[IZ/i.test(title));
-  if (!title || hasCorruptTitleTokens) {
-    if (specificLawClean && !(/지게차|172조/.test(specificLawClean) && !hasForkliftCtx)) {
-      title = specificLawClean;
-    } else if (isFallOrFormCtx) {
-      title = resolveNonForkliftFallLawTitle(`${body} ${ctx}`, title);
-    } else if (isElecCtx) {
-      title = '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)';
-    } else if (lawClean && !(/지게차|172조/.test(lawClean) && !hasForkliftCtx)) {
-      title = lawClean;
-    }
+  // [1순위 보조] rawLaw가 없고 동일 레코드의 비-일반 law 필드만 유효하게 남아 있을 때 (단 도메인 충돌 시 사용 금지)
+  if (!title && specificLawClean && !hasGarbledKoreanNoise(specificLawClean) && !areSafetyDomainsConflicting(inferSafetyDomain(specificLawClean), ctxDomain, specificLawClean, `${ctxFull} ${body}`)) {
+    title = specificLawClean;
   }
 
   if (body) {
     body = normalizeSafetyLawBody(body);
   }
 
+  const finalTitle = normalizeKoreanSpacing(title);
+  const needsAiLaw = Boolean(
+    !finalTitle ||
+    !body ||
+    hasGarbledKoreanNoise(finalTitle) ||
+    mismatchReason ||
+    /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/i.test(finalTitle)
+  );
+
   return {
-    title: normalizeKoreanSpacing(title),
-    body
+    title: finalTitle,
+    body,
+    needsAiLaw,
+    mismatchReason,
+    code: extractGuidelineCode(finalTitle) || preservedCode
   };
 }
 
@@ -1137,6 +1496,7 @@ export function applyTypoPatches(record, typoPatches) {
 // 전역 브라우저/Node 객체에도 노출 (비모듈 스크립트 호환)
 const _globalRoot = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
 if (_globalRoot) {
+  _globalRoot.SafeGuidelineMemory = SafeGuidelineMemory;
   _globalRoot.SafeTextNormalizer = {
     decomposeHangul,
     levenshteinDistance,
@@ -1145,10 +1505,16 @@ if (_globalRoot) {
     joinWrappedKoreanLines,
     normalizeKoreanSpacing,
     stripCircledNumbers,
+    stripBannerSecondItemTail,
     normalizePhotoBannerText,
     resolveUnifiedPhotoBanner,
     normalizeSafetyLawBody,
     normalizeSafetyLawSpec,
+    hasGarbledKoreanNoise,
+    inferSafetyDomain,
+    extractGuidelineCode,
+    SafeGuidelineMemory,
+    parseInterviewOpinions,
     OFFICIAL_WORK_GROUPS,
     mapToStandardWorkGroup,
     isLocationOnlyBanner,
