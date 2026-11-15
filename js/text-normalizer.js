@@ -97,13 +97,13 @@ export function snapToStandardTaxonomy(rawInput, candidates = [], threshold = 0.
  */
 export function normalizeRoundText(raw = '') {
   let s = String(raw || '')
-    .replace(/^[\s|Iㅣl\[\]'’‘]+|[\s|Iㅣl\[\]-]+$/g, '')
+    .replace(/^(?:[\s|Iㅣl\[\]]|['’‘](?!\s*\d{2}\s*[년年]))+|[\s|Iㅣl\[\]-]+$/g, '')
     .replace(/^(?:점검|섬검|섭십|첨검)?\s*(?:차수|자수|사수|자주)\s*[:：.]?\s*/g, '')
     .trim();
   if (!s) return "'26년上 2차";
 
   // 연도 추출 (예: '26년, 26년, 25년)
-  const yrMatch = s.match(/(['’‘]?)\s*(\d{2})\s*년/);
+  const yrMatch = s.match(/(['’‘]?)\s*(\d{2})\s*[년年]/);
   const hasQuote = Boolean(yrMatch && yrMatch[1]);
   const yr = yrMatch ? yrMatch[2] : '26';
 
@@ -185,6 +185,9 @@ const DOMAIN_TYPO_MAP = [
   [/이형자재(?=[가-힣])/g, '이형자재 '],
   [/양중글지|양중금지/g, '양중 금지'],
   [/글지(?=\s|[.,!?]|$)/g, '금지'],
+  [/쓴아짐/g, '쏟아짐'],
+  [/상태양중/g, '상태 양중'],
+  [/(^|[\s(/·\-])미\s+(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호)(?=\s|$|[.,;:)/·\-])/g, '$1미$2'],
   [/([다요음함됨임]\.?)\s*[a-zA-Z]{1,3}$/gm, '$1']
 ];
 
@@ -339,6 +342,9 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/([가-힣])([을를])(?=(?:설치|조치|작성|실시|착용|체결|확보|준수|유지|제거|정비|배치|고정|금지|확인|점검|통제|방지|보호|수립|운영|관리))/g, '$1$2 ')
     .replace(/(처짐|돌출|이격|침하|변형|마모|부식|균열|누설|노출)(과다|불량|미흡|누락|부족)/g, '$1 $2')
     .replace(/(미고박\s*상태|수평\s*상태|개방\s*상태|무단\s*상태|불안정\s*상태)(?=[가-힣])/g, '$1 ')
+    .replace(/상태양중/g, '상태 양중')
+    .replace(/쓴아짐/g, '쏟아짐')
+    .replace(/(^|[\s(/·\-])미\s+(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호)(?=\s|$|[.,;:)/·\-])/g, '$1미$2')
     .replace(/(양중작업|하역작업|고소작업|굴착작업|해체작업|용접작업|비계작업)시(?=[가-힣\s]|$)/g, '$1 시')
     .replace(/(재교육)\s*(실시)/g, '$1 $2')
     .replace(/(동일\s*사항)\s*(재발)/g, '동일사항 $2')
@@ -857,14 +863,49 @@ export function normalizeSafetyLawBody(lawBody = '') {
     }
   }
 
-  // 한 문서 내 불릿 기호(*, •, ·, ▪, -) 혼용 시 단일 표준 '-' 불릿으로 통일 (단일 '•' 양식은 호환 유지)
+  // 한 문서 내 불릿 기호(*, •, ·, ▪, -) 혼용 시 단일 표준 '-' 불릿으로 통일 + '- ' 항목은 완결 평서문 '~다.' 종결
   const hasHyphenOrStarBullet = merged.some(l => /^-\s/.test(l));
   const hasDotBullet = merged.some(l => /^[•·]\s/.test(l));
+  const finalizeLawBulletEnding = (lineStr = '') => {
+    const s = String(lineStr || '').trim();
+    const mBullet = s.match(/^([-•·]\s+)(.+)$/);
+    if (!mBullet) return s;
+    const marker = mBullet[1];
+    let b = mBullet[2].replace(/[,;\s]+$/, '').trim();
+    if (!b) return s;
+    const isDash = marker.startsWith('-');
+    // '-' 불릿은 반드시 '~다.' 완결 문장으로 종결 (~하며, ~하고, 마침표 누락, 말미 명사 '금지' 보정)
+    if (isDash) {
+      b = b
+        .replace(/하지\s*않으며\.?$/g, '하지 않는다.')
+        .replace(/되지\s*않으며\.?$/g, '되지 않는다.')
+        .replace(/(하여야|해야|되어야|있어야|없어야|않아야)\s*(?:하며|하고)\.?$/g, '$1 한다.')
+        .replace(/(하여야|해야)\.?$/g, '$1 한다.')
+        .replace(/금지\s*(?:하며|하고|하여)\.?$/g, '금지한다.')
+        .replace(/금지\s*할\s*것\.?$/g, '금지한다.')
+        .replace(/([가-힣]+)\s*금지\.?$/g, '$1 금지한다.')
+        .replace(/(가능|필요|적합|충분|견고|안전|확실)하며\.?$/g, '$1하다.')
+        .replace(/있으며\.?$/g, '있다.')
+        .replace(/없으며\.?$/g, '없다.')
+        .replace(/되며\.?$/g, '된다.')
+        .replace(/([가-힣]{2,})하며\.?$/g, '$1한다.')
+        .replace(/([가-힣]{2,})하고\.?$/g, '$1한다.')
+        .replace(/(확인|점검|실시|착용|사용|준수|조치|설치|체결|결속|유지|확보|관리|방지|통제|엄수|이행|수립|작성|배치|고정|보강|비치)\.?$/g, '$1한다.')
+        .replace(/필요\.?$/g, '필요하다.')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    if (/(?:한다|된다|않는다|없다|있다|바란다|같다|아니다|이다|필요하다)\.?$/.test(b)) {
+      b = b.endsWith('.') ? b : `${b}.`;
+    }
+    return `${marker}${b}`;
+  };
   const unified = merged.map(l => {
     let out = normalizeKoreanSpacing(l);
     if (hasHyphenOrStarBullet && hasDotBullet) {
       out = out.replace(/^[•·]\s+/, '- ');
     }
+    out = finalizeLawBulletEnding(out);
     return out;
   });
 
@@ -906,6 +947,31 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
   for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
     title = title.replace(pattern, replacement);
     body = body.replace(pattern, replacement);
+  }
+
+  // [v47] 관련기준 볼드체 제목(rawLaw) 안에 본문 세부 준수사항이 혼입된 경우 헤더/본문 자동 분리
+  if (title.length > 26) {
+    const mergeSplitClause = (clauseText, existingBody) => {
+      const clause = String(clauseText || '').replace(/^[-•*▪]\s*/, '').trim();
+      if (!clause) return existingBody;
+      const compactClause = clause.replace(/\s+/g, '');
+      const compactBody = String(existingBody || '').replace(/\s+/g, '');
+      if (compactBody && compactClause.length >= 6 && compactBody.includes(compactClause.slice(0, Math.min(12, compactClause.length)))) {
+        return existingBody;
+      }
+      return existingBody ? `- ${clause}\n${existingBody}` : `- ${clause}`;
+    };
+    const mGuide = title.match(/^(.{8,}?(?:지침|절차|요령|수칙))\s+(?!\[)(.{6,})$/);
+    if (mGuide && /(?:확인|금지|착용|설치|유도|준수|확보|점검|사용|한다|해야|양중물|작업자|근로자|출입|통제|방지|결속|기준|원칙|\d+\)|-)/.test(mGuide[2])) {
+      title = mGuide[1].trim();
+      body = mergeSplitClause(mGuide[2], body);
+    } else {
+      const mRule = title.match(/^((?:산업)?안전보건(?:기준에\s*관한\s*)?규칙\s*제\d+조(?:의\d+)?(?:\s*\([^)]+\))?(?:\s*,\s*제\d+조(?:의\d+)?(?:\s*\([^)]+\))?)*)\s+(.{6,})$/);
+      if (mRule && !/^제\d+조/.test(mRule[2].trim())) {
+        title = mRule[1].trim();
+        body = mergeSplitClause(mRule[2], body);
+      }
+    }
   }
   const ctx = ctxRaw.replace(/직[계게개]차|지[계개제]차/g, '지게차');
   const lawClean = lawFallbackRaw.replace(/직[계게개]차|지[계개제]차/g, '지게차');

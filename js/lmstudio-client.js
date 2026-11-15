@@ -104,7 +104,7 @@
         hazardType: text.includes('낙하') ? '낙하' : '추락',
         mgmtCauses: ['계획 미이행', '불안전 행동'],
         holdPoint: true,
-        photoBanner: isHand ? '양중작업 시 화물을 직접 손으로 잡음' : (isHorizontal ? '양중작업 시 화물의 수평양중 미 실시' : '양중작업 시 유도로프 미사용'),
+        photoBanner: isHand ? '양중작업 시 화물을 직접 손으로 잡음' : (isHorizontal ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 유도로프 미사용'),
         photo2Banner: isHand ? '양중작업 시 유도로프 미사용' : (isHorizontal ? '지상에서 보 거푸집 로프체결 간격 미준수' : ''),
         analysis: '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 및 협착 위험',
         pmVerdict: '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업'
@@ -413,7 +413,7 @@
    - [올바른 작성 예시]:
      • '양중작업 시 화물을 직접 손으로 잡음'
      • '양중작업 시 유도로프 미사용'
-     • '양중작업 시 화물의 수평양중 미 실시'
+     • '양중작업 시 화물의 수평양중 미실시'
      • '말비계 모서리 구간 단부 추락방지 미조치'
      • '통로 바닥 가설전선 거치 및 정리 미실시'
      • '보 상부 승인 미실시 및 불안전 자세 작업'
@@ -751,7 +751,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/설치상소/g, '설치장소')
       .replace(/노단색\s*Mos|노란색\s*Mos|노단색/g, '노란색 마킹')
       .replace(/재교\s*육/g, '재교육')
-      .replace(/선\s*해체\s*방지/g, '선해체 방지');
+      .replace(/선\s*해체\s*방지/g, '선해체 방지')
+      .replace(/쓴아짐/g, '쏟아짐')
+      .replace(/상태양중/g, '상태 양중')
+      .replace(/(^|[\s(/·\-])미\s+(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호)(?=\s|$|[.,;:)/·\-])/g, '$1미$2');
   }
 
   function cleanLocation(rawLoc, contentText = '') {
@@ -1203,8 +1206,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   }
                 }
                 if (cf.round) {
-                  fallbackRecord.round = cf.round;
-                  fallbackRecord.inspectRound = cf.round;
+                  const normR = typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeRoundText
+                    ? window.SafeTextNormalizer.normalizeRoundText(cf.round)
+                    : cf.round;
+                  fallbackRecord.round = normR;
+                  fallbackRecord.inspectRound = normR;
                 }
                 if (cf.interviewOpinion && !isFieldKeyLiteral(cf.interviewOpinion)) {
                   const op = cleanOpinionText(normField(cf.interviewOpinion, 'interview')) || cf.interviewOpinion;
@@ -1588,7 +1594,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               if (!orig && !['rawLaw', 'lawBody', 'law', 'photoBanner'].includes(key)) return;
               const vCompactLen = v.replace(/\s+/g, '').length;
               const oCompactLen = orig.replace(/\s+/g, '').length;
-              const minRatio = (key === 'rawLaw' || key === 'lawBody') ? 0.25 : 0.40;
+              const minRatio = key === 'rawLaw' ? 0.15 : (key === 'lawBody' ? 0.25 : 0.40);
               if (oCompactLen > 0 && (vCompactLen < oCompactLen * minRatio || vCompactLen > oCompactLen * maxRatio)) return;
               const normFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
                 ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, key === 'interviewOpinion' ? 'interview' : key)
@@ -1706,12 +1712,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const applySurfacePolish = (rec) => {
       if (!rec || typeof rec !== 'object') return false;
       const beforeSnap = JSON.stringify([
-        rec.photoBanner, rec.content, rec.location, rec.law, rec.rawLaw,
+        rec.photoBanner, rec.content, rec.location, rec.inspectRound, rec.law, rec.rawLaw,
         rec.lawBody, rec.interviewOpinion, rec.auditProposal, rec.actionPlan
       ]);
       rec.workGroup = cleanWorkGroup(rec.workGroup || '', rec.content || '') || rec.workGroup || '';
       rec.workMethod = sanitizeWorkMethod(rec.workMethod || rec.workName, rec.workGroup, rec.content, rec.location) || rec.workMethod || '';
       if (rec.workMethod) rec.workName = rec.workMethod;
+      if (rec.inspectRound && norm?.normalizeRoundText) {
+        rec.inspectRound = norm.normalizeRoundText(rec.inspectRound);
+      }
       if (norm?.normalizeFieldText) {
         if (rec.content) rec.content = norm.normalizeFieldText(rec.content, 'content');
         if (rec.location) rec.location = cleanLocation(norm.normalizeFieldText(rec.location, 'location'), rec.content) || rec.location;
@@ -1737,7 +1746,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       }
       sanitizeDomainMismatchedLaw(rec);
       const afterSnap = JSON.stringify([
-        rec.photoBanner, rec.content, rec.location, rec.law, rec.rawLaw,
+        rec.photoBanner, rec.content, rec.location, rec.inspectRound, rec.law, rec.rawLaw,
         rec.lawBody, rec.interviewOpinion, rec.auditProposal, rec.actionPlan
       ]);
       return beforeSnap !== afterSnap;
@@ -1803,7 +1812,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               if (!aiRes || typeof aiRes !== 'object') return;
               const beforeStr = JSON.stringify([
                 rec.workGroup, rec.workMethod, rec.type, rec.photoBanner,
-                rec.content, rec.location, rec.law, rec.rawLaw, rec.lawBody,
+                rec.content, rec.location, rec.inspectRound, rec.law, rec.rawLaw, rec.lawBody,
                 rec.interviewOpinion, rec.auditProposal, rec.actionPlan
               ]);
               const corr = (aiRes.corrections && typeof aiRes.corrections === 'object') ? aiRes.corrections : {};
@@ -1849,7 +1858,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 rec.countermeasure = rec.actionPlan;
               }
               if (typeof corr.subcontractor === 'string' && !/\uFFFD/.test(corr.subcontractor)) rec.subcontractor = corr.subcontractor.trim();
-              if (typeof corr.inspectRound === 'string' && corr.inspectRound.trim()) rec.inspectRound = corr.inspectRound.trim();
+              if (typeof corr.inspectRound === 'string' && corr.inspectRound.trim()) {
+                rec.inspectRound = norm?.normalizeRoundText ? norm.normalizeRoundText(corr.inspectRound.trim()) : corr.inspectRound.trim();
+              }
 
               applySurfacePolish(rec);
               rec._aiVerified = true;
@@ -1857,7 +1868,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               rec._aiVerifyIssues = Array.isArray(aiRes.issues) ? aiRes.issues : [];
               const afterStr = JSON.stringify([
                 rec.workGroup, rec.workMethod, rec.type, rec.photoBanner,
-                rec.content, rec.location, rec.law, rec.rawLaw, rec.lawBody,
+                rec.content, rec.location, rec.inspectRound, rec.law, rec.rawLaw, rec.lawBody,
                 rec.interviewOpinion, rec.auditProposal, rec.actionPlan
               ]);
               if (beforeStr !== afterStr) modifiedCount++;

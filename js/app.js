@@ -2,8 +2,8 @@ import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEma
 import { store } from './store.js?v=20261108_v11';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v46';
-import './text-normalizer.js?v=20261115_v46';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v47';
+import './text-normalizer.js?v=20261115_v47';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -4835,8 +4835,26 @@ async function handlePptxImportChange(e) {
   }
 
   if (importedRecords.length > 0) {
+    if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
+      try {
+        if (progPct) progPct.textContent = '95%';
+        if (progBar) progBar.style.width = '95%';
+        if (progStatus) progStatus.textContent = `🤖 AI 자동 최종 검증 중 (${importedRecords.length}건)...`;
+        await window.SafeLocalAI.verifyRecordsBeforeSave(importedRecords, (msg) => {
+          if (progStatus && msg) progStatus.textContent = msg;
+        });
+      } catch (verifyErr) {
+        console.warn('Auto pre-save AI verify fallback:', verifyErr);
+      }
+    }
+    if (progPct) progPct.textContent = '100%';
+    if (progBar) progBar.style.width = '100%';
+    if (progStatus) {
+      progStatus.textContent = `✅ 분석 및 AI 자동 검증 완료: 점검장표 ${importedRecords.length}건` +
+        (totalSkippedPages > 0 ? ` (일반 글씨/간지 ${totalSkippedPages}페이지 자동 생략)` : '');
+    }
     const skipMsg = totalSkippedPages > 0 ? ` (일반 글씨 ${totalSkippedPages}장 생략)` : '';
-    toast(`총 ${importedRecords.length}건의 점검장표 사진·내용을 추출했습니다!${skipMsg}`, 'success', 3500);
+    toast(`총 ${importedRecords.length}건의 점검장표를 추출·AI 자동 검증했습니다!${skipMsg}`, 'success', 3500);
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'block';
     if ($('#importCount')) $('#importCount').textContent = importedRecords.length;
     renderImportedCards();
@@ -4924,8 +4942,8 @@ function renderImportedCards() {
 
     const escapeAttr = (v) => String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const verifiedBadgeHtml = rec._aiVerified
-      ? `<span style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">✅ AI 검증 완료${rec._aiVerifyIssues?.length ? ` (${rec._aiVerifyIssues.length}건 교정)` : ''}</span>`
-      : `<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">⏳ AI 검증 대기</span>`;
+      ? `<span style="background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">✅ AI 자동 검증됨${rec._aiVerifyIssues?.length ? ` (${rec._aiVerifyIssues.length}건 교정)` : ''}</span>`
+      : `<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">🤖 저장 시 자동 검증</span>`;
 
     card.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -5035,6 +5053,7 @@ function renderImportedCards() {
         const fKey = el.dataset.field;
         if (fKey) {
           rec[fKey] = e.target.value;
+          rec._aiVerified = false;
           if (fKey === 'actionPlan') rec.countermeasure = e.target.value;
           if (fKey === 'rawLaw' && !rec.law) rec.law = e.target.value;
         }
@@ -5052,12 +5071,12 @@ function renderImportedCards() {
   if (verifyBadge) {
     const allVerified = importedRecords.length > 0 && importedRecords.every(r => r._aiVerified);
     if (allVerified) {
-      verifyBadge.textContent = `✅ AI 최종 검증 완료 (${importedRecords.length}건)`;
+      verifyBadge.textContent = `✅ AI 자동 검증 완료 (${importedRecords.length}건)`;
       verifyBadge.style.background = '#ecfdf5';
       verifyBadge.style.color = '#047857';
       verifyBadge.style.borderColor = '#a7f3d0';
     } else {
-      verifyBadge.textContent = '🤖 등록 전 AI 최종 검증 대기';
+      verifyBadge.textContent = '🤖 저장 시 AI 자동 검증 반영';
       verifyBadge.style.background = '#eff6ff';
       verifyBadge.style.color = '#1d4ed8';
       verifyBadge.style.borderColor = '#bfdbfe';
@@ -5286,12 +5305,10 @@ async function handleSaveImportedRecords() {
   btn.textContent = `🤖 AI 최종 검증 및 저장 준비 중 (${importedRecords.length}건)...`;
 
   try {
-    if (window.SafeLocalAI?.verifyRecordsBeforeSave && importedRecords.some(r => !r._aiVerified)) {
-      const verifyRes = await window.SafeLocalAI.verifyRecordsBeforeSave(importedRecords, msg => { btn.textContent = msg; });
+    const unverifiedRecs = importedRecords.filter(r => !r._aiVerified);
+    if (window.SafeLocalAI?.verifyRecordsBeforeSave && unverifiedRecs.length > 0) {
+      await window.SafeLocalAI.verifyRecordsBeforeSave(unverifiedRecs, msg => { btn.textContent = msg; });
       renderImportedCards();
-      if (verifyRes?.modifiedCount > 0) {
-        toast(`🤖 저장 전 AI 최종 검증으로 ${verifyRes.modifiedCount}건의 문구·사진요약·산안법 기준을 자동 교정했습니다.`, 'info', 3000);
-      }
     }
     btn.textContent = `저장 중 (0/${importedRecords.length})...`;
     // 현장 등록 확인 (백그라운드 동기화로 저장 지연 제거)
@@ -5402,7 +5419,9 @@ async function handleSaveImportedRecords() {
         stage,
         severity: rec.severity || '중부적합',
         subcontractor: rec.subcontractor !== undefined ? rec.subcontractor : '',
-        inspectRound: rec.inspectRound || '1차',
+        inspectRound: (window.SafeTextNormalizer?.normalizeRoundText && rec.inspectRound)
+          ? window.SafeTextNormalizer.normalizeRoundText(rec.inspectRound)
+          : (rec.inspectRound || '1차'),
         inspectUser: sheetInspectUser || loggedInUser,
         inspector: loggedInUser,
         siteInfo: {
