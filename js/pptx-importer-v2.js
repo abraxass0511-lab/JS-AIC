@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v43';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v43';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v44';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v44';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -19,8 +19,12 @@ import {
   OFFICIAL_WORK_GROUPS,
   mapToStandardWorkGroup,
   extractCoreViolationBanner,
-  splitInlineBullets
-} from './text-normalizer.js?v=20261115_v43';
+  splitInlineBullets,
+  stripCircledNumbers,
+  normalizePhotoBannerText,
+  resolveUnifiedPhotoBanner,
+  normalizeSafetyLawSpec
+} from './text-normalizer.js?v=20261115_v44';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -649,11 +653,22 @@ export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
     return s || '';
 }
 
-export function cleanBannerText(rawBanner, content = '') {
-  let b = String(rawBanner || '').trim();
+export function cleanBannerText(rawBanner, content = '', location = '') {
+  const cleanedRaw = normalizePhotoBannerText(rawBanner, content, location);
+  if (cleanedRaw) {
+    const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(cleanedRaw);
+    const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(cleanedRaw);
+    const hangulCount = (cleanedRaw.match(/[가-힣]/g) || []).length;
+    const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
+    if (!hasDigitHangulCorruption && (isTechnicalForm || hangulCount >= 4) && cleanedRaw.length >= 5 && cleanedRaw.replace(/\s+/g, '') !== normContent.replace(/\s+/g, '')) {
+      const condensed = stripCircledNumbers(extractCoreViolationBanner(cleanedRaw, content, location));
+      if (condensed && condensed.length >= 5) return condensed;
+    }
+  }
+
+  let b = stripCircledNumbers(String(rawBanner || '').trim());
   b = healSafetyKoreanLexicon(b)
-    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
-    .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
+    .replace(/^[123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
     .replace(/벽의음/g, '벽이음')
     .replace(/6055/g, '60도↓')
     .replace(/6\/『|6\//g, 'E/V')
@@ -682,9 +697,9 @@ export function cleanBannerText(rawBanner, content = '') {
   const hangulCount = (b.match(/[가-힣]/g) || []).length;
   const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
   if (!b || b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '') || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
-    return deriveConcreteBanner(content).replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
+    return stripCircledNumbers(deriveConcreteBanner(content));
   }
-  return extractCoreViolationBanner(b, content).replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '');
+  return stripCircledNumbers(extractCoreViolationBanner(b, content, location));
 }
 
 export function cleanWorkGroup(rawWork, contentText = '') {
@@ -807,9 +822,19 @@ export function parseLawCell(tLaw, fallbackTitle = '산업안전보건기준에 
     }
   }
 
-  return {
+  const rawResult = {
     title: normalizeKoreanSpacing(rawTitle),
     body: bodyLines.map(l => normalizeKoreanSpacing(l)).join('\n')
+  };
+  const healedLaw = normalizeSafetyLawSpec({
+    rawLaw: rawResult.title,
+    lawBody: rawResult.body,
+    law: fallbackTitle,
+    contextText
+  });
+  return {
+    title: healedLaw.title || rawResult.title,
+    body: healedLaw.body || rawResult.body
   };
 }
 
@@ -853,7 +878,7 @@ export function cleanProposalText(raw) {
   if (!raw) return '';
   let s = healSafetyKoreanLexicon(String(raw))
     .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
-    .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+    .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사|작업팀|해당\s*작업팀)\s*교육\s*\)|\(\s*해당\s*작업팀\s*대기\s*\)|\(관리감독자\s*경고\)/gi, '')
     .replace(/^(?:[-•*·▪\s]*)(?:De\s*T=?\s*©?|SHE\s*SEA|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
     .trim();
@@ -884,8 +909,8 @@ export function cleanActionPlan(raw) {
   }
   const preBulletStr = rawStr
     .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
-    .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
-    .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화\s*방안\s*수립\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+    .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|패널티|페널티/gi, '')
+    .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화\s*방안\s*수립\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)|\(\s*해당\s*작업팀\s*대기\s*\)|\(\s*작업팀\s*교육\s*\)/gi, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
     .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
     .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화/g, '내실화 등 점검 강화')
@@ -902,7 +927,7 @@ export function cleanActionPlan(raw) {
     const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]/s.test(line);
     let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
     if (!cl || cl.length < 2) continue;
-    if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
+    if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업팀\s*교육)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
     if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
       return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
@@ -1511,13 +1536,19 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
 
   // 점검자 의견 구분 (복수 선택 지원: 시스템 개선, 교육/코칭, 페널티)
   // 주의: 제안 본문 내 단순 '재교육하여' 단어로 교육/코칭이 오인되지 않도록 엄격한 판정 라벨만 매칭
-  const verdictRegionMatch = txt.match(/(?:(?:점검단|HAT)\s*제안\]?[\s\S]{0,120})|(?:PM\s*판정\s*결과[\s\S]{0,120})/i);
-  const verdictScanTxt = verdictRegionMatch ? verdictRegionMatch[0] : txt;
-  const opinionTypes = [];
-  if (/시스템\s*개선/i.test(verdictScanTxt)) opinionTypes.push('시스템 개선');
-  if (/교육\s*[\/·]\s*코칭|협력사\s*교육|근로자\s*교육|코칭/i.test(verdictScanTxt)) opinionTypes.push('교육/코칭');
-  if (/페널티|패널티/i.test(verdictScanTxt)) opinionTypes.push('페널티');
-  const inspectorOpinionType = opinionTypes.length > 0 ? Array.from(new Set(opinionTypes)).join(', ') : '시스템 개선';
+  const propRegionMatch = txt.match(/(?:점검단|HAT)\s*제안\]?([\s\S]{0,220}?)(?=개선\s*대책|\[?\s*PM\s*판정|$)/i);
+  const pmRegionMatch = txt.match(/\[?\s*PM\s*판정\s*결과\s*\]?([\s\S]{0,200})/i);
+  const proposalScanTxt = propRegionMatch ? propRegionMatch[1] : txt;
+  const extractOpinionTypes = (scanTxt) => {
+    const types = [];
+    if (/시스템\s*개선/i.test(scanTxt)) types.push('시스템 개선');
+    if (/교육\s*[\/·]\s*코칭|작업팀\s*교육|협력사\s*교육|근로자\s*교육|코칭/i.test(scanTxt)) types.push('교육/코칭');
+    if (/제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기/i.test(scanTxt)) types.push('제재/징계');
+    if (/페널티|패널티/i.test(scanTxt)) types.push('페널티');
+    return Array.from(new Set(types));
+  };
+  const opinionTypes = extractOpinionTypes(proposalScanTxt);
+  const inspectorOpinionType = opinionTypes.length > 0 ? opinionTypes.join(', ') : '시스템 개선';
 
   // 점검단 제안 (앞의 '| -' 및 잡음 완벽 제거)
   let auditProposal = '';
@@ -1533,17 +1564,25 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     actionPlan = cleanActionPlan(mPlan[1]);
   }
 
-  // PM 판정결과 (원문 괄호 부제(이행강화방안수립/현장모니터링 강화 등) 보존)
-  const mIhSub = txt.match(/\(?\s*이행\s*강화[^)\n]{0,16}\)?/);
+  // PM 판정결과 (점검단 제안과 독립적으로 원문 유형 및 괄호 부제 보존)
+  const pmScanTxt = pmRegionMatch ? pmRegionMatch[1] : '';
+  const pmOpinionTypes = pmScanTxt ? extractOpinionTypes(pmScanTxt) : [];
+  const hasExplicitPmVerdict = pmOpinionTypes.length > 0;
+  const effectivePmTypes = hasExplicitPmVerdict ? pmOpinionTypes : opinionTypes;
+  const mIhSub = (pmScanTxt || txt).match(/\(?\s*이행\s*강화[^)\n]{0,16}\)?/);
   const normalizedIhSub = mIhSub ? (/방안|수립/.test(mIhSub[0]) ? '(이행강화방안수립)' : (mIhSub[0].startsWith('(') ? mIhSub[0] : `(${mIhSub[0]})`)) : '';
-  let pmVerdict = inspectorOpinionType;
-  let pmVerdictType = inspectorOpinionType;
-  const pmVerdictItems = opinionTypes.map(t => {
+  const mTeamWaitSub = (pmScanTxt || '').match(/\(?\s*해당\s*작업팀\s*대기\s*\)?/);
+  const mTeamEduSub = (pmScanTxt || '').match(/\(?\s*작업팀\s*교육\s*\)?/);
+  const pmVerdict = effectivePmTypes.length > 0 ? effectivePmTypes.join(', ') : inspectorOpinionType;
+  const pmVerdictType = pmVerdict;
+  const pmVerdictItems = effectivePmTypes.map(t => {
     let sub = '';
-    if (t.includes('시스템')) sub = normalizedIhSub || '(모니터링 강화)';
-    else if (t.includes('교육')) sub = '(근로자 교육)';
+    if (t.includes('제재') || t.includes('징계')) sub = mTeamWaitSub ? '(해당작업팀대기)' : '';
+    else if (t.includes('시스템')) sub = normalizedIhSub || '(모니터링 강화)';
+    else if (t.includes('교육')) sub = mTeamEduSub ? '(작업팀교육)' : '(근로자 교육)';
     return { type: t, sub };
   });
+  const pmVerdictSub = pmVerdictItems.map(it => it.sub).filter(Boolean).join(', ');
 
   const law = filterOnlyOccupationalSafetyLaw(rawLaw, `${content} ${workGroup}`);
 
@@ -1569,7 +1608,9 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     countermeasure: actionPlan,
     pmVerdict,
     pmVerdictType,
-    pmVerdictItems
+    pmVerdictSub,
+    pmVerdictItems,
+    _hasExplicitPmVerdict: hasExplicitPmVerdict
   };
 }
 
@@ -1903,11 +1944,14 @@ export function parseVerdictItemsFromText(txt, monitoringDefault = '(현장모�
     }
     items.push({ type: '시스템 개선', sub });
   }
-  if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사)\s*교육|코칭/i.test(s)) {
+  if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사|작업팀|해당\s*작업팀)\s*교육|코칭/i.test(s)) {
     let sub = '(근로자 교육)';
-    const mSub = s.match(/\(?\s*(?:근로자|협력사)\s*교육[^)\n]{0,12}\)?/);
-    if (mSub) {
-      const rawEdu = mSub[0].trim();
+    const mDirectEdu = s.match(/\(?\s*(?:근로자|협력사|작업팀|해당\s*작업팀)\s*교육[^)\n]{0,12}\)?/);
+    const mAfterEdu = s.match(/(?:교육\s*[\/·]\s*코칭|코칭)\s*\n?\s*(\(\s*[^()\n]{2,18}\s*\))/i);
+    const mSingleParen = !/시스템\s*개선|제재|징계|페널티|패널티/i.test(s) ? s.match(/\(\s*[^()\n]{2,18}\s*\)/) : null;
+    const pickedEdu = mDirectEdu?.[0] || mAfterEdu?.[1] || mSingleParen?.[0] || '';
+    if (pickedEdu && !/해당\s*작업팀\s*대기|제재|징계|모니터링|이행\s*강화/.test(pickedEdu)) {
+      const rawEdu = pickedEdu.trim();
       sub = rawEdu.startsWith('(') ? (rawEdu.endsWith(')') ? rawEdu : `${rawEdu})`) : `(${rawEdu.replace(/\)$/, '')})`;
     }
     items.push({ type: '교육/코칭', sub });
@@ -1920,6 +1964,18 @@ export function parseVerdictItemsFromText(txt, monitoringDefault = '(현장모�
       sub = rawPen.startsWith('(') ? (rawPen.endsWith(')') ? rawPen : `${rawPen})`) : `(${rawPen.replace(/\)$/, '')})`;
     }
     items.push({ type: '페널티', sub });
+  }
+  if (/제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업\s*중지|작업\s*대기/i.test(s)) {
+    let sub = '(해당작업팀대기)';
+    const mDirectSanc = s.match(/\(?\s*(?:해당\s*작업팀\s*대기|작업팀\s*대기|작업\s*중지|대상자\s*경고)[^)\n]{0,10}\)?/);
+    const mAfterSanc = s.match(/제재\s*[\/·]?\s*징계\s*\n?\s*(\(\s*[^()\n]{2,18}\s*\))/i);
+    const mSingleSanc = !/시스템\s*개선|교육\s*[\/·]\s*코칭|페널티|패널티/i.test(s) ? s.match(/\(\s*[^()\n]{2,18}\s*\)/) : null;
+    const pickedSanc = mDirectSanc?.[0] || mAfterSanc?.[1] || mSingleSanc?.[0] || '';
+    if (pickedSanc) {
+      const rawSanc = pickedSanc.trim();
+      sub = rawSanc.startsWith('(') ? (rawSanc.endsWith(')') ? rawSanc : `${rawSanc})`) : `(${rawSanc.replace(/\)$/, '')})`;
+    }
+    items.push({ type: '제재/징계', sub });
   }
   return items;
 }
@@ -1984,7 +2040,8 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   const subcontractor = cleanSubcontractor(tSubCell || (mSub ? mSub[1] : ''));
 
   const mWork = tMeta.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
-  const workGroup = cleanWorkGroup(tWorkCell || (mWork ? mWork[1] : ''), content) || '공통';
+  const rawWorkInput = tWorkCell || (mWork ? mWork[1] : '');
+  const workGroup = (rawWorkInput.trim() || content.trim()) ? cleanWorkGroup(rawWorkInput, content) : '';
 
   const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
   const location = cleanLocation(tLocCell || (mLoc ? mLoc[1] : ''), tLocCell, content);
@@ -2038,8 +2095,9 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   if (pmVerdictItems.length === 0 && proposalItems.length > 0 && tPmClean && /시스템|개선/.test(tPmClean)) {
     pmVerdictItems = proposalItems.map(it => ({ ...it }));
   }
-  const pmVerdictType = pmVerdictItems.map(p => p.type).join(', ') || inspectorOpinionType;
-  const pmVerdictSub = pmVerdictItems[0]?.sub || inspectorOpinionSub || '';
+  const hasExplicitPmVerdict = Boolean(pmVerdictItems.length > 0 || (tPmClean && tPmClean.length >= 2));
+  const pmVerdictType = pmVerdictItems.map(p => p.type).join(', ') || (hasExplicitPmVerdict ? tPmClean : inspectorOpinionType);
+  const pmVerdictSub = pmVerdictItems.length > 0 ? (pmVerdictItems[0].sub || '') : (hasExplicitPmVerdict ? '' : (inspectorOpinionSub || ''));
 
   const detectedSev = detectSeverityFromTypeBox(canvas, layout?.typeCell, tType);
   const severity = detectedSev || (allowDefaults ? '중부적합' : '');
@@ -2105,6 +2163,7 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     pmVerdictType,
     pmVerdictSub,
     pmVerdict: pmVerdictType,
+    _hasExplicitPmVerdict: hasExplicitPmVerdict,
     law,
     rawLaw: lawTitle,
     lawBody
@@ -2416,7 +2475,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
     type: '붕괴',
     law: '',
     subcontractor: '',
-    workGroup: '거푸집동바리공사',
+    workGroup: '',
     workMethod: '설치조립작업',
     workName: '설치조립작업',
     location: '',
@@ -2428,10 +2487,10 @@ export async function parseSheetCanvas(canvas, options = {}) {
     mgmtCauses,
     holdPoint: false,
     interviewOpinion: '',
-    inspectorOpinionType: '시스템 개선',
+    inspectorOpinionType: '',
     auditProposal: '',
-    pmVerdict: '시스템 개선',
-    pmVerdictType: '시스템 개선',
+    pmVerdict: '',
+    pmVerdictType: '',
     photos: extracted.photos,
     photo1: extracted.photos[0] || null,
     photo2: extracted.photos[1] || null,
@@ -2977,11 +3036,21 @@ export function shouldTriggerVisionRescue(cellTexts = {}, cellConfidences = {}, 
   const content = String(parsedFields.content || cellTexts.content || '').trim();
   if (!content || content.replace(/\s+/g, '').length < 6) return true;
 
-  // 6pt 작은 관련기준(law) 셀은 batch_classify AI가 산안규칙을 즉시 추론하므로 Vision Rescue(30초+) 트리거에서 제외하여 등록 속도 대폭 향상
+  // 6pt 관련기준(law) 셀은 1차로 normalizeSafetyLawSpec으로 복원하고, 그래도 심하게 깨진 비정상 토큰이 남은 저신뢰 경우에만 Vision Rescue 대상에 포함
   const coreKeys = ['content', 'interview', 'propText', 'cm'];
   const retryCount = coreKeys.filter((k) => Boolean(cellConfidences?.[k]?.needsVisionRetry)).length;
+  const rawLawText = String(parsedFields.rawLaw || cellTexts.law || '').trim();
+  const normalizedLaw = normalizeSafetyLawSpec({
+    rawLaw: rawLawText,
+    lawBody: parsedFields.lawBody || '',
+    law: parsedFields.law || '',
+    contextText: content
+  });
+  const hasCorruptLawToken = Boolean(cellConfidences?.law?.needsVisionRetry) &&
+    rawLawText.length >= 6 &&
+    /(?:안선작업|시심|주탁|닥아|방시시실|작입|IZ12B-10\/|\?{2,}|[가-힣]*\?[가-힣]*|\uFFFD)/.test(normalizedLaw.title || '');
   if (retryCount >= 3) return true;
-  if (retryCount >= 2 && Boolean(cellConfidences?.content?.needsVisionRetry)) return true;
+  if (retryCount >= 2 && (Boolean(cellConfidences?.content?.needsVisionRetry) || hasCorruptLawToken)) return true;
 
   const contentCorrupted = /\uFFFD|\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))|[A-Za-z]{2,}(?=[가-힣])|[가-힣](?=[a-z]{2,})/.test(content)
     || /[가-힣]{16,}/.test(content);

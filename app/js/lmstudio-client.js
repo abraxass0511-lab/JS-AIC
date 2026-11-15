@@ -295,9 +295,10 @@
     // 7-B. 지게차 / 하역운반 / 유도원 근접 충돌
     if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
       const isWindow = /pl\s*창호|창호|유리/i.test(text);
+      const isPc = /p\.?c\s*공사|피씨|프리캐스트|\bpc\b/i.test(text);
       return {
         item: '운반장비',
-        workGroup: isWindow ? '창호공사(PL)' : '양중 및 운반작업',
+        workGroup: isWindow ? '창호공사(PL)' : (isPc ? 'PC공사' : '가설공사(건설장비)'),
         workMethod: '하역운반작업',
         agentMajor: '건설장비',
         agentMid: '운반장비',
@@ -824,11 +825,18 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   }
 
   function cleanBannerText(rawBanner, content, location = '') {
+    if (typeof window !== 'undefined' && window.SafeTextNormalizer?.resolveUnifiedPhotoBanner) {
+      const unified = window.SafeTextNormalizer.resolveUnifiedPhotoBanner({
+        photoBanner: rawBanner,
+        content,
+        location
+      });
+      if (unified) return unified;
+    }
     if (typeof window !== 'undefined' && window.SafeTextNormalizer?.extractCoreViolationBanner) {
-      let b = String(rawBanner || '').trim();
+      let b = String(rawBanner || '').replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ').trim();
       b = healSafetyKoreanLexicon(b)
-        .replace(/^[①②③④⑤⑥⑦⑧⑨⑩123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
-        .replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, '')
+        .replace(/^[123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
         .replace(/벽의음/g, '벽이음')
         .replace(/6055/g, '60도↓')
         .replace(/6\/『|6\//g, 'E/V')
@@ -851,33 +859,37 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
   function cleanWorkGroup(wg, content) {
     if (typeof window !== 'undefined' && window.SafeTextNormalizer?.mapToStandardWorkGroup) {
-      return window.SafeTextNormalizer.mapToStandardWorkGroup(wg, content) || '공통';
+      return window.SafeTextNormalizer.mapToStandardWorkGroup(wg, content) || '건축공사(기타)';
     }
     let s = String(wg || '').trim();
     s = s.replace(/^(?:HEY|HA|HE|공종명?)\s*[:;：]?\s*/i, '');
     s = s.replace(/[_|ㅣ¦!\[\]~—\-\r\n]+/g, ' ');
     s = s.replace(/[^가-힣a-zA-Z0-9·()\/\s]/g, '');
     s = s.replace(/\s+/g, ' ').trim();
+    if (s === '양중 및 운반작업' || s === '양중작업' || s === '공통') s = '';
     if (/^(?:HA|HE|HEY|BEE)\s*공사/i.test(s)) return '비계공사';
     if (/pl\s*창호|플라스틱\s*창호/i.test(s)) return '창호공사(PL)';
     if (/^가설\s*전기(?:\s*공사)?$/i.test(s)) return '가설전기공사';
+    if (/^p\.?c\s*(?:공사|작업)?$|^피씨\s*공사$|프리캐스트/i.test(s)) return 'PC공사';
     const ctx = String(content || '');
+    const hasElecOrWinCtx = /창호|pl\s*창호|분전반|분전함|차단기|충전부|누전|가설전선|접지선|전등|소켓|심선/.test(ctx);
+    const hasFormCtx = /형틀|거푸집|동바리|유로폼|알폼|갱폼|서포트/.test(ctx);
     const isSuspiciousDefault =
-      s === '거푸집동바리공사' ||
+      (s === '거푸집동바리공사' && !hasFormCtx && hasElecOrWinCtx) ||
       (s === '가설공사(기타)' && /전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|분전반|분전함|차단기|충전부|누전|접지선|가설전선|가설전기/.test(ctx));
     if (s && s.length >= 2 && !isSuspiciousDefault) {
       return s;
     }
-    if (s === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(ctx)) {
+    if (s === '거푸집동바리공사' && (hasFormCtx || !hasElecOrWinCtx)) {
       return '거푸집동바리공사';
     }
     if (/pl\s*창호/i.test(ctx)) return '창호공사(PL)';
     if (/분전함|분전반|차단기|충전부|누전|가설전선|접지선|전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|전기/i.test(ctx)) return '가설전기공사';
-    if (/지게차|하역|운반/i.test(ctx)) return '양중 및 운반작업';
-    if (/양중|타워크레인|크레인|인양|유도로프/i.test(ctx)) return '양중작업';
+    if (/p\.?c\s*공사|피씨\s*공사|프리캐스트|pc\s*(?:기둥|보|슬래브|부재)/i.test(ctx)) return 'PC공사';
+    if (/거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지|형틀/i.test(ctx)) return '거푸집동바리공사';
     if (/비계|작업발판|안전난간|개구부/i.test(ctx)) return '비계공사';
-    if (/거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지/i.test(ctx)) return '거푸집동바리공사';
-    return s || '공통';
+    if (/지게차|하역|운반|양중|타워크레인|크레인|인양|유도로프/i.test(ctx)) return '가설공사(건설장비)';
+    return s || '건축공사(기타)';
   }
 
   function cleanOpinionText(txt) {
@@ -926,7 +938,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!txt) return '';
     let s = healSafetyKoreanLexicon(String(txt))
       .replace(/\[?(?:점검단|HAT)\s*제안\]?/gi, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
+      .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|패널티|페널티|\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사|작업팀|해당\s*작업팀)\s*교육\s*\)|\(\s*해당\s*작업팀\s*대기\s*\)|\(관리감독자\s*경고\)/gi, '')
       .replace(/^(?:[-•*·▪\s]*)(?:De\s*T=?\s*©?|oo\s*Tle\s*©?|구시\s*으\s*기느으|oo\s*기느으|구시\s*으|기느으|-?\s*SHE\s*SEA)[\s\S]*?(?=\d|1차|-|[가-힣]{2})/gi, '')
       .replace(/De\s*T=?\s*©?|구시\s*으\s*기느으|oo\s*Tle\s*©?|oo\s*기느으|SHE\s*SEA/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
@@ -966,8 +978,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     }
     let cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
-      .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
-      .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/g, '')
+      .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|패널티|페널티/gi, '')
+      .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)|\(\s*해당\s*작업팀\s*대기\s*\)|\(\s*작업팀\s*교육\s*\)/g, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '');
     cleanedStr = (typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets)
       ? window.SafeTextNormalizer.splitInlineBullets(cleanedStr)
@@ -983,7 +995,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]/s.test(line);
       let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
-      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
+      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업팀\s*교육)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
         return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
@@ -1141,16 +1153,21 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 if (!fallbackRecord.photo2Title) fallbackRecord.photo2Title = cfData.photo2Banner;
               }
               if (cfData.pmVerdict) {
-                fallbackRecord.pmVerdict = cfData.pmVerdict;
+                const incomingPm = String(cfData.pmVerdict).trim();
+                const hasExplicitPm = Boolean(
+                  fallbackRecord._hasExplicitPmVerdict ||
+                  (Array.isArray(fallbackRecord.pmVerdictItems) && fallbackRecord.pmVerdictItems.length > 0)
+                );
                 const hasSheetPropType = Boolean(
                   fallbackRecord._hasExplicitPropType ||
                   (Array.isArray(fallbackRecord.proposalItems) && fallbackRecord.proposalItems.length > 0 && fallbackRecord.inspectorOpinionType)
                 );
                 if (!hasSheetPropType) {
-                  fallbackRecord.inspectorOpinionType = cfData.pmVerdict;
+                  fallbackRecord.inspectorOpinionType = incomingPm;
                 }
-                if (!Array.isArray(fallbackRecord.pmVerdictItems) || fallbackRecord.pmVerdictItems.length === 0) {
-                  fallbackRecord.pmVerdictType = cfData.pmVerdict;
+                if (!hasExplicitPm) {
+                  fallbackRecord.pmVerdict = incomingPm;
+                  fallbackRecord.pmVerdictType = incomingPm;
                 }
               }
               // 주의: 장표에서 픽셀로 직접 감지한 4대 발생요인(mgmtCauses)이 이미 있으면 AI 추론값으로 절대 덮어쓰지 않음!
@@ -1231,6 +1248,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   }
                 }
                 sanitizeDomainMismatchedLaw(fallbackRecord);
+                if (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
+                  const normalizedSpec = window.SafeTextNormalizer.normalizeSafetyLawSpec({
+                    rawLaw: fallbackRecord.rawLaw || '',
+                    lawBody: fallbackRecord.lawBody || '',
+                    law: fallbackRecord.law || '',
+                    contextText: `${fallbackRecord.workGroup || ''} ${fallbackRecord.content || ''} ${fallbackRecord.type || ''}`
+                  });
+                  if (normalizedSpec.title) fallbackRecord.rawLaw = normalizedSpec.title;
+                  if (normalizedSpec.body !== undefined) fallbackRecord.lawBody = normalizedSpec.body;
+                }
               }
               if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText || wantVision)) {
                 fallbackRecord.photoBanner = cleanBannerText(cfData.photoBanner, fallbackRecord.content, fallbackRecord.location);
@@ -1384,8 +1411,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
       if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
         rec.workGroup = cleanWorkGroup(rawWorkFromSheet, rec.content);
-      } else if (!rec.workGroup || rec.workGroup === '거푸집동바리공사') {
-        rec.workGroup = cleanWorkGroup(r.workGroup || rec.workGroup, rec.content);
+      } else if (!rec.workGroup) {
+        rec.workGroup = cleanWorkGroup(r.workGroup || '', rec.content);
       } else {
         rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
       }
@@ -1462,6 +1489,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         content: rec.content || '',
         banner: rec._rawCellTexts?.banner || rec.photoBanner || '',
         lawRaw: rec.rawLaw || rec.law || '',
+        lawBody: rec.lawBody || '',
+        pmVerdict: rec.pmVerdictType || rec.pmVerdict || '',
         interview: rec.interviewOpinion || '',
         proposalText: rec.auditProposal || '',
         countermeasure: rec.actionPlan || rec.countermeasure || '',
@@ -1512,30 +1541,34 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           for (const f of taxFields) {
             if (aiItem[f]) rec[f] = aiItem[f];
           }
-          // 장표 원문 공종명을 표준 분류표(작업분류표.jpg: 창호공사(PL), 가설전기공사 등) 기준으로 정규화
+          // 장표 원문 공종명을 표준 분류표(작업분류표.jpg: PC공사, 거푸집동바리공사, 창호공사(PL), 가설전기공사 등) 기준으로 정규화
           const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
           if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
             rec.workGroup = cleanWorkGroup(rawWorkFromSheet, rec.content);
-          } else if (aiItem.workGroup && (!rec.workGroup || rec.workGroup === '거푸집동바리공사')) {
+          } else if (rec.workGroup && (!aiItem.workGroup || rec.workGroup === 'PC공사' || rec.workGroup === '거푸집동바리공사')) {
+            rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
+          } else if (aiItem.workGroup) {
             rec.workGroup = cleanWorkGroup(aiItem.workGroup, rec.content);
           } else {
             rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
           }
-          // 1) AI 전수 교정(edits 또는 fixedFields: 띄어쓰기 + 스캔 오탈자 + 말미 영문 노이즈 제거) 우선 반영
+          // 1) AI 전수 교정(edits 또는 fixedFields: 띄어쓰기 + 스캔 오탈자 + [관련 기준] 제목/본문 교정) 우선 반영
           // 단, Selective Vision Rescue(_visionCleaned)로 픽셀 직독 완료된 레코드는 텍스트 재추론으로 덮어쓰지 않음
           const aiPatchObj = (aiItem.edits && typeof aiItem.edits === 'object')
             ? aiItem.edits
             : ((aiItem.fixedFields && typeof aiItem.fixedFields === 'object') ? aiItem.fixedFields : null);
           if (!rec._visionCleaned && aiPatchObj) {
             const ff = aiPatchObj;
-            const applyFixedField = (key, rawVal, cleanerFn, syncKey) => {
+            const applyFixedField = (key, rawVal, cleanerFn, syncKey, maxRatio = 1.85) => {
               if (typeof rawVal !== 'string') return;
               const v = rawVal.trim();
               const orig = String(rec[key] || '').trim();
-              if (!v || !orig || /\uFFFD/.test(v) || isFieldKeyLiteral(v)) return;
+              if (!v || /\uFFFD/.test(v) || isFieldKeyLiteral(v)) return;
+              if (!orig) return;
+              if (key === 'rawLaw' && /\[?\s*I?Z\d/i.test(orig) && !/\[?\s*I?Z\d/i.test(v)) return;
               const vCompactLen = v.replace(/\s+/g, '').length;
               const oCompactLen = orig.replace(/\s+/g, '').length;
-              if (oCompactLen > 0 && (vCompactLen < oCompactLen * 0.45 || vCompactLen > oCompactLen * 1.85)) return;
+              if (oCompactLen > 0 && (vCompactLen < oCompactLen * 0.40 || vCompactLen > oCompactLen * maxRatio)) return;
               const normFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
                 ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, key === 'interviewOpinion' ? 'interview' : key)
                 : (s) => s;
@@ -1551,6 +1584,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             applyFixedField('interviewOpinion', ff.interview || ff.interviewOpinion, cleanOpinionText);
             applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
             applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
+            applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw, null, null, 2.8);
+            applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
           }
           const rawBannerOrigBeforePatch = String(rec._rawCellTexts?.banner || rec.photoBanner || '').trim();
           const hasTypoPatchForBanner = Boolean(
@@ -1572,7 +1607,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           }
           const normBannerFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
             ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, 'banner')
-            : (s) => s;
+            : (s) => String(s || '').replace(/[\u2460-\u2487\u2776-\u277F]/g, '').trim();
           const rawBannerOrig = rawBannerOrigBeforePatch;
           const rawBannerFromSheet = normBannerFn(rawBannerOrig);
           const aiBanner = normBannerFn(String(aiItem.photoBanner || aiPatchObj?.photoBanner || aiPatchObj?.banner || '').trim());
@@ -1585,7 +1620,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             aiBanner && !isLocBanner(aiBanner) && !/\uFFFD/.test(aiBanner) &&
             aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner) && aiBanner.length >= 4
           );
-          // AI 배너가 원본 OCR 배너의 띄어쓰기/오탈자 교정본(고유사도)이거나 원본 신뢰도가 낮을 때 AI 교정 배너 우선 채택
           const isAiRefinementOfRaw = (() => {
             if (!canUseAiBanner || !rawBannerFromSheet) return false;
             const aC = aiBanner.replace(/\s+/g, '');
@@ -1610,7 +1644,17 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           } else {
             rec.photoBanner = summarizeContentToBanner(rec.content);
           }
-          if (aiItem.law && !rec.law) rec.law = aiItem.law;
+          if (aiItem.law && (!rec.law || aiItem.lawMatched === false)) rec.law = aiItem.law;
+          if (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
+            const specFixed = window.SafeTextNormalizer.normalizeSafetyLawSpec({
+              rawLaw: rec.rawLaw || '',
+              lawBody: rec.lawBody || '',
+              law: rec.law || '',
+              contextText: `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''}`
+            });
+            if (rec.rawLaw && specFixed.title) rec.rawLaw = specFixed.title;
+            if (typeof rec.lawBody === 'string' && specFixed.body !== undefined) rec.lawBody = specFixed.body;
+          }
           rec._aiCleaned = true;
         });
         return applyLocalTaxonomyToRecords(records, { preserveAiFields: true });

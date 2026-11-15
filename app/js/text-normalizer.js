@@ -170,6 +170,7 @@ const DOMAIN_TYPO_MAP = [
   [/내속(?=\s|난간)/g, '내측'],
   [/\(흥로\)/g, '(종로)'],
   [/[적서][검걸걱]단/g, '점검단'],
+  [/안[선전]\s*작[업엄]\s*[지시][침심]/g, '안전작업지침'],
   [/([다요음함됨임]\.?)\s*[a-zA-Z]{1,3}$/gm, '$1']
 ];
 
@@ -317,6 +318,11 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/(소화튜브)\s*(부착)/g, '$1 $2')
     .replace(/(점검)\s*(등)\s*(유지관리|모니터링|조치|미비)/g, '$1 $2 $3')
     .replace(/(유도업무)\s*(재교육)/g, '$1 $2')
+    .replace(/(단부|상부|하부|슬래브|작업발판|발판|비계|동바리|거푸집|개구부|안전대|생명줄|분전반|접지선|크레인|지게차|지반|사면|시설|장비|작업자|근로자)의(?=[가-힣]{2,})/g, '$1의 ')
+    .replace(/([가-힣])([을를])(?=(?:설치|조치|작성|실시|착용|체결|확보|준수|유지|제거|정비|배치|고정|금지|확인|점검|통제|방지|보호|수립|운영|관리))/g, '$1$2 ')
+    .replace(/(처짐|돌출|이격|침하|변형|마모|부식|균열|누설|노출)(과다|불량|미흡|누락|부족)/g, '$1 $2')
+    .replace(/(미고박\s*상태|수평\s*상태|개방\s*상태|무단\s*상태|불안정\s*상태)(?=[가-힣])/g, '$1 ')
+    .replace(/(양중작업|하역작업|고소작업|굴착작업|해체작업|용접작업|비계작업)시(?=[가-힣\s]|$)/g, '$1 시')
     .replace(/(재교육)\s*(실시)/g, '$1 $2')
     .replace(/(동일\s*사항)\s*(재발)/g, '동일사항 $2')
     .replace(/(유도원)\s*(자격)/g, '$1 $2')
@@ -331,36 +337,43 @@ export function normalizeKoreanSpacing(str = '') {
  */
 export const OFFICIAL_WORK_GROUPS = [
   // 공통공사
-  '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(기타)', '가설도로공사',
-  '비계공사', '안전시설공사', '양중 및 운반작업', '해체/철거공사',
+  '현장관리', '청소',
   // 건축공사
-  '가설울타리공사', '거푸집공사(갱폼)', '거푸집공사(특수폼: ACS, RCS등)', '거푸집동바리공사',
-  '경량기포콘크리트공사', '금속공사', '내화피복공사', '단열공사', '도배공사', '도장공사',
-  '돌(석)공사', '목공사', '미장공사', '방수/방습공사', '보온공사', '수장공사', '시트방수공사',
-  '외벽마감공사', '유리공사', '잡철물공사', '조적공사', '지붕및홈통공사',
-  '창호공사(AL)', '창호공사(PL)', '창호공사(STL)', '창호공사(기타)', '창호공사(목창호)',
-  '철골공사', '철근공사', '콘크리트공사', '코킹공사', '타일공사', '특수건축공사', '파일공사',
+  '가설공사(안전시설물)', '가설공사(기타)', '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(건설장비)',
+  '비계공사', '철거공사(구조물)', '철거공사(석면)', 'PC공사', '거푸집동바리공사', '거푸집공사(갱폼)', '거푸집공사(특수폼: ACS, RCS등)',
+  '철근공사', '철골공사', '데크플레이트공사', '조적공사', '미장공사', '견출공사', '방수공사', '타일공사', '석공사',
+  '커튼월공사', '창호공사(STL)', '창호공사(AL)', '창호공사(PL)', '창호공사(목창호)', '창호공사(기타)',
+  '외장판넬공사', '유리공사', '코킹공사', '수장공사', '인테리어공사', '흡음/내화/단열공사', '금속공사', '잡철공사',
+  '지붕/홈통공사', '도장공사', '가구공사', '도배공사', '차별화공사', '기타마감공사', '건축공사(기타)',
   // 전기공사
-  '가설전기공사', '구내통신설비공사', '동력설비공사', '방재설비공사', '배관배선공사',
-  '수변전설비공사', '신재생에너지설비공사', '옥외전기공사', '전등전열설비공사', '전력간선설비공사',
-  '전선관공사', '접지/피뢰설비공사', '정보통신설비공사', '조명설비공사', '자동제어설비공사',
-  '케이블트레이공사', '기타전기공사',
+  '가설전기공사', '수변전설비공사', '전선Tray, Duct설치공사', 'Busduct설치공사', 'MCC분전반설치공사',
+  '전선관공사', '전선설치공사', '전등공사', '전열공사', '접지공사', '피뢰침공사', '전기공사(기타)',
+  '장비설치공사(전기)', '유도등공사', '통신공사', '엘리베이터공사', '에스컬레이터공사', '자동제어공사',
+  '전력간선공사', '자동화재탐지설비공사', '소방설비공사(기타)', '방송설비공사', 'CCTV공사',
+  '전력제어공사', '동력공사', '예비전력설비공사',
   // 설비공사
-  '가스설비공사', '공조덕트설비공사', '급배수/위생설비공사', '기계실설비공사', '난방설비공사',
-  '냉난방설비공사', '배관설비공사', '보온설비공사', '소방기계설비공사', '소화설비공사',
-  '수처리설비공사', '승강기설비공사', '열원설비공사', '위생기구설비공사', '자동크린넷설비공사',
-  '장비설치공사', '제연설비공사', '플랜트배관설비공사', '환기설비공사', '기타설비공사',
-  // 토목공사
-  '관로공사', '교량공사', '굴착공사', '기초공사', '도로포장공사', '동바리공사', '배수공사',
-  '법면보호공사', '부대토목공사', '상하수도공사', '성토/절토공사', '암파쇄공사', '옹벽공사',
-  '지반개량공사', '차수공사', '철거구조물공사', '터널공사', '터파기공사', '토공사', '토류벽공사',
-  '포장공사', '하천공사', '항만공사', '흙막이/차수공사', '기타토목공사',
-  // 조경공사
-  '기반조성공사', '부대조경공사', '수목식재공사', '시설물설치공사', '잔디식재공사',
-  '조경구조물공사', '조경시설물공사', '조경식재공사', '조경포장공사', '기타조경공사',
+  '설비공사(기타)', '배관공사(옥외)', '배관공사(기계실)', '배관공사(냉난방)', '배관공사(소화)', '배관공사(가스)', '배관공사(위생)', '배관공사(기타)',
+  '장비설치공사(설비)', '일반덕트공사', '위생기구설치공사', '보온공사', '가스, PCW공사', '지열공사', '시운전/점검',
+  '정화조공사', '재생에너지설비공사', '수영장/사우나설비공사', '에어컨/환기공사', '모듈공사', '특수설비공사',
+  '시스템실링공사', '어세스플로어공사', '파이프렉공사',
   // 플랜트공사
-  '배관설치공사', '보온도장공사', '비파괴검사', '시운전작업', '전기계장공사', '기계설치공사', '철골설치공사', '탱크설치공사'
+  '배관공사', '터빈공사(가스)', '터빈공사(증기)', '탱크공사', '보일러공사', '탈황설비공사', '집진설비공사',
+  '암모니아설비공사', '석탄이송설비공사', '석탄저장설비공사', '석탄미분설비공사', '연돌공사', '보조보일러공사',
+  // 토목공사
+  '지장물이설공사', '터파기공사', '발파공사', '부지정지공사', '사면안정화공사', '연약지반처리공사',
+  '가시설공사', '흙막이/차수공사', '배수공사', '기설말뚝공사', '현장타설말뚝공사', '기타말뚝공사',
+  '배수및관로공사', '오수공사', '토목부대설비공사', '공동구공사', '옹벽공사',
+  '포장공사(아스팔트)', '포장공사(콘크리트)', '포장공사(기타)',
+  // 조경공사
+  '조경식재공사', '조경시설물공사',
+  // 기타
+  '기타'
 ];
+
+const INVALID_WORK_GROUP_ALIASES = new Set([
+  '양중 및 운반작업', '양중및운반작업', '양중작업', '양중공사', '운반작업',
+  '공통', '공통공사', '건축공사', '전기공사', '설비공사', '토목공사', '플랜트공사', '조경공사', '미분류'
+]);
 
 /**
  * 장표 공종명 및 부적합 내용을 표준 작업분류표(작업분류표.jpg) 공식 명칭으로 100% 매핑
@@ -373,60 +386,91 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
     .replace(/\s+/g, ' ')
     .trim();
 
+  if (INVALID_WORK_GROUP_ALIASES.has(w)) {
+    w = '';
+  }
+
   const ctx = String(contentText || '');
   const comb = `${w} ${ctx}`;
 
+  const hasFormworkSignal = /형틀|거푸집|동바리|유로폼|알폼|갱폼|서포트|슬래브|전도방지|특수폼/.test(ctx);
+  const hasStrongElecOrWindowSignal = /창호|pl\s*창호|전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|분전반|분전함|차단기|충전부|누전|접지선|가설전선|가설전기/.test(ctx);
   const isSuspiciousDefaultGroup =
-    w === '거푸집동바리공사' ||
+    (w === '거푸집동바리공사' && !hasFormworkSignal && hasStrongElecOrWindowSignal) ||
     (w === '가설공사(기타)' && /전등|소켓|투광등|심선|절연\s*불량|전선\s*연결|분전반|분전함|차단기|충전부|누전|접지선|가설전선|가설전기/.test(ctx));
 
-  // 1) 이미 공식 분류표에 정확히 일치하는 명칭인 경우 (단, 기본값 오분류 '거푸집동바리공사' 및 전기 문맥의 '가설공사(기타)'는 문맥 검증)
-  if (OFFICIAL_WORK_GROUPS.includes(w) && !isSuspiciousDefaultGroup) {
+  // 1) 이미 공식 작업분류표에 정확히 일치하는 명칭인 경우 (명백한 이종 문맥 오분류만 예외)
+  if (w && OFFICIAL_WORK_GROUPS.includes(w) && !isSuspiciousDefaultGroup) {
     return w;
   }
 
-  // 2) 창호공사 세부분류 (건축공사 > 창호공사(PL), 창호공사(AL), 창호공사(STL), 창호공사(목창호), 창호공사(기타))
+  // 2) 창호공사 세부분류 (건축공사 > 창호공사(STL/AL/PL/목창호/기타))
   if (/pl\s*창호|창호\s*\(\s*pl\s*\)|피엘\s*창호/i.test(comb)) return '창호공사(PL)';
   if (/al\s*창호|창호\s*\(\s*al\s*\)|알루미늄\s*창호/i.test(comb)) return '창호공사(AL)';
   if (/stl\s*창호|창호\s*\(\s*stl\s*\)|스틸\s*창호|철재\s*창호/i.test(comb)) return '창호공사(STL)';
   if (/목\s*창호/i.test(comb)) return '창호공사(목창호)';
   if (/창호/.test(w)) return '창호공사(기타)';
 
-  // 3) 전기공사 세부분류 (전기공사 > 가설전기공사 등)
+  // 3) 전기공사 세부분류 (전기공사 > 작업분류표.jpg 공식 명칭)
   if (/^가설\s*전기(?:공사)?$|^임시\s*전기|^설비[·/]전기/i.test(w) || (/전기|분전|접지|차단기|전선|전등|소켓|심선|충전부/.test(w) && /가설|임시|분전반|분전함|컨테이너|전등|소켓|심선|충전부/.test(comb))) {
     return '가설전기공사';
   }
   if (/수변전/.test(comb)) return '수변전설비공사';
+  if (/bus\s*duct|버스덕트/i.test(comb)) return 'Busduct설치공사';
+  if (/mcc\s*분전반/i.test(comb)) return 'MCC분전반설치공사';
+  if (/케이블\s*트레이|tray/i.test(comb)) return '전선Tray, Duct설치공사';
   if (/전선관/.test(comb)) return '전선관공사';
-  if (/케이블\s*트레이/.test(comb)) return '케이블트레이공사';
-  if (/구내\s*통신/.test(comb)) return '구내통신설비공사';
-  if (/정보\s*통신/.test(comb)) return '정보통신설비공사';
-  if (/전등\s*전열/.test(comb)) return '전등전열설비공사';
-  if (/조명\s*설비/.test(w)) return '조명설비공사';
-  if (/접지|피뢰/.test(w) && !/가설|분전/.test(comb)) return '접지/피뢰설비공사';
+  if (/구내\s*통신|정보\s*통신|통신/.test(w)) return '통신공사';
+  if (/피뢰/.test(w)) return '피뢰침공사';
+  if (/접지/.test(w) && !/가설|분전/.test(comb)) return '접지공사';
+  if (/전등\s*전열/.test(w)) return '전등공사';
+  if (/전등|조명\s*설비/.test(w)) return '전등공사';
+  if (/전열/.test(w)) return '전열공사';
+  if (/유도등/.test(w)) return '유도등공사';
+  if (/전력\s*간선/.test(w)) return '전력간선공사';
+  if (/자동\s*제어/.test(w)) return '자동제어공사';
   if (/분전반|분전함|누전차단기|가설전선|가설전기|충전부|전등\s*소켓|전등\s*관리|투광등|심선\s*노출|전선\s*절연|전선\s*연결/.test(comb)) return '가설전기공사';
-  if (/전기/.test(w)) return '기타전기공사';
+  if (/전기/.test(w)) return '전기공사(기타)';
 
-  // 4) 건축/공통/토목 주요 공사 매핑
+  // 4) 건축/공통/토목/설비 주요 공사 매핑 (작업분류표.jpg 공식 명칭만 반환)
+  if (/^p\.?c\s*(?:공사|작업)?$|^피씨\s*공사$|프리캐스트/i.test(w)) return 'PC공사';
   if (/^(?:HA|HE|HEY|BEE)\s*공사$/i.test(w) || /비계/.test(w)) return '비계공사';
   if (/갱폼|gang\s*form/i.test(w)) return '거푸집공사(갱폼)';
   if (/acs|rcs|슬립폼|특수폼/i.test(w)) return '거푸집공사(특수폼: ACS, RCS등)';
-  if (w === '거푸집동바리공사' && /거푸집|동바리|유로폼|알폼|갱폼|서포트|전도방지|슬래브|벽체/i.test(ctx)) {
+  if (w === '거푸집동바리공사' && (hasFormworkSignal || !hasStrongElecOrWindowSignal)) {
     return '거푸집동바리공사';
   }
-  if (/흙막이|차수/.test(w)) return '흙막이/차수공사';
-  if (/터파기/.test(w)) return '터파기공사';
-  if (/굴착/.test(w)) return '굴착공사';
-  if (/파일|항타/.test(w)) return '파일공사';
+  if (/거푸집|동바리|유로폼|알폼|서포트/.test(w)) return '거푸집동바리공사';
+  if (/커튼월/.test(w)) return '커튼월공사';
+  if (/외장\s*판넬|외장패널|외부\s*판넬/.test(w)) return '외장판넬공사';
+  if (/흙막이|차수|토류벽/.test(w)) return '흙막이/차수공사';
+  if (/터파기|굴착/.test(w)) return '터파기공사';
+  if (/파일|항타|말뚝/.test(w)) return /기설/.test(w) ? '기설말뚝공사' : '현장타설말뚝공사';
   if (/타워크레인/.test(w)) return '가설공사(타워크레인)';
   if (/리프트|호이스트/.test(w)) return '가설공사(건설용리프트)';
-  if (/해체|철거/.test(w)) return '해체/철거공사';
-  if (/방수|방습/.test(w)) return '방수/방습공사';
-  if (/석공사|돌공사/.test(w)) return '돌(석)공사';
+  if (/장비|크레인|지게차|굴삭기|고소작업대|이동식\s*크레인/.test(w)) return '가설공사(건설장비)';
+  if (/안전시설|안전난간|개구부|추락방지|낙하물방지/.test(w)) return '가설공사(안전시설물)';
+  if (/해체|철거/.test(w)) return /석면/.test(comb) ? '철거공사(석면)' : '철거공사(구조물)';
+  if (/방수|방습/.test(w)) return '방수공사';
+  if (/석공사|돌공사|돌\s*\(\s*석\s*\)/.test(w)) return '석공사';
+  if (/지붕|홈통/.test(w)) return '지붕/홈통공사';
+  if (/흡음|내화|단열/.test(w)) return '흡음/내화/단열공사';
+  if (/잡철/.test(w)) return '잡철공사';
+  if (/승강기|엘리베이터/.test(w)) return '엘리베이터공사';
+  if (/에스컬레이터/.test(w)) return '에스컬레이터공사';
+  if (/공조|덕트/.test(w)) return '일반덕트공사';
+  if (/보온/.test(w)) return '보온공사';
+  if (/가스/.test(w)) return '배관공사(가스)';
+  if (/소화|소방/.test(w)) return '배관공사(소화)';
+  if (/냉난방/.test(w)) return '배관공사(냉난방)';
+  if (/급배수|위생/.test(w)) return /기구/.test(w) ? '위생기구설치공사' : '배관공사(위생)';
+  if (/배관/.test(w)) return '배관공사(기타)';
+  if (/가설\s*울타리|가설\s*휀스|가설\s*펜스|가설\s*도로|가설\s*공사/.test(w)) return '가설공사(기타)';
+  if (/콘크리트|타설/.test(w)) return '건축공사(기타)';
   if (/철근\s*콘크리트/.test(w)) {
     if (/철근/.test(ctx) && !/거푸집|동바리|타설/.test(ctx)) return '철근공사';
-    if (/타설|콘크리트/.test(ctx) && !/거푸집|동바리/.test(ctx)) return '콘크리트공사';
-    return '거푸집동바리공사';
+    if (/거푸집|동바리|형틀|슬래브/.test(ctx)) return '거푸집동바리공사';
+    return '건축공사(기타)';
   }
 
   if (w && !isSuspiciousDefaultGroup) {
@@ -434,24 +478,29 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
     if (snapped) return snapped;
   }
 
-  // 5) 공종 셀이 비어있거나 기본값 오분류였을 때 부적합 내용(ctx)으로 추론
+  // 5) 공종 셀이 비어있거나 무효 별칭일 때 부적합 내용(ctx)으로 작업분류표 기준 추론
   if (/pl\s*창호/i.test(ctx)) return '창호공사(PL)';
   if (/유리\s*하역|유리\s*설치|유리공사/.test(ctx)) return '유리공사';
   if (/분전반|분전함|차단기|충전부|누전|가설전선|접지선|전등|소켓|투광등|심선|절연\s*불량|전선\s*연결/.test(ctx)) return '가설전기공사';
-  if (/지게차|하역|운반|양중|유도로프|크레인/.test(ctx)) return '양중 및 운반작업';
+  if (/p\.?c\s*공사|피씨\s*공사|프리캐스트|pc\s*(?:기둥|보|슬래브|부재|자재)/i.test(ctx)) return 'PC공사';
+  if (/형틀|거푸집|동바리|유로폼|알폼|갱폼|서포트/.test(ctx)) return '거푸집동바리공사';
+  if (/타워크레인/i.test(ctx)) return '가설공사(타워크레인)';
+  if (/리프트|호이스트/i.test(ctx)) return '가설공사(건설용리프트)';
+  if (/지게차|하역|운반|양중|유도로프|크레인|카고/.test(ctx)) return '가설공사(건설장비)';
   if (/비계|작업발판|말비계|벽이음|가새|밑둥잡이/.test(ctx)) return '비계공사';
   if (/갱폼|gang\s*form/i.test(ctx)) return '거푸집공사(갱폼)';
-  if (/거푸집|동바리|유로폼|알폼|서포트|전도방지/.test(ctx)) return '거푸집동바리공사';
   if (/흙막이/.test(ctx)) return '흙막이/차수공사';
-  if (/파일\s*천공|항타/.test(ctx)) return '파일공사';
+  if (/터파기|굴착/.test(ctx)) return '터파기공사';
+  if (/파일\s*천공|항타/.test(ctx)) return '현장타설말뚝공사';
   if (/철근/.test(ctx)) return '철근공사';
-  if (/콘크리트|타설/.test(ctx)) return '콘크리트공사';
-  if (/안전난간|개구부/.test(ctx)) return '안전시설공사';
+  if (/콘크리트|타설/.test(ctx)) return '건축공사(기타)';
+  if (/안전난간|개구부|안전시설/.test(ctx)) return '가설공사(안전시설물)';
+  if (/현장관리/.test(ctx)) return '현장관리';
 
-  return w || '안전시설공사';
+  return (w && OFFICIAL_WORK_GROUPS.includes(w)) ? w : '건축공사(기타)';
 }
 
-const BANNER_DEFECT_SIGNAL_RE = /(?:불량|미흡|누락|노출|파손|훼손|변형|이탈|탈락|부족|위험|우려|방치|위반|금지|불가|누출|누전|침하|균열|전도|추락|낙하|충돌|감전|붕괴|협착|화재|폭발|역화|근접|혼재|과부하|적치|관리\s*불량|관리\s*미흡|정리\s*정돈|미\s*(?:설치|비치|착용|고정|체결|연결|시공|실시|확보|준수|사용|이행|수립|결속|보강|접지|구획|방호|표시|부착|배치)|고정\s*(?:불량|미흡)|개폐\s*불가|접지\s*(?:불량|미연결|누락)|충전부|심선|단자부|작업\s*중|하역|인양|달기구|해체)/;
+const BANNER_DEFECT_SIGNAL_RE = /(?:불량|미흡|누락|노출|파손|훼손|손상|변형|이탈|탈락|탈착|부족|미달|과다|초과|처짐|이격|유격|풀림|느슨|부식|마모|위험|우려|방치|위반|금지|불가|누출|누전|침하|균열|전도|추락|낙하|충돌|감전|붕괴|협착|화재|폭발|역화|근접|혼재|과부하|적치|생명줄|안전대|안전난간|관리\s*불량|관리\s*미흡|정리\s*정돈|미\s*(?:설치|비치|착용|고정|체결|연결|시공|실시|확보|준수|사용|이행|수립|결속|보강|접지|구획|방호|표시|부착|배치|복구)|고정\s*(?:불량|미흡)|개폐\s*불가|접지\s*(?:불량|미연결|누락)|충전부|심선|단자부|작업\s*중|하역|인양|달기구|해체)/;
 const BANNER_LOCATION_HINT_RE = /(?:주변|외부|내부|후면|전면|측면|상부|하부|상단|하단|옥상|코어|계단실?|피트|\d+\s*동|\d+\s*층|지하\s*\d*|구간|구역|호실|근생|상가|컨테이너|현장\s*내|동\s*옆|건물)/;
 
 export function isLocationOnlyBanner(text = '', locationText = '') {
@@ -565,16 +614,20 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   if (!source) return '';
 
   // 만약 원본 사진 배너가 이미 짧은 실제 위반 문구(예: "벽이음용 상부 버팀대 설치각도(60도↓) 불량", "협력사 가설컨테이너 반입시 점검 불량")이고
-  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환
-  const normBanner = normalizeKoreanSpacing(String(rawBanner || '')).replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\s]+/, '').trim();
-  const normContent = normalizeKoreanSpacing(String(contentText || '')).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim();
+  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환 (원문자 배지 ①②③ 선·후행 제거)
+  const normBanner = stripCircledNumbers(normalizeKoreanSpacing(String(rawBanner || '')))
+    .replace(/^[\d)\s]+/, '')
+    .trim();
+  const normContent = stripCircledNumbers(normalizeKoreanSpacing(String(contentText || '')))
+    .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
+    .trim();
   const isRawCopyOfContent = normBanner && normContent && normBanner.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
   const hasLongRiskClause = /[2-9]\)|②|발생\s*시|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전|으로\s*인해/.test(normBanner);
 
-  const isUnspacedLongBanner = normBanner.length >= 10 && !/\s/.test(normBanner);
+  const isUnspacedLongBanner = normBanner.length >= 12 && !/\s/.test(normBanner);
   const hasUnclosedParen = /\([^)]*$/.test(normBanner);
-  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && normBanner.length >= 5 && normBanner.length <= 24) {
-    return truncateBannerAtWordBoundary(normBanner, 24);
+  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && normBanner.length >= 5 && normBanner.length <= 28) {
+    return truncateBannerAtWordBoundary(normBanner, 28);
   }
 
   const targetText = normalizeKoreanSpacing(String(contentText || rawBanner || ''))
@@ -623,6 +676,175 @@ export function splitInlineBullets(text = '') {
 }
 
 /**
+ * 사진 요약 배너에서 원문자 번호(①②③...) 및 말단 숫자 배지 노이즈 제거
+ */
+export function stripCircledNumbers(text = '') {
+  return String(text || '')
+    .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * 사진 요약 배너 단일 표준 정규화 (엑셀 '사진 요약(배너)' · PPT 상단 적색 배너 100% 공용)
+ */
+export function normalizePhotoBannerText(rawBanner = '', content = '', location = '') {
+  let s = stripCircledNumbers(String(rawBanner || '').trim())
+    .replace(/^[123458\s()\[\].\-_|｜]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[|｜\[\]()\s]+|[|｜\[\]\s]+$/g, '')
+    .replace(/벽의음/g, '벽이음')
+    .replace(/상부0버팀대8/g, '상부 버팀대 ')
+    .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
+    .replace(/6\/『|6\//g, 'E/V')
+    .replace(/\s+[12]$/, '')
+    .replace(/\(\s*$/, '')
+    .trim();
+  if (!s) return '';
+
+  for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
+    s = s.replace(pattern, replacement);
+  }
+  s = normalizeKoreanSpacing(s)
+    .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+    .replace(/\s+[12]$/, '')
+    .replace(/[.·,\s]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (location && isLocationOnlyBanner(s, location)) return '';
+  return s;
+}
+
+/**
+ * 레코드 객체에서 엑셀/PPT 완전 동일 사진 요약 배너 도출 (단일 관문)
+ */
+export function resolveUnifiedPhotoBanner(record = {}) {
+  if (!record || typeof record !== 'object') return '';
+  const content = String(record.content || '').trim();
+  const location = String(record.location || '').trim();
+  const isStaleLightDistributionBanner = (cand) => (
+    /분전(?:함|반).*차단기.*충전부/.test(cand) &&
+    /전등|소켓|조명|심선/.test(content) &&
+    !/분전함|분전반|차단기/.test(content)
+  );
+  const isGenericBanner = (cand) => !cand || /^(?:가시설|건설장비|작업방법|작업공도구|작업발판|보호구|전기시설|소방시설|작업장|추락|낙하|비래|붕괴|도괴|전복|전도|협착|충돌|감전|화재|폭발|질식|기타|해당없음|미확인|현장 부적합 작업 전경|안전기준 미준수)$/.test(cand);
+
+  const candidates = [record.photoBanner, record.photo1Title]
+    .map(v => normalizePhotoBannerText(v || '', content, location))
+    .filter(v => v && !isStaleLightDistributionBanner(v) && !isGenericBanner(v));
+
+  for (const cand of candidates) {
+    const refined = normalizePhotoBannerText(extractCoreViolationBanner(cand, content, location), content, location);
+    if (refined && !isGenericBanner(refined)) {
+      return refined;
+    }
+  }
+  if (content) {
+    const c = normalizeKoreanSpacing(content);
+    if (/Gang\s*Form|갱폼|선해체/i.test(c)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
+    if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
+    if (/밑둥잡이|워킹타워/i.test(c)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
+    if (/버팀대|설치각도/.test(c)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+    if (c.includes('접지선') && /고정\s*불량|용량\s*부족/.test(c)) return '접지선 볼트 고정 불량 및 용량 부족';
+    if ((c.includes('전등') || c.includes('소켓')) && c.includes('충전부')) return '전등 소켓 충전부 노출 및 절연 불량';
+    if (/분전반|분전함/.test(c) && c.includes('충전부') && c.includes('노출')) return '분전함 차단기 충전부 노출';
+    if (/분전반|분전함/.test(c) && /관리\s*불량|주변\s*정리/.test(c)) return '가설분전반 관리 및 주변정리 불량';
+    const derived = normalizePhotoBannerText(extractCoreViolationBanner('', content, location), content, location);
+    if (derived && !isGenericBanner(derived)) return derived;
+  }
+  return '';
+}
+
+/**
+ * [관련 기준] 제목/본문 OCR 오타·코드·도메인 불일치 단일 정규화 및 방어기
+ */
+export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', contextText = '' } = {}) {
+  const ctx = String(contextText || '').trim();
+  const hasForkliftCtx = /지게차|하역|유도원|운행경로|3\.?6\s*유도자/.test(ctx);
+  const isElecCtx = /(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전)/.test(ctx) && !hasForkliftCtx;
+  const isFallOrFormCtx = /(?:생명줄|안전대\s*부착|추락|낙하방지|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼|형틀)/.test(ctx) && !hasForkliftCtx;
+
+  let title = String(rawLaw || '').trim();
+  let body = String(lawBody || '').trim();
+
+  for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
+    title = title.replace(pattern, replacement);
+    body = body.replace(pattern, replacement);
+  }
+
+  title = title
+    .replace(/^[|ㅣ¦!~—\-_=\[\]0-9I;:\s]*(?=안전|안선|IZ|1Z|현장|산업|산안|법)/i, '')
+    .replace(/(?:안[선전]|\b안\s*[선전])\s*작[업엄]\s*[지시][침심]|안전\s*삭[업엄]\s*[지시][침심]|안전\s*작업\s*시[심침]/g, '안전작업지침')
+    .replace(/주탁|추탁|축락|추낙/g, '추락')
+    .replace(/닥아|낙아/g, '낙하')
+    .replace(/방시시실|방지시실|방시시설|방지시설/g, '방지시설')
+    .replace(/작입|삭업|자업(?=\s|$)/g, '작업')
+    .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*10[\/7](\s*\(?K\)?)\s*\]?/gi, '[IZ12B-107(K)]')
+    .replace(/\[\s*[1Il|]?Z1[2Z]B[-\s_]*(\d{3})\s*\(?\s*K\s*\)?\s*\]?/gi, '[IZ12B-$1(K)]')
+    .replace(/안전작업지침\s*\[/g, '안전작업지침 [')
+    .replace(/\]\s*(?=[가-힣A-Za-z])/g, '] ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // 도메인 충돌 및 주요 사내 안전작업지침 코드 정규화
+  const fullLawCheck = `${title} ${body} ${ctx}`;
+  if (isElecCtx) {
+    if (/지게차|3\.?6\s*유도자|운행경로|제172조/.test(`${title} ${body}`)) {
+      title = (law && !/172조|지게차/.test(law))
+        ? law
+        : (/충전부|심선|소켓|단자부|피복|절연/.test(ctx)
+          ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
+          : (/접지/.test(ctx)
+            ? '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)'
+            : '안전보건규칙 제304조(누전차단기에 의한 감전방지)'));
+      if (/지게차|유도자|운행경로/.test(body)) body = '';
+    } else if (/IZ12B-108\(K\)|108\s*\(?K\)?/i.test(title) && !/11\d/.test(title)) {
+      title = '안전작업지침 [IZ12B-108(K)] 전기 작업';
+    } else if (/IZ12B-115\(K\)|115\s*\(?K\)?/i.test(title)) {
+      title = '안전작업지침 [IZ12B-115(K)] 전기 작업';
+    }
+  } else if (isFallOrFormCtx && /지게차|3\.?6\s*유도자|운행경로|제172조/.test(`${title} ${body}`)) {
+    title = (law && !/172조|지게차/.test(law)) ? law : '';
+    if (/지게차|유도자|운행경로/.test(body)) body = '';
+  }
+
+  if (/IZ12B-107\(K\)|107\s*\(?K\)?/i.test(title) || (/10[\/7]\s*\(?K\)?/i.test(title) && /추락|낙하|출입금지|안전시설|방지시설/.test(fullLawCheck))) {
+    title = '안전작업지침 [IZ12B-107(K)] 추락/낙하방지시설 작업';
+  } else if (/IZ12B-106\(K\)/i.test(title) && !/지게차|전기|거푸집|동바리/.test(ctx)) {
+    title = '안전작업지침 [IZ12B-106(K)] 비계 작업';
+  } else if (/IZSW-003\(K\)/i.test(title) && /거푸집|동바리|형틀/.test(fullLawCheck)) {
+    title = '안전작업지침 [IZSW-003(K)] 거푸집동바리 작업';
+  } else if (/(?:IZ12B-108\(K\)|지게차\s*작업지침)/i.test(title) && !isElecCtx && !isFallOrFormCtx && hasForkliftCtx) {
+    title = '안전작업지침 [IZ12B-108(K)] 지게차 작업지침';
+  }
+
+  // 잔여 심각한 OCR 깨짐(해독 불가 비단어) 차단 가드
+  const hasCorruptTitleTokens = /(?:시심|주탁|닥아|방시시실|방지시실|작입|삭보|식보|업적|of\s*xi|\/\(K\)|\uFFFD)/.test(title) ||
+    /^[0-9I=;:\s]{3,}/.test(title);
+  if ((!title || hasCorruptTitleTokens) && law && !/지게차|172조/.test(law && !hasForkliftCtx ? law : '')) {
+    title = String(law).trim();
+  }
+
+  if (body) {
+    body = body
+      .split(/\r?\n/)
+      .map(line => {
+        let l = line.replace(/^[|ㅣ¦!~—_=\[\]]+\s*/, '').replace(/\.[a-zA-Z]{1,2}\s*$/, '.').trim();
+        l = normalizeKoreanSpacing(l);
+        l = l.replace(/^([•*·▪])\s*(?=[가-힣A-Za-z0-9])/, '$1 ');
+        return l;
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return {
+    title: normalizeKoreanSpacing(title),
+    body
+  };
+}
+
+/**
  * 단일 본문 필드 텍스트 정제
  */
 export function normalizeFieldText(text = '', fieldKey = '') {
@@ -633,16 +855,15 @@ export function normalizeFieldText(text = '', fieldKey = '') {
     return normalizeRoundText(s);
   }
 
+  if (fieldKey === 'banner' || fieldKey === 'banner2' || fieldKey === 'photoBanner' || fieldKey === 'photo2Banner') {
+    return normalizePhotoBannerText(s);
+  }
+
   for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
     s = s.replace(pattern, replacement);
   }
 
   s = normalizeKoreanSpacing(s);
-
-  if (fieldKey === 'banner' || fieldKey === 'banner2' || fieldKey === 'photoBanner' || fieldKey === 'photo2Banner') {
-    // 배너 좌우 경계/우측 원문자 오인식 잔여 노이즈 제거 (예: "| 형식적 점검", "불량 1")
-    s = s.replace(/^[|｜\[\]]+\s*|\s*[|｜\[\]]+$/g, '').replace(/\s+[12]$/, '').trim();
-  }
 
   if (fieldKey === 'content') {
     s = s.replace(/^부적합\s*내용\s*[:：]\s*/, '').trim();
@@ -659,13 +880,13 @@ export function normalizeFieldText(text = '', fieldKey = '') {
 export function applyTypoPatches(record, typoPatches) {
   if (!record || !typoPatches || typeof typoPatches !== 'object') return record;
   const entries = Object.entries(typoPatches).filter(
-    ([bad, good]) => bad && good && bad !== good && bad.length >= 2 && Math.abs(bad.length - good.length) <= 6
+    ([bad, good]) => bad && good && bad !== good && bad.length >= 2 && Math.abs(bad.length - good.length) <= 8
   );
   if (!entries.length) return record;
 
   const targetKeys = [
     'content', 'interviewOpinion', 'auditProposal', 'actionPlan',
-    'countermeasure', 'photoBanner', 'photo2Banner', 'law', 'location'
+    'countermeasure', 'photoBanner', 'photo2Banner', 'law', 'rawLaw', 'lawBody', 'location'
   ];
   for (const key of targetKeys) {
     if (typeof record[key] === 'string' && record[key]) {
@@ -691,6 +912,10 @@ if (_globalRoot) {
     normalizeRoundText,
     joinWrappedKoreanLines,
     normalizeKoreanSpacing,
+    stripCircledNumbers,
+    normalizePhotoBannerText,
+    resolveUnifiedPhotoBanner,
+    normalizeSafetyLawSpec,
     OFFICIAL_WORK_GROUPS,
     mapToStandardWorkGroup,
     isLocationOnlyBanner,
