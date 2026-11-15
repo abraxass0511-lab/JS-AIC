@@ -616,7 +616,7 @@
     }
     // 2. 양중작업 시 수평양중 미실시 (이미지 5번 실물 점검장표 100% 일치)
     if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
-      return '양중작업 시 화물의 수평양중 미 실시';
+      return '양중작업 시 화물의 수평양중 미실시';
     }
     // 3. 양중작업 시 유도로프 미사용 (이미지 4번 2번 사진 배너)
     if (text.includes('유도로프')) {
@@ -1262,7 +1262,7 @@
     let photo2Title = r.photo2Title || '';
     if (!photo1Title) {
       if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
-        photo1Title = '양중작업 시 화물의 수평양중 미 실시';
+        photo1Title = '양중작업 시 화물의 수평양중 미실시';
       } else if (text.includes('손으로') || (text.includes('유도로프') && text.includes('미사용'))) {
         photo1Title = '양중작업 시 화물을 직접 손으로 잡음';
       } else {
@@ -1378,7 +1378,11 @@
       pmVerdictItems = [];
     }
 
-    let inspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년 下 3차");
+    const _roundNorm = _getNorm();
+    const rawInspectRound = r.inspectRound || (r.round ? `${r.round}차` : "'26년下 3차");
+    let inspectRound = (_roundNorm && typeof _roundNorm.normalizeRoundText === 'function')
+      ? _roundNorm.normalizeRoundText(rawInspectRound)
+      : rawInspectRound;
     // 점검자명 정제: OCR 라벨 오인식('적검자', '점검자', 1글자 잔여 노이즈 '로') 배제 및 등록된 로그인/시트 점검자 사용
     const sanitizeInspectorName = (val) => {
       const s = String(val || '')
@@ -1501,7 +1505,7 @@
       fill: { color: 'FFFFFF' }, line: { color: C_BORDER, width: 0.5 }
     });
     // 기준 제목 (16pt Bold #000000, 길면 자동 축소)
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.5644, 16, 9.5);
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.48, 16, 8.5);
     slide.addText(data.lawTitle, {
       x: 4.8865, y: 0.1450, w: 5.5644, h: 0.3150,
       fontFace: FONT_MALGUN, fontSize: lawTitleFontSize, bold: true, color: '000000',
@@ -2183,7 +2187,7 @@
     const pt = (n) => `${(n * 0.104167).toFixed(4)}cqw`;
     const glowTextShadow = '0 0 4px rgba(0,0,0,0.85), -0.5px -0.5px 1.5px rgba(0,0,0,0.85), 0.5px 0.5px 1.5px rgba(0,0,0,0.85)';
 
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.5644, 16, 9.5);
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.48, 16, 8.5);
     const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 14, 6.5, 1.03, [1, 4, 1, 4]);
 
     const metaCols = [
@@ -2262,7 +2266,7 @@
         <div style="position: absolute; left: ${pctX(4.8185)}; top: ${pctY(0.1216)}; width: ${pctW(5.6949)}; height: ${pctH(1.0535)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
         <!-- 4-1. 관련기준 제목 (16pt bold, 길면 자동 축소) -->
-        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.1450)}; width: ${pctW(5.5644)}; height: ${pctH(0.3150)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
+        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.1450)}; width: ${pctW(5.5644)}; height: ${pctH(0.3150)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;">
           ${data.lawTitle}
         </div>
 

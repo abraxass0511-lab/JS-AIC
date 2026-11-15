@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v46';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v46';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v47';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v47';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -25,7 +25,7 @@ import {
   resolveUnifiedPhotoBanner,
   normalizeSafetyLawBody,
   normalizeSafetyLawSpec
-} from './text-normalizer.js?v=20261115_v46';
+} from './text-normalizer.js?v=20261115_v47';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -1520,7 +1520,7 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
   let inspectRound = "'26년上 2차";
   const mRound = txt.match(/점검차수\s*[:;：]?\s*([^\n|]+)/i);
   if (mRound && mRound[1]) {
-    inspectRound = mRound[1].trim();
+    inspectRound = normalizeRoundText(mRound[1].trim());
   }
 
   // 사진 요약(배너) 동적 생성 (절대 공란 배제)
@@ -1927,7 +1927,13 @@ async function ocrCellsSinglePass(canvas, cellSpecs, options = {}) {
     const workV = String(result.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
     const locV = String(result.loc || '').replace(/^.*?작업장소\s*[:：.]?\s*/, '').trim();
     const userV = sanitizeInspectorValue(result.user || '');
-    const roundV = normalizeRoundText(result.round || '');
+    const mDigitalRound = (options.hasDigitalText && options.digitalText)
+      ? String(options.digitalText).match(/점검\s*차수\s*[:;：]?\s*([^\n|]{2,20}?)(?=\s*(?:부적합|협력사|공종|작업장소|점검자|$))/i)
+      : null;
+    const rawRoundSrc = (mDigitalRound && mDigitalRound[1] && /[上上下하상]\s*\d+/.test(mDigitalRound[1]))
+      ? mDigitalRound[1].trim()
+      : (result.round || '');
+    const roundV = normalizeRoundText(rawRoundSrc);
     result.sub = subV;
     result.work = workV;
     result.loc = locV;
@@ -2357,7 +2363,7 @@ export async function parseSheetCanvas(canvas, options = {}) {
       cellCrops,
       cellConfidences,
       lowConfidenceFields
-    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText, buildStrip: false });
+    } = await ocrCellsSinglePass(canvas, cellSpecsList, { hasDigitalText, digitalText, buildStrip: false });
     const hadCellText = Object.values(cellTexts).some(v => v && String(v).trim().length > 0);
     const parsedFields = parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, hadCellText);
     if (photos.length <= 1) {
