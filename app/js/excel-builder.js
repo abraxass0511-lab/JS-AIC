@@ -583,15 +583,17 @@
       .replace(/\[=\]\s*oa/gi, '')
       .trim();
 
-    // 인라인 명시적 불릿(-)만 줄바꿈 처리 (임의의 단어 뒤 분리 배제)
-    s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪]\s*(?=[가-힣0-9])/g, '\n- ');
+    // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함, 코드 하이픈 'IZ12B-108' 비분할)
+    s = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
+      ? window.SafeTextNormalizer.splitInlineBullets(s)
+      : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (let l of rawLines) {
       if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(l);
-      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
       if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
       if (items.length === 0 || isBulletStart) {
@@ -617,14 +619,16 @@
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
       .trim();
 
-    // 인라인 명시적 불릿(-)만 줄바꿈 처리
-    s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ');
+    // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
+    s = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
+      ? window.SafeTextNormalizer.splitInlineBullets(s)
+      : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(line);
-      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
       if (items.length === 0 || isBulletStart) {
         items.push(cl);
@@ -777,7 +781,7 @@
     if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
       return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
     }
-    const cleanedStr = rawStr
+    let cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
       .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(이행강화안\s*수립\)|\(\s*(?:협력사|근로자)\s*교육\s*\)|\(관리감독자\s*경고\)/g, '')
@@ -792,8 +796,11 @@
       .replace(/혐식적/g, '형식적')
       .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
       .replace(/5045내|5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
-      .replace(/시스템\s*구죽/g, '시스템 구축')
-      .replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ')
+      .replace(/시스템\s*구죽/g, '시스템 구축');
+    cleanedStr = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
+      ? window.SafeTextNormalizer.splitInlineBullets(cleanedStr)
+      : cleanedStr.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
+    cleanedStr = cleanedStr
       .replace(/,\s*-\s*/g, '\n- ')
       .trim();
 

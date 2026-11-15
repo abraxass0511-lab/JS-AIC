@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v41';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v41';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v42';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v42';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -18,8 +18,9 @@ import {
   normalizeKoreanSpacing,
   OFFICIAL_WORK_GROUPS,
   mapToStandardWorkGroup,
-  extractCoreViolationBanner
-} from './text-normalizer.js?v=20261115_v41';
+  extractCoreViolationBanner,
+  splitInlineBullets
+} from './text-normalizer.js?v=20261115_v42';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -260,7 +261,7 @@ function rotateCanvas(srcCanvas, deg) {
  * @param {number} [pdfRotate=0] - PDF 페이지 메타데이터에 지정된 회전각(0, 90, 180, 270)
  * @returns {Promise<HTMLCanvasElement>} 정방향 가로 슬라이드 Canvas
  */
-export async function normalizeImageOrientation(file, pdfRotate = 0) {
+export async function normalizeImageOrientation(file, pdfRotate = 0, options = {}) {
   let bmp;
   try {
     bmp = await createImageBitmap(file, { imageOrientation: 'none' });
@@ -268,10 +269,17 @@ export async function normalizeImageOrientation(file, pdfRotate = 0) {
     bmp = await createImageBitmap(file);
   }
 
+  const maxWidth = options.maxWidth || 1650;
+  const maxDim = Math.max(bmp.width, bmp.height);
+  const scale = maxDim > maxWidth ? (maxWidth / maxDim) : 1;
+  const dw = Math.max(1, Math.round(bmp.width * scale));
+  const dh = Math.max(1, Math.round(bmp.height * scale));
+
   let baseCanvas = document.createElement('canvas');
-  baseCanvas.width = bmp.width;
-  baseCanvas.height = bmp.height;
-  baseCanvas.getContext('2d').drawImage(bmp, 0, 0);
+  baseCanvas.width = dw;
+  baseCanvas.height = dh;
+  baseCanvas.getContext('2d').drawImage(bmp, 0, 0, dw, dh);
+  if (typeof bmp.close === 'function') bmp.close();
 
   // 1. PDF 메타데이터 회전각이 명시된 경우 우선 적용
   if (pdfRotate) {
@@ -781,15 +789,15 @@ export function cleanOpinionText(raw) {
     .replace(/^[^\n]*?=\s*-\s*/, '- ')
     .trim();
 
-  // 인라인 명시적 불릿(-)만 줄바꿈 처리
-  s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪]\s*(?=[가-힣0-9])/g, '\n- ');
+  // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
+  s = splitInlineBullets(s);
 
   const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const items = [];
   for (let l of rawLines) {
     if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
     const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(l);
-    let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+    let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
     if (!text || text.length < 2) continue;
     if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
     if (items.length === 0 || isBulletStart) {
@@ -811,14 +819,14 @@ export function cleanProposalText(raw) {
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
     .trim();
 
-  // 인라인 명시적 불릿(-)만 줄바꿈 처리
-  s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ');
+  // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
+  s = splitInlineBullets(s);
 
   const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const items = [];
   for (const line of rawLines) {
     const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(line);
-    let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+    let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
     if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
     if (items.length === 0 || isBulletStart) {
       items.push(cl);
@@ -835,7 +843,7 @@ export function cleanActionPlan(raw) {
   if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
     return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
   }
-  const cleanedStr = rawStr
+  const preBulletStr = rawStr
     .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
     .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
     .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화\s*방안\s*수립\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/gi, '')
@@ -843,8 +851,8 @@ export function cleanActionPlan(raw) {
     .replace(/위[험혐협형횸][성승송]?\s*평[가기ㅇ아어0-9]?/g, '위험성평가')
     .replace(/내실화\s*[&xX×쪽종등5]\s*점검\s*강\s*화/g, '내실화 등 점검 강화')
     .replace(/30000\s*이하|3000\)?\s*이하|3060\s*이하|30cm이하/g, '30cm 이하')
-    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm')
-    .replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ')
+    .replace(/5560[ㅁ口0-9]*|5500\b|55em\b/g, '55cm');
+  const cleanedStr = splitInlineBullets(preBulletStr)
     .replace(/,\s*-\s*/g, '\n- ')
     .trim();
 
@@ -853,7 +861,7 @@ export function cleanActionPlan(raw) {
 
   for (const line of rawLines) {
     const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]/s.test(line);
-    let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
+    let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
     if (!cl || cl.length < 2) continue;
     if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
@@ -2551,8 +2559,9 @@ export async function parsePDF(file, onProgress = () => {}) {
 
   if (hasFullBinaryJpegs) {
     totalPages = binaryResult.jpegPages.length;
-    const BATCH_SIZE = 4;
+    const BATCH_SIZE = 8;
     let processedCount = 0;
+    const aiPromises = [];
 
     for (let i = 0; i < binaryResult.jpegPages.length; i += BATCH_SIZE) {
       const batch = binaryResult.jpegPages.slice(i, i + BATCH_SIZE);
@@ -2570,7 +2579,7 @@ export async function parsePDF(file, onProgress = () => {}) {
         });
         await new Promise(r => setTimeout(r, 0));
 
-        const canvas = await normalizeImageOrientation(pg.blob, pg.rotate);
+        const canvas = await normalizeImageOrientation(pg.blob, pg.rotate, { maxWidth: 1650 });
         const sig = measureHeaderSignature(canvas);
 
         if (!sig.isSheet) {
@@ -2629,15 +2638,33 @@ export async function parsePDF(file, onProgress = () => {}) {
         }
       }
 
-      // 다건 배치 AI 표준 분류 및 핀포인트 오타 패치 (묶음 1회 호출)
+      // 다건 배치 AI 표준 분류 및 핀포인트 오타 패치 — 비동기 파이프라인으로 다음 배치 OCR과 병렬 처리
       const validBatchRecs = batchResults.filter(r => r && !r._skipped);
       if (validBatchRecs.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
-        try {
-          await window.SafeLocalAI.classifyBatchRecords(validBatchRecs);
-        } catch (e) {
+        const aiTask = window.SafeLocalAI.classifyBatchRecords(validBatchRecs).catch(e => {
           console.warn('[SafePatrol] Batch AI classify warning:', e);
+        });
+        aiPromises.push(aiTask);
+        // 동시 네트워크 요청은 최대 2개까지 유지해 AI 처리와 다음 페이지 OCR 오버랩 극대화
+        if (aiPromises.length >= 2) {
+          await aiPromises[aiPromises.length - 2];
         }
       }
+    }
+
+    if (aiPromises.length > 0) {
+      onProgress({
+        phase: 'ai',
+        current: totalPages,
+        total: totalPages,
+        extracted: records.length,
+        skipped: skippedCount,
+        currentPage: totalPages,
+        totalPages,
+        extractedCount: records.length,
+        skippedCount
+      });
+      await Promise.all(aiPromises);
     }
 
     records.sort((a, b) => (a.pageNumber || 0) - (b.pageNumber || 0));
@@ -2720,6 +2747,8 @@ export async function parsePDF(file, onProgress = () => {}) {
     const sig = measureHeaderSignature(pageCanvas);
     return { pNum, pageCanvas, digitalText, sig };
   };
+
+  const aiPromises = [];
 
   for (let startPage = 1; startPage <= totalPages; startPage += BATCH_SIZE) {
     const batchPages = [];
@@ -2823,10 +2852,13 @@ export async function parsePDF(file, onProgress = () => {}) {
 
     const batchSlice = batchPages.map(p => orderedResults[p - 1]).filter(Boolean);
     if (batchSlice.length > 0 && window.SafeLocalAI && typeof window.SafeLocalAI.classifyBatchRecords === 'function') {
-      try {
-        await window.SafeLocalAI.classifyBatchRecords(batchSlice);
-      } catch (e) {
+      const aiTask = window.SafeLocalAI.classifyBatchRecords(batchSlice).catch(e => {
         console.warn('[SafePatrol] Batch AI classify warning:', e);
+      });
+      aiPromises.push(aiTask);
+      // 동시 네트워크 요청은 최대 2개까지 유지해 AI 처리와 다음 배치 렌더링/OCR 오버랩 극대화
+      if (aiPromises.length >= 2) {
+        await aiPromises[aiPromises.length - 2];
       }
     }
 
@@ -2846,6 +2878,25 @@ export async function parsePDF(file, onProgress = () => {}) {
       extractedCount: records.length,
       skippedCount
     });
+  }
+
+  if (aiPromises.length > 0) {
+    onProgress({
+      phase: 'ai',
+      current: totalPages,
+      total: totalPages,
+      extracted: records.length,
+      skipped: skippedCount,
+      currentPage: totalPages,
+      totalPages,
+      extractedCount: records.length,
+      skippedCount
+    });
+    await Promise.all(aiPromises);
+    records.length = 0;
+    for (const r of orderedResults) {
+      if (r) records.push(r);
+    }
   }
 
   onProgress({

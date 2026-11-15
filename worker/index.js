@@ -505,8 +505,8 @@ export default {
           const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy)·한국어 OCR 교정 전문가 AI이다.
 입력된 다중 페이지(items)의 PaddleOCR 추출 텍스트를 분석하여 다음 3가지를 동시에 수행하라:
 1. 건설안전 9x9 및 작업분류표(창호공사(PL), 가설전기공사 등) 표준 분류코드와 산안규칙 조문을 정확히 매핑할 것 (가설전기 분전반/접지/전등 불량은 절대 "해체작업"이나 "굴착작업"으로 분류하지 말고 "설치조립작업"으로 선택).
-2. 사진 상단용 12~24자 핵심 위반 명사구 요약 배너(photoBanner: 반드시 자연스러운 띄어쓰기 포함 완성 명사구, content 복사·결과/우려 꼬리·'2)'·말줄임표 및 괄호 중간 절단 절대 금지)를 생성할 것.
-3. fixedFields에 입력 텍스트(content, interview, proposalText, countermeasure, location)의 의미·숫자·단위·항목번호(1), 2), -)는 100% 보존하되, OCR 과정에서 누락된 한국어 띄어쓰기(예: 유도하는과정에서→유도하는 과정에서, 전등관리미흡전선연결부심선노출→전등 관리 미흡 및 전선 연결부 심선 노출, 재발방지대책수립→재발방지대책 수립), 명백한 스캔 오탈자(흥로→종로, 적격성올→적격성을), 줄 끝 잔여 영문 노이즈(cb, cYb, ee 등)를 깨끗이 교정·제거하여 반환할 것 (PL, AL, Door, E/V, 2EA, cm 등 유효 영문·단위는 유지).
+2. 사진 상단용 12~24자 핵심 위반 명사구 요약 배너(photoBanner: 반드시 자연스러운 띄어쓰기 포함 완성 명사구, content 복사·결과/우려 꼬리·'2)'·말줄임표 및 괄호 중간 절단 절대 금지, 배너 OCR 오타 "노술/노습→노출", "본트→볼트", "다설→타설", "내속→내측" 교정)를 생성할 것.
+3. 입력 필드 중 띄어쓰기·오탈자·말단 영문 노이즈(cb, cYb, ee 등) 교정이 **실제로 필요한 필드만** edits에 담아 반환하고, 변경이 불필요한 필드는 edits에 절대 중복 반환하지 말 것 (의미·숫자·단위·1), 2), - 및 PL/AL/Door/E/V/Gray Area 등 유효 영문·단위 100% 보존). 오탈자 어절 치환은 typoPatches에 {"원문오타단어":"정확한단어"} 형식으로만 작성할 것(예: {"흥로":"종로","노술":"노출"}, 필드명을 키로 쓰지 말 것).
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -515,26 +515,20 @@ ${TAXONOMY_STANDARD_PROMPT}
   "results": [
     {
       "pageIndex": 1,
-      "workGroup": "작업분류표 기준 표준 공종 (PL창호공사→창호공사(PL), 가설전기/전등/분전반→가설전기공사)",
-      "workMethod": "표준 작업방법 (가설전기/분전반/점검불량→설치조립작업, 지게차/하역→하역운반작업)",
+      "workGroup": "표준 공종",
+      "workMethod": "표준 작업방법",
       "agentMajor": "표준 기인물 대분류",
       "agentMid": "표준 기인물 중분류",
       "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
-      "photoBanner": "12~24자 완성된 띄어쓰기 핵심 위반 명사구 (중간 절단·원문 복사·우려 꼬리 금지)",
+      "photoBanner": "12~24자 완성된 띄어쓰기 핵심 위반 명사구",
       "condition": "표준 불안전 상태",
       "action": "표준 불안전 행동",
       "rootCauseMgmt": "표준 법적 관리감독",
       "rootCauseSystem": "표준 안전시스템",
       "stakeholder": "표준 관리/책임주체",
       "law": "안전보건규칙 제OO조(조항명)",
-      "fixedFields": {
-        "location": "띄어쓰기/노이즈 교정된 작업장소 (원본이 비었으면 빈 문자열)",
-        "content": "띄어쓰기/오탈자/말단노이즈 교정된 부적합 내용",
-        "interview": "띄어쓰기/오탈자/말단노이즈 교정된 관계자 의견",
-        "proposalText": "띄어쓰기/오탈자/말단노이즈(cYb 등) 교정된 점검단 제안",
-        "countermeasure": "띄어쓰기/오탈자/말단노이즈(cb 등) 교정된 개선대책"
-      },
+      "edits": {},
       "typoPatches": {}
     }
   ]
@@ -545,7 +539,7 @@ ${TAXONOMY_STANDARD_PROMPT}
                 { role: 'system', content: batchSystemPrompt },
                 { role: 'user', content: `${JSON.stringify(items)}\n/no_think` }
               ],
-              max_tokens: 4096,
+              max_tokens: 2048,
               temperature: 0.05
             });
             const raw = (typeof qRes?.response === 'string' && qRes.response) || qRes?.choices?.[0]?.message?.content || '';
@@ -561,13 +555,17 @@ ${TAXONOMY_STANDARD_PROMPT}
                   if (typeof out.photoBanner === 'string' && out.photoBanner.includes('\uFFFD')) {
                     out.photoBanner = '';
                   }
-                  if (out.fixedFields && typeof out.fixedFields === 'object') {
+                  const rawEdits = (out.edits && typeof out.edits === 'object')
+                    ? out.edits
+                    : ((out.fixedFields && typeof out.fixedFields === 'object') ? out.fixedFields : null);
+                  if (rawEdits) {
                     const ff = {};
-                    for (const [k, v] of Object.entries(out.fixedFields)) {
-                      if (typeof v === 'string' && !v.includes('\uFFFD')) {
+                    for (const [k, v] of Object.entries(rawEdits)) {
+                      if (typeof v === 'string' && v.trim() && !v.includes('\uFFFD')) {
                         ff[k] = v;
                       }
                     }
+                    out.edits = ff;
                     out.fixedFields = ff;
                   }
                   return out;

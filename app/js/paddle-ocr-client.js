@@ -5,8 +5,8 @@
  * - 단문 셀은 rec 직결, 다중 줄 셀은 수평 투영 줄 분할 후 rec 직결하여 페이지당 0.6~1.0초 고속 인식
  */
 
-import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v41';
-import { normalizeFieldText } from './text-normalizer.js?v=20261115_v41';
+import { preprocessCellCanvas, splitCanvasIntoLineCanvases } from './sheet-layout.js?v=20261115_v42';
+import { normalizeFieldText } from './text-normalizer.js?v=20261115_v42';
 
 const MODEL_CACHE_DB = 'SafePatrolOCRModelCache_v5';
 const MODEL_CACHE_STORE = 'assets';
@@ -301,11 +301,15 @@ export async function recognizeCellWithPaddle(rawCellCanvas, cellKey = '') {
 
   for (const lc of lineCanvases) {
     const { text, confidence, minCharConfidence } = await recognizeSingleLineCanvas(lc);
-    if (text) {
-      lineTexts.push(text);
-      lineConfs.push(confidence);
-      if (minCharConfidence < minCharConf) minCharConf = minCharConfidence;
-    }
+    if (!text) continue;
+    // 표 경계선('wb', 'cwb', 'owb', '_', '|', '[' 등) 잔여 오인식 노이즈 배제
+    const isBorderNoise = /^(?:[coyabw]{1,4}|[|_.\-\[\]iI()]+)$/i.test(text) && (confidence < 0.80 || lc.height <= 26);
+    if (isBorderNoise) continue;
+    // 세로 10px 미만의 초박형 조각에서 저신뢰도 한글 난독이 생성된 경우(예: 1~2px 잔획) 배제
+    if (confidence < 0.42 && lc.height <= 16 && text.length <= 8) continue;
+    lineTexts.push(text);
+    lineConfs.push(confidence);
+    if (minCharConfidence < minCharConf) minCharConf = minCharConfidence;
   }
 
   const rawJoined = lineTexts.join(isSingleLine ? ' ' : '\n').trim();

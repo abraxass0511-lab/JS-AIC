@@ -160,6 +160,16 @@ const DOMAIN_TYPO_MAP = [
   [/실시\s+(?=Gray\s*Area)/gi, '실시 - '],
   [/불량\s+1$/g, '불량'],
   [/적격성[올울]/g, '적격성을'],
+  [/노[술습](?=\s|$|[),.;:])/g, '노출'],
+  [/([가-힣]*?)노줄(?!구)(?=\s|$|[),.;:])/g, '$1노출'],
+  [/심선\s*노[술줄습]/g, '심선 노출'],
+  [/충전부\s*노[술줄습]/g, '충전부 노출'],
+  [/볼트\s*노[술줄습]/g, '볼트 노출'],
+  [/본트(?=\s|노|체|고|미|$)/g, '볼트'],
+  [/다설(?=\s|계단|중|전)/g, '타설'],
+  [/내속(?=\s|난간)/g, '내측'],
+  [/\(흥로\)/g, '(종로)'],
+  [/[적서][검걸걱]단/g, '점검단'],
   [/([다요음함됨임]\.?)\s*[a-zA-Z]{1,3}$/gm, '$1']
 ];
 
@@ -600,6 +610,19 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
 }
 
 /**
+ * 인라인 불릿('-', '•', '*', '·', '▪') 앞에서 안전하게 줄바꿈 분할
+ * - 영문/괄호 시작 불릿('- Gray Area', '- (주의)') 포함 지원
+ * - 'IZ12B-108(K)', '101-1' 등 하이픈 결합 코드는 분할하지 않음
+ */
+export function splitInlineBullets(text = '') {
+  if (!text) return '';
+  return String(text).replace(
+    /(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g,
+    '\n- '
+  );
+}
+
+/**
  * 단일 본문 필드 텍스트 정제
  */
 export function normalizeFieldText(text = '', fieldKey = '') {
@@ -617,8 +640,8 @@ export function normalizeFieldText(text = '', fieldKey = '') {
   s = normalizeKoreanSpacing(s);
 
   if (fieldKey === 'banner' || fieldKey === 'banner2' || fieldKey === 'photoBanner' || fieldKey === 'photo2Banner') {
-    // 배너 우측 끝에 붙은 원문자 오인식 숫자 제거 (예: "벽이음용 상부 버팀대 설치각도(60도↓) 불량 1")
-    s = s.replace(/\s+[12]$/, '').trim();
+    // 배너 좌우 경계/우측 원문자 오인식 잔여 노이즈 제거 (예: "| 형식적 점검", "불량 1")
+    s = s.replace(/^[|｜\[\]]+\s*|\s*[|｜\[\]]+$/g, '').replace(/\s+[12]$/, '').trim();
   }
 
   if (fieldKey === 'content') {
@@ -673,6 +696,7 @@ if (_globalRoot) {
     isLocationOnlyBanner,
     extractCoreViolationBanner,
     normalizeFieldText,
-    applyTypoPatches
+    applyTypoPatches,
+    splitInlineBullets
   };
 }
