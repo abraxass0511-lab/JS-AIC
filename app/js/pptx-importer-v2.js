@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v45';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v45';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261115_v46';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v46';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -25,7 +25,7 @@ import {
   resolveUnifiedPhotoBanner,
   normalizeSafetyLawBody,
   normalizeSafetyLawSpec
-} from './text-normalizer.js?v=20261115_v45';
+} from './text-normalizer.js?v=20261115_v46';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -80,14 +80,18 @@ export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
   const hasForkliftInCtx = /지게차|하역|유도원|운행경로/.test(ctxStr);
   const hasElecInCtx = /가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|절연\s*불량/.test(ctxStr || combined);
   const hasLifelineInCtx = /생명줄|안전대\s*부착|안전대|추락|단부|개구부|안전난간|비계|동바리|거푸집|갱폼|알폼/.test(ctxStr);
+  const hasCraneLiftingInCtx = /크레인|타워크레인|양중물|형틀자재\s*양중|자재\s*양중|줄걸이|인양|달기구|슬링|유도로프|양중\s*(?:작업|금지|시)/.test(ctxStr || combined);
+  const hasFormworkAssemblyDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(combined);
 
   if (rawLawStr && /산업안전보건|안전보건규칙|산안법|산안규칙/.test(rawLawStr) && /제\s*\d+\s*조/.test(rawLawStr)) {
-    const isCollisionLawMismatch = /제172조|지게차/.test(rawLawStr) && !hasForkliftInCtx && (hasElecInCtx || hasLifelineInCtx);
+    const isCollisionLawMismatch =
+      (/제172조|지게차/.test(rawLawStr) && !hasForkliftInCtx && (hasElecInCtx || hasLifelineInCtx)) ||
+      (/제332조|거푸집동바리/.test(rawLawStr) && hasCraneLiftingInCtx && !hasFormworkAssemblyDefect);
     if (!isCollisionLawMismatch) {
       return rawLawStr;
     }
   }
-  // 사내 작업지침(예: [IZ12B-108(K)] 지게차 vs 전기 작업, [IZSW-003(K)] 동바리 작업)인 경우 실제 위반 문맥과 충돌하지 않을 때만 표준 조문 매핑
+  // AI가 산안법 조문을 이미 제시하지 않았을 때만 도메인 문맥 기반 최소 표준 조문 보조 매핑 (크레인/양중 vs 거푸집동바리 우선순위 보정)
   const allowForklift = !hasElecInCtx && !hasLifelineInCtx && (hasForkliftInCtx || (/지게차|유도자|유도원|운행경로/.test(combined) && !hasElecInCtx));
   if (allowForklift && /지게차|유도자|유도원|하역|운행경로/.test(combined)) {
     return '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)';
@@ -100,6 +104,9 @@ export function filterOnlyOccupationalSafetyLaw(lawText, contextText = '') {
   }
   if (/누전차단기|분전함|분전반|차단기|가설전선|가설전기|전기\s*작업|전기설비/.test(combined)) {
     return '안전보건규칙 제304조(누전차단기에 의한 감전방지)';
+  }
+  if (hasCraneLiftingInCtx && !hasFormworkAssemblyDefect) {
+    return '안전보건규칙 제132조(양중기의 안전조치), 제134조(고리걸이 등)';
   }
   if (/갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(combined)) {
     return '안전보건규칙 제337조(갱폼 등의 조립ㆍ해체 등)';
