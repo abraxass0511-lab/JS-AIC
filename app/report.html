@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SafePatrol 관리자용 상세 분석 보고서</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Malgun Gothic', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .status-card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 32px 28px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 12px 32px rgba(15, 41, 74, 0.12);
+      text-align: center;
+    }
+    .status-card h1 { margin: 0 0 10px; font-size: 1.25rem; color: #0f294a; }
+    .status-card p { margin: 0 0 18px; color: #475569; font-size: 0.92rem; line-height: 1.55; }
+    .spinner {
+      width: 38px;
+      height: 38px;
+      margin: 0 auto 16px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #1d4ed8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .retry-btn {
+      display: inline-block;
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: none;
+      background: #1d4ed8;
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+  <script src="js/config.js?v=20261115_v52"></script>
+  <script src="js/html-report-builder.js?v=20261115_v52"></script>
+</head>
+<body>
+  <div class="status-card" id="loaderCard">
+    <div class="spinner" id="loaderSpinner"></div>
+    <h1 id="loaderTitle">상세 분석 보고서를 불러오는 중...</h1>
+    <p id="loaderMsg">공유된 부적합 분석 데이터와 드릴다운 대시보드를 구성하고 있습니다.</p>
+    <button type="button" class="retry-btn" id="btnRetryLoad" style="display:none;" onclick="window.location.reload()">다시 시도</button>
+  </div>
+
+  <script>
+    (async function () {
+      const titleEl = document.getElementById('loaderTitle');
+      const msgEl = document.getElementById('loaderMsg');
+      const spinnerEl = document.getElementById('loaderSpinner');
+      const retryEl = document.getElementById('btnRetryLoad');
+
+      function showError(title, msg) {
+        if (spinnerEl) spinnerEl.style.display = 'none';
+        if (titleEl) titleEl.textContent = title;
+        if (msgEl) msgEl.textContent = msg;
+        if (retryEl) retryEl.style.display = 'inline-block';
+      }
+
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const shareId = (params.get('id') || '').trim();
+        if (!/^[a-zA-Z0-9_-]{4,80}$/.test(shareId)) {
+          showError('유효하지 않은 보고서 링크', '공유 보고서 식별자(id)가 누락되었거나 형식이 올바르지 않습니다.');
+          return;
+        }
+
+        const workerUrl = ((window.SAFEPATROL_CONFIG && window.SAFEPATROL_CONFIG.workerUrl) || 'https://safepatrol-relay.abraxass0511.workers.dev').replace(/\/+$/, '');
+        const fetchUrl = workerUrl + '/file?path=' + encodeURIComponent('shares/' + shareId + '.json') + '&raw=1';
+        const res = await fetch(fetchUrl, { cache: 'no-store' });
+        if (!res.ok) {
+          showError('보고서를 찾을 수 없습니다', '요청하신 공유 보고서를 불러오지 못했습니다. (HTTP ' + res.status + ')');
+          return;
+        }
+
+        const payload = await res.json();
+        if (!payload || !payload.meta || !Array.isArray(payload.records)) {
+          showError('보고서 데이터 손상', '공유된 보고서 형식이 올바르지 않습니다.');
+          return;
+        }
+
+        document.body.style.display = 'block';
+        document.body.style.minHeight = 'auto';
+        document.body.style.padding = '0';
+        window.SafeHtmlReport.mountDashboard(payload);
+      } catch (err) {
+        showError('보고서 로드 오류', err && err.message ? err.message : '네트워크 연결 상태를 확인한 뒤 다시 시도해주세요.');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,4 +1,3 @@
-/* eslint-disable no-useless-escape */
 (function (root, factory) {
   let engine = null;
   if (typeof module === 'object' && module.exports) {
@@ -167,18 +166,8 @@
     });
   }
 
-  function renderHtmlDocument(payload) {
-    const titleEsc = escapeHtmlText(`${payload.meta.siteLabel} · ${payload.meta.periodLabel} 관리자용 상세 분석 보고서`);
-    const generatedAtEsc = escapeHtmlText(payload.meta.generatedAt);
-    const payloadJson = safeJsonForScript(payload);
-
-    return `<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${titleEsc}</title>
-  <style>
+  function getDashboardStyles() {
+    return `
     :root {
       --navy: #0f294a;
       --blue: #1d4ed8;
@@ -222,6 +211,7 @@
     }
     .hero h1 { margin: 0 0 6px; font-size: 1.45rem; letter-spacing: -0.02em; }
     .hero-meta { font-size: 0.86rem; color: #dbeafe; display: flex; flex-wrap: wrap; gap: 14px; }
+    .hero-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .btn {
       border: 1px solid var(--slate-200);
       background: #fff;
@@ -238,6 +228,36 @@
     .btn-primary:hover { background: #1e40af; }
     .btn-ghost { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.28); color: #fff; }
     .btn-ghost:hover { background: rgba(255,255,255,0.24); }
+    .btn-share {
+      background: #ffffff;
+      border-color: #ffffff;
+      color: #0f294a;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    }
+    .btn-share:hover { background: #e0f2fe; border-color: #bae6fd; }
+    .btn-share.copied { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+    .copy-toast {
+      position: fixed;
+      top: 22px;
+      right: 24px;
+      z-index: 1200;
+      background: #0f294a;
+      color: #ffffff;
+      padding: 11px 16px;
+      border-radius: 10px;
+      font-size: 0.86rem;
+      font-weight: 600;
+      box-shadow: 0 10px 28px rgba(15, 41, 74, 0.32);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      opacity: 0;
+      transform: translateY(-8px);
+      pointer-events: none;
+      transition: all 0.18s ease;
+      max-width: min(460px, calc(100vw - 40px));
+    }
+    .copy-toast.show { opacity: 1; transform: translateY(0); }
+    .copy-toast.warn { background: #92400e; }
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -429,6 +449,7 @@
       justify-content: space-between;
       align-items: center;
       gap: 12px;
+      flex-wrap: wrap;
       z-index: 2;
     }
     .modal-body { padding: 20px 24px 26px; }
@@ -462,10 +483,11 @@
       .no-print { display: none !important; }
       body { background: #fff; }
       .panel, .kpi-card { box-shadow: none; border: 1px solid #cbd5e1; }
-    }
-  </style>
-</head>
-<body>
+    }`;
+  }
+
+  function getDashboardBodyHtml(generatedAtEsc) {
+    return `
   <div class="wrap">
     <header class="hero">
       <div>
@@ -474,10 +496,11 @@
           <span>현장: <strong id="metaSite">-</strong></span>
           <span>대상기간: <strong id="metaPeriod">-</strong></span>
           <span>점검책임: <strong id="metaInspector">-</strong></span>
-          <span>생성일시: <strong>${generatedAtEsc}</strong></span>
+          <span>생성일시: <strong>${generatedAtEsc || '-'}</strong></span>
         </div>
       </div>
-      <div class="no-print" style="display:flex; gap:8px;">
+      <div class="hero-actions no-print">
+        <button type="button" class="btn btn-share" id="btnCopyShareLink" title="현재 필터 및 상세화면 상태를 포함한 링크 복사">🔗 링크 복사</button>
         <button type="button" class="btn btn-ghost" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
       </div>
     </header>
@@ -545,7 +568,8 @@
     <div class="modal" role="dialog" aria-modal="true">
       <div class="modal-head">
         <div id="modalTitle" style="font-weight:800; font-size:1.05rem;">부적합 상세 정보</div>
-        <div style="display:flex; gap:8px; align-items:center;">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button type="button" class="btn btn-ghost" id="btnCopyModalLink">🔗 항목 링크</button>
           <button type="button" class="btn btn-ghost" id="btnModalPrev">← 이전</button>
           <button type="button" class="btn btn-ghost" id="btnModalNext">다음 →</button>
           <button type="button" class="btn btn-ghost" id="btnModalClose">✕ 닫기</button>
@@ -555,8 +579,20 @@
     </div>
   </div>
 
-  <script>
-    const REPORT_DATA = ${payloadJson};
+  <div id="linkCopyToast" class="copy-toast no-print" role="status" aria-live="polite"></div>`;
+  }
+
+  /* eslint-disable no-var */
+  function bootDashboard(REPORT_DATA) {
+    const VALID_TABS = ['hazard', 'agent', 'work', 'loc', 'cause'];
+    const FILTER_KEYS = [
+      'tab', 'search', 'severity', 'status', 'holdOnly', 'type',
+      'agentMajor', 'agentMid', 'agentMinor', 'workGroup', 'workName',
+      'location', 'subcontractor', 'pdca', 'causeType', 'causeTag',
+    ];
+    let initialized = false;
+    let toastTimer = null;
+    let btnResetTimer = null;
 
     const state = {
       tab: 'hazard',
@@ -602,8 +638,125 @@
       return Array.from(m.values()).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko'));
     }
 
-    function getFilteredRecords(ignoreKeys = []) {
-      const ignore = new Set(ignoreKeys);
+    function buildHashFromState() {
+      const p = new URLSearchParams();
+      if (state.tab && state.tab !== 'hazard') p.set('tab', state.tab);
+      if (state.search) p.set('search', state.search);
+      if (state.severity) p.set('severity', state.severity);
+      if (state.status) p.set('status', state.status);
+      if (state.holdOnly) p.set('holdOnly', '1');
+      ['type', 'agentMajor', 'agentMid', 'agentMinor', 'workGroup', 'workName', 'location', 'subcontractor', 'pdca', 'causeType', 'causeTag'].forEach((k) => {
+        if (state[k]) p.set(k, state[k]);
+      });
+      const modalOpen = document.getElementById('detailModal').classList.contains('open');
+      if (modalOpen && state.modalPos >= 0 && state.filtered[state.modalPos]) {
+        p.set('rec', String(state.filtered[state.modalPos].id));
+      }
+      const str = p.toString();
+      return str ? '#' + str : '';
+    }
+
+    function syncHashFromState() {
+      if (!initialized) return;
+      try {
+        const hash = buildHashFromState();
+        const base = window.location.pathname + window.location.search;
+        if (typeof history !== 'undefined' && typeof history.replaceState === 'function') {
+          history.replaceState(null, '', hash ? base + hash : base);
+        } else {
+          window.location.hash = hash;
+        }
+      } catch (_) {
+        // file:// 특수 환경 등 replaceState 제한 시 무시
+      }
+    }
+
+    function getShareUrl() {
+      const hash = buildHashFromState();
+      const proto = (window.location && window.location.protocol) || '';
+      if (proto === 'http:' || proto === 'https:') {
+        return window.location.origin + window.location.pathname + window.location.search + hash;
+      }
+      if (REPORT_DATA.meta && REPORT_DATA.meta.shareUrl) {
+        return REPORT_DATA.meta.shareUrl + hash;
+      }
+      const rawHref = (window.location && window.location.href) || '';
+      return rawHref.split('#')[0] + hash;
+    }
+
+    function showToast(msg, isWarn) {
+      const toastEl = document.getElementById('linkCopyToast');
+      const copyBtn = document.getElementById('btnCopyShareLink');
+      if (toastEl) {
+        toastEl.textContent = msg;
+        toastEl.classList.toggle('warn', Boolean(isWarn));
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3600);
+      }
+      if (copyBtn) {
+        copyBtn.textContent = '✓ 링크 복사됨';
+        copyBtn.classList.add('copied');
+        clearTimeout(btnResetTimer);
+        btnResetTimer = setTimeout(() => {
+          copyBtn.textContent = '🔗 링크 복사';
+          copyBtn.classList.remove('copied');
+        }, 2200);
+      }
+    }
+
+    function fallbackExecCopy(text) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        ta.style.top = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return Boolean(ok);
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function handleCopyShareLink() {
+      syncHashFromState();
+      const shareUrl = getShareUrl();
+      let copied = false;
+
+      if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          copied = true;
+        } catch (_) {
+          copied = false;
+        }
+      }
+      if (!copied) {
+        copied = fallbackExecCopy(shareUrl);
+      }
+      if (!copied && typeof window.prompt === 'function') {
+        window.prompt('아래 링크를 복사(Ctrl+C)하여 공유하세요:', shareUrl);
+        return;
+      }
+
+      const hasHash = shareUrl.includes('#');
+      if (/^https?:/i.test(shareUrl)) {
+        showToast(hasHash
+          ? '✓ 현재 필터·상세화면 상태를 포함한 공유 링크가 복사되었습니다.'
+          : '✓ 웹 공유 링크가 클립보드에 복사되었습니다.');
+      } else {
+        showToast('✓ 현재 HTML 파일 링크가 복사되었습니다. (외부 공유 시 클라우드 로그인 후 HTML 다시 생성 또는 파일 첨부 필요)', true);
+      }
+    }
+
+    function getFilteredRecords(ignoreKeys) {
+      const ignore = new Set(ignoreKeys || []);
       const q = state.search.trim().toLowerCase();
       return REPORT_DATA.records.filter((r) => {
         if (!ignore.has('severity') && state.severity) {
@@ -738,7 +891,8 @@
             syncInputsAndRender();
           });
         });
-        document.getElementById('btnClearHaz')?.addEventListener('click', () => { state.type = ''; syncInputsAndRender(); });
+        const clearBtn = document.getElementById('btnClearHaz');
+        if (clearBtn) clearBtn.addEventListener('click', () => { state.type = ''; syncInputsAndRender(); });
         box.querySelectorAll('[data-haz-minor]').forEach((el) => {
           el.addEventListener('click', () => {
             if (!state.type && targetType) state.type = targetType;
@@ -874,7 +1028,6 @@
         return;
       }
 
-      // tab === 'cause'
       const condItems = countBy(all.filter((r) => r.condition), (r) => r.condition);
       const actItems = countBy(all.filter((r) => r.action), (r) => r.action);
       const pdcaItems = ['PLAN', 'DO', 'CHECK', 'ACTION'].map((ph) => {
@@ -901,11 +1054,13 @@
             renderBarList(pdcaItems, all.length, state.pdca, 'pdca', true) + '</div>' +
         '</div>';
 
-      document.getElementById('btnFilterCond')?.addEventListener('click', () => {
+      const btnCond = document.getElementById('btnFilterCond');
+      if (btnCond) btnCond.addEventListener('click', () => {
         state.causeType = state.causeType === 'COND' ? '' : 'COND';
         syncInputsAndRender();
       });
-      document.getElementById('btnFilterAct')?.addEventListener('click', () => {
+      const btnAct = document.getElementById('btnFilterAct');
+      if (btnAct) btnAct.addEventListener('click', () => {
         state.causeType = state.causeType === 'ACT' ? '' : 'ACT';
         syncInputsAndRender();
       });
@@ -1004,10 +1159,13 @@
         '#' + r.idx + ' [' + esc(r.type) + '] ' + sevBadge(r.severity, r.severityLabel) +
         ' <span class="badge ' + (r.status === '조치완료' ? 'b-done' : 'b-open') + '">' + esc(r.status) + '</span>';
 
+      const fallbacks = (REPORT_DATA.meta && REPORT_DATA.meta.photoFallbacks) || {};
       const photosHtml = r.photoKeys.length
         ? '<div class="photo-grid">' + r.photoKeys.map((k) => {
-            const src = REPORT_DATA.photos[k] || '';
-            return src ? '<img src="' + src + '" alt="현장사진" />' : '';
+            const src = (REPORT_DATA.photos && REPORT_DATA.photos[k]) || '';
+            const fb = fallbacks[k] || '';
+            if (!src && !fb) return '';
+            return '<img src="' + esc(src || fb) + '"' + (fb ? ' data-fallback="' + esc(fb) + '"' : '') + ' alt="현장사진" />';
           }).join('') + '</div>'
         : '<p class="muted">첨부된 현장사진이 없습니다.</p>';
 
@@ -1017,16 +1175,17 @@
         r.rootCauseMgmt ? '• 관리감독 원인: ' + r.rootCauseMgmt : '',
         r.rootCauseSystem ? '• 안전시스템 원인: ' + r.rootCauseSystem : '',
         r.stakeholder ? '• 책임 주체: ' + r.stakeholder : '',
-        r.interviewOpinion ? '• 현장 인터뷰(근로자·관리자):\\n' + r.interviewOpinion : '',
-      ].filter(Boolean).join('\\n');
+        r.interviewOpinion ? '• 현장 인터뷰(근로자·관리자):\n' + r.interviewOpinion : '',
+      ].filter(Boolean).join('\n');
 
       const actionLines = [
-        r.auditProposal ? '• 점검단 제안 / 개선대책:\\n' + r.auditProposal : '',
+        r.auditProposal ? '• 점검단 제안 / 개선대책:\n' + r.auditProposal : '',
         r.pmVerdict ? '• PM 판정결과: ' + r.pmVerdict : '',
         r.inspectorOpinionType ? '• 개선유형: ' + r.inspectorOpinionType : '',
-      ].filter(Boolean).join('\\n');
+      ].filter(Boolean).join('\n');
 
-      document.getElementById('modalBody').innerHTML =
+      const modalBody = document.getElementById('modalBody');
+      modalBody.innerHTML =
         '<div class="detail-grid">' +
           '<div class="detail-kv"><div class="detail-k">현장 / 협력사</div><div class="detail-v">' + esc(r.site) + (r.subcontractor ? ' · ' + esc(r.subcontractor) : '') + '</div></div>' +
           '<div class="detail-kv"><div class="detail-k">점검일 / 차수 / 점검자</div><div class="detail-v">' + esc(r.date) + (r.round ? ' · ' + esc(r.round) : '') + ' · ' + esc(r.inspector) + '</div></div>' +
@@ -1041,9 +1200,26 @@
         '<div class="detail-sec"><h4>🛡️ 개선대책 및 PM 판정</h4><p>' + esc(actionLines || '기재된 개선대책 정보가 없습니다.') + '</p></div>' +
         '<div class="detail-sec"><h4>📷 현장 실사 사진</h4>' + photosHtml + '</div>';
 
+      modalBody.querySelectorAll('img[data-fallback]').forEach((img) => {
+        img.addEventListener('error', function () {
+          const fb = this.getAttribute('data-fallback');
+          if (fb && this.getAttribute('src') !== fb) {
+            this.removeAttribute('data-fallback');
+            this.setAttribute('src', fb);
+          }
+        });
+      });
+
       document.getElementById('detailModal').classList.add('open');
       document.getElementById('btnModalPrev').disabled = pos <= 0;
       document.getElementById('btnModalNext').disabled = pos >= state.filtered.length - 1;
+      syncHashFromState();
+    }
+
+    function closeModal() {
+      document.getElementById('detailModal').classList.remove('open');
+      state.modalPos = -1;
+      syncHashFromState();
     }
 
     function resetAllFilters() {
@@ -1076,12 +1252,42 @@
       renderDrillDown();
       renderActiveChips();
       renderTable();
+      syncHashFromState();
+    }
+
+    function applyStateFromHash() {
+      const rawHash = ((window.location && window.location.hash) || '').replace(/^#/, '');
+      let recId = '';
+      if (rawHash) {
+        const p = new URLSearchParams(rawHash);
+        const tabVal = p.get('tab') || 'hazard';
+        state.tab = VALID_TABS.includes(tabVal) ? tabVal : 'hazard';
+        FILTER_KEYS.forEach((k) => {
+          if (k === 'tab') return;
+          if (k === 'holdOnly') state.holdOnly = p.get('holdOnly') === '1';
+          else state[k] = p.get(k) || '';
+        });
+        recId = p.get('rec') || '';
+      }
+      syncInputsAndRender();
+      if (recId) {
+        let pos = state.filtered.findIndex((r) => String(r.id) === String(recId));
+        if (pos < 0) {
+          resetAllFilters();
+          pos = state.filtered.findIndex((r) => String(r.id) === String(recId));
+        }
+        if (pos >= 0) openModal(pos);
+      }
     }
 
     document.getElementById('reportTitle').textContent = REPORT_DATA.meta.title;
     document.getElementById('metaSite').textContent = REPORT_DATA.meta.siteLabel;
     document.getElementById('metaPeriod').textContent = REPORT_DATA.meta.periodLabel;
     document.getElementById('metaInspector').textContent = REPORT_DATA.meta.inspector;
+
+    document.getElementById('btnCopyShareLink').addEventListener('click', handleCopyShareLink);
+    const modalCopyBtn = document.getElementById('btnCopyModalLink');
+    if (modalCopyBtn) modalCopyBtn.addEventListener('click', handleCopyShareLink);
 
     document.querySelectorAll('#drillTabs .tab-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1102,11 +1308,9 @@
       syncInputsAndRender();
     });
     document.getElementById('btnResetFilters').addEventListener('click', resetAllFilters);
-    document.getElementById('btnModalClose').addEventListener('click', () => {
-      document.getElementById('detailModal').classList.remove('open');
-    });
+    document.getElementById('btnModalClose').addEventListener('click', closeModal);
     document.getElementById('detailModal').addEventListener('click', (e) => {
-      if (e.target.id === 'detailModal') document.getElementById('detailModal').classList.remove('open');
+      if (e.target.id === 'detailModal') closeModal();
     });
     document.getElementById('btnModalPrev').addEventListener('click', () => {
       if (state.modalPos > 0) openModal(state.modalPos - 1);
@@ -1117,15 +1321,90 @@
     document.addEventListener('keydown', (e) => {
       const modalOpen = document.getElementById('detailModal').classList.contains('open');
       if (!modalOpen) return;
-      if (e.key === 'Escape') document.getElementById('detailModal').classList.remove('open');
+      if (e.key === 'Escape') closeModal();
       if (e.key === 'ArrowLeft' && state.modalPos > 0) openModal(state.modalPos - 1);
       if (e.key === 'ArrowRight' && state.modalPos < state.filtered.length - 1) openModal(state.modalPos + 1);
     });
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('hashchange', applyStateFromHash);
+    }
 
-    syncInputsAndRender();
+    applyStateFromHash();
+    initialized = true;
+    syncHashFromState();
+  }
+
+  function createShareSnapshot(payload, photoMap, shareConfig) {
+    const baseAppUrl = (shareConfig && shareConfig.baseAppUrl)
+      ? shareConfig.baseAppUrl.replace(/\/?$/, '/')
+      : 'https://abraxass0511-lab.github.io/JS-AIC/';
+    const workerUrl = (shareConfig && shareConfig.workerUrl)
+      ? shareConfig.workerUrl.replace(/\/+$/, '')
+      : '';
+    const sharePhotos = {};
+    const photoFallbacks = {};
+
+    Object.keys(photoMap || {}).forEach((k) => {
+      if (k.startsWith('samples/')) {
+        sharePhotos[k] = baseAppUrl + k;
+      } else if (k.startsWith('http://') || k.startsWith('https://')) {
+        sharePhotos[k] = k;
+      } else if (!k.startsWith('data:') && workerUrl) {
+        sharePhotos[k] = `${workerUrl}/file?path=${encodeURIComponent(k)}&raw=1`;
+        photoFallbacks[k] = baseAppUrl + k;
+      } else if (typeof photoMap[k] === 'string' && photoMap[k].length <= 120000) {
+        sharePhotos[k] = photoMap[k];
+      }
+    });
+
+    return {
+      meta: {
+        ...payload.meta,
+        shareUrl: (shareConfig && shareConfig.viewerUrl) || '',
+        photoFallbacks,
+      },
+      records: payload.records,
+      photos: sharePhotos,
+    };
+  }
+
+  function renderHtmlDocument(payload) {
+    const titleEsc = escapeHtmlText(`${payload.meta.siteLabel} · ${payload.meta.periodLabel} 관리자용 상세 분석 보고서`);
+    const generatedAtEsc = escapeHtmlText(payload.meta.generatedAt);
+    const payloadJson = safeJsonForScript(payload);
+
+    return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${titleEsc}</title>
+  <style>${getDashboardStyles()}
+  </style>
+</head>
+<body>${getDashboardBodyHtml(generatedAtEsc)}
+  <script>
+    (${bootDashboard.toString()})(${payloadJson});
   </script>
 </body>
 </html>`;
+  }
+
+  function mountDashboard(payload, targetDoc) {
+    const doc = targetDoc || (typeof document !== 'undefined' ? document : null);
+    if (!doc) throw new Error('DOM document가 필요합니다.');
+    const safeMeta = (payload && payload.meta) || {};
+    doc.title = safeMeta.title || '관리자용 상세 분석 보고서';
+
+    let styleEl = doc.getElementById('safeHtmlReportStyle');
+    if (!styleEl) {
+      styleEl = doc.createElement('style');
+      styleEl.id = 'safeHtmlReportStyle';
+      doc.head.appendChild(styleEl);
+    }
+    styleEl.textContent = getDashboardStyles();
+    doc.body.innerHTML = getDashboardBodyHtml(escapeHtmlText(safeMeta.generatedAt || '-'));
+    bootDashboard(payload);
   }
 
   async function buildManagerDetailHtmlBlob(options = {}) {
@@ -1153,6 +1432,7 @@
         periodLabel: stats.periodInfo.label || stats.periodSuffix || `${stats.targetYear}년 전체`,
         inspector: stats.inspector || '안전관리자',
         generatedAt,
+        shareUrl: options.shareUrl || '',
         total: stats.total,
         sevCrit: stats.sev.중대 || 0,
         sevMid: stats.sev.중 || 0,
@@ -1167,6 +1447,16 @@
       photos: photoMap,
     };
 
+    if (options.shareConfig && typeof options.shareConfig.publish === 'function') {
+      try {
+        const shareSnapshot = createShareSnapshot(payload, photoMap, options.shareConfig);
+        await options.shareConfig.publish(shareSnapshot);
+        payload.meta.shareUrl = options.shareConfig.viewerUrl || '';
+      } catch (shareErr) {
+        console.warn('공유 스냅샷 게시 생략 (로컬 모드로 진행):', shareErr);
+      }
+    }
+
     const html = renderHtmlDocument(payload);
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const safePeriod = (stats.periodInfo.label || stats.month || stats.periodSuffix || '전체').replace(/[\s~:/\\']+/g, '_');
@@ -1176,15 +1466,20 @@
     if (typeof engine.triggerDownloadIfRequested === 'function') {
       engine.triggerDownloadIfRequested(blob, filename, options.download);
     }
-    return { blob, html, filename, stats };
+    return { blob, html, filename, stats, shareUrl: payload.meta.shareUrl || '' };
   }
 
   return {
     buildManagerDetailHtmlBlob,
+    mountDashboard,
+    getDashboardStyles,
+    getDashboardBodyHtml,
     _internal: {
       collectPhotosForRecords,
       normalizeRecordsForHtml,
+      createShareSnapshot,
       renderHtmlDocument,
+      bootDashboard,
       safeJsonForScript,
     },
   };
