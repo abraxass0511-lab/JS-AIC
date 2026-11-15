@@ -886,15 +886,17 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/\[=\]\s*oa/gi, '')
       .trim();
 
-    // 인라인 명시적 불릿(-)만 줄바꿈 처리
-    s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪]\s*(?=[가-힣0-9])/g, '\n- ');
+    // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
+    s = (typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets)
+      ? window.SafeTextNormalizer.splitInlineBullets(s)
+      : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (let l of rawLines) {
       if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(l);
-      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
       if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
       if (items.length === 0 || isBulletStart) {
@@ -923,14 +925,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
       .trim();
 
-    // 인라인 명시적 불릿(-)만 줄바꿈 처리
-    s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ');
+    // 인라인 명시적 불릿(-)만 줄바꿈 처리 (영문/괄호 시작 불릿 포함)
+    s = (typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets)
+      ? window.SafeTextNormalizer.splitInlineBullets(s)
+      : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(line);
-      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
       if (items.length === 0 || isBulletStart) {
         items.push(cl);
@@ -952,12 +956,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
       return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
     }
-    const cleanedStr = rawStr
+    let cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
       .replace(/시스템\s*개선|교육\/코칭|패널티|페널티/gi, '')
       .replace(/\((?:현장\s*)?모니터링\s*강화\)|\(\s*모니터링\/점검강화\s*\)|\(이행강화안\s*수립\)|\(\s*(?:근로자|협력사)\s*교육\s*\)|\(관리감독자\s*경고\)/g, '')
-      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '')
-      .replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ')
+      .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|[—\-_]{3,})[\s\S]*$/gi, '');
+    cleanedStr = (typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets)
+      ? window.SafeTextNormalizer.splitInlineBullets(cleanedStr)
+      : cleanedStr.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
+    cleanedStr = cleanedStr
       .replace(/,\s*-\s*/g, '\n- ')
       .trim();
 
@@ -966,7 +973,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
     for (const line of rawLines) {
       const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]/s.test(line);
-      let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
+      let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
       if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\/코칭)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
@@ -1383,6 +1390,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         workTypeRaw: rec.workGroup || '',
         location: rec.location || '',
         content: rec.content || '',
+        banner: rec._rawCellTexts?.banner || rec.photoBanner || '',
         lawRaw: rec.rawLaw || rec.law || '',
         interview: rec.interviewOpinion || '',
         proposalText: rec.auditProposal || '',
@@ -1443,10 +1451,13 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           } else {
             rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
           }
-          // 1) AI 전수 교정(fixedFields: 띄어쓰기 + 스캔 오탈자 + 말미 영문 노이즈 제거) 우선 반영
+          // 1) AI 전수 교정(edits 또는 fixedFields: 띄어쓰기 + 스캔 오탈자 + 말미 영문 노이즈 제거) 우선 반영
           // 단, Selective Vision Rescue(_visionCleaned)로 픽셀 직독 완료된 레코드는 텍스트 재추론으로 덮어쓰지 않음
-          if (!rec._visionCleaned && aiItem.fixedFields && typeof aiItem.fixedFields === 'object') {
-            const ff = aiItem.fixedFields;
+          const aiPatchObj = (aiItem.edits && typeof aiItem.edits === 'object')
+            ? aiItem.edits
+            : ((aiItem.fixedFields && typeof aiItem.fixedFields === 'object') ? aiItem.fixedFields : null);
+          if (!rec._visionCleaned && aiPatchObj) {
+            const ff = aiPatchObj;
             const applyFixedField = (key, rawVal, cleanerFn, syncKey) => {
               if (typeof rawVal !== 'string') return;
               const v = rawVal.trim();
@@ -1471,6 +1482,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
             applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
           }
+          const rawBannerOrigBeforePatch = String(rec._rawCellTexts?.banner || rec.photoBanner || '').trim();
+          const hasTypoPatchForBanner = Boolean(
+            aiItem.typoPatches &&
+            typeof aiItem.typoPatches === 'object' &&
+            Object.keys(aiItem.typoPatches).some(bad => bad && rawBannerOrigBeforePatch.includes(bad))
+          );
           if (!rec._visionCleaned && aiItem.typoPatches && window.SafeTextNormalizer?.applyTypoPatches) {
             window.SafeTextNormalizer.applyTypoPatches(rec, aiItem.typoPatches);
           }
@@ -1483,16 +1500,40 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           if (aiItem.hazardType && (!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(`${rec._rawCellTexts?.type || ''} ${rec.content || ''}`)))) {
             rec.type = String(aiItem.hazardType).split('·')[0];
           }
-          const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
-          const aiBanner = (aiItem.photoBanner || '').trim();
+          const normBannerFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
+            ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, 'banner')
+            : (s) => s;
+          const rawBannerOrig = rawBannerOrigBeforePatch;
+          const rawBannerFromSheet = normBannerFn(rawBannerOrig);
+          const aiBanner = normBannerFn(String(aiItem.photoBanner || aiPatchObj?.photoBanner || aiPatchObj?.banner || '').trim());
           const hasUsefulSpaces = (s) => /\s/.test(s) || s.length < 10;
           const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s);
           const isLocBanner = (s) => typeof window !== 'undefined' && window.SafeTextNormalizer?.isLocationOnlyBanner?.(s, rec.location);
+          const bannerConf = Number(rec._cellConfidences?.banner?.confidence ?? 1.0);
+          const rawHasSuspectedTypo = hasTypoPatchForBanner || /노[술줄습솔]|본트|다설|내속|흥로|책베이스/.test(rawBannerOrig);
+          const canUseAiBanner = Boolean(
+            aiBanner && !isLocBanner(aiBanner) && !/\uFFFD/.test(aiBanner) &&
+            aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner) && aiBanner.length >= 4
+          );
+          // AI 배너가 원본 OCR 배너의 띄어쓰기/오탈자 교정본(고유사도)이거나 원본 신뢰도가 낮을 때 AI 교정 배너 우선 채택
+          const isAiRefinementOfRaw = (() => {
+            if (!canUseAiBanner || !rawBannerFromSheet) return false;
+            const aC = aiBanner.replace(/\s+/g, '');
+            const rC = rawBannerFromSheet.replace(/\s+/g, '');
+            if (aC === rC) return true;
+            if (typeof window !== 'undefined' && window.SafeTextNormalizer?.levenshteinDistance) {
+              const dist = window.SafeTextNormalizer.levenshteinDistance(aC, rC);
+              return dist <= Math.max(2, Math.floor(Math.max(aC.length, rC.length) * 0.25));
+            }
+            return false;
+          })();
           if (rec._visionCleaned && rec.photoBanner && !isLocBanner(rec.photoBanner)) {
             rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location);
+          } else if (canUseAiBanner && (bannerConf < 0.90 || rawHasSuspectedTypo || isAiRefinementOfRaw || !rawBannerFromSheet || isLocBanner(rawBannerFromSheet) || !hasUsefulSpaces(rawBannerFromSheet) || isTruncatedRawBanner(rawBannerFromSheet))) {
+            rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location);
           } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet) && hasUsefulSpaces(rawBannerFromSheet) && !isTruncatedRawBanner(rawBannerFromSheet)) {
             rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
-          } else if (aiBanner && !isLocBanner(aiBanner) && !/\uFFFD/.test(aiBanner) && aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner)) {
+          } else if (canUseAiBanner) {
             rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location);
           } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet)) {
             rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);

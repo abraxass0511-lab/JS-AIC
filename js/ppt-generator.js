@@ -313,14 +313,16 @@
 
     // 문장 종결 후 새 항목 분리 (예: 못함 갱폼 인양팀 -> 못함\n- 갱폼 인양팀)
     s = s.replace(/(?<=(?:못함|했음|하였음|설치함|확인함|판단됨|간과함|발생함|요청함|부족함|미흡함|않음|보완하겠음|개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립))\s*[-•·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|작업팀|시공사|협력사|향후|사전|2단|상부|하부|점검|유관부서|당사|본사|1차|2차|갱폼인양팀장|인양팀장))/g, '\n- ');
-    s = s.replace(/(?<=[가-힣.!?])\s*[-•·▪]\s*(?=[가-힣0-9])/g, '\n- ');
+    s = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
+      ? window.SafeTextNormalizer.splitInlineBullets(s)
+      : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (let l of rawLines) {
       if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(l);
-      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
       if (items.length === 0 || isBulletStart) {
         items.push(text);
@@ -343,15 +345,17 @@
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
       .trim();
 
-    // 분리 규칙:
-    s = s.replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ');
+    // 분리 규칙 (영문/괄호 시작 불릿 포함):
+    s = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
+      ? window.SafeTextNormalizer.splitInlineBullets(s)
+      : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
     s = s.replace(/(?<=(?:개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립|점검\s*실시|교육\s*실시|내실화|구축|적용|설치|존치|수렴|확인|완료))\s*[-•*·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|점검단|유관부서|당사|본사|1차|2차|향후|사전|정기|수시|형식적|비계설치|상가동|외벽|갱폼인양팀장|인양팀장))/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
       const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(line);
-      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=\d.)]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
+      let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
       if (items.length === 0 || isBulletStart) {
         items.push(cl);
@@ -379,15 +383,17 @@
       .replace(/혐식적/g, '형식적')
       .replace(/(?:5045|5145|SNS)\s*[내U]\s*등록/gi, 'SNS내 등록')
       .replace(/5045내|5145내|SNSU|SNS\s*U\b/gi, 'SNS내')
-      .replace(/시스템\s*구죽/g, '시스템 구축')
-      // 불릿 기호 분리 및 문장 종결 후 새 항목 분리
-      .replace(/(?<=[가-힣.!?])\s*[-•*·▪*]\s*(?=[가-힣0-9])/g, '\n- ')
+      .replace(/시스템\s*구죽/g, '시스템 구축');
+    const bulletSplitStr = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
+      ? window.SafeTextNormalizer.splitInlineBullets(cleanedStr)
+      : cleanedStr.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
+    const finalActionStr = bulletSplitStr
       .replace(/(?<=(?:개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립|점검\s*실시|교육\s*실시|내실화|구축|적용|설치|존치|수렴|확인|완료))\s*[-•*·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|점검단|유관부서|당사|본사|1차|2차|향후|사전|정기|수시|형식적|비계설치|상가동|외벽|갱폼인양팀장|인양팀장))/g, '\n- ')
       .replace(/(교육\s*실시|점검\s*실시\s*\([^)]+\)|존치\)|추가\s*설치)\s*[.,·•-]?\s*(?=거푸집\s*전도|비계\s*잭베이스|시스템\s*비계\s*설치계획서)/g, '$1\n- ')
       .replace(/,\s*-\s*/g, '\n- ')
       .trim();
 
-    const rawLines = cleanedStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const rawLines = finalActionStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
       const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
@@ -734,6 +740,81 @@
       sz -= 0.5;
     }
     return sz;
+  }
+
+  /**
+   * [v42] 문자열 폭 가중치 계산 (맑은 고딕 기준)
+   */
+  function measureTextWidthUnits(text) {
+    if (!text) return 0;
+    let units = 0;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === ' ') units += 0.34;
+      else if (/[:.,/()\[\]\-]/.test(ch)) units += 0.36;
+      else if (text.charCodeAt(i) > 127) units += 1.05;
+      else units += 0.60;
+    }
+    return units;
+  }
+
+  /**
+   * [v42] 부적합 내용 박스(w=11.05in, h=0.6925in) 가로 페어 패킹 및 클리핑 방지 폰트 자동 산출
+   * - 3개 이상 번호 항목('1)... 2)... 3)... 4)...')은 원본 장표처럼 가로 2열(1+2, 3+4)로 배치해 공간 최적화
+   * - 줄바꿈 발생 시에도 박스 높이를 넘기지 않도록 폰트 크기 및 줄 간격을 자동 축소(최소 8.0pt)
+   */
+  function fitMainContentForBox(rawMainContent, boxWidthIn = 11.05, boxHeightIn = 0.6925) {
+    const rawLines = String(rawMainContent || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (rawLines.length === 0) {
+      return { lines: [], fontSize: 14, lineSpacingMultiple: 1.15, packed: false };
+    }
+
+    const availWIn = Math.max(2.0, boxWidthIn - 0.14);
+    const estimateWrappedLines = (lines, sz) => {
+      const charWIn = sz / 72;
+      let total = 0;
+      for (const l of lines) {
+        const wIn = measureTextWidthUnits(l) * charWIn;
+        total += Math.max(1, Math.ceil(wIn / availWIn));
+      }
+      return total;
+    };
+
+    let candidateLines = rawLines;
+    let packed = false;
+    if (rawLines.length >= 3) {
+      const paired = [];
+      for (let i = 0; i < rawLines.length; i += 2) {
+        paired.push(i + 1 < rawLines.length ? `${rawLines[i]}  ${rawLines[i + 1]}` : rawLines[i]);
+      }
+      const longestPairedUnits = paired.reduce((mx, l) => Math.max(mx, measureTextWidthUnits(l)), 0);
+      if (longestPairedUnits * (10.5 / 72) <= availWIn * 1.02) {
+        candidateLines = paired;
+        packed = true;
+      }
+    }
+
+    const vertMarginPt = candidateLines.length >= 3 ? 6 : 9;
+    const usableHPt = Math.max(20, boxHeightIn * 72 - vertMarginPt);
+    const baseLineMult = candidateLines.length >= 3 ? 1.08 : 1.15;
+    let sz = candidateLines.length === 1 ? 14 : (packed ? 12 : 13);
+    while (sz > 8.0) {
+      const wrapped = estimateWrappedLines(candidateLines, sz);
+      const effMult = Math.max(1.18, baseLineMult * 1.06);
+      const estHPt = wrapped * sz * effMult;
+      if (estHPt <= usableHPt) {
+        if (candidateLines.length <= 2 && wrapped <= 2) break;
+        if (wrapped <= 4) break;
+      }
+      sz -= 0.5;
+    }
+
+    return {
+      lines: candidateLines,
+      fontSize: sz,
+      lineSpacingMultiple: sz <= 10.0 ? 1.06 : baseLineMult,
+      packed
+    };
   }
 
   /**
@@ -1360,9 +1441,9 @@
       });
     });
 
-    // 부적합 개요 2행: 부적합 내용 (Cell(4,2): x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925, 14pt, 1)/2) 줄바꿈 및 수직 중앙 정렬)
-    const mainLines = String(data.mainContent || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const longestMainLine = mainLines.reduce((a, b) => (a.length >= b.length ? a : b), '');
+    // 부적합 개요 2행: 부적합 내용 (Cell(4,2): x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925)
+    const mainFit = fitMainContentForBox(data.mainContent, 11.05, 0.6925);
+    const mainLines = mainFit.lines;
 
     slide.addShape(pptx.ShapeType.rect, {
       x: 0.9375, y: 1.6213, w: 12.2938, h: 0.6925,
@@ -1370,28 +1451,32 @@
     });
     if (mainLines.length <= 1) {
       const singleMainText = mainLines[0] || '';
-      const mainSz = calcSingleLineFontSize(`부적합 내용 : ${singleMainText}`, 12.2938, 14, 11.5);
+      const mainSz = calcSingleLineFontSize(`부적합 내용 : ${singleMainText}`, 12.2938, 14, 10.5);
+      const needsWrap = measureTextWidthUnits(`부적합 내용 : ${singleMainText}`) * (mainSz / 72) > 12.10;
       slide.addText([
         { text: '부적합 내용 ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } },
         { text: ': ', options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } },
         ...(singleMainText ? [{ text: singleMainText, options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } }] : [])
       ], {
         x: 0.9375, y: 1.6213, w: 12.2938, h: 0.6925,
-        align: 'left', valign: 'middle', margin: [2, 6, 2, 6], wrap: true
+        align: 'left', valign: needsWrap ? 'top' : 'middle', margin: needsWrap ? [4, 6, 3, 6] : [2, 6, 2, 6], wrap: true
       });
     } else {
-      const mainSz = calcSingleLineFontSize(longestMainLine, 11.05, 14, 11.5);
+      const mainSz = mainFit.fontSize;
+      const topPad = mainLines.length >= 3 || mainSz <= 10 ? 3 : 5;
+      const botPad = mainLines.length >= 3 || mainSz <= 10 ? 2 : 3;
+      const labelSz = Math.min(12.5, Math.max(10.5, mainSz));
       slide.addText([
-        { text: '부적합 내용 ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: mainSz } },
-        { text: ': ', options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: mainSz } }
+        { text: '부적합 내용 ', options: { bold: true, color: C_ACCENT_BLUE, fontFace: FONT_MALGUN, fontSize: labelSz } },
+        { text: ': ', options: { bold: true, color: '000000', fontFace: FONT_MALGUN, fontSize: labelSz } }
       ], {
         x: 0.9375, y: 1.6213, w: 1.2500, h: 0.6925,
-        align: 'left', valign: 'top', margin: [6, 0, 4, 6], lineSpacingMultiple: 1.15, wrap: false
+        align: 'left', valign: 'top', margin: [topPad, 0, botPad, 6], lineSpacingMultiple: mainFit.lineSpacingMultiple, wrap: false
       });
       slide.addText(mainLines.join('\n'), {
         x: 2.1300, y: 1.6213, w: 11.0950, h: 0.6925,
         fontFace: FONT_MALGUN, fontSize: mainSz, bold: true, color: '000000',
-        align: 'left', valign: 'top', margin: [6, 6, 4, 0], lineSpacingMultiple: 1.15, wrap: true
+        align: 'left', valign: 'top', margin: [topPad, 6, botPad, 0], lineSpacingMultiple: mainFit.lineSpacingMultiple, wrap: true
       });
     }
 
@@ -1970,9 +2055,13 @@
       { label: '점검차수 : ', val: data.inspectRound, x: 11.1666, w: 2.0647 }
     ];
 
-    const mainLines = String(data.mainContent || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const longestMainLine = mainLines.reduce((a, b) => (a.length >= b.length ? a : b), '');
-    const mainSz = calcSingleLineFontSize(longestMainLine, 11.05, 14, 12);
+    const mainFit = fitMainContentForBox(data.mainContent, 11.05, 0.6925);
+    const mainLines = mainFit.lines;
+    const packedMainContent = mainLines.join('\n');
+    const mainSz = mainLines.length <= 1
+      ? calcSingleLineFontSize(`부적합 내용 : ${mainLines[0] || ''}`, 12.2938, 14, 10.5)
+      : mainFit.fontSize;
+    const mainHtmlLineHeight = mainLines.length >= 3 || mainSz <= 10 ? 1.15 : 1.24;
 
     const intLineSpacing = (data.interviewOpinion || '').length > 110 ? 1.12 : 1.20;
     const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213, 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 4]);
@@ -2073,12 +2162,12 @@
     }).join('')}
 
         <!-- 6-3. 부적합 내용 셀 (x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925, 14pt bold, 1)/2) 줄바꿈 및 내어쓰기 정렬) -->
-        <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: flex-start; padding: 0.28cqw 0.5cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="flex-shrink: 0; white-space: nowrap; font-size: ${pt(mainSz)}; line-height: 1.28;">
+        <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: flex-start; padding: 0.20cqw 0.5cqw; box-sizing: border-box; overflow: hidden;">
+          <div style="flex-shrink: 0; white-space: nowrap; font-size: ${pt(Math.min(12.5, Math.max(10.5, mainSz)))}; line-height: ${mainHtmlLineHeight};">
             <strong style="color: #0000ff;">부적합 내용</strong><strong style="color: #000000;">&nbsp;:&nbsp;</strong>
           </div>
-          <div style="flex: 1; min-width: 0; font-weight: 800; color: #000000; font-size: ${pt(mainSz)}; line-height: 1.28; word-break: keep-all;">
-            ${renderHangingLinesHTML(data.mainContent)}
+          <div style="flex: 1; min-width: 0; font-weight: 800; color: #000000; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight}; word-break: keep-all;">
+            ${renderHangingLinesHTML(packedMainContent)}
           </div>
         </div>
 

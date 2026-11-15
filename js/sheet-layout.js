@@ -449,11 +449,17 @@ export function findRedBanners(img, area) {
       }
     }
   }
-  // 근접 배너 병합 (두 줄 배너) 및 좌->우(① -> ②) 정렬
+  // 근접 배너 병합 (두 줄 배너 및 문자 폭으로 상하 분리된 단일 배너 조각) 및 좌->우(① -> ②) 정렬
   out.sort((p, q) => (Math.abs(p.y - q.y) < area.h * 0.15 ? (p.x - q.x) : (p.y - q.y)));
+  const maxMergeGapY = Math.max(24, Math.round(area.h * 0.045));
   const merged = [];
   for (const r of out) {
-    const m = merged.find(o => Math.abs(o.x - r.x) < 30 && r.y - (o.y + o.h) < 12 && r.y >= o.y);
+    const m = merged.find(o => {
+      if (r.y < o.y || r.y - (o.y + o.h) >= maxMergeGapY) return false;
+      const overlapX = Math.max(0, Math.min(o.x + o.w, r.x + r.w) - Math.max(o.x, r.x));
+      const minW = Math.max(1, Math.min(o.w, r.w));
+      return Math.abs(o.x - r.x) < 30 || (overlapX / minW) >= 0.55;
+    });
     if (m) {
       const nx1 = Math.max(m.x + m.w, r.x + r.w), ny1 = Math.max(m.y + m.h, r.y + r.h);
       m.x = Math.min(m.x, r.x); m.y = Math.min(m.y, r.y); m.w = nx1 - m.x; m.h = ny1 - m.y;
@@ -787,10 +793,56 @@ export function preprocessCellCanvas(rawCanvas, shavePx = 2, padPx = 8, options 
   ctx.fillRect(0, 0, out.width, out.height);
   ctx.drawImage(rawCanvas, effectiveShave, effectiveShave, sw, sh, padPx, padPx, sw, sh);
 
-  if (isBanner) return out;
-
   const imgData = ctx.getImageData(padPx, padPx, sw, sh);
   const data = imgData.data;
+
+  if (isBanner) {
+    // 배너 전경 극성 추출: 적색/유색 배경 위 백색·황색 글자를 순백 바탕의 선명한 흑색 글자로 변환 (노출→노술 오인식 및 2줄 배너 미분할 해결)
+    const totalPx = sw * sh;
+    let coloredOrDarkCount = 0;
+    let sampleCount = 0;
+    let lumSum = 0;
+    for (let i = 0; i < totalPx; i += 2) {
+      const k = i * 4;
+      const r = data[k], g = data[k + 1], b = data[k + 2];
+      const maxC = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (lum < 246) {
+        sampleCount++;
+        lumSum += lum;
+        if (maxC - minC > 38 || lum < 140) coloredOrDarkCount++;
+      }
+    }
+    const coloredFrac = sampleCount > 0 ? coloredOrDarkCount / sampleCount : 0;
+    const avgLum = sampleCount > 0 ? lumSum / sampleCount : 255;
+    const isColoredBanner = coloredFrac >= 0.25 || avgLum < 165;
+
+    for (let i = 0; i < totalPx; i++) {
+      const k = i * 4;
+      const r = data[k], g = data[k + 1], b = data[k + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      let v = 255;
+      if (!isColoredBanner) {
+        if (lum < 165) {
+          v = Math.max(0, Math.min(220, Math.round((lum - 20) * 1.1)));
+        }
+      } else {
+        const minC = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        const wStr = Math.max(0, Math.min(1, (minC - 135) / 85)) *
+          Math.max(0, Math.min(1, 1 - (r - minC - 30) / 50));
+        const minRG = r < g ? r : g;
+        const yStr = Math.max(0, Math.min(1, (minRG - 170) / 55)) *
+          Math.max(0, Math.min(1, (125 - b) / 60));
+        const fg = wStr > yStr ? wStr : yStr;
+        const gVal = Math.round(255 * (1 - fg));
+        v = gVal > 210 ? 255 : gVal;
+      }
+      data[k] = v; data[k + 1] = v; data[k + 2] = v; data[k + 3] = 255;
+    }
+    ctx.putImageData(imgData, padPx, padPx);
+    return out;
+  }
 
   // 1) 상/하단 가장자리 잔여 수평 표 테두리선(밀도 70% 이상 행) 백색 제거
   for (let y = 0; y < sh; y++) {
@@ -809,27 +861,32 @@ export function preprocessCellCanvas(rawCanvas, shavePx = 2, padPx = 8, options 
     }
   }
 
-  // 2) 개인정보 가림 박스(고밀도 암색/회색 직사각형 영역) 탐지 후 백색 마스킹
+  // 2) 개인정보 가림 박스(고밀도 암색/회색 직사각형 영역) 탐지 후 백색 마스킹 — 2D 누적합(O(sw*sh))
   const checkMasking = !cellKey || ['sub', 'user', 'meta', 'interview'].includes(cellKey);
   const WIN_W = 22, WIN_H = 12;
   if (checkMasking && sw >= WIN_W && sh >= WIN_H) {
-    const darkMap = new Uint8Array(sw * sh);
-    for (let i = 0; i < sw * sh; i++) {
-      const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
-      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (lum < 155) darkMap[i] = 1;
+    const strideW = sw + 1;
+    const pref = new Int32Array(strideW * (sh + 1));
+    for (let y = 0; y < sh; y++) {
+      let rowSum = 0;
+      const rowOff = y * sw;
+      const pRowOff = (y + 1) * strideW;
+      const pPrevOff = y * strideW;
+      for (let x = 0; x < sw; x++) {
+        const idx = (rowOff + x) * 4;
+        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        if (lum < 155) rowSum++;
+        pref[pRowOff + x + 1] = pref[pPrevOff + x + 1] + rowSum;
+      }
     }
 
+    const minDarkInWin = Math.ceil(WIN_W * WIN_H * 0.78);
     for (let y = 0; y <= sh - WIN_H; y += 3) {
+      const topOff = y * strideW;
+      const botOff = (y + WIN_H) * strideW;
       for (let x = 0; x <= sw - WIN_W; x += 3) {
-        let darkCount = 0;
-        for (let dy = 0; dy < WIN_H; dy++) {
-          const rowOffset = (y + dy) * sw + x;
-          for (let dx = 0; dx < WIN_W; dx++) {
-            darkCount += darkMap[rowOffset + dx];
-          }
-        }
-        if (darkCount / (WIN_W * WIN_H) >= 0.78) {
+        const darkCount = pref[botOff + x + WIN_W] - pref[topOff + x + WIN_W] - pref[botOff + x] + pref[topOff + x];
+        if (darkCount >= minDarkInWin) {
           for (let dy = Math.max(0, y - 2); dy < Math.min(sh, y + WIN_H + 2); dy++) {
             for (let dx = Math.max(0, x - 2); dx < Math.min(sw, x + WIN_W + 2); dx++) {
               const idx = (dy * sw + dx) * 4;
@@ -867,6 +924,8 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
     const sh = Math.max(1, sy1 - sy0 + 1);
     const colDark = new Int32Array(w);
     let darkPixels = 0;
+    let minInkY = sy1 + 1;
+    let maxInkY = sy0 - 1;
     for (let y = sy0; y <= sy1; y++) {
       const rowOff = y * w;
       for (let x = xStart; x < xEnd; x++) {
@@ -875,10 +934,13 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
         if (lum < 195) {
           darkPixels++;
           colDark[x]++;
+          if (y < minInkY) minInkY = y;
+          if (y > maxInkY) maxInkY = y;
         }
       }
     }
     if (darkPixels < 8) return null;
+    const inkH = Math.max(1, maxInkY - minInkY + 1);
     // 1px 고립 노이즈(셀 우측/좌측 테두리 점 등)를 제외하고 실제 문자 획 밀집 열만 포함하여 빈 꼬리 트림
     let minX = w;
     let maxX = -1;
@@ -892,9 +954,20 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
       }
     }
     if (maxX - minX < 5) return null;
+    const spanCols = maxX - minX + 1;
     const sx0 = Math.max(0, minX - 8);
     const sx1 = Math.min(w - 1, maxX + 8);
     const sw = Math.max(8, sx1 - sx0 + 1);
+    // 기울어진 가로 표 테두리선('wb', '__', 'cwb' 등 1~4px 두께의 얇은 수평 직선) 배제
+    if (inkH <= 20 && sw / inkH >= 10 && spanCols >= 120) {
+      let inkedCols = 0;
+      for (let x = minX; x <= maxX; x++) {
+        if (colDark[x] > 0) inkedCols++;
+      }
+      if (inkedCols >= 80 && (inkedCols / spanCols) >= 0.65 && (darkPixels / inkedCols) <= 4.2) {
+        return null;
+      }
+    }
     const lc = document.createElement('canvas');
     lc.width = sw;
     lc.height = sh;
@@ -953,14 +1026,20 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
   }
 
   const finalSlices = [];
+  const minSplitBandH = options.isBanner ? 44 : 33;
+  const minHalfH = options.isBanner ? 16 : 14;
   const splitBandByValleys = (y0, y1, depth = 0) => {
     const bh = y1 - y0 + 1;
-    if (bh >= 18 && depth < 3) {
-      const scanStart = y0 + Math.max(7, Math.floor(bh * 0.22));
-      const scanEnd = y1 - Math.max(7, Math.floor(bh * 0.22));
+    // 단일 한글 줄(bh < 33px)의 초·중성과 종성(받침) 사이 밀도 골짜기를 줄 경계로 오인 분할하지 않음
+    if (bh >= minSplitBandH && depth < 3) {
+      const scanStart = y0 + Math.max(minHalfH, Math.floor(bh * 0.28));
+      const scanEnd = y1 - Math.max(minHalfH, Math.floor(bh * 0.28));
       let bestY = -1;
       let bestRatio = 1.0;
+      const maxRatio = bh >= 95 ? 0.32 : (bh >= 44 ? 0.24 : 0.16);
+      const maxVal = bh >= 95 ? 0.10 : (bh >= 44 ? 0.055 : 0.032);
       for (let y = scanStart; y <= scanEnd; y++) {
+        if ((y - y0) < minHalfH || (y1 - y) < minHalfH) continue;
         const val = rowDensity[y];
         let peakTop = 0;
         for (let ty = y0; ty < y; ty++) {
@@ -973,7 +1052,7 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
         const minPeak = Math.min(peakTop, peakBot);
         if (minPeak >= 0.035) {
           const ratio = val / minPeak;
-          if ((ratio < 0.36 || val < 0.032) && ratio < bestRatio) {
+          if ((val <= 0.015 || (ratio < maxRatio && val < maxVal)) && ratio < bestRatio) {
             bestRatio = ratio;
             bestY = y;
           }
