@@ -22,7 +22,8 @@
   <script src="js/classifier.js?v=20261115_v48"></script>
   <script src="js/excel-builder.js?v=20261115_v48"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-generator.js?v=20261115_v48"></script>
+  <script src="js/ppt-template-engine.js?v=20261115_v49"></script>
+  <script src="js/ppt-generator.js?v=20261115_v49"></script>
   <script src="js/lmstudio-client.js?v=20261115_v48"></script>
 </head>
 
@@ -997,19 +998,35 @@
           💡 [메일 발송] 시 파일이 다운로드되며 메일 앱이 열립니다. 메일 앱 상단의 클립(📎)을 눌러 방금 저장된 파일을 첨부해 주세요.
         </p>
 
-        <!-- 2. PPT 다운로드 -->
+        <!-- 2. 관리자용 / 근로자용 PPT 다운로드 -->
         <div class="card-title" style="margin-bottom: 6px;">
-          <span>📊 안전회의용 PPT 자동 생성</span>
+          <span>📊 관리자용 PPT 자동 생성</span>
         </div>
         <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
-          선택한 기간의 조치율, 유형별 차트, 발생원인 분포, 규칙 기반 종합 대책을 16:9 와이드 프레젠테이션(.pptx)으로 제작합니다.
+          선택한 기간의 부적합 발생현황, 유형별 경향(Treemap), PDCA 원인분석, 안전점검 테마선정, 3E 감소대책을 16:9 관리자용 보고서(.pptx)로 제작합니다.
         </p>
-        <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+        <div style="display: flex; gap: 8px; margin-bottom: 16px;">
           <button type="button" id="btnDownloadPPT" class="btn btn-accent" style="flex: 2; padding: 13px;">
-            📑 회의용 PPT (.pptx) 다운로드
+            📊 관리자용 보고서 PPT (.pptx) 다운로드
           </button>
           <button type="button" id="btnEmailPPT" class="btn btn-outline"
             style="flex: 1; padding: 13px; border-color: #d97706; color: #b45309; font-weight: 600; white-space: nowrap;">
+            📧 메일 발송
+          </button>
+        </div>
+
+        <div class="card-title" style="margin-bottom: 6px;">
+          <span>👷 근로자용 PPT (Today's TBM Letter) 자동 생성</span>
+        </div>
+        <p style="font-size: 0.82rem; color: var(--gray-600); margin-bottom: 12px;">
+          선택한 기간의 주요 위험유형 Top 3, 기인물 분포, 안전Point, 현장 사례(사진 포함), 근로자 위험성평가를 TBM 레터(.pptx)로 제작합니다.
+        </p>
+        <div style="display: flex; gap: 8px; margin-bottom: 6px;">
+          <button type="button" id="btnDownloadWorkerPPT" class="btn btn-primary" style="flex: 2; padding: 13px;">
+            👷 근로자용 TBM PPT (.pptx) 다운로드
+          </button>
+          <button type="button" id="btnEmailWorkerPPT" class="btn btn-outline"
+            style="flex: 1; padding: 13px; border-color: #2563eb; color: #1d4ed8; font-weight: 600; white-space: nowrap;">
             📧 메일 발송
           </button>
         </div>
@@ -1404,7 +1421,7 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261115_v48"></script>
+  <script type="module" src="js/app.js?v=20261115_v49"></script>
 </body>
 
 </html>
