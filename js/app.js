@@ -2417,19 +2417,47 @@ function bindEvents() {
     btn.disabled = true;
     btn.textContent = isWorker
       ? '근로자용 TBM PPT 제작 중...'
-      : (isDetailHtml ? '상세 분석 HTML 생성 중...' : '관리자용 보고서 PPT 제작 중...');
+      : (isDetailHtml ? '상세 분석 HTML · 링크 생성 중...' : '관리자용 보고서 PPT 제작 중...');
 
     try {
       const payload = await collectExportReportPayload($('#selExportSite').value);
       if (!payload) return;
+
+      let shareConfig = null;
+      if (isDetailHtml && store.mode === 'github' && store.backend && store.backend.url && store.backend.pin) {
+        const randBytes = new Uint8Array(6);
+        if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+          window.crypto.getRandomValues(randBytes);
+        } else {
+          for (let i = 0; i < randBytes.length; i++) randBytes[i] = Math.floor(Math.random() * 256);
+        }
+        const randHex = Array.from(randBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+        const shareId = `rpt_${Date.now().toString(36)}_${randHex}`;
+        const host = (window.location && window.location.hostname) || '';
+        const isHostedWeb = /^https?:$/i.test((window.location && window.location.protocol) || '') && !/^(localhost|127\.0\.0\.1)$/i.test(host);
+        const viewerBaseUrl = isHostedWeb
+          ? new URL('report.html', window.location.href).href.split('#')[0].split('?')[0]
+          : 'https://abraxass0511-lab.github.io/JS-AIC/report.html';
+        const baseAppUrl = viewerBaseUrl.replace(/\/report\.html$/, '/');
+        shareConfig = {
+          shareId,
+          workerUrl: store.backend.url,
+          viewerUrl: `${viewerBaseUrl}?id=${encodeURIComponent(shareId)}`,
+          baseAppUrl,
+          publish: (sharePayload) => store.backend.writeJSON(`shares/${shareId}.json`, sharePayload, null, `share report ${shareId}`),
+        };
+      }
+
       const fn = isWorker
         ? window.SafePPT.generateWorkerPresentation
         : (isDetailHtml ? window.SafePPT.generateManagerDetailHtml : window.SafePPT.generatePresentation);
-      await fn({ ...payload, download: true });
+      const res = await fn({ ...payload, shareConfig, download: true });
       const okMsg = isWorker
         ? '근로자용 TBM PPT가 성공적으로 다운로드되었습니다.'
         : (isDetailHtml
-          ? '관리자용 상세 분석 HTML 보고서가 다운로드되었습니다.'
+          ? (res && res.shareUrl
+            ? '관리자용 상세 분석 HTML이 다운로드되었습니다. (HTML 우측 상단 [🔗 링크 복사]로 공유 URL 복사 가능)'
+            : '관리자용 상세 분석 HTML 보고서가 다운로드되었습니다.')
           : '관리자용 보고서 PPT가 성공적으로 다운로드되었습니다.');
       toast(okMsg, 'success');
     } catch (e) {
