@@ -2407,29 +2407,43 @@ function bindEvents() {
 
   async function runPptDownload(kind) {
     const isWorker = kind === 'worker';
-    const btn = $(isWorker ? '#btnDownloadWorkerPPT' : '#btnDownloadPPT');
+    const isDetailHtml = kind === 'detailHtml';
+    const btnSelector = isWorker
+      ? '#btnDownloadWorkerPPT'
+      : (isDetailHtml ? '#btnDownloadDetailHTML' : '#btnDownloadPPT');
+    const btn = $(btnSelector);
     if (!btn) return;
     const origText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = isWorker ? '근로자용 TBM PPT 제작 중...' : '관리자용 보고서 PPT 제작 중...';
+    btn.textContent = isWorker
+      ? '근로자용 TBM PPT 제작 중...'
+      : (isDetailHtml ? '상세 분석 HTML 생성 중...' : '관리자용 보고서 PPT 제작 중...');
 
     try {
       const payload = await collectExportReportPayload($('#selExportSite').value);
       if (!payload) return;
-      const fn = isWorker ? window.SafePPT.generateWorkerPresentation : window.SafePPT.generatePresentation;
+      const fn = isWorker
+        ? window.SafePPT.generateWorkerPresentation
+        : (isDetailHtml ? window.SafePPT.generateManagerDetailHtml : window.SafePPT.generatePresentation);
       await fn({ ...payload, download: true });
-      toast(isWorker ? '근로자용 TBM PPT가 성공적으로 다운로드되었습니다.' : '관리자용 보고서 PPT가 성공적으로 다운로드되었습니다.', 'success');
+      const okMsg = isWorker
+        ? '근로자용 TBM PPT가 성공적으로 다운로드되었습니다.'
+        : (isDetailHtml
+          ? '관리자용 상세 분석 HTML 보고서가 다운로드되었습니다.'
+          : '관리자용 보고서 PPT가 성공적으로 다운로드되었습니다.');
+      toast(okMsg, 'success');
     } catch (e) {
       console.error(e);
-      toast(`PPT 생성 실패: ${e.message}`, 'danger');
+      toast(`보고서 생성 실패: ${e.message}`, 'danger');
     } finally {
       btn.disabled = false;
       btn.textContent = origText;
     }
   }
 
-  // ── 관리자용 / 근로자용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
+  // ── 관리자용 PPT / 상세 HTML / 근로자용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
   $('#btnDownloadPPT')?.addEventListener('click', () => runPptDownload('manager'));
+  $('#btnDownloadDetailHTML')?.addEventListener('click', () => runPptDownload('detailHtml'));
   $('#btnDownloadWorkerPPT')?.addEventListener('click', () => runPptDownload('worker'));
 
   // Fix Action Dialog

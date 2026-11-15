@@ -85,7 +85,8 @@
     if (noParen && noParen.length <= maxLen && noParen.length >= Math.min(4, maxLen)) return noParen;
     if (noParen && noParen.length < s.length && noParen.length >= 4) s = noParen;
 
-    // 2. 공백·구분자 축약 및 상용 건설용어 간결화
+    // 2. 공백·구분자 축약 및 상용 건설용어 간결화 (복합 `/` 명사는 `·`로 연결 유지)
+    s = s.replace(/([가-힣A-Za-z0-9])\/([가-힣A-Za-z0-9])/g, '$1·$2');
     const compactMap = [
       [/거푸집\s*동바리\s*공사/g, '거푸집동바리'],
       [/가설\s*전기\s*공사/g, '가설전기'],
@@ -94,7 +95,7 @@
       [/안전\s*작업\s*지침/g, '작업지침'],
       [/구조\s*검토서/g, '구조검토서'],
       [/\s*,\s*/g, ','],
-      [/\s*\/\s*/g, '/'],
+      [/\s*\/\s*/g, '·'],
       [/\s*·\s*/g, '·'],
     ];
     for (const [re, rep] of compactMap) {
@@ -102,9 +103,9 @@
       if (s.length <= maxLen) return s.trim();
     }
 
-    // 3. 절/구분자(`/`, `·`, `,`) 단위로 말줄임표 없이 완결 구문 추출
-    const clauses = s.split(/(?:[,/;]|\s+및\s+|\s+후\s+|\s*-\s*)/).filter(Boolean);
-    if (clauses.length > 1) {
+    // 3. 절 단위 분리 (첫 절이 6자 이상일 때만 절 경계 우선 채택)
+    const clauses = s.split(/(?:[,;]|\s+및\s+|\s+후\s+|\s*-\s*)/).filter(Boolean);
+    if (clauses.length > 1 && clauses[0].trim().length >= 6) {
       let acc = '';
       for (const c of clauses) {
         const cleanC = c.trim();
@@ -121,6 +122,7 @@
       if (acc && acc.length <= maxLen) return acc.replace(/[,/;·\-:\s]+$/g, '').trim();
     }
 
+    // 4. 어절 단위로 최대 길이 내 완결 어구 구성
     const words = s.split(/\s+/).filter(Boolean);
     let built = '';
     for (const w of words) {
@@ -131,12 +133,24 @@
         break;
       }
     }
-    if (built && built.length >= Math.min(3, maxLen)) {
+    if (built && built.length >= Math.min(4, maxLen)) {
       built = built
         .replace(/\s+(?:을|를|이|가|은|는|의|에|로|과|와|및|등|시|중|후|위해|위한|대한|따른|있는|없는|하는)$/u, '')
         .replace(/[,/;·\-:\s]+$/g, '')
         .trim();
       if (built) return built;
+    }
+
+    // 5. 공백 없는 복합 `·` 어구만 마지막 수단으로 `·` 단위 분리
+    const midParts = s.split('·').filter(Boolean);
+    if (midParts.length > 1) {
+      let mAcc = '';
+      for (const p of midParts) {
+        const next = mAcc ? `${mAcc}·${p}` : p;
+        if (next.length <= maxLen) mAcc = next;
+        else break;
+      }
+      if (mAcc) return mAcc.trim();
     }
 
     return s.slice(0, maxLen).replace(/[,/;·\-:\s]+$/g, '').trim();
@@ -290,7 +304,19 @@
       if (txOpen < 0 || txClose < 0) return block;
       const inner = block.slice(txOpen + '<p:txBody>'.length, txClose);
       const firstP = inner.indexOf('<a:p');
-      const header = firstP >= 0 ? inner.slice(0, firstP) : inner;
+      let header = firstP >= 0 ? inner.slice(0, firstP) : inner;
+      if (defStyle.lIns !== undefined || defStyle.tIns !== undefined || defStyle.rIns !== undefined || defStyle.bIns !== undefined) {
+        header = header.replace(/<a:bodyPr([^>]*?)(\/?)>/, (_m, attrs, slash) => {
+          let a = attrs;
+          for (const k of ['lIns', 'tIns', 'rIns', 'bIns']) {
+            if (defStyle[k] !== undefined) {
+              const re = new RegExp(`\\b${k}="\\d+"`);
+              a = re.test(a) ? a.replace(re, `${k}="${defStyle[k]}"`) : `${a} ${k}="${defStyle[k]}"`;
+            }
+          }
+          return `<a:bodyPr${a}${slash}>`;
+        });
+      }
       const pXml = buildParagraphsXml(paragraphs, defStyle);
       return block.slice(0, txOpen) + `<p:txBody>${header}${pXml}</p:txBody>` + block.slice(txClose + '</p:txBody>'.length);
     });
@@ -1126,40 +1152,144 @@
   }
 
   // ── 근로자용 PPT 안전Point / 사례 / 위험성평가 생성기 ───────────────────
+  function buildConcreteSafetyPoint(haz, idx, allRecs) {
+    const num = ['①', '②', '③'][idx];
+    const hName = haz.name || '안전';
+    const hRecs = (haz.records && haz.records.length ? haz.records : allRecs).slice(0, 15);
+    const ctx = hRecs.map((r) => `${r.content || ''} ${r.auditProposal || ''} ${r.workName || ''} ${r.agentMinor || ''}`).join(' ');
+
+    if (hName === '추락') {
+      if (/개구부|덮개/.test(ctx)) {
+        return {
+          title: `${num} [추락] 개구부 덮개·안전벨트 체결`,
+          bullets: [
+            '개구부 덮개 고정 및 추락위험 표지 유지',
+            '안전벨트(안전대) 생명줄 2지점 이상 결속',
+            '작업구간 안전난간·발끝막이판 임의해체 금지',
+          ],
+        };
+      }
+      if (/사다리|말비계|A형/.test(ctx)) {
+        return {
+          title: `${num} [추락] 안전벨트·2인1조 작업`,
+          bullets: [
+            '고소작업 시 안전벨트 고리 선체결 철저',
+            '사다리 최상단 작업 금지 및 2인1조 준수',
+            '작업발판 고정핀·비계 흔들림 사전 점검',
+          ],
+        };
+      }
+      return {
+        title: `${num} [추락] 안전벨트·안전난간 체결`,
+        bullets: [
+          '안전벨트(안전대) 생명줄 상부 2지점 결속',
+          '안전난간·작업발판 고정 및 임의해체 금지',
+          /버팀대|벽이음/.test(ctx) ? '벽이음·2단 버팀대 설치각도 및 체결 점검' : '비계·거푸집 연결핀 및 개구부 덮개 확인',
+        ],
+      };
+    }
+
+    if (hName === '낙하') {
+      return {
+        title: `${num} [낙하] 2줄 걸이·하부 출입통제`,
+        bullets: [
+          '자재 인양 시 2줄 걸이 및 샤클 풀림방지',
+          '인양구간 하부 출입금지 및 유도자 배치',
+          /전도방지|고박|유도로프/.test(ctx) ? '전도방지 파이프·유도로프 설치 철저' : '상부 작업공구 낙하방지끈·방지망 확인',
+        ],
+      };
+    }
+
+    if (hName === '붕괴') {
+      return {
+        title: `${num} [붕괴] 동바리·지지대 체결 철저`,
+        bullets: [
+          '동바리 수직·수평연결재 및 가새 체결 준수',
+          /합벽|앵커|앙카/.test(ctx) ? '합벽지지대 앵커 볼트 체결상태 전수점검' : '거푸집 버팀대·깔목 수직도 사전 확인',
+          /멍에|편심|슬라브|침하/.test(ctx) ? '멍에재 길이·지지점 편심 시공 즉시 시정' : '타설 전 동바리 하부 침하·변형 여부 점검',
+        ],
+      };
+    }
+
+    if (hName === '충돌') {
+      return {
+        title: `${num} [충돌] 신호수 배치·반경 통제`,
+        bullets: [
+          '장비 작업반경 내 근로자 접근금지 철저',
+          '신호수 전담 배치 및 후진경보 작동확인',
+          '보행자 안전통로와 장비 이동동선 완전분리',
+        ],
+      };
+    }
+
+    if (hName === '협착') {
+      return {
+        title: `${num} [협착] 방호덮개·전원 LOTO 차단`,
+        bullets: [
+          '회전체·끼임부위 방호덮개 설치상태 확인',
+          '설비 점검·정비 전 전원 차단 및 잠금표지',
+          '자재 인양·거치 시 손끼임 주의 및 수신호',
+        ],
+      };
+    }
+
+    if (hName === '전도') {
+      return {
+        title: `${num} [전도] 아웃트리거·통로정리`,
+        bullets: [
+          '고소작업대 아웃트리거 완전전개·지반확인',
+          '작업통로 자재·전선 정리로 걸림넘어짐 예방',
+          '자재 적재 높이 제한 및 전도방지 고박 철저',
+        ],
+      };
+    }
+
+    if (hName === '감전') {
+      return {
+        title: `${num} [감전] 접지선·누전차단기 점검`,
+        bullets: [
+          '분전반 접지선 체결 및 누전차단기 작동확인',
+          '가설 분전반 외함 도어 시건 및 방수 유지',
+          '피복 손상 전선·불량 콘센트 즉시 교체 사용',
+        ],
+      };
+    }
+
+    if (hName === '화재') {
+      return {
+        title: `${num} [화재] 불티비산방지·소화기 비치`,
+        bullets: [
+          '용접·절단 작업 시 불티비산방지포 설치',
+          '화기작업 반경 5m 내 소화기 근접 배치',
+          '주변 가연물 격리 및 작업 종료 후 잔불점검',
+        ],
+      };
+    }
+
+    return {
+      title: `${num} [${hName}] 핵심 안전수칙 준수`,
+      bullets: [
+        '작업 전 안전보호구(안전모·안전대) 착용',
+        '방호장치·작업발판 등 안전시설 사전 점검',
+        '이상 징후 발견 시 즉시 작업중지 및 보고',
+      ],
+    };
+  }
+
   function buildWorkerTbmContent(stats) {
     const recs = stats.records || [];
     const top3 = stats.top3Hazards || [];
 
-    const rulesByHazard = {
-      '추락': ['안전난간·덮개 임의해체 금지', '고소작업 시 안전고리 체결', '작업발판 고정상태 사전 확인'],
-      '낙하': ['자재 인양 시 2줄 걸이 준수', '인양구간 하부 출입통제 철저', '유도로프 사용 및 공구 낙하방지'],
-      '붕괴': ['거푸집·동바리 수직·수평연결 철저', '합벽지지대 앵커 볼트 고정 확인', '타설 전 동바리 하부 침하 점검'],
-      '충돌': ['장비 작업반경 내 접근금지 준수', '신호수 배치 및 후진경보 확인', '근로자 통로와 장비동선 분리'],
-      '협착': ['회전체·끼임부위 방호덮개 확인', '설비 정비·청소 전 전원 차단', '자재 인양·거치 시 손끼임 주의'],
-      '전도': ['작업통로 자재·전선 정리정돈', '고소작업대 아웃트리거 완전전개', '사다리 2인1조 및 전도방지 확인'],
-      '감전': ['분전반 접지선·누전차단기 확인', '분전반 외함 도어 상시 시건 유지', '피복 손상 전선 즉시 교체 사용'],
-      '화재': ['화기작업 전 불티비산방지 조치', '작업반경 내 소화기 근접 배치', '가연물 격리 및 작업 후 잔불점검'],
-    };
-
-    const safetyPoints = top3.map((haz, idx) => {
-      const sampleRec = (haz.records && haz.records[0]) || recs[idx];
-      const topAg = (haz.topAgents && haz.topAgents[0] && isMeaningfulValue(haz.topAgents[0].name))
-        ? toCompletePhrase(haz.topAgents[0].name, 7)
-        : '현장시설';
-      const baseRules = rulesByHazard[haz.name] || ['작업 전 방호장치 상태 확인', '개인보호구 정위치 착용 철저', '이상 발견 시 작업중지 후 보고'];
-      const rawProposal = sampleRec && (isMeaningfulValue(sampleRec.auditProposal) ? sampleRec.auditProposal : sampleRec.content);
-      const cleanRule3 = toCompletePhrase(rawProposal, 19);
-      const bullet3 = (cleanRule3 && cleanRule3.length >= 6 && cleanRule3.length <= 19) ? cleanRule3 : baseRules[2];
-      return {
-        title: `${['①', '②', '③'][idx]} ${haz.name} (${topAg})`,
-        bullets: [baseRules[0], baseRules[1], bullet3],
-      };
-    });
+    const safetyPoints = top3.map((haz, idx) => buildConcreteSafetyPoint(haz, idx, recs));
     while (safetyPoints.length < 3) {
       const idx = safetyPoints.length;
       safetyPoints.push({
-        title: `${['①', '②', '③'][idx]} 현장 기본 안전수칙`,
-        bullets: ['작업 전 안전시설 점검', '개인보호구 정위치 착용', '위험 시 작업중지 후 보고'],
+        title: `${['①', '②', '③'][idx]} 현장 필수 안전수칙 준수`,
+        bullets: [
+          '고소작업 시 안전벨트·안전고리 체결 철저',
+          '안전난간·개구부 덮개 및 안전시설 점검',
+          '위험 발견 시 즉시 작업중지 후 관리자 보고',
+        ],
       });
     }
 
@@ -1202,12 +1332,12 @@
         };
       }
       const hName = normalizeHazardType(r.type);
-      const loc = toCompletePhrase(r.locationDetail || r.location || r.workName || r.site || '현장', 10) || '현장';
-      const detailTxt = toCompletePhrase(r.content || r.workName || '안전기준 미준수', 18) || '안전기준 미준수';
+      const loc = toCompletePhrase(r.locationDetail || r.location || r.workName || r.site || '현장', 11) || '현장';
+      const detailTxt = toCompletePhrase(r.content || r.workName || '안전기준 미준수', 23) || '안전기준 미준수';
       const rawMeasure = (r.fix && isMeaningfulValue(r.fix.content))
         ? r.fix.content
         : (isMeaningfulValue(r.auditProposal) ? r.auditProposal : '안전시설 보완 및 교육');
-      const measureTxt = toCompletePhrase(rawMeasure, 18) || '안전시설 즉시 보완';
+      const measureTxt = toCompletePhrase(rawMeasure, 23) || '안전시설 즉시 보완';
       return {
         title: `${i === 0 ? '①' : '②'} [${hName}] ${loc}`,
         detail: `• 지적: ${detailTxt}`,
@@ -1225,11 +1355,11 @@
       const wName = toCompletePhrase(r.workName || r.workGroup || '현장작업', 9) || '현장작업';
       const wLoc = toCompletePhrase(r.location || minor, 9) || '현장';
       const work = `${wName}\n(${wLoc})`;
-      const risk = `[${hName}] ${toCompletePhrase(r.content || minor, 22) || '안전위험 요인'}`;
+      const risk = `[${hName}] ${toCompletePhrase(r.content || minor, 28) || '안전위험 요인'}`;
       const rawMeas = isMeaningfulValue(r.auditProposal)
         ? r.auditProposal
         : ((r.fix && isMeaningfulValue(r.fix.content)) ? r.fix.content : '안전시설 보완 및 수칙 준수');
-      const measure = toCompletePhrase(rawMeas, 22) || '안전시설 보완 및 수칙 준수';
+      const measure = toCompletePhrase(rawMeas, 28) || '안전시설 보완 및 수칙 준수';
       return [work, risk, measure];
     });
 
@@ -1242,7 +1372,7 @@
       return await customLoader(filename);
     }
     if (typeof fetch === 'function') {
-      const res = await fetch(`templates/${filename}?v=20261115_v50`);
+      const res = await fetch(`templates/${filename}?v=20261115_v51`);
       if (!res.ok) throw new Error(`템플릿 로드 실패 (${filename}: HTTP ${res.status})`);
       return await res.arrayBuffer();
     }
@@ -1339,33 +1469,33 @@
     s2 = updateShapeTextKeepAttrs(s2, 15, [{ text: `${fmtNum(중대)}`, sz: 1400, bold: true, color: 'FFFFFF' }], { algn: 'ctr' });
     s2 = updateShapeTextKeepAttrs(s2, 16, [{ text: `${fmtNum(공지)}`, sz: 1300, bold: true, color: 'FFFFFF' }], { algn: 'ctr' });
 
-    // 표 20 (회사/현장별 발생현황: R2..R9 = 8행, R10 = 합) — 1줄 고정 + 여백 축소로 슬라이드 초과 방지
+    // 표 20 (회사/현장별 발생현황: R2..R9 = 8행, R10 = 합) — 시인성 확보(10pt) + 카드 내 수납
     const tbl20Updates = {};
     for (let r = 2; r <= 9; r++) {
       const row = stats.companyRows[r - 2];
       tbl20Updates[r] = row
         ? {
-            0: { text: row.name, sz: 880 },
-            1: { text: row.progress || '-', sz: 880 },
-            2: { text: fmtNum(row.계), sz: 900, bold: true },
-            3: { text: fmtNum(row.중대), sz: 880 },
-            4: { text: fmtNum(row.중), sz: 880 },
-            5: { text: fmtNum(row.경), sz: 880 },
-            6: { text: row.amount || '-', sz: 850 },
-            7: { text: `${pct(row.fixed, row.계)}%`, sz: 850 },
+            0: { text: row.name, sz: 1000 },
+            1: { text: row.progress || '-', sz: 1000 },
+            2: { text: fmtNum(row.계), sz: 1020, bold: true },
+            3: { text: fmtNum(row.중대), sz: 1000 },
+            4: { text: fmtNum(row.중), sz: 1000 },
+            5: { text: fmtNum(row.경), sz: 1000 },
+            6: { text: row.amount || '-', sz: 950 },
+            7: { text: `${pct(row.fixed, row.계)}%`, sz: 950 },
           }
         : { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '', 7: '' };
     }
     tbl20Updates[10] = {
-      2: { text: fmtNum(stats.total), sz: 920, bold: true, color: COLORS.NAVY },
-      3: { text: fmtNum(중대), sz: 920, bold: true },
-      4: { text: fmtNum(중), sz: 920, bold: true },
-      5: { text: fmtNum(경), sz: 920, bold: true },
-      6: { text: '-', sz: 850 },
-      7: { text: `${stats.fixRate}%`, sz: 880, bold: true },
+      2: { text: fmtNum(stats.total), sz: 1050, bold: true, color: COLORS.NAVY },
+      3: { text: fmtNum(중대), sz: 1050, bold: true },
+      4: { text: fmtNum(중), sz: 1050, bold: true },
+      5: { text: fmtNum(경), sz: 1050, bold: true },
+      6: { text: '-', sz: 950 },
+      7: { text: `${stats.fixRate}%`, sz: 1000, bold: true },
     };
     s2 = updateTableById(s2, 21, tbl20Updates);
-    s2 = compactTableLayout(s2, 21, { marT: 6000, marB: 6000, marL: 8000, marR: 8000, minRowIdx: 2, rowHeight: 205000 });
+    s2 = compactTableLayout(s2, 21, { marT: 4500, marB: 4500, marL: 6000, marR: 6000, minRowIdx: 2, rowHeight: 225000 });
 
     // 월별 현황 요약 TextBox 27 (id=28) 및 callout (id=31)
     s2 = setShapeParagraphs(s2, 28, [
@@ -1380,22 +1510,23 @@
         spcAft: 300,
       },
       { text: `- 연간/기간 현황 : ${stats.targetYear}년 누적 ${fmtNum(stats.yearTotal)}건 (선택기간 ${fmtNum(stats.total)}건)`, sz: 1400, spcAft: 200, color: COLORS.DARK_TEXT },
-      { text: `  · 기간 증감 추이 : ${stats.deltaText}`, sz: 1300, bold: true, color: COLORS.NAVY, spcAft: 100 },
+      { text: `  · 기간 증감 추이 : ${stats.deltaText}`, sz: 1350, bold: true, color: COLORS.NAVY, spcAft: 100 },
     ], { algn: 'l' });
 
     s2 = updateShapeTextKeepAttrs(s2, 31, [
-      { text: `최다발생 ${stats.maxM.m}월(${stats.maxM.v}건) · 선택기간 조치율 ${stats.fixRate}% (Hold ${stats.holdCount}건)`, sz: 1250, bold: true, color: COLORS.NAVY },
+      { text: `최다발생 ${stats.maxM.m}월(${stats.maxM.v}건) · 선택기간 조치율 ${stats.fixRate}% (Hold ${stats.holdCount}건)`, sz: 1350, bold: true, color: COLORS.NAVY },
     ], { algn: 'ctr' });
 
     // 표 23 (월 1~12, 년 누적)
     const tbl23Updates = { 1: {}, 2: {} };
     for (let i = 0; i < 12; i++) {
-      tbl23Updates[1][i + 1] = { text: fmtNum(stats.monthlyTotal[i]), sz: 950 };
-      tbl23Updates[2][i + 1] = { text: fmtNum(stats.monthlyCumul[i]), sz: 950 };
+      tbl23Updates[1][i + 1] = { text: fmtNum(stats.monthlyTotal[i]), sz: 1050 };
+      tbl23Updates[2][i + 1] = { text: fmtNum(stats.monthlyCumul[i]), sz: 1050 };
     }
-    tbl23Updates[1][13] = { text: fmtNum(stats.total), sz: 950, bold: true };
-    tbl23Updates[2][13] = { text: fmtNum(stats.yearTotal), sz: 950, bold: true };
+    tbl23Updates[1][13] = { text: fmtNum(stats.total), sz: 1050, bold: true };
+    tbl23Updates[2][13] = { text: fmtNum(stats.yearTotal), sz: 1050, bold: true };
     s2 = updateTableById(s2, 24, tbl23Updates);
+    s2 = compactTableLayout(s2, 24, { marT: 4500, marB: 4500, marL: 4500, marR: 4500 });
     zip.file('ppt/slides/slide2.xml', s2);
 
     // 차트 1 XML + 임베딩 Excel 업데이트
@@ -1427,47 +1558,47 @@
     const lowNonZero = stats.nonZeroRanked[stats.nonZeroRanked.length - 1];
     // id=7 TextBox 6은 id=27(y=2564752) 위쪽 영역만 사용해 절대 겹치지 않도록 2줄 고정
     s3 = setShapeParagraphs(s3, 7, [
-      { text: `- 발생유형 TOP 4 : ${t4.map((x) => x.name).join('·')} (전체 ${pct(top4Sum, tDen)}%)`, sz: 1200, bold: true, color: COLORS.NAVY, spcAft: 140 },
-      { text: `- 최다: ${top1.name} ${fmtNum(top1.계)}건(${top1.pct}%) / 최소: ${lowNonZero ? `${lowNonZero.name} ${lowNonZero.계}건` : '없음'}`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 0 },
-    ], { algn: 'l' });
+      { text: `- 발생유형 TOP 4 : ${t4.map((x) => x.name).join('·')} (전체 ${pct(top4Sum, tDen)}%)`, sz: 1350, bold: true, color: COLORS.NAVY, spcAft: 140 },
+      { text: `- 최다: ${top1.name} ${fmtNum(top1.계)}건(${top1.pct}%) / 최소: ${lowNonZero ? `${lowNonZero.name} ${lowNonZero.계}건` : '없음'}`, sz: 1350, color: COLORS.DARK_TEXT, spcAft: 0 },
+    ], { algn: 'l', tIns: 45000, bIns: 45000 });
 
     const top1AgStr = (top1.topAgents || []).filter((a) => isMeaningfulValue(a.name)).slice(0, 2).map((a) => `${toCompletePhrase(a.name, 7)}(${a.count})`).join(', ') || '-';
     const top1TrStr = (top1.topTrades || []).filter((t) => isMeaningfulValue(t.name)).slice(0, 1).map((t) => toCompletePhrase(t.name, 8)).join(', ') || '-';
     s3 = updateShapeTextKeepAttrs(s3, 27, [
-      { text: `핵심 기인물(${top1.name}): ${top1AgStr} | 공종: ${top1TrStr}`, sz: 1050, bold: true, color: COLORS.NAVY },
+      { text: `핵심 기인물(${top1.name}): ${top1AgStr} | 공종: ${top1TrStr}`, sz: 1200, bold: true, color: COLORS.NAVY },
     ], { algn: 'ctr' });
     s3 = updateShapeTextKeepAttrs(s3, 29, [
-      { text: `TOP 2(${top1.name}·${top2.name}) 비중: ${pct(top1.계 + top2.계, tDen)}% (${top1.계 + top2.계}/${stats.total}건)`, sz: 1050, bold: true, color: COLORS.NAVY },
+      { text: `TOP 2(${top1.name}·${top2.name}) 비중: ${pct(top1.계 + top2.계, tDen)}% (${top1.계 + top2.계}/${stats.total}건)`, sz: 1200, bold: true, color: COLORS.NAVY },
     ], { algn: 'ctr' });
 
-    // 표 2 (유형 8행 + 합) — 100.0% 1줄 유지 및 카드 내 수납
+    // 표 2 (유형 8행 + 합) — 100.0% 1줄 유지 및 시인성 확대
     const tbl2Updates = {};
     HAZARD_TYPES.forEach((hName, i) => {
       const h = stats.hazardStats[hName] || { 계: 0, 중대: 0, 중: 0, 경: 0 };
       const rIdx = i + 2;
       tbl2Updates[rIdx] = {
-        0: { text: hName, sz: 950, bold: h.계 > 0 },
-        2: { text: fmtNum(h.계), sz: 950, bold: h.계 > 0 },
-        3: { text: fmtNum(h.중대), sz: 900 },
-        4: { text: fmtNum(h.중), sz: 900 },
-        5: { text: fmtNum(h.경), sz: 900 },
-        6: { text: `${pct1(h.계, stats.total)}%`, sz: 850 },
-        7: { text: h.계 === top1.계 && h.계 > 0 ? '최다' : '', sz: 880, color: COLORS.RED, bold: true },
+        0: { text: hName, sz: 1050, bold: h.계 > 0 },
+        2: { text: fmtNum(h.계), sz: 1050, bold: h.계 > 0 },
+        3: { text: fmtNum(h.중대), sz: 1000 },
+        4: { text: fmtNum(h.중), sz: 1000 },
+        5: { text: fmtNum(h.경), sz: 1000 },
+        6: { text: `${pct1(h.계, stats.total)}%`, sz: 980 },
+        7: { text: h.계 === top1.계 && h.계 > 0 ? '최다' : '', sz: 1000, color: COLORS.RED, bold: true },
       };
     });
     const etcCnt = (stats.hazardStats['기타'] && stats.hazardStats['기타'].계) || 0;
     tbl2Updates[10] = {
-      2: { text: fmtNum(stats.total), sz: 950, bold: true, color: COLORS.NAVY },
-      3: { text: fmtNum(중대), sz: 950, bold: true },
-      4: { text: fmtNum(중), sz: 950, bold: true },
-      5: { text: fmtNum(경), sz: 950, bold: true },
-      6: { text: '100%', sz: 880, bold: true },
-      7: { text: etcCnt > 0 ? `기타 ${etcCnt}` : '-', sz: 850 },
+      2: { text: fmtNum(stats.total), sz: 1050, bold: true, color: COLORS.NAVY },
+      3: { text: fmtNum(중대), sz: 1050, bold: true },
+      4: { text: fmtNum(중), sz: 1050, bold: true },
+      5: { text: fmtNum(경), sz: 1050, bold: true },
+      6: { text: '100%', sz: 1000, bold: true },
+      7: { text: etcCnt > 0 ? `기타 ${etcCnt}` : '-', sz: 980 },
     };
     s3 = updateTableById(s3, 3, tbl2Updates);
-    s3 = compactTableLayout(s3, 3, { marT: 6000, marB: 6000, marL: 7000, marR: 7000, minRowIdx: 2, rowHeight: 205000 });
+    s3 = compactTableLayout(s3, 3, { marT: 4500, marB: 4500, marL: 6000, marR: 6000, minRowIdx: 2, rowHeight: 220000 });
 
-    // 4대 유형 Treemap 매핑 — 타이틀 1줄 고정
+    // 4대 유형 Treemap 매핑 — 타이틀 1줄 고정 및 시인성 확대
     const treemapSlots = [
       { titleId: 18, chartEx: 'ppt/charts/chartEx1.xml', sheet: 'ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx', img: 'ppt/media/image1.png', color: '#1D4ED8' },
       { titleId: 19, chartEx: 'ppt/charts/chartEx2.xml', sheet: 'ppt/embeddings/Microsoft_Excel_Worksheet2.xlsx', img: 'ppt/media/image2.png', color: '#D97706' },
@@ -1479,7 +1610,7 @@
       const haz = t4[i] || { name: HAZARD_TYPES[i], leaves: [], topAgents: [] };
       const agLine = (haz.topAgents || []).filter((a) => isMeaningfulValue(a.name)).slice(0, 2).map((a) => toCompletePhrase(a.name, 7)).join(' · ') || '기인물 없음';
       s3 = updateShapeTextKeepAttrs(s3, slot.titleId, [
-        { text: ` ${haz.name} : ${agLine}`, sz: 1000, bold: true, color: COLORS.NAVY },
+        { text: ` ${haz.name} : ${agLine}`, sz: 1150, bold: true, color: COLORS.NAVY },
       ], { algn: 'l' });
 
       const cexXml = await zip.file(slot.chartEx).async('string');
@@ -1506,41 +1637,54 @@
     ], { algn: 'l' });
 
     const s4IdStart = getNextShapeId(s4);
-    const makeDominoParas = (title, items, samples, accentColor) => {
-      const ps = [{ text: title, sz: 1350, bold: true, color: accentColor, spcAft: 240 }];
+    const makeDominoParas = (title, items, samples, actionTips, accentColor) => {
+      const ps = [{ text: title, sz: 1550, bold: true, color: accentColor, spcAft: 260 }];
       const cleanItems = (items || []).filter((it) => isMeaningfulValue(it.name)).slice(0, 4);
       if (cleanItems.length) {
         cleanItems.forEach((it, idx) => {
           ps.push({
             runs: [
-              { text: `${idx + 1}. ${toCompletePhrase(it.name, 16)} : `, sz: 1200, bold: true, color: COLORS.NAVY },
-              { text: `${fmtNum(it.count)}건 (${pct(it.count, tDen)}%)`, sz: 1200, bold: true, color: accentColor },
+              { text: `${idx + 1}. ${toCompletePhrase(it.name, 16)} : `, sz: 1350, bold: true, color: COLORS.NAVY },
+              { text: `${fmtNum(it.count)}건 (${pct(it.count, tDen)}%)`, sz: 1350, bold: true, color: accentColor },
             ],
-            spcAft: 200,
+            spcAft: 220,
           });
         });
       } else {
-        ps.push({ text: '• 해당 기간 세부 항목 없음', sz: 1200, color: COLORS.MUTED_TEXT, spcAft: 200 });
+        ps.push({ text: '• 해당 기간 세부 항목 없음', sz: 1300, color: COLORS.MUTED_TEXT, spcAft: 220 });
       }
-      ps.push({ text: '── 대표 현장 사례 ──', sz: 1150, bold: true, color: COLORS.MUTED_TEXT, spcAft: 140 });
-      (samples.length ? samples : ['등록된 대표 지적사례 없음']).slice(0, 3).forEach((sm) => {
-        ps.push({ text: `· ${toCompletePhrase(sm, 26)}`, sz: 1100, color: COLORS.DARK_TEXT, spcAft: 130 });
+      ps.push({ text: '── 대표 현장 사례 ──', sz: 1300, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 });
+      (samples.length ? samples : ['등록된 대표 지적사례 없음']).slice(0, 4).forEach((sm) => {
+        ps.push({ text: `· ${toCompletePhrase(sm, 26)}`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 150 });
+      });
+      ps.push({ text: '── 핵심 개선 대책 ──', sz: 1300, bold: true, color: accentColor, spcAft: 150 });
+      actionTips.forEach((tip) => {
+        ps.push({ text: `• ${tip}`, sz: 1250, bold: true, color: COLORS.NAVY, spcAft: 140 });
       });
       return ps;
     };
 
+    const s4CondTips = [
+      '가시설·방호장치 설치 완료 후 작업 허가(PTW) 승인 철저',
+      '작업 전 일상점검으로 불안전 시설 즉시 보완 후 작업착수',
+    ];
+    const s4ActTips = [
+      '작업 시작 전 10분 TBM으로 핵심 안전수칙·보호구 착용 교육',
+      '고위험 공종 관리감독자 상주 및 불안전 행동 즉시 시정',
+    ];
+
     const s4Left = createTextBoxXml(
       s4IdStart, '불안전상태_내역',
       { x: 400000, y: 2050000, w: 5470000, h: 4450000 },
-      makeDominoParas(`물적·시설 요인 (총 ${fmtNum(stats.condCount)}건)`, stats.condList, stats.condSamples, COLORS.RED),
-      { algn: 'l' },
+      makeDominoParas(`물적·시설 요인 (총 ${fmtNum(stats.condCount)}건, ${pct(stats.condCount, dominoSum)}%)`, stats.condList, stats.condSamples, s4CondTips, COLORS.RED),
+      { algn: 'l', lIns: 110000, rIns: 110000, tIns: 100000, lnSpc: 112000 },
       { fill: 'FFFFFF', border: 'BFDBFE', round: true }
     );
     const s4Right = createTextBoxXml(
       s4IdStart + 1, '불안전행동_내역',
       { x: 6260000, y: 2050000, w: 5470000, h: 4450000 },
-      makeDominoParas(`인적·행동 요인 (총 ${fmtNum(stats.actCount)}건)`, stats.actList, stats.actSamples, COLORS.BLUE),
-      { algn: 'l' },
+      makeDominoParas(`인적·행동 요인 (총 ${fmtNum(stats.actCount)}건, ${pct(stats.actCount, dominoSum)}%)`, stats.actList, stats.actSamples, s4ActTips, COLORS.BLUE),
+      { algn: 'l', lIns: 110000, rIns: 110000, tIns: 100000, lnSpc: 112000 },
       { fill: 'FFFFFF', border: 'BFDBFE', round: true }
     );
     s4 = insertIntoSpTree(s4, s4Left + s4Right);
@@ -1560,47 +1704,59 @@
       },
     ], { algn: 'l' });
 
+    const pdcaActionMap = {
+      PLAN: ['고위험 작업계획서 사전 승인 강화', '공종별 위험성평가 변경 즉시 반영'],
+      DO: ['TBM 연계 안전시설 선설치 확인', '표준 작업방법·보호구 착용 이행'],
+      CHECK: ['관리감독자 Hold Point 실효성 점검', '형식적 체크리스트 배제·현장 확인'],
+      ACTION: ['지적사항 48시간 이내 완결 추적', '우수·미흡 협력사 인센티브/코칭'],
+    };
+
     const buildPdcaParas = (phaseKey, label) => {
       const list = stats.pdca[phaseKey] || [];
       const topR = topEntries(stats.pdcaReasonMap[phaseKey] || {}, 4).filter((r) => isMeaningfulValue(r.name));
       const ps = [
         {
           runs: [
-            { text: `${label} `, sz: 1300, bold: true, color: COLORS.NAVY },
-            { text: `${fmtNum(list.length)}건 (${pct(list.length, pdcaDen)}%)`, sz: 1300, bold: true, color: COLORS.RED },
+            { text: `${label} `, sz: 1450, bold: true, color: COLORS.NAVY },
+            { text: `${fmtNum(list.length)}건 (${pct(list.length, pdcaDen)}%)`, sz: 1450, bold: true, color: COLORS.RED },
           ],
           spcAft: 240,
         },
       ];
       if (topR.length) {
         topR.forEach((r) => {
-          ps.push({ text: `- ${toCompletePhrase(r.name, 15)} (${r.count}건)`, sz: 1000, color: COLORS.DARK_TEXT, spcAft: 160 });
+          ps.push({ text: `- ${toCompletePhrase(r.name, 16)} (${r.count}건)`, sz: 1200, bold: true, color: COLORS.DARK_TEXT, spcAft: 160 });
         });
       } else {
-        ps.push({ text: '- 해당 단계 특이사항 없음', sz: 1000, color: COLORS.MUTED_TEXT, spcAft: 160 });
+        ps.push({ text: '- 해당 단계 특이사항 없음', sz: 1200, color: COLORS.MUTED_TEXT, spcAft: 160 });
       }
       const seenSamples = new Set();
       const cleanSamples = [];
       for (const rec of list) {
         if (!isMeaningfulValue(rec && rec.content)) continue;
-        const txt = toCompletePhrase(rec.content, 16);
+        const txt = toCompletePhrase(rec.content, 20);
         if (txt && !seenSamples.has(txt)) {
           seenSamples.add(txt);
           cleanSamples.push(txt);
-          if (cleanSamples.length >= 3) break;
+          if (cleanSamples.length >= 4) break;
         }
       }
       if (cleanSamples.length) {
-        ps.push({ text: '── 주요 지적 ──', sz: 1050, bold: true, color: COLORS.MUTED_TEXT, spcAft: 100 });
+        ps.push({ text: '── 주요 지적 사례 ──', sz: 1180, bold: true, color: COLORS.MUTED_TEXT, spcAft: 130 });
         cleanSamples.forEach((txt) => {
-          ps.push({ text: `· ${txt}`, sz: 1000, color: COLORS.DARK_TEXT, spcAft: 110 });
+          ps.push({ text: `· ${txt}`, sz: 1120, color: COLORS.DARK_TEXT, spcAft: 130 });
         });
       }
+      ps.push({ text: '── 단계별 개선방향 ──', sz: 1180, bold: true, color: COLORS.BLUE, spcAft: 120 });
+      (pdcaActionMap[phaseKey] || []).forEach((act) => {
+        ps.push({ text: `• ${act}`, sz: 1120, bold: true, color: COLORS.NAVY, spcAft: 120 });
+      });
       return ps;
     };
 
+    const pdcaCardStyle = { algn: 'l', lIns: 75000, rIns: 75000, tIns: 85000, lnSpc: 112000 };
     // PLAN 기존 id=24를 카드 크기에 맞게 확장하고 DO/CHECK/ACTION 카드 삽입
-    s5 = setShapeParagraphs(s5, 24, buildPdcaParas('PLAN', '계획단계'), { algn: 'l' });
+    s5 = setShapeParagraphs(s5, 24, buildPdcaParas('PLAN', '계획단계'), pdcaCardStyle);
     s5 = replaceElementBlockById(s5, 24, (blk) =>
       blk.replace(/<a:off x="\d+" y="\d+"\/>/, '<a:off x="340000" y="2070000"/>')
          .replace(/<a:ext cx="\d+" cy="\d+"\/>/, '<a:ext cx="2670000" cy="4420000"/>')
@@ -1608,43 +1764,64 @@
     );
     const s5IdStart = getNextShapeId(s5);
     const pdcaBoxes = [
-      createTextBoxXml(s5IdStart, 'DO_내용', { x: 3250000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('DO', '실행단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
-      createTextBoxXml(s5IdStart + 1, 'CHECK_내용', { x: 6160000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('CHECK', '확인단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
-      createTextBoxXml(s5IdStart + 2, 'ACTION_내용', { x: 9070000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('ACTION', '조치단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
+      createTextBoxXml(s5IdStart, 'DO_내용', { x: 3250000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('DO', '실행단계'), pdcaCardStyle, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
+      createTextBoxXml(s5IdStart + 1, 'CHECK_내용', { x: 6160000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('CHECK', '확인단계'), pdcaCardStyle, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
+      createTextBoxXml(s5IdStart + 2, 'ACTION_내용', { x: 9070000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('ACTION', '조치단계'), pdcaCardStyle, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
     ].join('');
     s5 = insertIntoSpTree(s5, pdcaBoxes);
     zip.file('ppt/slides/slide5.xml', s5);
 
-    // ── Slide 6: 4. 사고와 상관관계 ──
+    // ── Slide 6: 4. 사고와 상관관계 (시인성 확대 및 공란 최소화 밸런스 배치) ──
     let s6 = await zip.file('ppt/slides/slide6.xml').async('string');
     const hiPct = pct(stats.hiRiskCount, tDen);
     s6 = updateShapeTextKeepAttrs(s6, 20, [
       { text: `중대·중부적합(${fmtNum(stats.hiRiskCount)}건, ${hiPct}%) 및 ${top1.name}·${top2.name} 중심의 선제적 중대재해 예방관리 필요`, sz: 2100, bold: true, color: COLORS.NAVY },
     ], { algn: 'l' });
 
+    const top3Haz = t4[2] || { name: '-', pct: 0 };
+    const tradeCountMap = {};
+    const locCountMap = {};
+    stats.records.forEach((r) => {
+      if (isMeaningfulValue(r.workGroup || r.workName)) incMap(tradeCountMap, toCompletePhrase(r.workGroup || r.workName, 10));
+      if (isMeaningfulValue(r.locationDetail || r.location)) incMap(locCountMap, toCompletePhrase(r.locationDetail || r.location, 10));
+    });
+    const topTradesAll = topEntries(tradeCountMap, 2).map((x) => `${x.name}(${x.count}건)`).join(', ') || '공종 전반';
+    const topLocsAll = topEntries(locCountMap, 2).map((x) => `${x.name}(${x.count}건)`).join(', ') || '현장 전 구간';
+    const weakPdca = [
+      { k: 'Plan(계획)', v: pN },
+      { k: 'Do(실행)', v: dN },
+      { k: 'Check(확인)', v: cN },
+      { k: 'Action(조치)', v: aN },
+    ].sort((a, b) => b.v - a.v)[0];
+    const leadAgentName = (top1.topAgents && top1.topAgents[0] && toCompletePhrase(top1.topAgents[0].name, 8)) || '핵심 기인물';
+
     const s6IdStart = getNextShapeId(s6);
     const accidentParas = [
-      { text: '하인리히 법칙(1:29:300) 기반 잠재사고 위험도', sz: 1400, bold: true, color: COLORS.NAVY, spcAft: 260 },
-      { text: `• 고위험 부적합(중대+중): ${fmtNum(stats.hiRiskCount)}건 (${hiPct}%)`, sz: 1300, bold: true, color: COLORS.RED, spcAft: 220 },
-      { text: `• 1순위 위험유형: ${top1.name} (${top1.pct}%) — 주요 기인물 ${toCompletePhrase(top1AgStr, 18)}`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 200 },
-      { text: `• 2순위 위험유형: ${top2.name} (${top2.pct}%) — 연쇄 재해 전이 주의`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 260 },
-      { text: '── 집중 공종 연계 위험 ──', sz: 1200, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 },
-      { text: `· 다빈도 공종: ${top1TrStr} 구간 작업 전 허가·안전대 체결 필수`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 140 },
-      { text: `· Hold Point 위반 ${fmtNum(stats.holdCount)}건 발생 → 작업중지권 적극 행사`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 100 },
+      { text: '하인리히 법칙(1:29:300) 기반 잠재사고 위험도', sz: 1550, bold: true, color: COLORS.NAVY, spcAft: 240 },
+      { text: `• 고위험 부적합(중대+중): ${fmtNum(stats.hiRiskCount)}건 (${hiPct}%)`, sz: 1400, bold: true, color: COLORS.RED, spcAft: 200 },
+      { text: `• 원인 비중: 불안전 상태 ${fmtNum(stats.condCount)}건(${pct(stats.condCount, dominoSum)}%) · 행동 ${fmtNum(stats.actCount)}건(${pct(stats.actCount, dominoSum)}%)`, sz: 1300, color: COLORS.DARK_TEXT, spcAft: 190 },
+      { text: `• 1순위 위험: ${top1.name} (${top1.pct}%) — 주요 기인물 ${toCompletePhrase(top1AgStr, 18)}`, sz: 1300, color: COLORS.DARK_TEXT, spcAft: 190 },
+      { text: `• 2·3순위 위험: ${top2.name}(${top2.pct}%), ${top3Haz.name}(${top3Haz.pct}%) — 연쇄 재해 전이 주의`, sz: 1300, color: COLORS.DARK_TEXT, spcAft: 240 },
+      { text: '── 다빈도 공종·구간 연계 위험 ──', sz: 1350, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 },
+      { text: `· 집중 공종: ${topTradesAll} 작업 전 PTW·안전고리 결속 필수`, sz: 1280, color: COLORS.DARK_TEXT, spcAft: 160 },
+      { text: `· 다발 장소: ${topLocsAll} 중심 합동 패트롤 강화`, sz: 1280, color: COLORS.DARK_TEXT, spcAft: 160 },
+      { text: `· Hold Point 위반 ${fmtNum(stats.holdCount)}건 발생 → 즉시 작업중지 후 보완`, sz: 1280, bold: true, color: COLORS.NAVY, spcAft: 120 },
     ];
     const nonconfParas = [
-      { text: '선택기간 부적합 발생·조치 상관지표', sz: 1400, bold: true, color: COLORS.NAVY, spcAft: 260 },
-      { text: `• 기간 총 발생: ${fmtNum(stats.total)}건 (조치 ${fmtNum(stats.fixed)}건 / 미조치 ${fmtNum(stats.unfixed)}건)`, sz: 1300, bold: true, color: COLORS.BLUE, spcAft: 220 },
-      { text: `• 조치율: ${stats.fixRate}% (${stats.fixRate >= 80 ? '양호' : '조기 종결 독려 필요'})`, sz: 1250, color: stats.fixRate >= 80 ? COLORS.GREEN : COLORS.RED, spcAft: 200 },
-      { text: `• 원인 상관성: 계획(Plan) ${pN}건·실행(Do) ${dN}건 → 현장 불안전 상태(${stats.condCount}건) 유발`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 260 },
-      { text: '── 경영·현장 피드백 제언 ──', sz: 1200, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 },
-      { text: `· 전기 대비 변화: ${stats.deltaText}`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 140 },
-      { text: `· 미조치 ${fmtNum(stats.unfixed)}건 우선 해소 시 동종 사고예방 효과 극대화`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 100 },
+      { text: '선택기간 부적합 발생·조치 상관지표', sz: 1550, bold: true, color: COLORS.NAVY, spcAft: 240 },
+      { text: `• 기간 총 발생: ${fmtNum(stats.total)}건 (조치 ${fmtNum(stats.fixed)}건 / 미조치 ${fmtNum(stats.unfixed)}건)`, sz: 1400, bold: true, color: COLORS.BLUE, spcAft: 200 },
+      { text: `• 조치 이행률: ${stats.fixRate}% (${stats.fixRate >= 80 ? '양호 수준 유지' : '조기 종결 집중 독려 필요'})`, sz: 1300, bold: true, color: stats.fixRate >= 80 ? COLORS.GREEN : COLORS.RED, spcAft: 190 },
+      { text: `• PDCA 취약단계: ${weakPdca.k} ${fmtNum(weakPdca.v)}건 최다 (${pN}/${dN}/${cN}/${aN}건)`, sz: 1300, color: COLORS.DARK_TEXT, spcAft: 190 },
+      { text: `• 연간 추이: 최다 ${stats.maxM.m}월(${fmtNum(stats.maxM.v)}건) / 최소 ${stats.minM.m}월(${fmtNum(stats.minM.v)}건)`, sz: 1300, color: COLORS.DARK_TEXT, spcAft: 240 },
+      { text: '── 경영·현장 피드백 제언 ──', sz: 1350, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 },
+      { text: `· 전기 대비 변화: ${stats.deltaText}`, sz: 1280, color: COLORS.DARK_TEXT, spcAft: 160 },
+      { text: `· 대표 기인물(${leadAgentName}) 작업 개시 전 10분 TBM 필수 전파`, sz: 1280, color: COLORS.DARK_TEXT, spcAft: 160 },
+      { text: `· 미조치 ${fmtNum(stats.unfixed)}건 48시간 이내 해소 시 동종 재해예방 효과 극대화`, sz: 1280, bold: true, color: COLORS.NAVY, spcAft: 120 },
     ];
     s6 = insertIntoSpTree(
       s6,
-      createTextBoxXml(s6IdStart, '사고_상관관계_카드', { x: 400000, y: 2050000, w: 5470000, h: 4450000 }, accidentParas, { algn: 'l' }, { fill: 'FFFFFF', border: 'BFDBFE', round: true }) +
-      createTextBoxXml(s6IdStart + 1, '부적합_상관관계_카드', { x: 6260000, y: 2050000, w: 5470000, h: 4450000 }, nonconfParas, { algn: 'l' }, { fill: 'FFFFFF', border: 'BFDBFE', round: true })
+      createTextBoxXml(s6IdStart, '사고_상관관계_카드', { x: 400000, y: 2050000, w: 5470000, h: 4450000 }, accidentParas, { algn: 'l', lIns: 110000, rIns: 110000, tIns: 100000, lnSpc: 114000 }, { fill: 'FFFFFF', border: 'BFDBFE', round: true }) +
+      createTextBoxXml(s6IdStart + 1, '부적합_상관관계_카드', { x: 6260000, y: 2050000, w: 5470000, h: 4450000 }, nonconfParas, { algn: 'l', lIns: 110000, rIns: 110000, tIns: 100000, lnSpc: 114000 }, { fill: 'FFFFFF', border: 'BFDBFE', round: true })
     );
     zip.file('ppt/slides/slide6.xml', s6);
 
@@ -1654,21 +1831,21 @@
     stats.themeRows.forEach((tr, idx) => {
       const rIdx = idx + 2; // R2..R13
       const rowUpdate = {
-        1: { text: tr.agent, sz: 880 },
-        2: { text: tr.workName, sz: 880, algn: 'l' },
-        3: { text: tr.trade, sz: 880 },
-        4: { text: tr.location, sz: 880 },
-        5: { text: tr.team, sz: 880 },
-        6: { text: tr.note, sz: 820 },
+        1: { text: toCompletePhrase(tr.agent, 9) || '-', sz: 1020 },
+        2: { text: toCompletePhrase(tr.workName, 18) || '-', sz: 1000, algn: 'l' },
+        3: { text: toCompletePhrase(tr.trade, 9) || '-', sz: 1000 },
+        4: { text: toCompletePhrase(tr.location, 9) || '-', sz: 1000 },
+        5: { text: toCompletePhrase(tr.team, 9) || '-', sz: 1000 },
+        6: { text: tr.note, sz: 950 },
       };
       if (idx % 3 === 0) {
         const spaced = tr.type.length === 2 ? `${tr.type[0]} ${tr.type[1]}` : tr.type;
-        rowUpdate[0] = { text: spaced, sz: 1200, bold: true, color: COLORS.NAVY };
+        rowUpdate[0] = { text: spaced, sz: 1350, bold: true, color: COLORS.NAVY };
       }
       tbl16Updates[rIdx] = rowUpdate;
     });
     s7 = updateTableById(s7, 17, tbl16Updates);
-    s7 = compactTableLayout(s7, 17, { marT: 6000, marB: 6000, marL: 9000, marR: 9000, minRowIdx: 2, rowHeight: 310000 });
+    s7 = compactTableLayout(s7, 17, { marT: 4500, marB: 4500, marL: 6500, marR: 6500, minRowIdx: 2, rowHeight: 320000 });
     zip.file('ppt/slides/slide7.xml', s7);
 
     // ── Slide 8: 5. 안전관리 의사결정 (부적합 발생 감소대책 3E, 표 7) ──
@@ -1679,15 +1856,15 @@
       const item = eRows[r];
       if (!item) continue;
       tbl7Updates[r] = {
-        2: { text: item.content, sz: 900, algn: 'l' },
-        3: { text: item.target, sz: 880 },
-        4: { text: item.owner, sz: 880 },
-        5: { text: item.schedule, sz: 880 },
-        6: { text: item.note, sz: 880 },
+        2: { text: item.content, sz: 1050, algn: 'l' },
+        3: { text: item.target, sz: 1020 },
+        4: { text: item.owner, sz: 1020 },
+        5: { text: item.schedule, sz: 1020 },
+        6: { text: item.note, sz: 1020 },
       };
     }
     s8 = updateTableById(s8, 8, tbl7Updates);
-    s8 = compactTableLayout(s8, 8, { marT: 7000, marB: 7000, marL: 10000, marR: 10000, minRowIdx: 2, rowHeight: 330000 });
+    s8 = compactTableLayout(s8, 8, { marT: 5000, marB: 5000, marL: 7000, marR: 7000, minRowIdx: 2, rowHeight: 340000 });
     zip.file('ppt/slides/slide8.xml', s8);
 
     const outBuf = await zip.generateAsync({ type: 'blob' });
@@ -1759,35 +1936,49 @@
 
       const repAgents = cleanAgents.slice(0, 2).map((a) => toCompletePhrase(a.name, 7)).join(', ') || '주요요인 없음';
       s1 = updateShapeTextKeepAttrs(s1, summaryIds[i], [
-        { text: `${['①', '②', '③'][i]} `, sz: 1300, bold: true, color: COLORS.BRIGHT_RED },
-        { text: `[${haz.name}] `, sz: 1250, bold: true, color: COLORS.NAVY },
-        { text: `${fmtNum(haz.계)}건(${haz.pct}%) · 대표 기인물: ${repAgents}`, sz: 1050, color: COLORS.DARK_TEXT },
+        { text: `${['①', '②', '③'][i]} `, sz: 1350, bold: true, color: COLORS.BRIGHT_RED },
+        { text: `[${haz.name}] `, sz: 1300, bold: true, color: COLORS.NAVY },
+        { text: `${fmtNum(haz.계)}건(${haz.pct}%) · 기인물: ${repAgents}`, sz: 1200, color: COLORS.DARK_TEXT },
       ], { algn: 'l' });
     }
 
-    // 반드시 지켜야 할 안전Point 3개 (id=28, 38, 39)
+    // 반드시 지켜야 할 안전Point 3개 (id=28, 38, 39) — 구체적 안전행동 수칙 + 시인성 확대
     const ptIds = [28, 38, 39];
     wContent.safetyPoints.forEach((pt, i) => {
       const paras = [
-        { text: pt.title, sz: 1100, bold: true, color: COLORS.NAVY, spcAft: 120 },
-        ...pt.bullets.map((b) => ({ text: `• ${b}`, sz: 950, color: COLORS.DARK_TEXT, spcAft: 100 })),
+        { text: pt.title, sz: 1200, bold: true, color: COLORS.NAVY, spcAft: 110 },
+        ...pt.bullets.map((b) => ({ text: `• ${b}`, sz: 1050, color: COLORS.DARK_TEXT, spcAft: 85 })),
       ];
-      s1 = setShapeParagraphs(s1, ptIds[i], paras, { algn: 'l' });
+      s1 = setShapeParagraphs(s1, ptIds[i], paras, {
+        algn: 'l',
+        lIns: 50000,
+        rIns: 50000,
+        tIns: 45000,
+        bIns: 40000,
+        lnSpc: 112000,
+      });
     });
 
     // 사고/아차사고 사례 2개 (id=42, id=48) + 실사 사진 임베딩
     const caseIds = [42, 48];
     const photoBoxes = [
-      { x: 6320000, y: 1690000, w: 2600000, h: 1320000 },
-      { x: 9245000, y: 1690000, w: 2600000, h: 1320000 },
+      { x: 6320000, y: 1770000, w: 2600000, h: 1250000 },
+      { x: 9245000, y: 1770000, w: 2600000, h: 1250000 },
     ];
     for (let i = 0; i < 2; i++) {
       const c = wContent.cases[i];
       s1 = setShapeParagraphs(s1, caseIds[i], [
-        { text: c.title, sz: 1080, bold: true, color: COLORS.RED, spcAft: 60 },
-        { text: c.detail, sz: 920, bold: true, color: COLORS.NAVY, spcAft: 50 },
-        { text: c.measure, sz: 900, color: COLORS.DARK_TEXT, spcAft: 40 },
-      ], { algn: 'l' });
+        { text: c.title, sz: 1200, bold: true, color: COLORS.RED, spcAft: 45 },
+        { text: c.detail, sz: 1050, bold: true, color: COLORS.NAVY, spcAft: 40 },
+        { text: c.measure, sz: 1020, color: COLORS.DARK_TEXT, spcAft: 30 },
+      ], {
+        algn: 'l',
+        lIns: 55000,
+        rIns: 55000,
+        tIns: 40000,
+        bIns: 30000,
+        lnSpc: 108000,
+      });
 
       if (c.photoPath && options.loadPhotoBase64) {
         try {
@@ -1803,17 +1994,17 @@
       }
     }
 
-    // 근로자 위험성 평가 표 76 (id=77, R1..R3)
+    // 근로자 위험성 평가 표 76 (id=77, R1..R3) — 시인성 확대
     const tbl76Updates = {};
     wContent.riskRows.forEach((cols, idx) => {
       tbl76Updates[idx + 1] = {
-        0: { text: cols[0], sz: 950, bold: true, color: COLORS.NAVY },
-        1: { text: cols[1], sz: 900, algn: 'l' },
-        2: { text: cols[2], sz: 900, algn: 'l' },
+        0: { text: cols[0], sz: 1080, bold: true, color: COLORS.NAVY },
+        1: { text: cols[1], sz: 1050, algn: 'l' },
+        2: { text: cols[2], sz: 1050, algn: 'l' },
       };
     });
     s1 = updateTableById(s1, 77, tbl76Updates);
-    s1 = compactTableLayout(s1, 77, { marT: 9000, marB: 9000, marL: 12000, marR: 12000 });
+    s1 = compactTableLayout(s1, 77, { marT: 7000, marB: 7000, marL: 8000, marR: 8000 });
 
     zip.file('ppt/slides/slide1.xml', s1);
     zip.file('ppt/slides/_rels/slide1.xml.rels', rels1);
@@ -1837,9 +2028,15 @@
     computeReportStats,
     buildManagerPptxBlob,
     buildWorkerPptxBlob,
+    triggerDownloadIfRequested,
     _internal: {
       normalizeHazardType,
       normalizeSeverity,
+      getAgentLevels,
+      isUnsafeCondition,
+      isUnsafeAction,
+      isMeaningfulValue,
+      getRecordDateStr,
       classifyPDCA,
       build3ERows,
       buildWorkerTbmContent,
