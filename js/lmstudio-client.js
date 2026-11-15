@@ -258,30 +258,38 @@
         pmVerdict: '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개'
       };
     }
-    // 7. 가설전기 / 감전 / 분전함 충전부 노출
-    if (text.includes('전기') || text.includes('분전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부') || text.includes('감전')) {
+    // 7. 가설전기 / 감전 / 분전함·전등 소켓 충전부 노출·접지 불량
+    if (text.includes('전기') || text.includes('분전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부') || text.includes('감전') || text.includes('전등') || text.includes('소켓') || text.includes('투광등') || text.includes('심선')) {
       const isLivePart = text.includes('충전부') || text.includes('노출');
+      const isLight = text.includes('전등') || text.includes('소켓') || text.includes('심선') || text.includes('투광등');
+      const isGroundBolt = text.includes('접지선') && (text.includes('고정') || text.includes('볼트') || text.includes('용량') || text.includes('미연결'));
       return {
-        item: '분전반',
+        item: isLight ? '전등/전선' : '분전반',
         workGroup: '가설전기공사',
         workMethod: '설치조립작업',
-        agentMajor: '전기시설',
-        agentMid: '누전차단기',
-        agentMinor: isLivePart ? '분전함' : '누전차단기',
-        law: isLivePart ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)' : '안전보건규칙 제302조(전기 기계·기구의 접지)',
+        agentMajor: '전기·화기·설비',
+        agentMid: '전기시설',
+        agentMinor: isLight ? '가설전선/이동릴선' : (isGroundBolt ? '접지시설' : (isLivePart ? '분전함' : '누전차단기')),
+        law: isLivePart
+          ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
+          : (isGroundBolt || text.includes('접지') ? '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)' : '안전보건규칙 제304조(누전차단기에 의한 감전방지)'),
         hazardType: '감전',
         type: '감전',
         severity: '중부적합',
         mgmtCauses: ['불안전 상태', '계획 미이행'],
-        condition: '안전방호장치의 결함 (미설치·해체·불량)',
+        condition: '방호장치 결함 (덮개·난간 미설치 등)',
         action: '해당없음',
         rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡',
         rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡',
         stakeholder: '협력사 관리감독자',
         holdPoint: false,
-        photoBanner: isLivePart ? '분전함 차단기 충전부 노출' : '전기기구 누전차단기 및 접지 불량',
-        analysis: isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 누전차단기 불량',
-        pmVerdict: '즉시 전원 차단 및 충전부 절연 방호커버 설치, 반입 전 사전 점검 이행'
+        photoBanner: isLight
+          ? '전등 소켓 충전부 노출 및 절연 불량'
+          : (isLivePart ? '분전함 차단기 충전부 노출' : (isGroundBolt ? '접지선 볼트 고정 불량 및 용량 부족' : '가설분전반 관리 및 접지 불량')),
+        analysis: isLight
+          ? '작업등·전등 소켓 충전부 노출 및 전선 절연 불량으로 감전 위험'
+          : (isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 접지선 체결 불량'),
+        pmVerdict: '즉시 전원 차단 및 충전부 절연 방호·접지 보강 후 사용'
       };
     }
     // 7-B. 지게차 / 하역운반 / 유도원 근접 충돌
@@ -1196,8 +1204,25 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                     fallbackRecord.countermeasure = cleanedPlan;
                   }
                 }
-                if (cf.law && !isFieldKeyLiteral(cf.law) && !fallbackRecord.rawLaw) fallbackRecord.rawLaw = cf.law;
-                if (cf.rawLaw && !isFieldKeyLiteral(cf.rawLaw)) fallbackRecord.rawLaw = cf.rawLaw;
+                if (cf.law && !isFieldKeyLiteral(cf.law)) {
+                  fallbackRecord.law = cf.law;
+                  if (!fallbackRecord.rawLaw) fallbackRecord.rawLaw = cf.law;
+                }
+                if (cf.rawLaw && !isFieldKeyLiteral(cf.rawLaw)) {
+                  const rawLawStr = String(cf.rawLaw).trim();
+                  if (!cf.lawBody && rawLawStr.includes('\n')) {
+                    const rlLines = rawLawStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                    if (/^\d+\.\d+|^\d+\)|^[•\-*]/.test(rlLines[0] || '') && cf.law) {
+                      fallbackRecord.rawLaw = cf.law;
+                      fallbackRecord.lawBody = rawLawStr;
+                    } else {
+                      fallbackRecord.rawLaw = rlLines[0] || fallbackRecord.rawLaw;
+                      fallbackRecord.lawBody = rlLines.slice(1).join('\n').trim();
+                    }
+                  } else {
+                    fallbackRecord.rawLaw = rawLawStr;
+                  }
+                }
                 if (cf.lawBody && !isFieldKeyLiteral(cf.lawBody)) fallbackRecord.lawBody = cf.lawBody;
                 if (!cf.rawLaw && !cf.lawBody && cfData.visionText) {
                   const lawSecMatch = String(cfData.visionText).match(/\[관련기준\]\s*([\s\S]*?)(?=\n\[[가-힣A-Za-z0-9_/]+\]|$)/);
@@ -1205,6 +1230,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                     fallbackRecord.rawLaw = lawSecMatch[1].trim();
                   }
                 }
+                sanitizeDomainMismatchedLaw(fallbackRecord);
               }
               if (cfData.photoBanner && (!fallbackRecord.photoBanner || fallbackRecord.photoBanner === '안전기준 미준수' || !fallbackRecord._hasDigitalText || wantVision)) {
                 fallbackRecord.photoBanner = cleanBannerText(cfData.photoBanner, fallbackRecord.content, fallbackRecord.location);
@@ -1314,11 +1340,45 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return wm;
   }
 
+  function sanitizeDomainMismatchedLaw(rec) {
+    if (!rec || typeof rec !== 'object') return rec;
+    const ctx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''} ${rec.hazardType || ''}`;
+    const hasForkliftCtx = /지게차|하역|유도원|운행경로/.test(`${rec.workGroup || ''} ${rec.content || ''}`);
+    const isElec = rec.workGroup === '가설전기공사' || rec.type === '감전' || (ELECTRICAL_SIGNAL_RE.test(ctx) && !hasForkliftCtx);
+    const isOtherTrade = !isElec && !hasForkliftCtx && /(?:생명줄|안전대\s*부착|비계|동바리|거푸집|갱폼|알폼)/.test(ctx);
+    if (!isElec && !isOtherTrade) return rec;
+
+    const r = quickRuleAnalysis(`${rec.workGroup || ''} ${rec.content || ''}`) || {};
+    const validLawFallback = isElec
+      ? (r.law && !/172조|지게차/.test(r.law) ? r.law : '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)')
+      : (r.law && !/172조|지게차/.test(r.law) ? r.law : '');
+
+    if (rec.law && /지게차|제172조/.test(rec.law)) {
+      if (validLawFallback) rec.law = validLawFallback;
+    }
+    if (rec.rawLaw && /지게차|제172조/.test(rec.rawLaw)) {
+      if (isElec && /(?:108\s*\(?K\)?|전기)/.test(rec.rawLaw) && /전기/.test(`${rec.rawLaw} ${rec.lawBody || ''}`)) {
+        rec.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
+      } else if (validLawFallback) {
+        rec.rawLaw = validLawFallback;
+      } else {
+        rec.rawLaw = '';
+      }
+    } else if (isElec && rec.rawLaw && /(?:108\s*\(?K\)?)/i.test(rec.rawLaw) && !/11\d|7\.2\.3|301|302|304|안전보건규칙/.test(rec.rawLaw)) {
+      rec.rawLaw = '안전작업지침 [IZ12B-108(K)] 전기 작업';
+    }
+    if (rec.lawBody && /유도자|지게차|운행경로/.test(rec.lawBody)) {
+      rec.lawBody = '';
+    }
+    return rec;
+  }
+
   function applyLocalTaxonomyToRecords(records = [], options = {}) {
     if (!Array.isArray(records)) return records;
     const preserveAiFields = Boolean(options.preserveAiFields);
     records.forEach((rec) => {
       if (!rec) return;
+      sanitizeDomainMismatchedLaw(rec);
       const fullCtx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''}`;
       const r = quickRuleAnalysis(fullCtx) || {};
       const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
@@ -1350,9 +1410,19 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if ((!rec.type || (rec.type === '붕괴' && !/붕괴|도괴/.test(fullCtx))) && r.type) {
         rec.type = r.type;
       }
+      if (
+        /분전(?:함|반).*차단기.*충전부/.test(String(rec.photoBanner || '').trim()) &&
+        /전등|소켓|조명|심선/.test(rec.content || '') &&
+        !/분전함|분전반|차단기/.test(rec.content || '')
+      ) {
+        rec.photoBanner = '';
+      }
       if (!preserveAiFields || !rec.photoBanner) {
         const rawBannerFromSheet = String(rec._rawCellTexts?.banner || '').trim();
-        rec.photoBanner = cleanBannerText(rawBannerFromSheet || rec.photoBanner, rec.content, rec.location) || r.photoBanner || '';
+        const isStaleRawBanner = /분전(?:함|반).*차단기.*충전부/.test(rawBannerFromSheet) &&
+          /전등|소켓|조명|심선/.test(rec.content || '') &&
+          !/분전함|분전반|차단기/.test(rec.content || '');
+        rec.photoBanner = cleanBannerText((isStaleRawBanner ? '' : rawBannerFromSheet) || rec.photoBanner, rec.content, rec.location) || r.photoBanner || '';
       }
       if (!rec.condition || rec.condition === '해당없음') rec.condition = r.condition || rec.condition;
       if (!rec.action || rec.action === '해당없음') rec.action = r.action || rec.action;
