@@ -50,10 +50,133 @@
       .replace(/&amp;/g, '&');
   }
 
-  function truncateText(text, maxLen) {
-    const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const NA_VALUES = new Set(['', '-', '--', '없음', '해당없음', '해당 없음', '미지정', '미입력', '선택', 'none', 'n/a', 'na', 'null', 'undefined']);
+
+  function isMeaningfulValue(v) {
+    if (v === null || v === undefined) return false;
+    const s = String(v).replace(/\s+/g, ' ').trim();
+    if (!s) return false;
+    return !NA_VALUES.has(s.toLowerCase());
+  }
+
+  function cleanSafetyText(text) {
+    let s = String(text || '').replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    for (let pass = 0; pass < 5; pass++) {
+      s = s
+        .replace(/^\[(?:[^\[\]]*|\[[^\]]*\])*\]+\s*/g, '')
+        .replace(/^[\[\]]+\s*/g, '')
+        .replace(/^\d{1,2}\)\s*/, '')
+        .replace(/^[①-⑮]\s*/, '')
+        .replace(/^[-·•–—:]+\s*/, '')
+        .trim();
+    }
+    s = s.replace(/[\[\]]+/g, '').replace(/\s*\.{2,}\s*$/g, '').replace(/\s*…+\s*$/g, '').replace(/\s+/g, ' ').trim();
+    return s;
+  }
+
+  function toCompletePhrase(text, maxLen) {
+    let s = cleanSafetyText(text);
+    if (!s) return '';
     if (!maxLen || s.length <= maxLen) return s;
-    return s.slice(0, Math.max(1, maxLen - 1)) + '…';
+
+    // 1. 괄호 부연설명을 제거해 핵심만 유지
+    const noParen = s.replace(/\([^)]{1,24}\)/g, '').replace(/\s+/g, ' ').trim();
+    if (noParen && noParen.length <= maxLen && noParen.length >= Math.min(4, maxLen)) return noParen;
+    if (noParen && noParen.length < s.length && noParen.length >= 4) s = noParen;
+
+    // 2. 공백·구분자 축약 및 상용 건설용어 간결화
+    const compactMap = [
+      [/거푸집\s*동바리\s*공사/g, '거푸집동바리'],
+      [/가설\s*전기\s*공사/g, '가설전기'],
+      [/철근\s*콘크리트\s*공사/g, '철근콘크리트'],
+      [/위험성\s*평가/g, '위험성평가'],
+      [/안전\s*작업\s*지침/g, '작업지침'],
+      [/구조\s*검토서/g, '구조검토서'],
+      [/\s*,\s*/g, ','],
+      [/\s*\/\s*/g, '/'],
+      [/\s*·\s*/g, '·'],
+    ];
+    for (const [re, rep] of compactMap) {
+      s = s.replace(re, rep);
+      if (s.length <= maxLen) return s.trim();
+    }
+
+    // 3. 절/구분자(`/`, `·`, `,`) 단위로 말줄임표 없이 완결 구문 추출
+    const clauses = s.split(/(?:[,/;]|\s+및\s+|\s+후\s+|\s*-\s*)/).filter(Boolean);
+    if (clauses.length > 1) {
+      let acc = '';
+      for (const c of clauses) {
+        const cleanC = c.trim();
+        if (!cleanC) continue;
+        const next = acc ? `${acc}·${cleanC}` : cleanC;
+        if (next.length <= maxLen) {
+          acc = next;
+        } else if (!acc) {
+          break;
+        } else {
+          return acc.replace(/[,/;·\-:\s]+$/g, '').trim();
+        }
+      }
+      if (acc && acc.length <= maxLen) return acc.replace(/[,/;·\-:\s]+$/g, '').trim();
+    }
+
+    const words = s.split(/\s+/).filter(Boolean);
+    let built = '';
+    for (const w of words) {
+      const next = built ? `${built} ${w}` : w;
+      if (next.length <= maxLen) {
+        built = next;
+      } else {
+        break;
+      }
+    }
+    if (built && built.length >= Math.min(3, maxLen)) {
+      built = built
+        .replace(/\s+(?:을|를|이|가|은|는|의|에|로|과|와|및|등|시|중|후|위해|위한|대한|따른|있는|없는|하는)$/u, '')
+        .replace(/[,/;·\-:\s]+$/g, '')
+        .trim();
+      if (built) return built;
+    }
+
+    return s.slice(0, maxLen).replace(/[,/;·\-:\s]+$/g, '').trim();
+  }
+
+  function truncateText(text, maxLen) {
+    return toCompletePhrase(text, maxLen);
+  }
+
+  function toShortCompanyName(subcontractor) {
+    if (!isMeaningfulValue(subcontractor)) return '';
+    let s = String(subcontractor).replace(/\s+/g, ' ').trim();
+    s = s.replace(/^(?:\(주\)|㈜|주식회사|\(유\))\s*/g, '').replace(/\s*(?:\(주\)|㈜|주식회사|\(유\))$/g, '').trim();
+    return toCompletePhrase(s, 7);
+  }
+
+  function compactTableLayout(slideXml, tableId, opts = {}) {
+    const marT = opts.marT !== undefined ? opts.marT : 7000;
+    const marB = opts.marB !== undefined ? opts.marB : 7000;
+    const marL = opts.marL !== undefined ? opts.marL : 12000;
+    const marR = opts.marR !== undefined ? opts.marR : 12000;
+    const minRowIdx = opts.minRowIdx !== undefined ? opts.minRowIdx : 0;
+    const rowHeight = opts.rowHeight || null;
+    return replaceElementBlockById(slideXml, tableId, (tblBlk) => {
+      let rowCounter = 0;
+      return tblBlk.replace(/<a:tr\b([^>]*)>([\s\S]*?)<\/a:tr>/g, (trFull, trAttrs, trInner) => {
+        const curIdx = rowCounter++;
+        let newAttrs = trAttrs;
+        if (rowHeight && curIdx >= minRowIdx) {
+          newAttrs = /\bh="\d+"/.test(newAttrs)
+            ? newAttrs.replace(/\bh="\d+"/, `h="${rowHeight}"`)
+            : `${newAttrs} h="${rowHeight}"`;
+        }
+        const newInner = trInner.replace(/<a:tcPr([^>]*?)(\/?)>/g, (_m, attrs, slash) => {
+          const cleaned = String(attrs || '').replace(/\s+mar[LRTB]="[^"]*"/g, '');
+          return `<a:tcPr${cleaned} marL="${marL}" marR="${marR}" marT="${marT}" marB="${marB}"${slash}>`;
+        });
+        return `<a:tr${newAttrs}>${newInner}</a:tr>`;
+      });
+    });
   }
 
   function fmtNum(n) {
@@ -577,16 +700,16 @@
   }
 
   function isUnsafeCondition(rec) {
-    if (rec && rec.condition) return true;
-    const mc = (rec && rec.mgmtCauses) || [];
-    const cs = (rec && rec.causes) || [];
+    if (rec && isMeaningfulValue(rec.condition)) return true;
+    const mc = ((rec && rec.mgmtCauses) || []).filter(isMeaningfulValue);
+    const cs = ((rec && rec.causes) || []).filter(isMeaningfulValue);
     return mc.some((x) => /불안전\s*상태/.test(x)) || cs.some((x) => /물적|불안전\s*상태/.test(x));
   }
 
   function isUnsafeAction(rec) {
-    if (rec && rec.action) return true;
-    const mc = (rec && rec.mgmtCauses) || [];
-    const cs = (rec && rec.causes) || [];
+    if (rec && isMeaningfulValue(rec.action)) return true;
+    const mc = ((rec && rec.mgmtCauses) || []).filter(isMeaningfulValue);
+    const cs = ((rec && rec.causes) || []).filter(isMeaningfulValue);
     return mc.some((x) => /불안전\s*행동/.test(x)) || cs.some((x) => /인적|불안전\s*행동/.test(x));
   }
 
@@ -600,7 +723,7 @@
     const combined = `${mc} ${sys} ${mgmt} ${workPlan} ${ra}`;
 
     if (/계획\s*미수립|미반영|사전/.test(combined) || /미수립/.test(workPlan)) tags.push('PLAN');
-    if (/계획\s*미이행|불안전\s*상태|불안전\s*행동/.test(combined) || rec.condition || rec.action) tags.push('DO');
+    if (/계획\s*미이행|불안전\s*상태|불안전\s*행동/.test(combined) || isMeaningfulValue(rec.condition) || isMeaningfulValue(rec.action)) tags.push('DO');
     if (/점검|확인|형식적|모니터링/.test(combined) || rec.holdPoint) tags.push('CHECK');
     if ((rec && rec.auditProposal) || (rec && rec.pmVerdict) || (rec && rec.status === '조치완료')) tags.push('ACTION');
     if (!tags.length) tags.push('DO');
@@ -688,17 +811,17 @@
       if (r.holdPoint) holdCount++;
       if (r.workGroup) workGroupSet.add(r.workGroup);
 
-      // 회사명(협력사) 또는 현장별 집계
-      const compKey = (siteName !== '전체 현장')
-        ? (r.subcontractor || r.workGroup || r.site || '미지정')
-        : (r.subcontractor ? `${r.site || '현장'} (${r.subcontractor})` : (r.site || '미지정'));
+      // 회사명(협력사) 집계 — 협력사가 공란이면 공란('') 유지 (공종 강제 대체 금지)
+      const rawSub = isMeaningfulValue(r.subcontractor) ? String(r.subcontractor).replace(/\s+/g, ' ').trim() : '';
+      const shortSub = toShortCompanyName(rawSub);
+      const compKey = (siteName !== '전체 현장') ? shortSub : `${r.site || ''}\u0001${shortSub}`;
       if (!companyMap[compKey]) {
         const siteCfg = sitesMeta.find((s) => s.name === (r.site || ''));
         companyMap[compKey] = {
-          name: compKey,
+          name: shortSub,
           site: r.site || '',
-          progress: (r.siteInfo && r.siteInfo.progress) || (r.progressRate ? `${r.progressRate}%` : (siteCfg && siteCfg.progress) || '-'),
-          amount: (r.siteInfo && r.siteInfo.amount) || (siteCfg && siteCfg.amount) || '-',
+          progress: toCompletePhrase((r.siteInfo && r.siteInfo.progress) || (r.progressRate ? `${r.progressRate}%` : (siteCfg && siteCfg.progress) || '-'), 8) || '-',
+          amount: toCompletePhrase((r.siteInfo && r.siteInfo.amount) || (siteCfg && siteCfg.amount) || '-', 7) || '-',
           계: 0, 중대: 0, 중: 0, 경: 0, fixed: 0,
         };
       }
@@ -796,41 +919,75 @@
       return { ...h, pct: pct(h.계, total), leaves, topAgents, topTrades };
     });
 
-    // 4. 불안전 상태 vs 불안전 행동 (Slide 4)
+    // 4. 불안전 상태 vs 불안전 행동 (Slide 4) - '해당없음' 등 무의미 값 제외
     const condMap = {};
     const actMap = {};
     const condSamples = [];
     const actSamples = [];
     let condCount = 0;
     let actCount = 0;
+    const multiSites = new Set(records.map((r) => r.site).filter(Boolean)).size > 1;
     records.forEach((r) => {
       const hasC = isUnsafeCondition(r);
       const hasA = isUnsafeAction(r);
       if (hasC) {
         condCount++;
-        incMap(condMap, r.condition || '안전방호장치·시설 결함 (불안전 상태)');
-        if (condSamples.length < 4 && r.content) condSamples.push(`${truncateText(r.content, 38)} (${r.site || ''})`);
+        const condLabel = isMeaningfulValue(r.condition)
+          ? toCompletePhrase(r.condition, 16)
+          : '안전방호장치·시설 결함';
+        if (isMeaningfulValue(condLabel)) incMap(condMap, condLabel);
+        if (condSamples.length < 4 && isMeaningfulValue(r.content)) {
+          const core = toCompletePhrase(r.content, 24);
+          if (core && !condSamples.some((x) => x.startsWith(core))) {
+            condSamples.push(multiSites && r.site ? `${core} (${toCompletePhrase(r.site, 6)})` : core);
+          }
+        }
       }
       if (hasA) {
         actCount++;
-        incMap(actMap, r.action || '안전수칙 미준수·방치 (불안전 행동)');
-        if (actSamples.length < 4 && (r.interviewOpinion || r.content)) {
-          actSamples.push(`${truncateText(r.interviewOpinion || r.content, 38)} (${r.site || ''})`);
+        const actLabel = isMeaningfulValue(r.action)
+          ? toCompletePhrase(r.action, 16)
+          : '안전수칙·보호구 미준수';
+        if (isMeaningfulValue(actLabel)) incMap(actMap, actLabel);
+        const rawSample = isMeaningfulValue(r.interviewOpinion) ? r.interviewOpinion : r.content;
+        if (actSamples.length < 4 && isMeaningfulValue(rawSample)) {
+          const core = toCompletePhrase(rawSample, 24);
+          if (core && !actSamples.some((x) => x.startsWith(core))) {
+            actSamples.push(multiSites && r.site ? `${core} (${toCompletePhrase(r.site, 6)})` : core);
+          }
         }
       }
     });
 
-    // 5. PDCA 프로세스 분석 (Slide 5)
+    // 5. PDCA 프로세스 분석 (Slide 5) - '해당없음' 및 이중 하이픈 제외
     const pdca = { PLAN: [], DO: [], CHECK: [], ACTION: [] };
     const pdcaReasonMap = { PLAN: {}, DO: {}, CHECK: {}, ACTION: {} };
     records.forEach((r) => {
       const phases = classifyPDCA(r);
       phases.forEach((ph) => {
         pdca[ph].push(r);
-        if (ph === 'PLAN') incMap(pdcaReasonMap.PLAN, r.workPlan === '미수립' ? '작업계획서 미수립' : (r.basis && r.basis.ra === '미반영' ? '위험성평가 미반영' : '사전계획·검토 미흡'));
-        if (ph === 'DO') incMap(pdcaReasonMap.DO, r.condition || r.action || '현장 안전조치 미이행');
-        if (ph === 'CHECK') incMap(pdcaReasonMap.CHECK, r.holdPoint ? 'Hold Point 위반 확인' : (r.rootCauseMgmt || '현장 점검·확인 미흡'));
-        if (ph === 'ACTION') incMap(pdcaReasonMap.ACTION, r.auditProposal || r.pmVerdict || (r.status === '조치완료' ? '개선조치 완료' : '후속조치·보완 필요'));
+        if (ph === 'PLAN') {
+          incMap(pdcaReasonMap.PLAN, r.workPlan === '미수립' ? '작업계획서 미수립' : (r.basis && r.basis.ra === '미반영' ? '위험성평가 미반영' : '사전계획 검토 미흡'));
+        }
+        if (ph === 'DO') {
+          const doReason = isMeaningfulValue(r.condition)
+            ? toCompletePhrase(r.condition, 15)
+            : (isMeaningfulValue(r.action) ? toCompletePhrase(r.action, 15) : '현장 안전조치 미이행');
+          if (isMeaningfulValue(doReason)) incMap(pdcaReasonMap.DO, doReason);
+        }
+        if (ph === 'CHECK') {
+          const chkReason = r.holdPoint
+            ? 'Hold Point 위반'
+            : (isMeaningfulValue(r.rootCauseMgmt) ? toCompletePhrase(r.rootCauseMgmt, 15) : '현장 점검·확인 미흡');
+          if (isMeaningfulValue(chkReason)) incMap(pdcaReasonMap.CHECK, chkReason);
+        }
+        if (ph === 'ACTION') {
+          const actRaw = isMeaningfulValue(r.auditProposal) ? r.auditProposal : (isMeaningfulValue(r.pmVerdict) ? r.pmVerdict : '');
+          const actReason = actRaw
+            ? toCompletePhrase(actRaw, 15)
+            : (r.status === '조치완료' ? '개선조치 완료' : '후속조치 보완 필요');
+          if (isMeaningfulValue(actReason)) incMap(pdcaReasonMap.ACTION, actReason);
+        }
       });
     });
 
@@ -846,20 +1003,24 @@
         const r = topRecs[i];
         if (r) {
           const { minor } = getAgentLevels(r);
+          const rawWork = isMeaningfulValue(r.workName) ? r.workName : (isMeaningfulValue(r.workMethod) ? r.workMethod : r.content);
+          const teamRaw = isMeaningfulValue(r.subcontractor) ? r.subcontractor : (isMeaningfulValue(r.inspector) ? r.inspector : (r.site || '-'));
           themeRows.push({
             type: haz.name,
-            agent: truncateText(minor, 16),
-            workName: truncateText(r.workName || r.workMethod || r.content, 20),
-            trade: truncateText(r.workGroup || '-', 14),
-            location: truncateText(r.locationDetail || r.location || '-', 16),
-            team: truncateText(r.subcontractor || r.site || r.inspector || '-', 14),
-            note: `${normalizeSeverity(r)}/${r.status || '미조치'}`,
+            agent: toCompletePhrase(minor, 10) || '-',
+            workName: toCompletePhrase(rawWork, 20) || '-',
+            trade: toCompletePhrase(r.workGroup || '-', 10) || '-',
+            location: toCompletePhrase(r.locationDetail || r.location || '-', 10) || '-',
+            team: toCompletePhrase(teamRaw, 10) || '-',
+            note: `${normalizeSeverity(r)}·${r.status === '조치완료' ? '완료' : '미조치'}`,
           });
         } else {
           themeRows.push({ type: haz.name, agent: '-', workName: '-', trade: '-', location: '-', team: '-', note: '-' });
         }
       }
     });
+
+    const namedCompanyCount = companyRows.filter((c) => Boolean(c.name)).length;
 
     return {
       total,
@@ -875,7 +1036,8 @@
       coverTitle: formatCoverTitle(periodInfo, targetYear),
       periodSuffix: formatPeriodSuffix(periodInfo, targetYear),
       workGroupCount: workGroupSet.size,
-      companyCount: companyRows.length,
+      companyCount: namedCompanyCount,
+      namedCompanyCount,
       companyRows,
       monthlyLabels: ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'],
       monthlyTotal,
@@ -909,41 +1071,57 @@
   // ── 3E 감소대책 (Slide 8) 동적 매핑 생성기 ─────────────────────────────
   function build3ERows(stats) {
     const recs = stats.records || [];
-    const pick = (pred, fallbackTitle) => {
+    const usedCore = new Set();
+    const pick = (pred, fallbackTitle, useProposal) => {
       const matched = recs.filter(pred);
       if (!matched.length) {
         return {
           content: fallbackTitle,
-          target: stats.siteName,
+          target: toCompletePhrase(stats.siteName, 11) || '-',
           owner: '안전·시공팀',
-          schedule: stats.periodSuffix,
+          schedule: toCompletePhrase(stats.periodSuffix, 8) || '상시',
           note: '상시',
         };
       }
+      // 행마다 중복되지 않는 대표 건/대책을 우선 선택
+      let coreTitle = '';
+      for (const r of matched) {
+        const src = useProposal
+          ? (isMeaningfulValue(r.auditProposal) ? r.auditProposal : fallbackTitle)
+          : (isMeaningfulValue(r.content) ? r.content : fallbackTitle);
+        const cand = toCompletePhrase(src, 17);
+        if (cand && !usedCore.has(cand)) {
+          coreTitle = cand;
+          usedCore.add(cand);
+          break;
+        }
+      }
+      if (!coreTitle) coreTitle = fallbackTitle;
+
       const first = matched[0];
-      const trades = [...new Set(matched.map((r) => r.workGroup || r.workName).filter(Boolean))].slice(0, 2).join(', ');
-      const sites = [...new Set(matched.map((r) => r.subcontractor || r.site).filter(Boolean))].slice(0, 2).join(', ');
+      const trades = [...new Set(matched.map((r) => r.workGroup || r.workName).filter(isMeaningfulValue))];
+      const teams = [...new Set(matched.map((r) => (isMeaningfulValue(r.subcontractor) ? r.subcontractor : r.site)).filter(isMeaningfulValue))];
       return {
-        content: truncateText(`${first.content || fallbackTitle} (${matched.length}건)`, 36),
-        target: truncateText(trades || first.workName || stats.siteName, 22),
-        owner: truncateText(sites || first.subcontractor || '안전팀·담당자', 16),
+        content: `${coreTitle} (${matched.length}건)`,
+        target: toCompletePhrase(trades[0] || first.workName || stats.siteName, 11) || '-',
+        owner: toCompletePhrase(teams[0] || '안전·시공팀', 7) || '안전·시공팀',
         schedule: matched.some((r) => r.status !== '조치완료') ? '즉시/당주' : '완료점검',
         note: `${matched.length}건`,
       };
     };
 
     return {
-      2: pick((r) => /작업방법|고소|양중|해체/.test(`${r.workMethod} ${r.workName} ${r.content}`), '고위험 작업공법 사전안전성 검토'),
-      3: pick((r) => /계획|동시|간섭|동바리|근접/.test(`${r.workMethod} ${r.content}`), '상·하부 동시작업 및 간섭작업 조정'),
-      4: pick((r) => /비계|발판|통로|개구부|가시설/.test(`${r.kind} ${r.item} ${r.content}`), '가시설·통로·개구부 작업발판 보수'),
-      5: pick((r) => /난간|생명줄|방호|소화|접지|추락/.test(`${r.item} ${r.agent} ${r.content}`), '추락방지망·안전난간·방호장치 설치'),
-      6: pick((r) => Boolean(r.holdPoint) || /점검|형식/.test(`${r.rootCauseMgmt} ${r.content}`), '일일 안전패트롤 및 Hold Point 확인'),
-      7: pick((r) => /중대|중부적합/.test(r.severity || '') || /제재|징계|코칭/.test(r.auditProposal || ''), '중부적합 즉시 시정지시 및 삼진아웃'),
-      8: pick((r) => /기준|법|지침|수립/.test(`${r.auditProposal} ${r.pmVerdict}`), '작업표준·안전작업허가 기준 정비'),
-      9: pick((r) => /교육|미착용|불안전\s*행동/.test(`${r.auditProposal} ${r.action} ${r.mgmtCauses}`), 'TBM 연계 핵심안전수칙 및 보호구 교육'),
-      10: pick((r) => (r.basis && r.basis.ra === '미반영') || /위험성/.test(`${r.auditProposal} ${r.rootCauseSystem}`), '공종별 위험성평가 변경·보완 실시'),
-      11: pick((r) => r.status === '조치완료', '우수 협력사 및 모범 근로자 포상 추천'),
-      12: pick((r) => r.status !== '조치완료', `미조치(${stats.unfixed}건) 조기 종결 추적관리`),
+      2: pick((r) => /작업방법|고소|양중|해체/.test(`${r.workMethod} ${r.workName} ${r.content}`), '고위험 작업공법 사전검토', false),
+      3: pick((r) => /계획|동시|간섭|동바리|근접/.test(`${r.workMethod} ${r.content}`), '상·하부 동시작업 간섭 조정', false),
+      4: pick((r) => /비계|발판|통로|개구부|가시설/.test(`${r.kind} ${r.item} ${r.content}`), '가시설·통로 작업발판 보수', false),
+      5: pick((r) => /난간|생명줄|방호|소화|접지|추락/.test(`${r.item} ${r.agent} ${r.content}`), '추락방지망·안전난간 설치', false),
+      6: pick((r) => Boolean(r.holdPoint) || /점검|형식/.test(`${r.rootCauseMgmt} ${r.content}`), '일일 패트롤·Hold Point 확인', false),
+      7: pick((r) => /중대|중부적합/.test(r.severity || '') || /제재|징계|코칭/.test(r.auditProposal || ''), '중부적합 즉시 시정지시 시행', true),
+      8: pick((r) => /기준|법|지침|수립/.test(`${r.auditProposal} ${r.pmVerdict}`), '작업표준·허가기준 재정비', true),
+      9: pick((r) => /교육|미착용|불안전\s*행동/.test(`${r.auditProposal} ${r.action} ${r.mgmtCauses}`), 'TBM 연계 핵심안전수칙 교육', true),
+      10: pick((r) => (r.basis && r.basis.ra === '미반영') || /위험성/.test(`${r.auditProposal} ${r.rootCauseSystem}`), '공종별 위험성평가 변경·보완', true),
+      11: pick((r) => r.status === '조치완료', '우수 협력사·근로자 포상 추천', true),
+      12: pick((r) => r.status !== '조치완료', `미조치(${stats.unfixed}건) 조기종결 관리`, false),
     };
   }
 
@@ -952,71 +1130,88 @@
     const recs = stats.records || [];
     const top3 = stats.top3Hazards || [];
 
+    const rulesByHazard = {
+      '추락': ['안전난간·덮개 임의해체 금지', '고소작업 시 안전고리 체결', '작업발판 고정상태 사전 확인'],
+      '낙하': ['자재 인양 시 2줄 걸이 준수', '인양구간 하부 출입통제 철저', '유도로프 사용 및 공구 낙하방지'],
+      '붕괴': ['거푸집·동바리 수직·수평연결 철저', '합벽지지대 앵커 볼트 고정 확인', '타설 전 동바리 하부 침하 점검'],
+      '충돌': ['장비 작업반경 내 접근금지 준수', '신호수 배치 및 후진경보 확인', '근로자 통로와 장비동선 분리'],
+      '협착': ['회전체·끼임부위 방호덮개 확인', '설비 정비·청소 전 전원 차단', '자재 인양·거치 시 손끼임 주의'],
+      '전도': ['작업통로 자재·전선 정리정돈', '고소작업대 아웃트리거 완전전개', '사다리 2인1조 및 전도방지 확인'],
+      '감전': ['분전반 접지선·누전차단기 확인', '분전반 외함 도어 상시 시건 유지', '피복 손상 전선 즉시 교체 사용'],
+      '화재': ['화기작업 전 불티비산방지 조치', '작업반경 내 소화기 근접 배치', '가연물 격리 및 작업 후 잔불점검'],
+    };
+
     const safetyPoints = top3.map((haz, idx) => {
       const sampleRec = (haz.records && haz.records[0]) || recs[idx];
-      const topAg = (haz.topAgents && haz.topAgents[0] && haz.topAgents[0].name) || '현장시설';
-      let rule1 = '작업 전 방호장치 및 안전시설 상태 확인';
-      let rule2 = '개인보호구(안전모·안전대) 정위치 착용';
-      if (haz.name === '추락') {
-        rule1 = '안전난간·개구부 덮개 고정 및 임의해체 금지';
-        rule2 = '안전벨트(안전대) 생명줄 2지점 이상 결속';
-      } else if (haz.name === '낙하') {
-        rule1 = '인양·적재물 2줄 걸이 및 하부 출입통제 철저';
-        rule2 = '유도로프 사용 및 고소 공구 낙하방지망 점검';
-      } else if (haz.name === '충돌') {
-        rule1 = '건설기계 작업반경 내 근로자 접근금지·신호수 배치';
-        rule2 = '장비 후진경보·전방주시 및 안전통로 보행';
-      } else if (haz.name === '협착') {
-        rule1 = '회전체·압착위험 부위 방호덮개 및 정비 전 LOTO';
-        rule2 = '자재 인양·거치 시 손끼임 주의 및 수신호 일치';
-      } else if (haz.name === '전도') {
-        rule1 = '작업통로 자재·전선 정리정돈 및 미끄럼 방지';
-        rule2 = '고소작업대·사다리 전도방지 아웃트리거 설치';
-      } else if (haz.name === '감전') {
-        rule1 = '분전반 접지선·누전차단기 및 도어 시건 철저';
-        rule2 = '전선 피복 손상·충전부 노출 즉시 사용중지';
-      }
-      const fromRec = sampleRec && (sampleRec.auditProposal || sampleRec.content);
+      const topAg = (haz.topAgents && haz.topAgents[0] && isMeaningfulValue(haz.topAgents[0].name))
+        ? toCompletePhrase(haz.topAgents[0].name, 7)
+        : '현장시설';
+      const baseRules = rulesByHazard[haz.name] || ['작업 전 방호장치 상태 확인', '개인보호구 정위치 착용 철저', '이상 발견 시 작업중지 후 보고'];
+      const rawProposal = sampleRec && (isMeaningfulValue(sampleRec.auditProposal) ? sampleRec.auditProposal : sampleRec.content);
+      const cleanRule3 = toCompletePhrase(rawProposal, 19);
+      const bullet3 = (cleanRule3 && cleanRule3.length >= 6 && cleanRule3.length <= 19) ? cleanRule3 : baseRules[2];
       return {
-        title: `${['①', '②', '③'][idx]} [${haz.name}] ${truncateText(topAg, 10)} 안전수칙`,
-        bullets: [
-          truncateText(rule1, 30),
-          truncateText(rule2, 30),
-          truncateText(fromRec ? `핵심: ${fromRec}` : `작업 전 TBM 위험요인 공유`, 32),
-        ],
+        title: `${['①', '②', '③'][idx]} ${haz.name} (${topAg})`,
+        bullets: [baseRules[0], baseRules[1], bullet3],
       };
     });
     while (safetyPoints.length < 3) {
       const idx = safetyPoints.length;
       safetyPoints.push({
         title: `${['①', '②', '③'][idx]} 현장 기본 안전수칙`,
-        bullets: ['작업 전 안전시설 점검', '보호구 착용 철저', '위험 시 작업중지 후 보고'],
+        bullets: ['작업 전 안전시설 점검', '개인보호구 정위치 착용', '위험 시 작업중지 후 보고'],
       });
     }
 
-    // 대표 사례 2건 (중대/중부적합 + 사진 보유 우선)
-    const rankedCases = recs.slice().sort((a, b) => {
+    // 대표 사례 선별 — 상위 유형·서로 다른 지적내용 우선으로 다양하게 선정
+    const rankedAll = recs.slice().sort((a, b) => {
       const sevScore = (r) => (normalizeSeverity(r) === '중대' ? 10 : normalizeSeverity(r) === '중' ? 6 : 2);
       const photoScore = (r) => (r.photos && r.photos.length ? 5 : 0);
       return (sevScore(b) + photoScore(b)) - (sevScore(a) + photoScore(a));
     });
+    const rankedCases = [];
+    const seenTypes = new Set();
+    const seenContents = new Set();
+    for (const r of rankedAll) {
+      const h = normalizeHazardType(r.type);
+      const cKey = toCompletePhrase(r.content || '', 16);
+      if (!seenTypes.has(h) && !seenContents.has(cKey)) {
+        rankedCases.push(r);
+        seenTypes.add(h);
+        seenContents.add(cKey);
+        if (rankedCases.length >= 3) break;
+      }
+    }
+    if (rankedCases.length < 3) {
+      for (const r of rankedAll) {
+        if (!rankedCases.includes(r)) {
+          rankedCases.push(r);
+          if (rankedCases.length >= 3) break;
+        }
+      }
+    }
+
     const cases = [0, 1].map((i) => {
       const r = rankedCases[i];
       if (!r) {
         return {
           title: `${i === 0 ? '①' : '②'} 해당 기간 등록 사례 없음`,
-          detail: '• 작업 전 위험요인 사전 점검 실시',
-          measure: '• 이상 발견 시 즉시 관리감독자 보고',
+          detail: '• 작업 전 위험요인 사전점검 실시',
+          measure: '• 이상 발견 시 관리감독자 즉시 보고',
           photoPath: null,
         };
       }
       const hName = normalizeHazardType(r.type);
-      const loc = truncateText(r.locationDetail || r.location || r.workName || r.site || '현장', 20);
-      const measureTxt = (r.fix && r.fix.content) || r.auditProposal || '안전시설 즉시 보완 및 작업자 교육';
+      const loc = toCompletePhrase(r.locationDetail || r.location || r.workName || r.site || '현장', 10) || '현장';
+      const detailTxt = toCompletePhrase(r.content || r.workName || '안전기준 미준수', 18) || '안전기준 미준수';
+      const rawMeasure = (r.fix && isMeaningfulValue(r.fix.content))
+        ? r.fix.content
+        : (isMeaningfulValue(r.auditProposal) ? r.auditProposal : '안전시설 보완 및 교육');
+      const measureTxt = toCompletePhrase(rawMeasure, 18) || '안전시설 즉시 보완';
       return {
         title: `${i === 0 ? '①' : '②'} [${hName}] ${loc}`,
-        detail: `• 지적: ${truncateText(r.content || r.workName || '안전기준 미준수', 34)}`,
-        measure: `• 대책: ${truncateText(measureTxt, 32)}`,
+        detail: `• 지적: ${detailTxt}`,
+        measure: `• 대책: ${measureTxt}`,
         photoPath: (r.photos && r.photos[0]) || (r.fix && r.fix.photo) || null,
       };
     });
@@ -1027,9 +1222,14 @@
       if (!r) return ['금일 고위험 작업', '추락·낙하·충돌 위험요인', '보호구 착용 및 작업전 점검'];
       const hName = normalizeHazardType(r.type);
       const { minor } = getAgentLevels(r);
-      const work = truncateText(`${r.workName || r.workGroup || '현장작업'}\n(${r.location || minor})`, 26);
-      const risk = truncateText(`[${hName}] ${r.content || minor}`, 36);
-      const measure = truncateText((r.basis && r.basis.law ? `[${r.basis.law}] ` : '') + (r.auditProposal || (r.fix && r.fix.content) || '안전시설 보완 및 수칙 준수'), 40);
+      const wName = toCompletePhrase(r.workName || r.workGroup || '현장작업', 9) || '현장작업';
+      const wLoc = toCompletePhrase(r.location || minor, 9) || '현장';
+      const work = `${wName}\n(${wLoc})`;
+      const risk = `[${hName}] ${toCompletePhrase(r.content || minor, 22) || '안전위험 요인'}`;
+      const rawMeas = isMeaningfulValue(r.auditProposal)
+        ? r.auditProposal
+        : ((r.fix && isMeaningfulValue(r.fix.content)) ? r.fix.content : '안전시설 보완 및 수칙 준수');
+      const measure = toCompletePhrase(rawMeas, 22) || '안전시설 보완 및 수칙 준수';
       return [work, risk, measure];
     });
 
@@ -1042,7 +1242,7 @@
       return await customLoader(filename);
     }
     if (typeof fetch === 'function') {
-      const res = await fetch(`templates/${filename}?v=20261115_v49`);
+      const res = await fetch(`templates/${filename}?v=20261115_v50`);
       if (!res.ok) throw new Error(`템플릿 로드 실패 (${filename}: HTTP ${res.status})`);
       return await res.arrayBuffer();
     }
@@ -1115,10 +1315,11 @@
 
     const { 경, 중, 중대, 공지 } = stats.sev;
     const tDen = Math.max(1, stats.total);
+    const companyLabel = stats.namedCompanyCount > 0 ? `(${stats.namedCompanyCount}개 협력사)` : '';
     s2 = setShapeParagraphs(s2, 2, [
       {
         runs: [
-          { text: `- ${stats.workGroupCount || 1}개 공종(${stats.companyCount || 1}개 회사/현장)에서 `, sz: 1400, color: COLORS.DARK_TEXT },
+          { text: `- ${stats.workGroupCount || 1}개 공종${companyLabel}에서 `, sz: 1400, color: COLORS.DARK_TEXT },
           { text: `총 ${fmtNum(stats.total)}건`, sz: 1400, bold: true, color: COLORS.BRIGHT_RED },
           { text: ' 발생', sz: 1400, color: COLORS.DARK_TEXT },
         ],
@@ -1138,32 +1339,33 @@
     s2 = updateShapeTextKeepAttrs(s2, 15, [{ text: `${fmtNum(중대)}`, sz: 1400, bold: true, color: 'FFFFFF' }], { algn: 'ctr' });
     s2 = updateShapeTextKeepAttrs(s2, 16, [{ text: `${fmtNum(공지)}`, sz: 1300, bold: true, color: 'FFFFFF' }], { algn: 'ctr' });
 
-    // 표 20 (회사/현장별 발생현황: R2..R9 = 8행, R10 = 합)
+    // 표 20 (회사/현장별 발생현황: R2..R9 = 8행, R10 = 합) — 1줄 고정 + 여백 축소로 슬라이드 초과 방지
     const tbl20Updates = {};
     for (let r = 2; r <= 9; r++) {
       const row = stats.companyRows[r - 2];
       tbl20Updates[r] = row
         ? {
-            0: { text: truncateText(row.name, 12), sz: 1050 },
-            1: { text: row.progress || '-', sz: 1000 },
-            2: { text: fmtNum(row.계), sz: 1050, bold: true },
-            3: { text: fmtNum(row.중대), sz: 1000 },
-            4: { text: fmtNum(row.중), sz: 1000 },
-            5: { text: fmtNum(row.경), sz: 1000 },
-            6: { text: row.amount || '-', sz: 1000 },
-            7: { text: `${pct(row.fixed, row.계)}%`, sz: 1000 },
+            0: { text: row.name, sz: 880 },
+            1: { text: row.progress || '-', sz: 880 },
+            2: { text: fmtNum(row.계), sz: 900, bold: true },
+            3: { text: fmtNum(row.중대), sz: 880 },
+            4: { text: fmtNum(row.중), sz: 880 },
+            5: { text: fmtNum(row.경), sz: 880 },
+            6: { text: row.amount || '-', sz: 850 },
+            7: { text: `${pct(row.fixed, row.계)}%`, sz: 850 },
           }
         : { 0: '', 1: '', 2: '', 3: '', 4: '', 5: '', 6: '', 7: '' };
     }
     tbl20Updates[10] = {
-      2: { text: fmtNum(stats.total), sz: 1100, bold: true, color: COLORS.NAVY },
-      3: { text: fmtNum(중대), sz: 1100, bold: true },
-      4: { text: fmtNum(중), sz: 1100, bold: true },
-      5: { text: fmtNum(경), sz: 1100, bold: true },
-      6: '-',
-      7: { text: `${stats.fixRate}%`, sz: 1050, bold: true },
+      2: { text: fmtNum(stats.total), sz: 920, bold: true, color: COLORS.NAVY },
+      3: { text: fmtNum(중대), sz: 920, bold: true },
+      4: { text: fmtNum(중), sz: 920, bold: true },
+      5: { text: fmtNum(경), sz: 920, bold: true },
+      6: { text: '-', sz: 850 },
+      7: { text: `${stats.fixRate}%`, sz: 880, bold: true },
     };
     s2 = updateTableById(s2, 21, tbl20Updates);
+    s2 = compactTableLayout(s2, 21, { marT: 6000, marB: 6000, marL: 8000, marR: 8000, minRowIdx: 2, rowHeight: 205000 });
 
     // 월별 현황 요약 TextBox 27 (id=28) 및 callout (id=31)
     s2 = setShapeParagraphs(s2, 28, [
@@ -1216,55 +1418,56 @@
     const t4 = stats.top4Hazards;
     const top4Head = t4.map((h) => `${h.name} ${fmtNum(h.계)}건(${h.pct}%)`).join(', ');
     s3 = updateShapeTextKeepAttrs(s3, 20, [
-      { text: `${top4Head} 순으로 발생`, sz: 2200, bold: true, color: COLORS.NAVY },
+      { text: `${top4Head} 순으로 발생`, sz: 2100, bold: true, color: COLORS.NAVY },
     ], { algn: 'l' });
 
     const top4Sum = t4.reduce((s, x) => s + x.계, 0);
     const top1 = t4[0] || { name: '-', 계: 0, pct: 0, topAgents: [], topTrades: [] };
     const top2 = t4[1] || { name: '-', 계: 0, pct: 0 };
     const lowNonZero = stats.nonZeroRanked[stats.nonZeroRanked.length - 1];
+    // id=7 TextBox 6은 id=27(y=2564752) 위쪽 영역만 사용해 절대 겹치지 않도록 2줄 고정
     s3 = setShapeParagraphs(s3, 7, [
-      { text: `- 발생유형 TOP 4 : ${t4.map((x) => x.name).join(', ')} → 전체의 ${pct(top4Sum, tDen)}%`, sz: 1350, bold: true, color: COLORS.NAVY, spcAft: 300 },
-      { text: `- 최대 발생유형 : ${top1.name} (${fmtNum(top1.계)}건, ${top1.pct}%)`, sz: 1350, color: COLORS.DARK_TEXT, spcAft: 600 },
-      { text: `- 최소/관심 유형 : ${lowNonZero ? `${lowNonZero.name} (${lowNonZero.계}건)` : '해당없음'} — ${top1.name}·${top2.name} 집중관리`, sz: 1300, color: COLORS.DARK_TEXT, spcAft: 100 },
+      { text: `- 발생유형 TOP 4 : ${t4.map((x) => x.name).join('·')} (전체 ${pct(top4Sum, tDen)}%)`, sz: 1200, bold: true, color: COLORS.NAVY, spcAft: 140 },
+      { text: `- 최다: ${top1.name} ${fmtNum(top1.계)}건(${top1.pct}%) / 최소: ${lowNonZero ? `${lowNonZero.name} ${lowNonZero.계}건` : '없음'}`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 0 },
     ], { algn: 'l' });
 
-    const top1AgStr = (top1.topAgents || []).map((a) => `${a.name}(${a.count})`).join(', ') || '-';
-    const top1TrStr = (top1.topTrades || []).map((t) => `${t.name}`).join(', ') || '-';
+    const top1AgStr = (top1.topAgents || []).filter((a) => isMeaningfulValue(a.name)).slice(0, 2).map((a) => `${toCompletePhrase(a.name, 7)}(${a.count})`).join(', ') || '-';
+    const top1TrStr = (top1.topTrades || []).filter((t) => isMeaningfulValue(t.name)).slice(0, 1).map((t) => toCompletePhrase(t.name, 8)).join(', ') || '-';
     s3 = updateShapeTextKeepAttrs(s3, 27, [
-      { text: `핵심 기인물(${top1.name}): ${truncateText(top1AgStr, 28)} | 공종: ${truncateText(top1TrStr, 14)}`, sz: 1150, bold: true, color: COLORS.NAVY },
+      { text: `핵심 기인물(${top1.name}): ${top1AgStr} | 공종: ${top1TrStr}`, sz: 1050, bold: true, color: COLORS.NAVY },
     ], { algn: 'ctr' });
     s3 = updateShapeTextKeepAttrs(s3, 29, [
-      { text: `TOP 2(${top1.name}·${top2.name}) 비중: ${pct(top1.계 + top2.계, tDen)}% (${top1.계 + top2.계}/${stats.total}건)`, sz: 1150, bold: true, color: COLORS.NAVY },
+      { text: `TOP 2(${top1.name}·${top2.name}) 비중: ${pct(top1.계 + top2.계, tDen)}% (${top1.계 + top2.계}/${stats.total}건)`, sz: 1050, bold: true, color: COLORS.NAVY },
     ], { algn: 'ctr' });
 
-    // 표 2 (유형 8행 + 합)
+    // 표 2 (유형 8행 + 합) — 100.0% 1줄 유지 및 카드 내 수납
     const tbl2Updates = {};
     HAZARD_TYPES.forEach((hName, i) => {
       const h = stats.hazardStats[hName] || { 계: 0, 중대: 0, 중: 0, 경: 0 };
       const rIdx = i + 2;
       tbl2Updates[rIdx] = {
-        0: { text: hName, sz: 1100, bold: h.계 > 0 },
-        2: { text: fmtNum(h.계), sz: 1100, bold: h.계 > 0 },
-        3: { text: fmtNum(h.중대), sz: 1050 },
-        4: { text: fmtNum(h.중), sz: 1050 },
-        5: { text: fmtNum(h.경), sz: 1050 },
-        6: { text: `${pct1(h.계, stats.total)}%`, sz: 1050 },
-        7: { text: h.계 === top1.계 && h.계 > 0 ? '최다' : '', sz: 1000, color: COLORS.RED, bold: true },
+        0: { text: hName, sz: 950, bold: h.계 > 0 },
+        2: { text: fmtNum(h.계), sz: 950, bold: h.계 > 0 },
+        3: { text: fmtNum(h.중대), sz: 900 },
+        4: { text: fmtNum(h.중), sz: 900 },
+        5: { text: fmtNum(h.경), sz: 900 },
+        6: { text: `${pct1(h.계, stats.total)}%`, sz: 850 },
+        7: { text: h.계 === top1.계 && h.계 > 0 ? '최다' : '', sz: 880, color: COLORS.RED, bold: true },
       };
     });
     const etcCnt = (stats.hazardStats['기타'] && stats.hazardStats['기타'].계) || 0;
     tbl2Updates[10] = {
-      2: { text: fmtNum(stats.total), sz: 1100, bold: true, color: COLORS.NAVY },
-      3: { text: fmtNum(중대), sz: 1100, bold: true },
-      4: { text: fmtNum(중), sz: 1100, bold: true },
-      5: { text: fmtNum(경), sz: 1100, bold: true },
-      6: { text: '100.0%', sz: 1050, bold: true },
-      7: { text: etcCnt > 0 ? `기타 ${etcCnt}` : '-', sz: 950 },
+      2: { text: fmtNum(stats.total), sz: 950, bold: true, color: COLORS.NAVY },
+      3: { text: fmtNum(중대), sz: 950, bold: true },
+      4: { text: fmtNum(중), sz: 950, bold: true },
+      5: { text: fmtNum(경), sz: 950, bold: true },
+      6: { text: '100%', sz: 880, bold: true },
+      7: { text: etcCnt > 0 ? `기타 ${etcCnt}` : '-', sz: 850 },
     };
     s3 = updateTableById(s3, 3, tbl2Updates);
+    s3 = compactTableLayout(s3, 3, { marT: 6000, marB: 6000, marL: 7000, marR: 7000, minRowIdx: 2, rowHeight: 205000 });
 
-    // 4대 유형 Treemap 매핑 (inspect 결과: 0→id18/chartEx1/img1, 1→id19/chartEx2/img2, 2→id25/chartEx3/img3, 3→id24/chartEx4/img4)
+    // 4대 유형 Treemap 매핑 — 타이틀 1줄 고정
     const treemapSlots = [
       { titleId: 18, chartEx: 'ppt/charts/chartEx1.xml', sheet: 'ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx', img: 'ppt/media/image1.png', color: '#1D4ED8' },
       { titleId: 19, chartEx: 'ppt/charts/chartEx2.xml', sheet: 'ppt/embeddings/Microsoft_Excel_Worksheet2.xlsx', img: 'ppt/media/image2.png', color: '#D97706' },
@@ -1274,9 +1477,9 @@
     for (let i = 0; i < treemapSlots.length; i++) {
       const slot = treemapSlots[i];
       const haz = t4[i] || { name: HAZARD_TYPES[i], leaves: [], topAgents: [] };
-      const agLine = (haz.topAgents || []).map((a) => a.name).join(' > ') || '기인물 없음';
+      const agLine = (haz.topAgents || []).filter((a) => isMeaningfulValue(a.name)).slice(0, 2).map((a) => toCompletePhrase(a.name, 7)).join(' · ') || '기인물 없음';
       s3 = updateShapeTextKeepAttrs(s3, slot.titleId, [
-        { text: ` ${haz.name} : ${truncateText(agLine, 26)}`, sz: 1150, bold: true, color: COLORS.NAVY },
+        { text: ` ${haz.name} : ${agLine}`, sz: 1000, bold: true, color: COLORS.NAVY },
       ], { algn: 'l' });
 
       const cexXml = await zip.file(slot.chartEx).async('string');
@@ -1304,23 +1507,24 @@
 
     const s4IdStart = getNextShapeId(s4);
     const makeDominoParas = (title, items, samples, accentColor) => {
-      const ps = [{ text: title, sz: 1400, bold: true, color: accentColor, spcAft: 300 }];
-      if (items.length) {
-        items.forEach((it, idx) => {
+      const ps = [{ text: title, sz: 1350, bold: true, color: accentColor, spcAft: 240 }];
+      const cleanItems = (items || []).filter((it) => isMeaningfulValue(it.name)).slice(0, 4);
+      if (cleanItems.length) {
+        cleanItems.forEach((it, idx) => {
           ps.push({
             runs: [
-              { text: `${idx + 1}. ${truncateText(it.name, 26)} : `, sz: 1300, bold: true, color: COLORS.NAVY },
-              { text: `${fmtNum(it.count)}건 (${pct(it.count, tDen)}%)`, sz: 1300, bold: true, color: accentColor },
+              { text: `${idx + 1}. ${toCompletePhrase(it.name, 16)} : `, sz: 1200, bold: true, color: COLORS.NAVY },
+              { text: `${fmtNum(it.count)}건 (${pct(it.count, tDen)}%)`, sz: 1200, bold: true, color: accentColor },
             ],
-            spcAft: 220,
+            spcAft: 200,
           });
         });
       } else {
-        ps.push({ text: '• 해당 기간 세부 항목 없음', sz: 1300, color: COLORS.MUTED_TEXT, spcAft: 220 });
+        ps.push({ text: '• 해당 기간 세부 항목 없음', sz: 1200, color: COLORS.MUTED_TEXT, spcAft: 200 });
       }
-      ps.push({ text: '── 대표 현장 사례 ──', sz: 1200, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 });
+      ps.push({ text: '── 대표 현장 사례 ──', sz: 1150, bold: true, color: COLORS.MUTED_TEXT, spcAft: 140 });
       (samples.length ? samples : ['등록된 대표 지적사례 없음']).slice(0, 3).forEach((sm) => {
-        ps.push({ text: `· ${sm}`, sz: 1150, color: COLORS.DARK_TEXT, spcAft: 140 });
+        ps.push({ text: `· ${toCompletePhrase(sm, 26)}`, sz: 1100, color: COLORS.DARK_TEXT, spcAft: 130 });
       });
       return ps;
     };
@@ -1358,27 +1562,38 @@
 
     const buildPdcaParas = (phaseKey, label) => {
       const list = stats.pdca[phaseKey] || [];
-      const topR = topEntries(stats.pdcaReasonMap[phaseKey] || {}, 4);
+      const topR = topEntries(stats.pdcaReasonMap[phaseKey] || {}, 4).filter((r) => isMeaningfulValue(r.name));
       const ps = [
         {
           runs: [
-            { text: `${label} `, sz: 1350, bold: true, color: COLORS.NAVY },
-            { text: `${fmtNum(list.length)}건 (${pct(list.length, pdcaDen)}%)`, sz: 1350, bold: true, color: COLORS.RED },
+            { text: `${label} `, sz: 1300, bold: true, color: COLORS.NAVY },
+            { text: `${fmtNum(list.length)}건 (${pct(list.length, pdcaDen)}%)`, sz: 1300, bold: true, color: COLORS.RED },
           ],
-          spcAft: 280,
+          spcAft: 240,
         },
       ];
       if (topR.length) {
         topR.forEach((r) => {
-          ps.push({ text: `- ${truncateText(r.name, 20)} (${r.count}건)`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 200 });
+          ps.push({ text: `- ${toCompletePhrase(r.name, 15)} (${r.count}건)`, sz: 1000, color: COLORS.DARK_TEXT, spcAft: 160 });
         });
       } else {
-        ps.push({ text: '- 해당 단계 특이사항 없음', sz: 1200, color: COLORS.MUTED_TEXT, spcAft: 200 });
+        ps.push({ text: '- 해당 단계 특이사항 없음', sz: 1000, color: COLORS.MUTED_TEXT, spcAft: 160 });
       }
-      if (list[0] && list[0].content) {
-        ps.push({ text: '── 주요 지적 ──', sz: 1100, bold: true, color: COLORS.MUTED_TEXT, spcAft: 120 });
-        list.slice(0, 3).forEach((rec) => {
-          ps.push({ text: `· ${truncateText(rec.content, 24)}`, sz: 1050, color: COLORS.DARK_TEXT, spcAft: 120 });
+      const seenSamples = new Set();
+      const cleanSamples = [];
+      for (const rec of list) {
+        if (!isMeaningfulValue(rec && rec.content)) continue;
+        const txt = toCompletePhrase(rec.content, 16);
+        if (txt && !seenSamples.has(txt)) {
+          seenSamples.add(txt);
+          cleanSamples.push(txt);
+          if (cleanSamples.length >= 3) break;
+        }
+      }
+      if (cleanSamples.length) {
+        ps.push({ text: '── 주요 지적 ──', sz: 1050, bold: true, color: COLORS.MUTED_TEXT, spcAft: 100 });
+        cleanSamples.forEach((txt) => {
+          ps.push({ text: `· ${txt}`, sz: 1000, color: COLORS.DARK_TEXT, spcAft: 110 });
         });
       }
       return ps;
@@ -1387,15 +1602,15 @@
     // PLAN 기존 id=24를 카드 크기에 맞게 확장하고 DO/CHECK/ACTION 카드 삽입
     s5 = setShapeParagraphs(s5, 24, buildPdcaParas('PLAN', '계획단계'), { algn: 'l' });
     s5 = replaceElementBlockById(s5, 24, (blk) =>
-      blk.replace(/<a:off x="\d+" y="\d+"\/>/, '<a:off x="340000" y="2050000"/>')
-         .replace(/<a:ext cx="\d+" cy="\d+"\/>/, '<a:ext cx="2670000" cy="4400000"/>')
+      blk.replace(/<a:off x="\d+" y="\d+"\/>/, '<a:off x="340000" y="2070000"/>')
+         .replace(/<a:ext cx="\d+" cy="\d+"\/>/, '<a:ext cx="2670000" cy="4420000"/>')
          .replace('<a:noFill/>', '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="DBEAFE"/></a:solidFill></a:ln>')
     );
     const s5IdStart = getNextShapeId(s5);
     const pdcaBoxes = [
-      createTextBoxXml(s5IdStart, 'DO_내용', { x: 3250000, y: 2050000, w: 2670000, h: 4400000 }, buildPdcaParas('DO', '실행단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
-      createTextBoxXml(s5IdStart + 1, 'CHECK_내용', { x: 6160000, y: 2050000, w: 2670000, h: 4400000 }, buildPdcaParas('CHECK', '확인단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
-      createTextBoxXml(s5IdStart + 2, 'ACTION_내용', { x: 9070000, y: 2050000, w: 2670000, h: 4400000 }, buildPdcaParas('ACTION', '조치단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
+      createTextBoxXml(s5IdStart, 'DO_내용', { x: 3250000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('DO', '실행단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
+      createTextBoxXml(s5IdStart + 1, 'CHECK_내용', { x: 6160000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('CHECK', '확인단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
+      createTextBoxXml(s5IdStart + 2, 'ACTION_내용', { x: 9070000, y: 2070000, w: 2670000, h: 4420000 }, buildPdcaParas('ACTION', '조치단계'), { algn: 'l' }, { fill: 'FFFFFF', border: 'DBEAFE', round: true }),
     ].join('');
     s5 = insertIntoSpTree(s5, pdcaBoxes);
     zip.file('ppt/slides/slide5.xml', s5);
@@ -1411,7 +1626,7 @@
     const accidentParas = [
       { text: '하인리히 법칙(1:29:300) 기반 잠재사고 위험도', sz: 1400, bold: true, color: COLORS.NAVY, spcAft: 260 },
       { text: `• 고위험 부적합(중대+중): ${fmtNum(stats.hiRiskCount)}건 (${hiPct}%)`, sz: 1300, bold: true, color: COLORS.RED, spcAft: 220 },
-      { text: `• 1순위 위험유형: ${top1.name} (${top1.pct}%) — 주요 기인물 ${truncateText(top1AgStr, 22)}`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 200 },
+      { text: `• 1순위 위험유형: ${top1.name} (${top1.pct}%) — 주요 기인물 ${toCompletePhrase(top1AgStr, 18)}`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 200 },
       { text: `• 2순위 위험유형: ${top2.name} (${top2.pct}%) — 연쇄 재해 전이 주의`, sz: 1250, color: COLORS.DARK_TEXT, spcAft: 260 },
       { text: '── 집중 공종 연계 위험 ──', sz: 1200, bold: true, color: COLORS.MUTED_TEXT, spcAft: 160 },
       { text: `· 다빈도 공종: ${top1TrStr} 구간 작업 전 허가·안전대 체결 필수`, sz: 1200, color: COLORS.DARK_TEXT, spcAft: 140 },
@@ -1439,20 +1654,21 @@
     stats.themeRows.forEach((tr, idx) => {
       const rIdx = idx + 2; // R2..R13
       const rowUpdate = {
-        1: { text: tr.agent, sz: 1050 },
-        2: { text: tr.workName, sz: 1000 },
-        3: { text: tr.trade, sz: 1000 },
-        4: { text: tr.location, sz: 1000 },
-        5: { text: tr.team, sz: 1000 },
-        6: { text: tr.note, sz: 1000 },
+        1: { text: tr.agent, sz: 880 },
+        2: { text: tr.workName, sz: 880, algn: 'l' },
+        3: { text: tr.trade, sz: 880 },
+        4: { text: tr.location, sz: 880 },
+        5: { text: tr.team, sz: 880 },
+        6: { text: tr.note, sz: 820 },
       };
       if (idx % 3 === 0) {
         const spaced = tr.type.length === 2 ? `${tr.type[0]} ${tr.type[1]}` : tr.type;
-        rowUpdate[0] = { text: spaced, sz: 1350, bold: true, color: COLORS.NAVY };
+        rowUpdate[0] = { text: spaced, sz: 1200, bold: true, color: COLORS.NAVY };
       }
       tbl16Updates[rIdx] = rowUpdate;
     });
     s7 = updateTableById(s7, 17, tbl16Updates);
+    s7 = compactTableLayout(s7, 17, { marT: 6000, marB: 6000, marL: 9000, marR: 9000, minRowIdx: 2, rowHeight: 310000 });
     zip.file('ppt/slides/slide7.xml', s7);
 
     // ── Slide 8: 5. 안전관리 의사결정 (부적합 발생 감소대책 3E, 표 7) ──
@@ -1463,14 +1679,15 @@
       const item = eRows[r];
       if (!item) continue;
       tbl7Updates[r] = {
-        2: { text: item.content, sz: 1000, algn: 'l' },
-        3: { text: item.target, sz: 1000 },
-        4: { text: item.owner, sz: 1000 },
-        5: { text: item.schedule, sz: 1000 },
-        6: { text: item.note, sz: 1000 },
+        2: { text: item.content, sz: 900, algn: 'l' },
+        3: { text: item.target, sz: 880 },
+        4: { text: item.owner, sz: 880 },
+        5: { text: item.schedule, sz: 880 },
+        6: { text: item.note, sz: 880 },
       };
     }
     s8 = updateTableById(s8, 8, tbl7Updates);
+    s8 = compactTableLayout(s8, 8, { marT: 7000, marB: 7000, marL: 10000, marR: 10000, minRowIdx: 2, rowHeight: 330000 });
     zip.file('ppt/slides/slide8.xml', s8);
 
     const outBuf = await zip.generateAsync({ type: 'blob' });
@@ -1530,21 +1747,21 @@
       const haz = stats.top3Hazards[i] || { name: HAZARD_TYPES[i], 계: 0, pct: 0, topAgents: [], topTrades: [] };
       s1 = updateShapeTextKeepAttrs(s1, pillIds[i], [{ text: haz.name, sz: 1200, bold: true, color: COLORS.NAVY }], { algn: 'ctr' });
 
-      const agents = (haz.topAgents && haz.topAgents.length
-        ? haz.topAgents.map((a) => ({ label: truncateText(a.name, 7), count: a.count }))
-        : [{ label: '해당없음', count: 0 }]);
+      const cleanAgents = (haz.topAgents || []).filter((a) => isMeaningfulValue(a.name));
+      const agents = cleanAgents.length
+        ? cleanAgents.map((a) => ({ label: toCompletePhrase(a.name, 7), count: a.count }))
+        : [{ label: '주요요인 없음', count: 0 }];
 
       const chXml = await zip.file(chartMeta[i].chart).async('string');
       zip.file(chartMeta[i].chart, updateHorizontalBarChartXml(chXml, agents));
       const wsRows = [[' ', '발생건수'], ...agents.map((a) => [a.label, a.count])];
       await updateEmbeddedWorkbook(zip, ExcelJSLib, chartMeta[i].sheet, wsRows);
 
-      const agDesc = (haz.topAgents || []).map((a) => `${a.name}(${a.count})`).join(', ') || '주요요인 없음';
-      const trDesc = (haz.topTrades && haz.topTrades[0] && haz.topTrades[0].name) || '공통작업';
+      const repAgents = cleanAgents.slice(0, 2).map((a) => toCompletePhrase(a.name, 7)).join(', ') || '주요요인 없음';
       s1 = updateShapeTextKeepAttrs(s1, summaryIds[i], [
-        { text: `${['①', '②', '③'][i]} `, sz: 1400, bold: true, color: COLORS.BRIGHT_RED },
-        { text: `[${haz.name}] `, sz: 1350, bold: true, color: COLORS.NAVY },
-        { text: `${fmtNum(haz.계)}건(${haz.pct}%) · 기인물: ${truncateText(agDesc, 22)} (${truncateText(trDesc, 10)})`, sz: 1150, color: COLORS.DARK_TEXT },
+        { text: `${['①', '②', '③'][i]} `, sz: 1300, bold: true, color: COLORS.BRIGHT_RED },
+        { text: `[${haz.name}] `, sz: 1250, bold: true, color: COLORS.NAVY },
+        { text: `${fmtNum(haz.계)}건(${haz.pct}%) · 대표 기인물: ${repAgents}`, sz: 1050, color: COLORS.DARK_TEXT },
       ], { algn: 'l' });
     }
 
@@ -1552,8 +1769,8 @@
     const ptIds = [28, 38, 39];
     wContent.safetyPoints.forEach((pt, i) => {
       const paras = [
-        { text: pt.title, sz: 1250, bold: true, color: COLORS.NAVY, spcAft: 160 },
-        ...pt.bullets.map((b) => ({ text: `• ${b}`, sz: 1050, color: COLORS.DARK_TEXT, spcAft: 120 })),
+        { text: pt.title, sz: 1100, bold: true, color: COLORS.NAVY, spcAft: 120 },
+        ...pt.bullets.map((b) => ({ text: `• ${b}`, sz: 950, color: COLORS.DARK_TEXT, spcAft: 100 })),
       ];
       s1 = setShapeParagraphs(s1, ptIds[i], paras, { algn: 'l' });
     });
@@ -1561,15 +1778,15 @@
     // 사고/아차사고 사례 2개 (id=42, id=48) + 실사 사진 임베딩
     const caseIds = [42, 48];
     const photoBoxes = [
-      { x: 6320000, y: 1580000, w: 2600000, h: 1420000 },
-      { x: 9245000, y: 1580000, w: 2600000, h: 1420000 },
+      { x: 6320000, y: 1690000, w: 2600000, h: 1320000 },
+      { x: 9245000, y: 1690000, w: 2600000, h: 1320000 },
     ];
     for (let i = 0; i < 2; i++) {
       const c = wContent.cases[i];
       s1 = setShapeParagraphs(s1, caseIds[i], [
-        { text: c.title, sz: 1200, bold: true, color: COLORS.RED, spcAft: 80 },
-        { text: c.detail, sz: 1000, bold: true, color: COLORS.NAVY, spcAft: 60 },
-        { text: c.measure, sz: 950, color: COLORS.DARK_TEXT, spcAft: 40 },
+        { text: c.title, sz: 1080, bold: true, color: COLORS.RED, spcAft: 60 },
+        { text: c.detail, sz: 920, bold: true, color: COLORS.NAVY, spcAft: 50 },
+        { text: c.measure, sz: 900, color: COLORS.DARK_TEXT, spcAft: 40 },
       ], { algn: 'l' });
 
       if (c.photoPath && options.loadPhotoBase64) {
@@ -1590,12 +1807,13 @@
     const tbl76Updates = {};
     wContent.riskRows.forEach((cols, idx) => {
       tbl76Updates[idx + 1] = {
-        0: { text: cols[0], sz: 1000, bold: true, color: COLORS.NAVY },
-        1: { text: cols[1], sz: 1000, algn: 'l' },
-        2: { text: cols[2], sz: 1000, algn: 'l' },
+        0: { text: cols[0], sz: 950, bold: true, color: COLORS.NAVY },
+        1: { text: cols[1], sz: 900, algn: 'l' },
+        2: { text: cols[2], sz: 900, algn: 'l' },
       };
     });
     s1 = updateTableById(s1, 77, tbl76Updates);
+    s1 = compactTableLayout(s1, 77, { marT: 9000, marB: 9000, marL: 12000, marR: 12000 });
 
     zip.file('ppt/slides/slide1.xml', s1);
     zip.file('ppt/slides/_rels/slide1.xml.rels', rels1);
