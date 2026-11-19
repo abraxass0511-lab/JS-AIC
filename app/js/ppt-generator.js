@@ -390,12 +390,12 @@
     const plan = resolveInterviewOpinionLayout(data);
     if (!plan.isMulti) {
       const single = plan.sections[0];
-      return `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #181717; margin-bottom: 0.20cqw;">${_escHtmlText(single.title)}</div>\n`
-        + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: ${plan.lineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(single.bodyText)}</div>`;
+      return `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #181717; margin-bottom: 0.28cqw;">${_escHtmlText(single.title)}</div>\n`
+        + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: 1.18; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(single.bodyText)}</div>`;
     }
     return plan.sections.map((sec, idx) => (
-      `          <div style="font-size: ${ptFn(plan.headerFontSize)}; font-weight: 800; color: #181717; margin-top: ${idx > 0 ? '0.16cqw' : '0'}; margin-bottom: 0.06cqw; line-height: 1.12;">${_escHtmlText(sec.title)}</div>\n`
-      + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: ${plan.lineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(sec.bodyText)}</div>`
+      `          <div style="font-size: ${ptFn(Math.max(11.5, plan.headerFontSize))}; font-weight: 800; color: #181717; margin-top: ${idx > 0 ? '0.45cqw' : '0'}; margin-bottom: 0.18cqw; line-height: 1.15;">${_escHtmlText(sec.title)}</div>\n`
+      + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: 1.18; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(sec.bodyText)}</div>`
     )).join('\n');
   }
 
@@ -1372,13 +1372,14 @@
     }
     countermeasureContent = cleanActionPlan(countermeasureContent);
 
-    // PM 판정결과 분류 (복수 선택 지원 - 원문 부제 우선 보존, 점검단 제안 부제로 오염 금지)
+    // PM 판정결과 분류 (복수 선택 지원 - 원문 괄호 부제 우선 보존, 점검단 제안 부제로 오염 금지)
     let pmVerdictItems = Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0 ? r.pmVerdictItems : [];
     if (pmVerdictItems.length === 0) {
       const rawPmType = String(r.pmVerdictType || r.pmVerdict || '').trim();
-      const rawPmSub = String(r.pmVerdictSub || '').trim();
+      const parenMatch = rawPmType.match(/(\([^)]+\))/);
+      const rawPmSub = String(r.pmVerdictSub || (parenMatch ? parenMatch[1] : '') || '').trim();
       const pmScan = `${rawPmType} ${rawPmSub}`.trim();
-      const preservedSub = rawPmSub || '(모니터링 강화)';
+      const preservedSub = rawPmSub || '(계획 재수립)';
       if (/제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업\s*중지|작업\s*대기/i.test(pmScan)) {
         pmVerdictItems.push({ type: '제재/징계', sub: rawPmSub || '(해당작업팀대기)' });
       }
@@ -2206,7 +2207,7 @@
   }
 
   /**
-   * [중부적합] 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합장표(중부적합).pptx 100% 정밀 일치)
+   * [중부적합] 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합장표(중부적합)_R1.pptx 100% 정밀 연동)
    */
   function renderMajorInspectionSheetHTML(record, data, options = {}) {
     const { photo1Url = '', photo2Url = '' } = options;
@@ -2218,8 +2219,8 @@
     const pt = (n) => `${(n * 0.104167).toFixed(4)}cqw`;
     const glowTextShadow = '0 0 4px rgba(0,0,0,0.85), -0.5px -0.5px 1.5px rgba(0,0,0,0.85), 0.5px 0.5px 1.5px rgba(0,0,0,0.85)';
 
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.48, 16, 8.5);
-    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.6495, 14, 6.5, 1.03, [1, 4, 1, 4]);
+    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.55, 16, 11);
+    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.656, 11, 8.5, 1.12, [2, 4, 2, 4]);
 
     const metaCols = [
       { label: '협력사 : ', val: data.subcontractor, x: 0.9375, w: 2.3333 },
@@ -2229,29 +2230,45 @@
       { label: '점검차수 : ', val: data.inspectRound, x: 11.1666, w: 2.0647 }
     ];
 
-    const mainFit = fitMainContentForBox(data.mainContent, 11.05, 0.6925);
-    const mainLines = mainFit.lines;
+    // 부적합 내용: 14pt Bold 기본, 1./2. 및 1)/2) 인라인 줄바꿈 분리
+    const rawMainLines = String(data.mainContent || '').replace(/\r\n/g, '\n').split('\n')
+      .flatMap(l => l.trim().split(/\s+(?=(?:[2-9]\d?[\.)]\s+|[②③④⑤⑥⑦⑧⑨⑩]\s*|-\s+))/))
+      .map(l => l.trim()).filter(Boolean);
+    const hasNumPrefix = rawMainLines.some(l => /^(?:\d+[\.)]|[①-⑩])/.test(l));
+    const mainLines = (rawMainLines.length >= 2 && !hasNumPrefix)
+      ? rawMainLines.map((l, i) => `${i + 1}. ${l.replace(/^[-•▪]\s*/, '')}`)
+      : rawMainLines;
     const packedMainContent = mainLines.join('\n');
-    const mainSz = mainLines.length <= 1
-      ? calcSingleLineFontSize(`부적합 내용 : ${mainLines[0] || ''}`, 12.2938, 14, 10.5)
-      : mainFit.fontSize;
-    const mainHtmlLineHeight = mainLines.length >= 3 || mainSz <= 10 ? 1.15 : 1.24;
+    const mainSz = mainLines.length >= 4 ? 11 : (mainLines.length === 3 ? 12.5 : 14);
+    const mainHtmlLineHeight = mainLines.length >= 3 ? 1.14 : 1.22;
 
-    const intLineSpacing = (data.interviewOpinion || '').length > 110 ? 1.12 : 1.20;
-    const intSz = calcFitMultilineFontSize(data.interviewOpinion || '', 4.9213, 1.02, 12, 9.5, intLineSpacing, [6, 8, 4, 4]);
+    const propLineSpacing = 1.15;
+    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.033, 12, 9.5, propLineSpacing, [4, 6, 4, 6]);
 
-    const propLineSpacing = (data.proposalContent || '').length > 65 ? 1.10 : 1.18;
-    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.2450, 12, 8.5, propLineSpacing, [4, 6, 4, 6]);
+    const counterLineSpacing = 1.15;
+    const counterSz = calcFitMultilineFontSize(data.countermeasureContent || '', 3.3858, 1.396, 12, 9.5, counterLineSpacing, [4, 6, 4, 6]);
 
-    const counterLineSpacing = 1.10;
-    const counterSz = calcFitMultilineFontSize(data.countermeasureContent || '', 3.3858, 1.3959, 12, 9.5, counterLineSpacing, [4, 6, 2, 4]);
-
+    const hasPhoto1 = Boolean(photo1Url);
     const hasPhoto2 = Boolean(photo2Url);
-    const showGuidelineBox = Boolean(data.hasGuideline && data.guidelineTitle);
-    const photoStartY = 3.2400;
-    const photoBodyHeight = showGuidelineBox ? 2.9200 : 4.0400;
     const bannerWidth = 5.4580;
-    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 16, 9.5);
+    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 16, 11);
+
+    const ensureVerdictList = (items, singleType, singleSub, fallback) => {
+      const list = Array.isArray(items) && items.length ? items : (singleType ? [{ type: singleType, sub: singleSub }] : fallback);
+      return list.map(it => {
+        const t = String((it && it.type) || '시스템 개선').trim();
+        let s = String((it && it.sub) || '').trim();
+        if (!s) {
+          if (/교육|코칭/.test(t)) s = '(근로자 교육)';
+          else if (/제재|징계/.test(t)) s = '(해당작업팀대기)';
+          else if (/페널티|패널티/.test(t)) s = '(관리감독자 경고)';
+          else s = '(계획 재수립)';
+        }
+        return { type: t, sub: s.startsWith('(') ? s : `(${s})` };
+      });
+    };
+    const propDisplayItems = ensureVerdictList(data.proposalItems, data.proposalType, data.proposalSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
+    const pmDisplayItems = ensureVerdictList(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
 
     const factorItems = [
       { boxX: 10.7738, labelX: 11.0573, y: 0.2453, checked: data.isUnplanned, label: '계획 미수립' },
@@ -2261,7 +2278,7 @@
     ];
 
     return `
-      <div id="jangpyoSlidePreview" data-severity="중부적합" style="
+      <div id="jangpyoSlidePreview" data-severity="중부적합" data-template="R1" style="
         width: 100%;
         aspect-ratio: 16 / 9;
         position: relative;
@@ -2284,8 +2301,7 @@
         <!-- 2. 사고유형 & 등급 (20pt bold, 순수 흰색 + 3px 황색 #ffc000 테두리) -->
         <div style="position: absolute; left: ${pctX(2.1666)}; top: ${pctY(0.1216)}; width: ${pctW(1.5186)}; height: ${pctH(1.0535)}; background: #ffffff; border: 3px solid #ffc000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;">
           <div style="font-size: ${pt(20)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center;">${data.typeMain}</div>
-          ${data.typeSub ? `<div style="font-size: ${pt(11)}; font-weight: 700; color: #333333; line-height: 1.1; text-align: center; margin-top: 0.05cqw;">${data.typeSub}</div>` : ''}
-          <div style="font-size: ${pt(20)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center; margin-top: 0.05cqw;">[${data.severity}]</div>
+          <div style="font-size: ${pt(18)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center; margin-top: 0.05cqw;">[${data.severity}]</div>
         </div>
 
         <!-- 3. 관련기준 라벨 (20pt bold) -->
@@ -2296,21 +2312,21 @@
         <!-- 4. 관련기준 내용 외곽 사각형 -->
         <div style="position: absolute; left: ${pctX(4.8185)}; top: ${pctY(0.1216)}; width: ${pctW(5.6949)}; height: ${pctH(1.0535)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 4-1. 관련기준 제목 (16pt bold, 길면 자동 축소) -->
-        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.1450)}; width: ${pctW(5.5644)}; height: ${pctH(0.3150)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;">
+        <!-- 4-1. 관련기준 제목 (R1: 16pt Bold, 초과 시만 축소) -->
+        <div style="position: absolute; left: ${pctX(4.8840)}; top: ${pctY(0.1450)}; width: ${pctW(5.5640)}; height: ${pctH(0.3100)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;">
           ${data.lawTitle}
         </div>
 
-        <!-- 4-2. 관련기준 본문 (연청색 #dae3f3 음영 박스, 넘침 방지 동적 폰트 및 내어쓰기 적용) -->
-        <div style="position: absolute; left: ${pctX(4.8865)}; top: ${pctY(0.4800)}; width: ${pctW(5.5644)}; height: ${pctH(0.6495)}; background: #dae3f3; padding: 0.2cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: center; overflow: hidden;">
-          <div style="width: 100%; font-size: ${pt(lawBodyFontSize)}; color: #111111; line-height: 1.15; word-break: keep-all;">${renderHangingLinesHTML(data.lawBody)}</div>
+        <!-- 4-2. 관련기준 본문 (R1 TextBox 1: 연파랑 반투명 음영, 선명한 일반체 + '-' 내어쓰기) -->
+        <div style="position: absolute; left: ${pctX(4.8840)}; top: ${pctY(0.4580)}; width: ${pctW(5.5640)}; height: ${pctH(0.6560)}; background: rgba(217, 226, 243, 0.72); padding: 0.22cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: flex-start; overflow: hidden;">
+          <div style="width: 100%; font-size: ${pt(lawBodyFontSize)}; font-weight: 400; color: #000000; line-height: 1.15; word-break: keep-all;">${renderHangingLinesHTML(data.lawBody)}</div>
         </div>
 
-        <!-- 5. 4대 발생요인 (TABLE #2: 정사각형 체크박스 4개 + 가로 구분선) -->
+        <!-- 5. 4대 발생요인 (R1 표 36: 정사각형 체크박스 4개 + 가로 구분선) -->
         <div style="position: absolute; left: ${pctX(10.6557)}; top: ${pctY(0.1257)}; width: ${pctW(2.5748)}; height: ${pctH(1.0455)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
         <div style="position: absolute; left: ${pctX(10.6557)}; top: ${pctY(0.6484)}; width: ${pctW(2.5748)}; height: 0; border-top: 1px solid #000000;"></div>
         ${factorItems.map(item => `
-          <div style="position: absolute; left: ${pctX(item.boxX)}; top: ${pctY(item.y)}; width: ${pctW(0.2835)}; height: ${pctH(0.2835)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(13)}; font-weight: 900; color: #000000; box-sizing: border-box;">
+          <div style="position: absolute; left: ${pctX(item.boxX)}; top: ${pctY(item.y)}; width: ${pctW(0.2835)}; height: ${pctH(0.2835)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 900; color: #000000; box-sizing: border-box;">
             ${item.checked ? '✔' : ''}
           </div>
           <div style="position: absolute; left: ${pctX(item.labelX)}; top: ${pctY(item.y)}; width: ${pctW(0.9449)}; height: ${pctH(0.2835)}; display: flex; align-items: center; padding-left: 0.25cqw; font-size: ${pt(10)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
@@ -2319,25 +2335,24 @@
         `).join('')}
 
         <!-- 6. 부적합 개요 섹션 -->
-        <!-- 6-1. 부적합 개요 라벨 (#ffd966, 18pt bold) -->
         <div style="position: absolute; left: ${pctX(0.1070)}; top: ${pctY(1.2444)}; width: ${pctW(0.8305)}; height: ${pctH(1.0694)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; text-align: center; line-height: 1.15; box-sizing: border-box;">
           부적합<br>개&nbsp;&nbsp;&nbsp;요
         </div>
 
-        <!-- 6-2. 메타 정보 5개 독립 셀 (14pt bold, 라벨 #0000ff) -->
+        <!-- 6-2. 메타 정보 5개 독립 셀 (R1: 14pt Bold, 라벨 #0000ff) -->
         ${metaCols.map(col => {
-      const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 9.5);
+      const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 11);
       return `
-            <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.2444)}; width: ${pctW(col.w)}; height: ${pctH(0.3769)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.4cqw; box-sizing: border-box; white-space: nowrap;">
-              <strong style="color: #0000ff; font-size: ${pt(sz)}; margin-right: 0.2cqw;">${col.label}</strong>
+            <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.2444)}; width: ${pctW(col.w)}; height: ${pctH(0.3769)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.38cqw; box-sizing: border-box; white-space: nowrap;">
+              <strong style="color: #0000ff; font-size: ${pt(sz)}; margin-right: 0.18cqw;">${col.label}</strong>
               <span style="font-weight: 800; color: #000000; font-size: ${pt(sz)};">${col.val}</span>
             </div>
           `;
     }).join('')}
 
-        <!-- 6-3. 부적합 내용 셀 (x = 0.9375, y = 1.6213, w = 12.2938, h = 0.6925, 14pt bold, 1)/2) 줄바꿈 및 내어쓰기 정렬) -->
-        <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: flex-start; padding: 0.20cqw 0.5cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="flex-shrink: 0; white-space: nowrap; font-size: ${pt(Math.min(12.5, Math.max(10.5, mainSz)))}; line-height: ${mainHtmlLineHeight};">
+        <!-- 6-3. 부적합 내용 셀 (R1: 14pt Bold, 1./2. 줄바꿈 및 정렬) -->
+        <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0.18cqw 0.45cqw; box-sizing: border-box; overflow: hidden;">
+          <div style="flex-shrink: 0; white-space: nowrap; align-self: flex-start; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight};">
             <strong style="color: #0000ff;">부적합 내용</strong><strong style="color: #000000;">&nbsp;:&nbsp;</strong>
           </div>
           <div style="flex: 1; min-width: 0; font-weight: 800; color: #000000; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight}; word-break: keep-all;">
@@ -2345,103 +2360,87 @@
           </div>
         </div>
 
-        <!-- 7. 하단 통합 본문 컨테이너 (x = 0.1070, y = 2.3138, w = 13.1243, h = 5.0632) -->
+        <!-- 7. 하단 통합 본문 컨테이너 (R1 표 47 R4: x = 0.107, y = 2.314, w = 13.124, h = 5.063) -->
         <div style="position: absolute; left: ${pctX(0.1070)}; top: ${pctY(2.3138)}; width: ${pctW(13.1243)}; height: ${pctH(5.0632)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 7-1. [좌측 컬럼] 적색 음영 배너 (#C00000 @ 60% = #d96666, x = 0.3121, y = 2.8121, w = 5.4580, h = 0.3702) -->
-        <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(2.8121)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.3702)}; background: rgba(192, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw;">
-          <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
+        <!-- 7-1. [좌측 상단] 적색 음영 배너 (R1 TextBox 29: x = 0.306, y = 2.411, w = 5.458, h = 0.370, 수직·수평 정중앙) -->
+        <div style="position: absolute; left: ${pctX(0.3064)}; top: ${pctY(2.4114)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.3702)}; background: rgba(192, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw;">
+          <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #f2f2f2; line-height: 1; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
         </div>
 
-        <!-- 7-2. [좌측 컬럼] 현장 사진 영역 (Hold Point 공간 침범 없이 x = 0.3121 ~ 5.7701 고정) -->
-        ${hasPhoto2 ? `
-          <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(photoStartY)}; width: ${pctW(2.6900)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
-          </div>
-          <div style="position: absolute; left: ${pctX(3.0801)}; top: ${pctY(photoStartY)}; width: ${pctW(2.6900)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
-          </div>
-        ` : `
-          <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(photoStartY)}; width: ${pctW(bannerWidth)}; height: ${pctH(photoBodyHeight)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
-          </div>
-        `}
-
-        ${showGuidelineBox ? `
-          <div style="position: absolute; left: ${pctX(0.3121)}; top: ${pctY(6.2000)}; width: ${pctW(bannerWidth)}; height: ${pctH(1.0800)}; background: #ffffff; border: 1px solid #000000; padding: 0.3cqw 0.6cqw; box-sizing: border-box;">
-            <div style="font-size: ${pt(12)}; font-weight: 800; color: #000000; margin-bottom: 0.15cqw;">${data.guidelineTitle}</div>
-            <div style="font-size: ${pt(10.5)}; color: #222222; white-space: pre-line; line-height: 1.3;">${data.guidelineBody}</div>
-          </div>
-        ` : ''}
-
-        <!-- 7-3. [중앙 컬럼] Hold Point 위반 박스 + 그림 예약 공간 + 초록색 음영 박스 -->
+        <!-- 7-2. [중앙 상단] Hold Point 위반 박스 (R1 표 32: x = 5.920, y = 2.377, w = 2.259, h = 0.404) -->
         <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.3772)}; width: ${pctW(2.2594)}; height: ${pctH(0.4039)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
         <div style="position: absolute; left: ${pctX(5.9748)}; top: ${pctY(2.4207)}; width: ${pctW(0.3150)}; height: ${pctH(0.3168)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(15)}; font-weight: 900; color: #000000; box-sizing: border-box;">
           ${data.isHoldPoint ? '✔' : ''}
         </div>
         <div style="position: absolute; left: ${pctX(6.2898)}; top: ${pctY(2.4207)}; width: ${pctW(1.8897)}; height: ${pctH(0.3168)}; display: flex; align-items: center; padding-left: 0.3cqw; font-size: ${pt(11)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
-          ${data.holdPointCode ? `Hold Point 위반 (${data.holdPointCode})` : 'Hold Point 위반'}
+          ${data.isHoldPoint ? (data.holdPointCode ? `Hold Point 위반 (${data.holdPointCode})` : 'Hold Point 위반') : 'Hold Point 위반 (N/A)'}
         </div>
 
-        <!-- Hold Point 그림 영역 공간 확보 (x = 5.9202, y = 2.7584, w = 2.2712, h = 2.7348) -->
-        <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.7584)}; width: ${pctW(2.2712)}; height: ${pctH(2.7348)}; box-sizing: border-box; overflow: hidden;">
-          ${record.holdPointImage ? `<img src="${record.holdPointImage}" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : ''}
-        </div>
+        <!-- 7-3. [좌측 전체] 현장 사진 영역 (R1 꽉 차게: x = 0.202 ~ 8.147, y = 2.838 ~ 7.311, object-fit: cover) -->
+        ${(hasPhoto1 && hasPhoto2) ? `
+          <div style="position: absolute; left: ${pctX(0.2023)}; top: ${pctY(2.8379)}; width: ${pctW(3.9261)}; height: ${pctH(4.4729)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+          </div>
+          <div style="position: absolute; left: ${pctX(4.2213)}; top: ${pctY(2.8379)}; width: ${pctW(3.9261)}; height: ${pctH(4.4729)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+          </div>
+        ` : `
+          <div style="position: absolute; left: ${pctX(0.2023)}; top: ${pctY(2.8379)}; width: ${pctW(7.9451)}; height: ${pctH(4.4729)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${(photo1Url || photo2Url)
+              ? `<img src="${photo1Url || photo2Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">`
+              : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          </div>
+        `}
 
-        <!-- 초록색 음영 박스 (SHAPE #13: x = 5.9320, y = 5.5054, w = 2.2594, h = 0.3702, #A9D18E @ 60% = #cbe3bb) -->
-        <div style="position: absolute; left: ${pctX(5.9320)}; top: ${pctY(5.5054)}; width: ${pctW(2.2594)}; height: ${pctH(0.3702)}; background: rgba(169, 209, 142, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap;">
-          ${data.greenBanner ? `<span style="font-size: ${pt(16)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.greenBanner}</span>` : ''}
-        </div>
-
-        <!-- 7-4. [우측 컬럼] 발생원인 & 개선대책 (x = 8.2448, w = 4.9213) -->
-        <!-- 발생원인 (인터뷰 결과) 헤더 (18pt bold) -->
+        <!-- 7-4. [우측 컬럼] 발생원인 & 개선대책 (R1 그룹 41 정확 좌표: x = 8.245, w = 4.921) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.3803)}; width: ${pctW(4.9213)}; height: ${pctH(0.4039)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; box-sizing: border-box;">
           발생원인 (인터뷰 결과)
         </div>
 
-        <!-- [의견 : ] 박스 (SHAPE #2: x = 8.2448, y = 2.8227, w = 4.9213, h = 1.3773) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.3773)}; background: #ffffff; border: 1px solid #000000; padding: 0.30cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
+        <!-- [의견 : ] 박스 (R1 TextBox 45: x = 8.245, y = 2.823, w = 4.921, h = 1.575) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.5748)}; background: #ffffff; border: 1px solid #000000; padding: 0.45cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
 ${renderInterviewOpinionBoxHTML(data, pt)}
         </div>
 
-        <!-- [점검단 제안] 헤더 셀 (SHAPE #5: x = 8.2448, y = 4.2000, w = 1.5342, h = 0.3100) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.2000)}; width: ${pctW(1.5342)}; height: ${pctH(0.3100)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(13.5)}; font-weight: 800; color: #181717; box-sizing: border-box;">
+        <!-- [점검단 제안] 헤더 셀 (R1 TextBox 53: x = 8.245, y = 4.398, w = 1.534, h = 0.354) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.3979)}; width: ${pctW(1.5342)}; height: ${pctH(0.3543)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; color: #181717; box-sizing: border-box;">
           [점검단 제안]
         </div>
 
-        <!-- [점검단 제안] 분류 셀 (SHAPE #6: x = 8.2448, y = 4.5100, w = 1.5342, h = 0.9350 - 높이 확대로 2개 분류도 끊김 없이 표시) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.5100)}; width: ${pctW(1.5342)}; height: ${pctH(0.9350)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px; overflow: hidden;">
-          ${(data.proposalItems || [{ type: data.proposalType, sub: data.proposalSub }]).map(it => `
-            <div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 10.5 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.08;">${it.type}</div>
-            ${it.sub ? `<div style="font-size: ${pt((data.proposalItems && data.proposalItems.length > 1) ? 8.5 : 11)}; font-weight: 800; color: #000000; line-height: 1.08; margin-bottom: 1px;">${it.sub}</div>` : ''}
+        <!-- [점검단 제안] 분류 셀 (R1 TextBox 54: x = 8.245, y = 4.752, w = 1.534, h = 0.679) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.7522)}; width: ${pctW(1.5342)}; height: ${pctH(0.6790)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px; overflow: hidden;">
+          ${propDisplayItems.map(it => `
+            <div style="font-size: ${pt(propDisplayItems.length > 1 ? 11.5 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.12;">${it.type}</div>
+            <div style="font-size: ${pt(propDisplayItems.length > 1 ? 9.5 : 11)}; font-weight: 500; color: #000000; line-height: 1.12; margin-bottom: 2px;">${it.sub}</div>
           `).join('')}
         </div>
 
-        <!-- [점검단 제안] 본문 셀 (SHAPE #4: x = 9.7790, y = 4.2000, w = 3.3871, h = 1.2450 - 높이 확대 및 자동 폰트 맞춤) -->
-        <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.2000)}; width: ${pctW(3.3871)}; height: ${pctH(1.2450)}; background: #ffffff; border: 1px solid #000000; padding: 0.28cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #111111; word-break: keep-all;">${renderHangingLinesHTML(data.proposalContent)}</div>
+        <!-- [점검단 제안] 본문 셀 (R1 TextBox 52: x = 9.779, y = 4.398, w = 3.387, h = 1.033) -->
+        <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.3979)}; width: ${pctW(3.3871)}; height: ${pctH(1.0333)}; background: #ffffff; border: 1px solid #000000; padding: 0.40cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
+          <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(data.proposalContent)}</div>
         </div>
 
-        <!-- 개선대책 (현장 협의 결과) 헤더 (SHAPE #8: x = 8.2448, y = 5.4951, w = 4.9213, h = 0.4039, 18pt bold) -->
+        <!-- 개선대책 (현장 협의 결과) 헤더 (R1 TextBox 26: x = 8.245, y = 5.495, w = 4.921, h = 0.404, 18pt bold) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.4951)}; width: ${pctW(4.9213)}; height: ${pctH(0.4039)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; box-sizing: border-box;">
           개선대책 (현장 협의 결과)
         </div>
 
-        <!-- 개선대책 본문 셀 (SHAPE #11: x = 8.2448, y = 5.9064, w = 3.3858, h = 1.3959) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.35cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
+        <!-- 개선대책 본문 셀 (R1 TextBox 38: x = 8.245, y = 5.906, w = 3.386, h = 1.396) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.45cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
           <div style="font-size: ${pt(counterSz)}; font-weight: 400; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(data.countermeasureContent || '')}</div>
         </div>
 
-        <!-- [PM 판정결과] 헤더 셀 (SHAPE #9: x = 11.6307, y = 5.9064, w = 1.5354, h = 0.3329) -->
+        <!-- [PM 판정결과] 헤더 셀 (R1 TextBox 27: x = 11.631, y = 5.906, w = 1.535, h = 0.333) -->
         <div style="position: absolute; left: ${pctX(11.6307)}; top: ${pctY(5.9064)}; width: ${pctW(1.5354)}; height: ${pctH(0.3329)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(14)}; font-weight: 800; color: #181717; box-sizing: border-box;">
           [PM 판정결과]
         </div>
 
-        <!-- [PM 판정결과] 값 셀 (SHAPE #10: x = 11.6307, y = 6.2394, w = 1.5354, h = 1.0630) -->
+        <!-- [PM 판정결과] 값 셀 (R1 TextBox 28: x = 11.631, y = 6.239, w = 1.535, h = 1.063, () 소분류 항상 포함) -->
         <div style="position: absolute; left: ${pctX(11.6307)}; top: ${pctY(6.2394)}; width: ${pctW(1.5354)}; height: ${pctH(1.0630)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px;">
-          ${(data.pmVerdictItems || (data.pmVerdictType ? [{ type: data.pmVerdictType, sub: data.pmVerdictSub }] : [])).map(it => `
-            <div style="font-size: ${pt((data.pmVerdictItems && data.pmVerdictItems.length > 1) ? 11 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.15;">${it.type}</div>
-            ${it.sub ? `<div style="font-size: ${pt((data.pmVerdictItems && data.pmVerdictItems.length > 1) ? 9 : 11)}; font-weight: 800; color: #000000; margin-bottom: 2px;">${it.sub}</div>` : ''}
+          ${pmDisplayItems.map(it => `
+            <div style="font-size: ${pt(pmDisplayItems.length > 1 ? 11.5 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.15;">${it.type}</div>
+            <div style="font-size: ${pt(pmDisplayItems.length > 1 ? 9.5 : 11)}; font-weight: 500; color: #000000; line-height: 1.15; margin-bottom: 2px;">${it.sub}</div>
           `).join('')}
         </div>
       </div>
@@ -2528,17 +2527,17 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
           <span style="font-size: ${pt(leftBannerSz)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
         </div>
 
-        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치, 원본 비율 contain 유지) -->
+        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치, R1 꽉 차게 object-fit: cover) -->
         ${(hasPhoto2 && !isPhoto2RiskDoc) ? `
-          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2207)}; width: ${pctW(2.6848)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
           </div>
-          <div style="position: absolute; left: ${pctX(3.6465)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+          <div style="position: absolute; left: ${pctX(3.6417)}; top: ${pctY(3.2207)}; width: ${pctW(2.6848)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2207)}; width: ${pctW(leftBannerW)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
