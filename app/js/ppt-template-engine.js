@@ -279,9 +279,10 @@
     const color = (run && run.color) || defStyle.color || COLORS.NAVY;
     const bAttr = bold ? ' b="1"' : (bold === false ? ' b="0"' : '');
     const font = (run && run.font) || defStyle.font || '맑은 고딕';
+    // !glow일 때도 반드시 <a:effectLst/>를 명시해 템플릿 <a:lstStyle>의 glow/그림자 상속을 차단
     const effectXml = (run && run.glow) || defStyle.glow
       ? '<a:effectLst><a:glow rad="101600"><a:srgbClr val="000000"><a:alpha val="80000"/></a:srgbClr></a:glow></a:effectLst>'
-      : '';
+      : '<a:effectLst/>';
     return `<a:r><a:rPr lang="ko-KR" altLang="en-US" sz="${sz}"${bAttr} dirty="0"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${effectXml}<a:latin typeface="${escapeXml(font)}"/><a:ea typeface="${escapeXml(font)}"/></a:rPr><a:t xml:space="preserve">${escapeXml(text)}</a:t></a:r>`;
   }
 
@@ -290,14 +291,22 @@
     return list.map((p) => {
       const cfg = (p && typeof p === 'object' && !Array.isArray(p)) ? p : { text: p };
       const algn = cfg.algn !== undefined ? cfg.algn : (defStyle.algn || '');
+      const spcBef = cfg.spcBef !== undefined ? cfg.spcBef : (defStyle.spcBef ?? 0);
       const spcAft = cfg.spcAft !== undefined ? cfg.spcAft : (defStyle.spcAft ?? 200);
       const lnSpc = cfg.lnSpc || defStyle.lnSpc || 105000;
+      const marL = cfg.marL !== undefined ? cfg.marL : defStyle.marL;
+      const indent = cfg.indent !== undefined ? cfg.indent : defStyle.indent;
+      const buNone = cfg.buNone !== undefined ? cfg.buNone : (defStyle.buNone || marL !== undefined || indent !== undefined);
       const runs = Array.isArray(cfg.runs) ? cfg.runs : [{ text: cfg.text ?? '', ...cfg }];
       const pPrParts = [];
+      if (marL !== undefined) pPrParts.push(`marL="${Math.round(marL)}"`);
+      if (indent !== undefined) pPrParts.push(`indent="${Math.round(indent)}"`);
       if (algn) pPrParts.push(`algn="${algn}"`);
-      pPrParts.push('latinLnBrk="1"');
+      pPrParts.push('eaLnBrk="1"', 'latinLnBrk="1"');
       const pPrInner = `<a:lnSpc><a:spcPct val="${lnSpc}"/></a:lnSpc>` +
-        (spcAft > 0 ? `<a:spcAft><a:spcPts val="${spcAft}"/></a:spcAft>` : '');
+        (spcBef > 0 ? `<a:spcBef><a:spcPts val="${spcBef}"/></a:spcBef>` : '') +
+        (spcAft > 0 ? `<a:spcAft><a:spcPts val="${spcAft}"/></a:spcAft>` : '') +
+        (buNone ? '<a:buNone/>' : '');
       const runsXml = runs.map((r) => buildRunXml(r, defStyle)).join('');
       const endSz = (runs[0] && runs[0].sz) || defStyle.sz || 1400;
       return `<a:p><a:pPr ${pPrParts.join(' ')}>${pPrInner}</a:pPr>${runsXml}<a:endParaRPr lang="ko-KR" altLang="en-US" sz="${endSz}" dirty="0"/></a:p>`;
@@ -312,7 +321,7 @@
       const inner = block.slice(txOpen + '<p:txBody>'.length, txClose);
       const firstP = inner.search(/<a:p(?:\s|>)/);
       let header = firstP >= 0 ? inner.slice(0, firstP) : inner;
-      if (defStyle.lIns !== undefined || defStyle.tIns !== undefined || defStyle.rIns !== undefined || defStyle.bIns !== undefined) {
+      if (defStyle.lIns !== undefined || defStyle.tIns !== undefined || defStyle.rIns !== undefined || defStyle.bIns !== undefined || defStyle.anchor !== undefined) {
         header = header.replace(/<a:bodyPr([^>]*?)(\/?)>/, (_m, attrs, slash) => {
           let a = attrs;
           for (const k of ['lIns', 'tIns', 'rIns', 'bIns']) {
@@ -321,8 +330,18 @@
               a = re.test(a) ? a.replace(re, `${k}="${defStyle[k]}"`) : `${a} ${k}="${defStyle[k]}"`;
             }
           }
+          if (defStyle.anchor !== undefined) {
+            const re = /\banchor="[a-zA-Z]+"/;
+            a = re.test(a) ? a.replace(re, `anchor="${defStyle.anchor}"`) : `${a} anchor="${defStyle.anchor}"`;
+          }
           return `<a:bodyPr${a}${slash}>`;
         });
+      }
+      if (defStyle.noAutofit) {
+        header = header.replace(/<a:spAutoFit\s*\/>|<a:normAutofit[^>]*\/>/g, '<a:noAutofit/>');
+      }
+      if (defStyle.clearLstStyle) {
+        header = header.replace(/<a:lstStyle>[\s\S]*?<\/a:lstStyle>/, '<a:lstStyle/>');
       }
       const pXml = buildParagraphsXml(paragraphs, defStyle);
       return block.slice(0, txOpen) + `<p:txBody>${header}${pXml}</p:txBody>` + block.slice(txClose + '</p:txBody>'.length);
@@ -1394,7 +1413,7 @@
       return await customLoader(filename);
     }
     if (typeof fetch === 'function') {
-      const res = await fetch(`templates/${filename}?v=20261119_v53`);
+      const res = await fetch(`templates/${filename}?v=20261119_v54`);
       if (!res.ok) throw new Error(`템플릿 로드 실패 (${filename}: HTTP ${res.status})`);
       return await res.arrayBuffer();
     }
@@ -2118,7 +2137,9 @@
   function estimateVisualWidthUnits(text) {
     let units = 0;
     for (const ch of String(text || '')) {
-      units += /[가-힣ㄱ-ㅎㅏ-ㅣ\u3000-\u9FFF]/.test(ch) ? 1.0 : 0.56;
+      if (/[가-힣ㄱ-ㅎㅏ-ㅣ\u3000-\u9FFF]/.test(ch)) units += 0.94;
+      else if (ch === ' ') units += 0.30;
+      else units += 0.52;
     }
     return units;
   }
@@ -2128,8 +2149,9 @@
     if (!units) return maxSz;
     const maxPt = maxSz / 100;
     const minPt = minSz / 100;
-    const availPt = Math.max(20, widthIn * 72 - 8);
-    const neededPt = availPt / (units * 1.04);
+    const availPt = Math.max(20, widthIn * 72 - 5);
+    const neededPt = availPt / units;
+    if (neededPt >= maxPt) return maxSz;
     const pt = Math.max(minPt, Math.min(maxPt, neededPt));
     return Math.round(pt * 2) * 50; // 0.5pt 단위 반올림
   }
@@ -2141,11 +2163,109 @@
     src.split('\n').forEach((line) => {
       const cleaned = line.trim();
       if (!cleaned) return;
-      // 본문 중간 ' - ' / ' · ' 항목을 줄바꿈 분리 (하이픈 모델코드 IZSW-024 등은 보존)
+      // 본문 중간 ' - ' / ' • ' 항목을 줄바꿈 분리 (하이픈 모델코드 IZSW-024 등은 보존)
       const parts = cleaned.split(/\s+(?=-\s+|[•▪]\s*)/).map((s) => s.trim()).filter(Boolean);
       parts.forEach((p) => out.push(p));
     });
     return out;
+  }
+
+  function splitNumberedContentLines(rawText) {
+    const src = String(rawText || '').replace(/\r\n/g, '\n').trim();
+    if (!src) return [];
+    const out = [];
+    src.split('\n').forEach((line) => {
+      const cleaned = line.trim();
+      if (!cleaned) return;
+      // '1. ... 2. ...' / '1) ... 2) ...' / '① ... ② ...' / ' - ...' 인라인 항목 분리
+      const parts = cleaned
+        .split(/\s+(?=(?:[2-9]\d?[\.)]\s+|[②③④⑤⑥⑦⑧⑨⑩]\s*|-\s+))/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      parts.forEach((p) => out.push(p));
+    });
+    if (out.length >= 2) {
+      const hasNum = out.some((l) => /^(?:\d+[\.)]|[①-⑩])/.test(l));
+      if (!hasNum) {
+        return out.map((l, idx) => `${idx + 1}. ${l.replace(/^[-•▪]\s*/, '')}`);
+      }
+    }
+    return out;
+  }
+
+  function defaultVerdictSub(type) {
+    const t = String(type || '').trim();
+    if (/교육|코칭/.test(t)) return '(근로자 교육)';
+    if (/제재|징계/.test(t)) return '(해당작업팀대기)';
+    if (/페널티|패널티/.test(t)) return '(관리감독자 경고)';
+    return '(계획 재수립)';
+  }
+
+  function resolveVerdictItems(items, singleType, singleSub, fallbackDefault) {
+    const rawList = Array.isArray(items) && items.length
+      ? items
+      : (singleType ? [{ type: singleType, sub: singleSub }] : fallbackDefault);
+    return rawList.map((it) => {
+      let type = String((it && it.type) || '시스템 개선').trim();
+      let sub = String((it && it.sub) || '').trim();
+      if (!sub) {
+        const m = type.match(/(\([^)]+\))/);
+        if (m) {
+          sub = m[1];
+          type = type.replace(m[1], '').trim();
+        } else {
+          sub = defaultVerdictSub(type);
+        }
+      }
+      if (sub && !sub.startsWith('(')) sub = `(${sub})`;
+      return { type: type || '시스템 개선', sub };
+    });
+  }
+
+  function appendSheetPic(slideXml, relsXml, zip, ctXml, mediaName, parsedPhoto, box, picTitle, mode = 'cover') {
+    if (!parsedPhoto || !parsedPhoto.base64) {
+      return { slideXml, relsXml, ctXml };
+    }
+    const ext = parsedPhoto.ext === 'png' ? 'png' : 'jpeg';
+    const mediaPath = `ppt/media/${mediaName}.${ext}`;
+    zip.file(mediaPath, parsedPhoto.base64, { base64: true });
+
+    const rIdNum = getNextRelId(relsXml);
+    const rId = `rId${rIdNum}`;
+    const newRel = `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${mediaName}.${ext}"/>`;
+    const nextRelsXml = relsXml.replace('</Relationships>', `${newRel}</Relationships>`);
+
+    let nextCtXml = ensureContentTypeDefault(ctXml, 'jpeg', 'image/jpeg');
+    nextCtXml = ensureContentTypeDefault(nextCtXml, 'png', 'image/png');
+
+    const dims = getImageDimensionsFromBase64(ext, parsedPhoto.base64);
+    let drawBox = box;
+    let srcRectXml = '';
+    if (mode === 'cover' && dims && dims.w && dims.h) {
+      const imgRatio = dims.w / dims.h;
+      const boxRatio = box.w / box.h;
+      if (imgRatio > boxRatio * 1.01) {
+        const crop = Math.min(35000, Math.round(((1 - boxRatio / imgRatio) / 2) * 100000));
+        if (crop > 0) srcRectXml = `<a:srcRect l="${crop}" r="${crop}"/>`;
+      } else if (imgRatio * 1.01 < boxRatio) {
+        const crop = Math.min(35000, Math.round(((1 - imgRatio / boxRatio) / 2) * 100000));
+        if (crop > 0) srcRectXml = `<a:srcRect t="${crop}" b="${crop}"/>`;
+      }
+    } else if (mode === 'contain' && dims && dims.w && dims.h) {
+      drawBox = fitBoxContain(box, dims);
+    }
+
+    const spId = getNextShapeId(slideXml);
+    const picXml =
+      `<p:pic>` +
+        `<p:nvPicPr><p:cNvPr id="${spId}" name="${escapeXml(picTitle || mediaName)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>` +
+        `<p:blipFill><a:blip r:embed="${rId}"/>${srcRectXml}<a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
+        `<p:spPr><a:xfrm><a:off x="${Math.round(drawBox.x)}" y="${Math.round(drawBox.y)}"/><a:ext cx="${Math.round(drawBox.w)}" cy="${Math.round(drawBox.h)}"/></a:xfrm>` +
+        `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:ln><a:noFill/></a:ln></p:spPr>` +
+      `</p:pic>`;
+
+    const nextSlideXml = insertIntoSpTree(slideXml, picXml);
+    return { slideXml: nextSlideXml, relsXml: nextRelsXml, ctXml: nextCtXml };
   }
 
   function buildCheckmarkPicXml(spId, name, rId, box) {
@@ -2166,13 +2286,13 @@
     const BLUE = '0000FF';
     const BLACK = '000000';
 
-    // 1. 표 47 (id=48): 유형/등급, 관련기준 제목, 협력사/공종명/작업장소/점검자/점검차수, 부적합 내용
+    // 1. 표 47 (id=48): 유형/등급, 관련기준 상단 16pt Bold, 메타 5칸 14pt Bold, 부적합 내용 14pt Bold (1./2. 정렬)
     const typeMain = String(data.typeMain || data.type || '안전').trim();
     const sevText = `[${data.severity || '중부적합'}]`;
-    const typeSz = calcFitFontSz(typeMain, 1.45, 2000, 1400);
+    const typeSz = calcFitFontSz(typeMain, 1.48, 2000, 1400);
 
     const lawTitleText = String(data.lawTitle || '').replace(/\r?\n/g, ' ').trim();
-    const lawTitleSz = calcFitFontSz(lawTitleText, 5.55, 1500, 1050);
+    const lawTitleSz = calcFitFontSz(lawTitleText, 5.55, 1600, 1100);
 
     const subText = String(data.subcontractor || '').replace(/\r?\n/g, ' ').trim();
     const workText = String(data.workGroup || '').replace(/\r?\n/g, ' ').trim();
@@ -2180,32 +2300,35 @@
     const inspText = String(data.inspector || '').replace(/\r?\n/g, ' ').trim();
     const roundText = String(data.inspectRound || '').replace(/\r?\n/g, ' ').trim();
 
-    const subSz = calcFitFontSz(`협력사 : ${subText}`, 2.25, 1400, 1050);
-    const workSz = calcFitFontSz(`공종명 : ${workText}`, 2.90, 1400, 1050);
-    const locSz = calcFitFontSz(`작업장소 : ${locText}`, 3.05, 1400, 1050);
-    const inspSz = calcFitFontSz(`점검자 : ${inspText}`, 1.72, 1400, 1050);
-    const roundSz = calcFitFontSz(`점검차수 : ${roundText}`, 2.00, 1400, 1050);
+    const subSz = calcFitFontSz(`협력사 : ${subText}`, 2.30, 1400, 1100);
+    const workSz = calcFitFontSz(`공종명 : ${workText}`, 2.94, 1400, 1100);
+    const locSz = calcFitFontSz(`작업장소 : ${locText}`, 3.10, 1400, 1100);
+    const inspSz = calcFitFontSz(`점검자 : ${inspText}`, 1.78, 1400, 1100);
+    const roundSz = calcFitFontSz(`점검차수 : ${roundText}`, 2.04, 1400, 1150);
 
-    const contentLines = splitBulletLines(data.mainContent || data.content || '');
-    const totalContentLen = contentLines.reduce((acc, l) => acc + l.length, 0);
-    const contentSz = contentLines.length >= 3 || totalContentLen > 95
-      ? 1050
-      : (contentLines.length >= 2 || totalContentLen > 52 ? 1200 : 1350);
+    const contentLines = splitNumberedContentLines(data.mainContent || data.content || '');
+    const maxLineUnits = contentLines.reduce((m, l) => Math.max(m, estimateVisualWidthUnits(l)), 0);
+    const contentSz = contentLines.length >= 4
+      ? 1100
+      : (contentLines.length === 3 ? 1250 : (maxLineUnits > 56 ? 1250 : 1400));
+    const labelHangEmu = Math.round((contentSz / 1400) * 1245000);
     const contentParas = contentLines.length
       ? contentLines.map((line, idx) => (idx === 0
         ? {
-            algn: 'l', spcAft: 30, lnSpc: 105000,
+            algn: 'l', spcAft: contentLines.length > 1 ? 150 : 0, lnSpc: 110000,
+            marL: labelHangEmu, indent: -labelHangEmu, buNone: true,
             runs: [
               { text: '부적합 내용 ', sz: contentSz, bold: true, color: BLUE },
               { text: `: ${line}`, sz: contentSz, bold: true, color: BLACK },
             ],
           }
         : {
-            algn: 'l', spcAft: 30, lnSpc: 105000,
-            runs: [{ text: `                  ${line}`, sz: contentSz, bold: true, color: BLACK }],
+            algn: 'l', spcAft: idx < contentLines.length - 1 ? 150 : 0, lnSpc: 110000,
+            marL: labelHangEmu, indent: 0, buNone: true,
+            runs: [{ text: line, sz: contentSz, bold: true, color: BLACK }],
           }))
       : [{
-          algn: 'l', spcAft: 0, lnSpc: 105000,
+          algn: 'l', spcAft: 0, lnSpc: 110000, marL: 0, indent: 0, buNone: true,
           runs: [
             { text: '부적합 내용 ', sz: 1400, bold: true, color: BLUE },
             { text: ': ', sz: 1400, bold: true, color: BLACK },
@@ -2281,16 +2404,34 @@
       },
     });
 
-    // 2. 관련기준 본문 박스 (TextBox 1, id=2)
+    // 2. 관련기준 본문 박스 (TextBox 1, id=2): lstStyle glow 제거 + 선명한 일반체 + '-' 내어쓰기
     const lawBodyLines = splitBulletLines(data.lawBody || '');
     const lawBodyChars = lawBodyLines.reduce((a, l) => a + l.length, 0);
     const lawBodySz = lawBodyLines.length >= 4 || lawBodyChars > 180
-      ? 850
-      : (lawBodyLines.length >= 3 || lawBodyChars > 110 ? 950 : 1050);
+      ? 900
+      : (lawBodyLines.length >= 3 || lawBodyChars > 110 ? 1000 : 1100);
+    const lawHangEmu = Math.round((lawBodySz / 1100) * 140000);
     const lawBodyParas = lawBodyLines.length
-      ? lawBodyLines.map((line) => ({ text: line, sz: lawBodySz, bold: false, color: BLACK, algn: 'l', spcAft: 20, lnSpc: 104000 }))
-      : [{ text: '', sz: 1050, bold: false, color: BLACK, algn: 'l', spcAft: 0 }];
-    sXml = setShapeParagraphs(sXml, 2, lawBodyParas, { algn: 'l', lIns: 45000, rIns: 45000, tIns: 25000, bIns: 25000 });
+      ? lawBodyLines.map((line, idx) => {
+          const isDash = /^[-•▪]\s+/.test(line);
+          return {
+            text: line,
+            sz: lawBodySz,
+            bold: false,
+            color: BLACK,
+            algn: 'l',
+            spcAft: idx < lawBodyLines.length - 1 ? 220 : 0,
+            lnSpc: 112000,
+            marL: isDash ? lawHangEmu : 0,
+            indent: isDash ? -lawHangEmu : 0,
+            buNone: true,
+          };
+        })
+      : [{ text: '', sz: 1100, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
+    sXml = setShapeParagraphs(sXml, 2, lawBodyParas, {
+      algn: 'l', lIns: 55000, rIns: 50000, tIns: 30000, bIns: 25000,
+      anchor: 't', noAutofit: true, clearLstStyle: true,
+    });
 
     // 3. 우측 상단 4대 원인 체크박스 (표 36) + Hold Point (표 32) 체크마크 PNG 배치
     sXml = removeElementBlockById(sXml, 26);
@@ -2315,14 +2456,14 @@
       sXml = insertIntoSpTree(sXml, buildCheckmarkPicXml(spId, cm.name, 'rId3', cm));
     });
 
-    // 4. 좌측 사진 상단 적색 배너 (TextBox 29, id=30)
+    // 4. 좌측 사진 상단 적색 배너 (TextBox 29, id=30) — 수직·수평 정중앙 배치
     const bannerTxt = String(data.photoBanner || '').replace(/\r?\n/g, ' ').trim();
     const bannerSz = calcFitFontSz(bannerTxt, 5.35, 1600, 1100);
     sXml = setShapeParagraphs(sXml, 30, [
-      { text: bannerTxt, sz: bannerSz, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcAft: 0, lnSpc: 100000 },
-    ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 18000, bIns: 18000 });
+      { text: bannerTxt, sz: bannerSz, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true },
+    ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true });
 
-    // 5. 발생원인 인터뷰 결과 (그룹 41 내 TextBox 45, id=46) — 복수 의견 전 구간 보존
+    // 5. 발생원인 인터뷰 결과 (그룹 41 내 TextBox 45, id=46) — 원본 단락 간격 + '-' 내어쓰기 정렬
     let sections = [];
     if (Array.isArray(data.interviewSections) && data.interviewSections.length) {
       sections = data.interviewSections.map((sec) => ({
@@ -2352,74 +2493,134 @@
       }
     }
     const ivTotalLines = sections.reduce((acc, sec) => acc + (sec.title ? 1 : 0) + ((sec.lines && sec.lines.length) || 0), 0);
-    const ivTitleSz = ivTotalLines >= 8 ? 1100 : (ivTotalLines >= 6 ? 1200 : 1350);
-    const ivBodySz = ivTotalLines >= 8 ? 950 : (ivTotalLines >= 6 ? 1050 : 1150);
+    const ivTitleSz = ivTotalLines >= 7 ? 1150 : (ivTotalLines >= 5 ? 1250 : 1400);
+    const ivBodySz = ivTotalLines >= 7 ? 1000 : (ivTotalLines >= 5 ? 1100 : 1200);
+    const ivHangEmu = Math.round((ivBodySz / 1200) * 152400);
     const ivParas = [];
     sections.forEach((sec, sIdx) => {
       if (sec.title) {
-        ivParas.push({ text: sec.title, sz: ivTitleSz, bold: true, color: BLACK, algn: 'l', spcAft: 30, lnSpc: 106000 });
+        ivParas.push({
+          text: sec.title,
+          sz: ivTitleSz,
+          bold: true,
+          color: BLACK,
+          algn: 'l',
+          spcBef: sIdx > 0 ? 650 : 0,
+          spcAft: 350,
+          lnSpc: 112000,
+          marL: 0,
+          indent: 0,
+          buNone: true,
+        });
       }
-      (sec.lines || []).forEach((ln) => {
-        const cleanLn = ln.startsWith('-') || ln.startsWith('•') ? ln : `- ${ln}`;
-        ivParas.push({ text: cleanLn, sz: ivBodySz, bold: false, color: BLACK, algn: 'l', spcAft: 30, lnSpc: 106000 });
+      const secLines = sec.lines || [];
+      secLines.forEach((ln, lIdx) => {
+        const cleanLn = /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`;
+        ivParas.push({
+          text: cleanLn,
+          sz: ivBodySz,
+          bold: false,
+          color: BLACK,
+          algn: 'l',
+          spcAft: lIdx < secLines.length - 1 ? 350 : 250,
+          lnSpc: 115000,
+          marL: ivHangEmu,
+          indent: -ivHangEmu,
+          buNone: true,
+        });
       });
-      if (sIdx < sections.length - 1) {
-        ivParas.push({ text: '', sz: 600, bold: false, color: BLACK, algn: 'l', spcAft: 0, lnSpc: 100000 });
-      }
     });
     if (!ivParas.length) {
-      ivParas.push({ text: '[의견 : 시공관리자 및 안전관리자]', sz: 1350, bold: true, color: BLACK, algn: 'l', spcAft: 0 });
+      ivParas.push({ text: '[의견 : 시공관리자 및 안전관리자]', sz: 1400, bold: true, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true });
     }
-    sXml = setShapeParagraphs(sXml, 46, ivParas, { algn: 'l', lIns: 60000, rIns: 60000, tIns: 45000, bIns: 40000 });
+    sXml = setShapeParagraphs(sXml, 46, ivParas, {
+      algn: 'l', lIns: 72000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
+    });
 
-    // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53)
-    const propTypeParas = [
-      { text: data.proposalType || '시스템 개선', sz: 1400, bold: true, color: BLUE, algn: 'ctr', spcAft: 20, lnSpc: 105000 },
-    ];
-    if (data.proposalSub) {
-      propTypeParas.push({ text: data.proposalSub, sz: 1100, bold: false, color: BLACK, algn: 'ctr', spcAft: 0, lnSpc: 105000 });
-    }
-    sXml = setShapeParagraphs(sXml, 55, propTypeParas, { algn: 'ctr', lIns: 30000, rIns: 30000, tIns: 30000, bIns: 30000 });
+    // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53) — () 소분류 보장 + '-' 내어쓰기
+    const propItems = resolveVerdictItems(data.proposalItems, data.proposalType, data.proposalSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
+    const propMulti = propItems.length > 1;
+    const propTypeParas = [];
+    propItems.forEach((it, idx) => {
+      propTypeParas.push({
+        text: it.type, sz: propMulti ? 1150 : 1400, bold: true, color: BLUE, algn: 'ctr',
+        spcBef: idx > 0 ? 250 : 0, spcAft: 120, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+      });
+      if (it.sub) {
+        propTypeParas.push({
+          text: it.sub, sz: propMulti ? 950 : 1100, bold: false, color: BLACK, algn: 'ctr',
+          spcAft: 0, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+        });
+      }
+    });
+    sXml = setShapeParagraphs(sXml, 55, propTypeParas, {
+      algn: 'ctr', lIns: 20000, rIns: 20000, tIns: 20000, bIns: 20000, anchor: 'ctr', noAutofit: true,
+    });
 
     const propLines = splitBulletLines(data.proposalContent || '');
-    const propSz = propLines.length >= 5 ? 950 : (propLines.length >= 4 ? 1050 : 1150);
+    const propSz = propLines.length >= 5 ? 1000 : (propLines.length >= 4 ? 1100 : 1200);
+    const propHangEmu = Math.round((propSz / 1200) * 152400);
     const propParas = propLines.length
-      ? propLines.map((ln) => ({ text: ln.startsWith('-') || ln.startsWith('•') ? ln : `- ${ln}`, sz: propSz, bold: false, color: BLACK, algn: 'l', spcAft: 30, lnSpc: 106000 }))
-      : [{ text: '', sz: 1150, bold: false, color: BLACK, algn: 'l', spcAft: 0 }];
-    sXml = setShapeParagraphs(sXml, 53, propParas, { algn: 'l', lIns: 55000, rIns: 55000, tIns: 40000, bIns: 35000 });
+      ? propLines.map((ln, idx) => ({
+          text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`,
+          sz: propSz, bold: false, color: BLACK, algn: 'l',
+          spcAft: idx < propLines.length - 1 ? 350 : 0, lnSpc: 115000,
+          marL: propHangEmu, indent: -propHangEmu, buNone: true,
+        }))
+      : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
+    sXml = setShapeParagraphs(sXml, 53, propParas, {
+      algn: 'l', lIns: 65000, rIns: 55000, tIns: 50000, bIns: 40000, anchor: 't', noAutofit: true,
+    });
 
-    // 7. 개선대책 본문 (TextBox 38, id=39) 및 PM 판정 분류 (TextBox 28, id=29)
+    // 7. 개선대책 본문 (TextBox 38, id=39) 및 PM 판정 분류 (TextBox 28, id=29) — () 내용 항상 포함
     const cmLines = splitBulletLines(data.countermeasureContent || '');
-    const cmSz = cmLines.length >= 6 ? 950 : (cmLines.length >= 4 ? 1050 : 1150);
+    const cmSz = cmLines.length >= 6 ? 1000 : (cmLines.length >= 4 ? 1100 : 1200);
+    const cmHangEmu = Math.round((cmSz / 1200) * 152400);
     const cmParas = cmLines.length
-      ? cmLines.map((ln) => ({ text: ln.startsWith('-') || ln.startsWith('•') ? ln : `- ${ln}`, sz: cmSz, bold: false, color: BLACK, algn: 'l', spcAft: 35, lnSpc: 108000 }))
-      : [{ text: '', sz: 1150, bold: false, color: BLACK, algn: 'l', spcAft: 0 }];
-    sXml = setShapeParagraphs(sXml, 39, cmParas, { algn: 'l', lIns: 55000, rIns: 55000, tIns: 45000, bIns: 40000 });
+      ? cmLines.map((ln, idx) => ({
+          text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`,
+          sz: cmSz, bold: false, color: BLACK, algn: 'l',
+          spcAft: idx < cmLines.length - 1 ? 420 : 0, lnSpc: 115000,
+          marL: cmHangEmu, indent: -cmHangEmu, buNone: true,
+        }))
+      : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
+    sXml = setShapeParagraphs(sXml, 39, cmParas, {
+      algn: 'l', lIns: 65000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
+    });
 
-    const pmParas = [
-      { text: data.pmVerdictType || '시스템 개선', sz: 1400, bold: true, color: BLUE, algn: 'ctr', spcAft: 20, lnSpc: 105000 },
-    ];
-    if (data.pmVerdictSub) {
-      pmParas.push({ text: data.pmVerdictSub, sz: 1100, bold: false, color: BLACK, algn: 'ctr', spcAft: 0, lnSpc: 105000 });
-    }
-    sXml = setShapeParagraphs(sXml, 29, pmParas, { algn: 'ctr', lIns: 30000, rIns: 30000, tIns: 30000, bIns: 30000 });
+    const pmItems = resolveVerdictItems(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
+    const pmMulti = pmItems.length > 1;
+    const pmParas = [];
+    pmItems.forEach((it, idx) => {
+      pmParas.push({
+        text: it.type, sz: pmMulti ? 1150 : 1400, bold: true, color: BLUE, algn: 'ctr',
+        spcBef: idx > 0 ? 250 : 0, spcAft: 150, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+      });
+      if (it.sub) {
+        pmParas.push({
+          text: it.sub, sz: pmMulti ? 950 : 1100, bold: false, color: BLACK, algn: 'ctr',
+          spcAft: 0, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+        });
+      }
+    });
+    sXml = setShapeParagraphs(sXml, 29, pmParas, {
+      algn: 'ctr', lIns: 20000, rIns: 20000, tIns: 20000, bIns: 20000, anchor: 'ctr', noAutofit: true,
+    });
 
-    // 8. 좌측 실사 사진 임베딩 (원본 비율 유지 contain)
-    const fullPhotoBox = { x: 250000, y: 2600000, w: 7180000, h: 4030000 };
+    // 8. 좌측 실사 사진 임베딩 — 직사각형 꽉 차게 (cover: 비율 유지 중앙 크롭, 여백/테두리 없음)
+    const fullPhotoBox = { x: 185000, y: 2595000, w: 7265000, h: 4090000 };
     if (photo1Parsed && photo2Parsed) {
-      const leftBox = fitBoxContain({ x: 250000, y: 2600000, w: 3520000, h: 4030000 }, getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64));
-      const rightBox = fitBoxContain({ x: 3910000, y: 2600000, w: 3520000, h: 4030000 }, getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64));
-      const r1 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, leftBox, '현장사진_1');
+      const leftBox = { x: 185000, y: 2595000, w: 3590000, h: 4090000 };
+      const rightBox = { x: 3860000, y: 2595000, w: 3590000, h: 4090000 };
+      const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, leftBox, '현장사진_1', 'cover');
       sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
-      const r2 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, rightBox, '현장사진_2');
+      const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, rightBox, '현장사진_2', 'cover');
       sXml = r2.slideXml; rXml = r2.relsXml; cXml = r2.ctXml;
     } else if (photo1Parsed) {
-      const fitted = fitBoxContain(fullPhotoBox, getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64));
-      const r1 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, fitted, '현장사진_1');
+      const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, fullPhotoBox, '현장사진_1', 'cover');
       sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
     } else if (photo2Parsed) {
-      const fitted = fitBoxContain(fullPhotoBox, getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64));
-      const r2 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, fitted, '현장사진_2');
+      const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, fullPhotoBox, '현장사진_2', 'cover');
       sXml = r2.slideXml; rXml = r2.relsXml; cXml = r2.ctXml;
     }
 
@@ -2434,16 +2635,16 @@
     const BLACK = '000000';
 
     // 1. 표 47 (id=48): R0C0('위험성평가'), R0C2, R2C0('부적합 사항'), R3C0('부적합 사례')은 원본 양식 그대로 유지
-    //    R2C1: ■ 위험요소 안전대책 이행 확인 [협력사: ...] + - 부적합 내용
+    //    R2C1: ■ 위험요소 안전대책 이행 확인 [협력사: ...] + - 부적합 내용 (14pt Bold + 내어쓰기)
     const cleanSub = String(data.subcontractor || '').replace(/[\r\n\t]+/g, ' ').trim();
     const contentLines = splitBulletLines(data.mainContent || data.content || '');
-    const maxLineLen = contentLines.reduce((m, l) => Math.max(m, l.length), 0);
+    const maxLineUnits = contentLines.reduce((m, l) => Math.max(m, estimateVisualWidthUnits(l)), 0);
     const bodySz = contentLines.length >= 3
-      ? 1150
-      : calcFitFontSz(`    - ${contentLines[0] || ''}`, 11.75, 1400, 1100);
+      ? 1200
+      : (maxLineUnits > 64 ? 1250 : 1400);
     const r2c1Paras = [
       {
-        algn: 'l', spcAft: 40, lnSpc: 112000,
+        algn: 'l', spcAft: 350, lnSpc: 112000, marL: 0, indent: 0, buNone: true,
         runs: [
           { text: '■ 위험요소 안전대책 이행 확인 [', sz: 1700, bold: true, color: BLACK },
           { text: `협력사: ${cleanSub || '                 '}`, sz: 1700, bold: true, color: BLUE },
@@ -2451,13 +2652,14 @@
         ],
       },
       ...(contentLines.length
-        ? contentLines.map((ln) => ({
-            algn: 'l', spcAft: 20, lnSpc: 108000,
-            runs: [{ text: `    ${ln.startsWith('-') ? ln : `- ${ln}`}`, sz: maxLineLen > 65 ? Math.min(bodySz, 1200) : bodySz, bold: true, color: BLACK }],
+        ? contentLines.map((ln, idx) => ({
+            algn: 'l', spcAft: idx < contentLines.length - 1 ? 220 : 0, lnSpc: 112000,
+            marL: 340000, indent: -165000, buNone: true,
+            runs: [{ text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`, sz: bodySz, bold: true, color: BLACK }],
           }))
         : [{
-            algn: 'l', spcAft: 0, lnSpc: 108000,
-            runs: [{ text: '    - ', sz: 1400, bold: true, color: BLACK }],
+            algn: 'l', spcAft: 0, lnSpc: 112000, marL: 340000, indent: -165000, buNone: true,
+            runs: [{ text: '- ', sz: 1400, bold: true, color: BLACK }],
           }]),
     ];
 
@@ -2467,37 +2669,33 @@
       },
     });
 
-    // 2. 좌측 적색 배너 (TextBox 11, id=12) — 우측 [위험성평가표] (id=17)은 원본 양식 그대로 보존
+    // 2. 좌측 적색 배너 (TextBox 11, id=12) — 수직·수평 정중앙 배치, 우측 [위험성평가표] (id=17) 원본 보존
     const bannerTxt = String(data.photoBanner || '').replace(/\r?\n/g, ' ').trim();
     const bannerSz = calcFitFontSz(bannerTxt, 5.35, 1600, 1100);
     sXml = setShapeParagraphs(sXml, 12, [
-      { text: bannerTxt, sz: bannerSz, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcAft: 0, lnSpc: 100000 },
-    ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 18000, bIns: 18000 });
+      { text: bannerTxt, sz: bannerSz, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true },
+    ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true });
 
-    // 3. 좌측 부적합 사례 사진 & 우측 위험성평가표 배치 (비율 유지 contain)
-    const leftFullBox = { x: 794187, y: 2971800, w: 4990796, h: 3611880 };
-    const rightDocBox = { x: 7199964, y: 2971800, w: 4030878, h: 3611880 };
+    // 3. 좌측 부적합 사례 사진(꽉 차게 cover) & 우측 위험성평가표(문서 잘림 방지 contain)
+    const leftFullBox = { x: 794187, y: 2945000, w: 4990796, h: 3695000 };
+    const rightDocBox = { x: 7199964, y: 2945000, w: 4030878, h: 3695000 };
 
     if (photo2Parsed && !isPhoto2RiskDoc) {
-      const halfLeft = { x: 794187, y: 2971800, w: 2445000, h: 3611880 };
-      const halfRight = { x: 3339983, y: 2971800, w: 2445000, h: 3611880 };
+      const halfLeft = { x: 794187, y: 2945000, w: 2455000, h: 3695000 };
+      const halfRight = { x: 3329983, y: 2945000, w: 2455000, h: 3695000 };
       if (photo1Parsed) {
-        const b1 = fitBoxContain(halfLeft, getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64));
-        const r1 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, b1, '부적합사례_1');
+        const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, halfLeft, '부적합사례_1', 'cover');
         sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
       }
-      const b2 = fitBoxContain(halfRight, getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64));
-      const r2 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, b2, '부적합사례_2');
+      const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, halfRight, '부적합사례_2', 'cover');
       sXml = r2.slideXml; rXml = r2.relsXml; cXml = r2.ctXml;
     } else {
       if (photo1Parsed) {
-        const b1 = fitBoxContain(leftFullBox, getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64));
-        const r1 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, b1, '부적합사례_1');
+        const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, leftFullBox, '부적합사례_1', 'cover');
         sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
       }
       if (photo2Parsed && isPhoto2RiskDoc) {
-        const b2 = fitBoxContain(rightDocBox, getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64));
-        const r2 = appendSlidePic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_doc`, photo2Parsed, b2, '위험성평가표');
+        const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_doc`, photo2Parsed, rightDocBox, '위험성평가표', 'contain');
         sXml = r2.slideXml; rXml = r2.relsXml; cXml = r2.ctXml;
       }
     }
