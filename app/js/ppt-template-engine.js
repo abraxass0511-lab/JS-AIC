@@ -278,12 +278,20 @@
     const bold = run && run.bold !== undefined ? run.bold : defStyle.bold;
     const color = (run && run.color) || defStyle.color || COLORS.NAVY;
     const bAttr = bold ? ' b="1"' : (bold === false ? ' b="0"' : '');
+    const kernVal = (run && run.kern !== undefined) ? run.kern : defStyle.kern;
+    const spcVal = (run && run.spc !== undefined) ? run.spc : defStyle.spc;
+    const kernAttr = kernVal !== undefined ? ` kern="${kernVal}"` : '';
+    const spcAttr = spcVal !== undefined ? ` spc="${spcVal}"` : '';
     const font = (run && run.font) || defStyle.font || '맑은 고딕';
+    const latin = (run && run.latin) || defStyle.latin || font;
+    const ea = (run && run.ea) || defStyle.ea || font;
+    const cs = (run && run.cs) || defStyle.cs || '';
+    const csXml = cs ? `<a:cs typeface="${escapeXml(cs)}"/>` : '';
     // !glow일 때도 반드시 <a:effectLst/>를 명시해 템플릿 <a:lstStyle>의 glow/그림자 상속을 차단
     const effectXml = (run && run.glow) || defStyle.glow
       ? '<a:effectLst><a:glow rad="101600"><a:srgbClr val="000000"><a:alpha val="80000"/></a:srgbClr></a:glow></a:effectLst>'
       : '<a:effectLst/>';
-    return `<a:r><a:rPr lang="ko-KR" altLang="en-US" sz="${sz}"${bAttr} dirty="0"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${effectXml}<a:latin typeface="${escapeXml(font)}"/><a:ea typeface="${escapeXml(font)}"/></a:rPr><a:t xml:space="preserve">${escapeXml(text)}</a:t></a:r>`;
+    return `<a:r><a:rPr lang="ko-KR" altLang="en-US" sz="${sz}"${bAttr}${kernAttr}${spcAttr} dirty="0"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${effectXml}<a:latin typeface="${escapeXml(latin)}"/><a:ea typeface="${escapeXml(ea)}"/>${csXml}</a:rPr><a:t xml:space="preserve">${escapeXml(text)}</a:t></a:r>`;
   }
 
   function buildParagraphsXml(paragraphs, defStyle = {}) {
@@ -455,6 +463,11 @@
         bold: spec.bold !== undefined ? spec.bold : defs.bold,
         color: spec.color || defs.color,
         algn: spec.algn || defs.algn,
+        latin: spec.latin,
+        ea: spec.ea,
+        cs: spec.cs,
+        spc: spec.spc,
+        kern: spec.kern,
         spcAft: 0,
         lnSpc: spec.lnSpc || 95000,
       }));
@@ -467,7 +480,23 @@
     const firstP = inner.search(/<a:p(?:\s|>)/);
     const header = firstP >= 0 ? inner.slice(0, firstP) : '<a:bodyPr/><a:lstStyle/>';
     const pXml = buildParagraphsXml(paras, defs);
-    return tcXml.slice(0, txOpen) + `<a:txBody>${header}${pXml}</a:txBody>` + tcXml.slice(txClose + '</a:txBody>'.length);
+    let nextTc = tcXml.slice(0, txOpen) + `<a:txBody>${header}${pXml}</a:txBody>` + tcXml.slice(txClose + '</a:txBody>'.length);
+    if (spec.anchor !== undefined || spec.marL !== undefined || spec.marR !== undefined || spec.marT !== undefined || spec.marB !== undefined) {
+      nextTc = nextTc.replace(/<a:tcPr([^>]*?)(\/?)>/, (_m, attrs, slash) => {
+        let a = String(attrs || '');
+        if (spec.anchor !== undefined) {
+          a = /\banchor="[^"]*"/.test(a) ? a.replace(/\banchor="[^"]*"/, `anchor="${spec.anchor}"`) : `${a} anchor="${spec.anchor}"`;
+        }
+        for (const k of ['marL', 'marR', 'marT', 'marB']) {
+          if (spec[k] !== undefined) {
+            const re = new RegExp(`\\b${k}="[^"]*"`);
+            a = re.test(a) ? a.replace(re, `${k}="${Math.round(spec[k])}"`) : `${a} ${k}="${Math.round(spec[k])}"`;
+          }
+        }
+        return `<a:tcPr${a}${slash}>`;
+      });
+    }
+    return nextTc;
   }
 
   function updateTableById(slideXml, tableId, updatesByRow) {
@@ -1413,7 +1442,7 @@
       return await customLoader(filename);
     }
     if (typeof fetch === 'function') {
-      const res = await fetch(`templates/${filename}?v=20261119_v54`);
+      const res = await fetch(`templates/${filename}?v=20261119_v55`);
       if (!res.ok) throw new Error(`템플릿 로드 실패 (${filename}: HTTP ${res.status})`);
       return await res.arrayBuffer();
     }
@@ -2184,7 +2213,7 @@
         .filter(Boolean);
       parts.forEach((p) => out.push(p));
     });
-    if (out.length >= 2) {
+    if (out.length >= 1) {
       const hasNum = out.some((l) => /^(?:\d+[\.)]|[①-⑩])/.test(l));
       if (!hasNum) {
         return out.map((l, idx) => `${idx + 1}. ${l.replace(/^[-•▪]\s*/, '')}`);
@@ -2311,12 +2340,15 @@
     const contentSz = contentLines.length >= 4
       ? 1100
       : (contentLines.length === 3 ? 1250 : (maxLineUnits > 56 ? 1250 : 1400));
-    const labelHangEmu = Math.round((contentSz / 1400) * 1245000);
+    // malgunbd.ttf 실측: 14pt '부적합 내용 : ' = 1,122,680 EMU, '1. ' = 212,090 EMU
+    const labelHangEmu = Math.round((contentSz / 1400) * 1122680);
+    const numHangEmu = Math.round((contentSz / 1400) * 212090);
+    const totalContentHangEmu = labelHangEmu + numHangEmu;
     const contentParas = contentLines.length
       ? contentLines.map((line, idx) => (idx === 0
         ? {
             algn: 'l', spcAft: contentLines.length > 1 ? 150 : 0, lnSpc: 110000,
-            marL: labelHangEmu, indent: -labelHangEmu, buNone: true,
+            marL: totalContentHangEmu, indent: -totalContentHangEmu, buNone: true,
             runs: [
               { text: '부적합 내용 ', sz: contentSz, bold: true, color: BLUE },
               { text: `: ${line}`, sz: contentSz, bold: true, color: BLACK },
@@ -2324,14 +2356,14 @@
           }
         : {
             algn: 'l', spcAft: idx < contentLines.length - 1 ? 150 : 0, lnSpc: 110000,
-            marL: labelHangEmu, indent: 0, buNone: true,
+            marL: totalContentHangEmu, indent: -numHangEmu, buNone: true,
             runs: [{ text: line, sz: contentSz, bold: true, color: BLACK }],
           }))
       : [{
           algn: 'l', spcAft: 0, lnSpc: 110000, marL: 0, indent: 0, buNone: true,
           runs: [
             { text: '부적합 내용 ', sz: 1400, bold: true, color: BLUE },
-            { text: ': ', sz: 1400, bold: true, color: BLACK },
+            { text: ': 1. ', sz: 1400, bold: true, color: BLACK },
           ],
         }];
 
@@ -2400,17 +2432,23 @@
         },
       },
       3: {
-        1: { paragraphs: contentParas },
+        1: {
+          paragraphs: contentParas,
+          anchor: 't',
+          marT: contentLines.length >= 3 ? 45000 : 90000,
+          marB: 36000,
+        },
       },
     });
 
-    // 2. 관련기준 본문 박스 (TextBox 1, id=2): lstStyle glow 제거 + 선명한 일반체 + '-' 내어쓰기
+    // 2. 관련기준 본문 박스 (TextBox 1, id=2): lstStyle glow 제거 + 선명한 일반체 + '-' 실측 내어쓰기
     const lawBodyLines = splitBulletLines(data.lawBody || '');
     const lawBodyChars = lawBodyLines.reduce((a, l) => a + l.length, 0);
     const lawBodySz = lawBodyLines.length >= 4 || lawBodyChars > 180
       ? 900
       : (lawBodyLines.length >= 3 || lawBodyChars > 110 ? 1000 : 1100);
-    const lawHangEmu = Math.round((lawBodySz / 1100) * 140000);
+    // malgun.ttf 실측: 11pt '- ' = 106,680 EMU
+    const lawHangEmu = Math.round((lawBodySz / 1100) * 106680);
     const lawBodyParas = lawBodyLines.length
       ? lawBodyLines.map((line, idx) => {
           const isDash = /^[-•▪]\s+/.test(line);
@@ -2434,16 +2472,20 @@
     });
 
     // 3. 우측 상단 4대 원인 체크박스 (표 36) + Hold Point (표 32) 체크마크 PNG 배치
+    //    미위반(N/A)일 때는 원본 표 32 XML(+mn-lt Calibri / +mn-ea 맑은 고딕 / spc="-30")을 100% 원형 보존
     sXml = removeElementBlockById(sXml, 26);
     sXml = removeElementBlockById(sXml, 31);
-    const holdLabel = data.isHoldPoint
-      ? (data.holdPointCode ? ` Hold Point 위반 (${data.holdPointCode})` : ' Hold Point 위반')
-      : ' Hold Point 위반 (N/A)';
-    sXml = updateTableById(sXml, 33, {
-      1: {
-        2: { text: holdLabel, sz: 1100, bold: true, color: BLACK, algn: 'l' },
-      },
-    });
+    if (data.isHoldPoint) {
+      const holdLabel = data.holdPointCode ? ` Hold Point 위반 (${data.holdPointCode})` : ' Hold Point 위반';
+      sXml = updateTableById(sXml, 33, {
+        1: {
+          2: {
+            text: holdLabel, sz: 1100, bold: true, color: BLACK, algn: 'l',
+            latin: '+mn-lt', ea: '+mn-ea', cs: '+mn-cs', spc: -30, kern: 1200,
+          },
+        },
+      });
+    }
 
     const checkMarks = [];
     if (data.isUnplanned) checkMarks.push({ name: 'Chk_Unplanned', x: 9835000, y: 177299, w: 287532, h: 360000 });
@@ -2495,7 +2537,8 @@
     const ivTotalLines = sections.reduce((acc, sec) => acc + (sec.title ? 1 : 0) + ((sec.lines && sec.lines.length) || 0), 0);
     const ivTitleSz = ivTotalLines >= 7 ? 1150 : (ivTotalLines >= 5 ? 1250 : 1400);
     const ivBodySz = ivTotalLines >= 7 ? 1000 : (ivTotalLines >= 5 ? 1100 : 1200);
-    const ivHangEmu = Math.round((ivBodySz / 1200) * 152400);
+    // malgun.ttf 실측: 12pt '- ' = 115,570 EMU (초과 들여쓰기 제거, 첫 글자 수직 직렬 일치)
+    const ivHangEmu = Math.round((ivBodySz / 1200) * 115570);
     const ivParas = [];
     sections.forEach((sec, sIdx) => {
       if (sec.title) {
@@ -2534,10 +2577,10 @@
       ivParas.push({ text: '[의견 : 시공관리자 및 안전관리자]', sz: 1400, bold: true, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true });
     }
     sXml = setShapeParagraphs(sXml, 46, ivParas, {
-      algn: 'l', lIns: 72000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 55000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
     });
 
-    // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53) — () 소분류 보장 + '-' 내어쓰기
+    // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53) — () 소분류 보장 + '-' 실측 내어쓰기
     const propItems = resolveVerdictItems(data.proposalItems, data.proposalType, data.proposalSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
     const propMulti = propItems.length > 1;
     const propTypeParas = [];
@@ -2559,7 +2602,7 @@
 
     const propLines = splitBulletLines(data.proposalContent || '');
     const propSz = propLines.length >= 5 ? 1000 : (propLines.length >= 4 ? 1100 : 1200);
-    const propHangEmu = Math.round((propSz / 1200) * 152400);
+    const propHangEmu = Math.round((propSz / 1200) * 115570);
     const propParas = propLines.length
       ? propLines.map((ln, idx) => ({
           text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`,
@@ -2569,13 +2612,13 @@
         }))
       : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
     sXml = setShapeParagraphs(sXml, 53, propParas, {
-      algn: 'l', lIns: 65000, rIns: 55000, tIns: 50000, bIns: 40000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 55000, rIns: 55000, tIns: 50000, bIns: 40000, anchor: 't', noAutofit: true,
     });
 
     // 7. 개선대책 본문 (TextBox 38, id=39) 및 PM 판정 분류 (TextBox 28, id=29) — () 내용 항상 포함
     const cmLines = splitBulletLines(data.countermeasureContent || '');
     const cmSz = cmLines.length >= 6 ? 1000 : (cmLines.length >= 4 ? 1100 : 1200);
-    const cmHangEmu = Math.round((cmSz / 1200) * 152400);
+    const cmHangEmu = Math.round((cmSz / 1200) * 115570);
     const cmParas = cmLines.length
       ? cmLines.map((ln, idx) => ({
           text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`,
@@ -2585,7 +2628,7 @@
         }))
       : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
     sXml = setShapeParagraphs(sXml, 39, cmParas, {
-      algn: 'l', lIns: 65000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 55000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
     });
 
     const pmItems = resolveVerdictItems(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
@@ -2607,11 +2650,11 @@
       algn: 'ctr', lIns: 20000, rIns: 20000, tIns: 20000, bIns: 20000, anchor: 'ctr', noAutofit: true,
     });
 
-    // 8. 좌측 실사 사진 임베딩 — 직사각형 꽉 차게 (cover: 비율 유지 중앙 크롭, 여백/테두리 없음)
-    const fullPhotoBox = { x: 185000, y: 2595000, w: 7265000, h: 4090000 };
+    // 8. 좌측 실사 사진 임베딩 — 좌측 적색 배너 끝(280152) ~ 우측 Hold Point 박스 끝(7479378) 정확 정렬
+    const fullPhotoBox = { x: 280152, y: 2600000, w: 7199226, h: 4077270 };
     if (photo1Parsed && photo2Parsed) {
-      const leftBox = { x: 185000, y: 2595000, w: 3590000, h: 4090000 };
-      const rightBox = { x: 3860000, y: 2595000, w: 3590000, h: 4090000 };
+      const leftBox = { x: 280152, y: 2600000, w: 3555000, h: 4077270 };
+      const rightBox = { x: 3924378, y: 2600000, w: 3555000, h: 4077270 };
       const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, leftBox, '현장사진_1', 'cover');
       sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
       const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, rightBox, '현장사진_2', 'cover');
@@ -2642,6 +2685,9 @@
     const bodySz = contentLines.length >= 3
       ? 1200
       : (maxLineUnits > 64 ? 1250 : 1400);
+    // malgunbd.ttf 실측: 14pt '- ' = 135,890 EMU
+    const minorBaseIndent = 160000;
+    const minorDashW = Math.round((bodySz / 1400) * 135890);
     const r2c1Paras = [
       {
         algn: 'l', spcAft: 350, lnSpc: 112000, marL: 0, indent: 0, buNone: true,
@@ -2654,11 +2700,11 @@
       ...(contentLines.length
         ? contentLines.map((ln, idx) => ({
             algn: 'l', spcAft: idx < contentLines.length - 1 ? 220 : 0, lnSpc: 112000,
-            marL: 340000, indent: -165000, buNone: true,
+            marL: minorBaseIndent + minorDashW, indent: -minorDashW, buNone: true,
             runs: [{ text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`, sz: bodySz, bold: true, color: BLACK }],
           }))
         : [{
-            algn: 'l', spcAft: 0, lnSpc: 112000, marL: 340000, indent: -165000, buNone: true,
+            algn: 'l', spcAft: 0, lnSpc: 112000, marL: minorBaseIndent + minorDashW, indent: -minorDashW, buNone: true,
             runs: [{ text: '- ', sz: 1400, bold: true, color: BLACK }],
           }]),
     ];
@@ -2775,8 +2821,13 @@
       let photo1Parsed = null;
       let photo2Parsed = null;
       if (options.loadPhotoBase64) {
-        const p1Path = (rec.photos && rec.photos[0]) || rec.photo1 || '';
-        const p2Path = (rec.photos && rec.photos[1]) || rec.photo2 || (rec.fix && rec.fix.photo) || '';
+        const isDemoRec = String(rec.id || '').startsWith('DEMO-');
+        const isDummySample = (p) => !isDemoRec && /^samples\/sample_(?:before|after)\.jpg$/i.test(String(p || '').trim());
+        const rawP1 = (rec.photos && rec.photos[0]) || rec.photo1 || '';
+        // 사용자가 직접 첨부한 부적합 사진만 임베딩 (조치 후 사진 rec.fix.photo 및 임의 샘플 자동 주입 금지)
+        const rawP2 = (rec.photos && rec.photos[1]) || rec.photo2 || '';
+        const p1Path = isDummySample(rawP1) ? '' : rawP1;
+        const p2Path = isDummySample(rawP2) ? '' : rawP2;
         if (p1Path) {
           try {
             const b1 = await options.loadPhotoBase64(p1Path, rec, 0);

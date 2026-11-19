@@ -690,12 +690,13 @@
   function renderHangingLinesHTML(text) {
     if (!text) return '';
     const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    return lines.map(line => {
-      const m = line.match(/^([-*•·▪]\s+|\d{1,2}\)\s*|→\s*)(.+)$/);
+    return lines.map((line, idx) => {
+      const mb = idx < lines.length - 1 ? '0.12cqw' : '0';
+      const m = line.match(/^([-*•·▪]\s+|\d{1,2}[\.)]\s*|→\s*)(.+)$/);
       if (m) {
-        return `<div style="display:flex;align-items:flex-start;margin:0;"><span style="flex:0 0 auto;white-space:pre;">${m[1]}</span><span style="flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:break-word;">${m[2]}</span></div>`;
+        return `<div style="display:flex;align-items:flex-start;margin:0 0 ${mb} 0;"><span style="flex:0 0 auto;white-space:pre;">${m[1]}</span><span style="flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:break-word;">${m[2]}</span></div>`;
       }
-      return `<div style="margin:0;word-break:keep-all;overflow-wrap:break-word;">${line}</div>`;
+      return `<div style="margin:0 0 ${mb} 0;word-break:keep-all;overflow-wrap:break-word;">${line}</div>`;
     }).join('');
   }
 
@@ -1668,7 +1669,7 @@
     let photo2Base64 = null;
     if (loadPhotoBase64) {
       try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) { }
-      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) { }
+      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || '', record, 1); } catch (e) { }
     }
     const hasPhoto2 = Boolean(photo2Base64);
 
@@ -2011,7 +2012,7 @@
     let photo2Base64 = null;
     if (loadPhotoBase64) {
       try { photo1Base64 = await loadPhotoBase64((record.photos && record.photos[0]) || '', record, 0); } catch (e) { }
-      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || (record.fix && record.fix.photo) || '', record, 1); } catch (e) { }
+      try { photo2Base64 = await loadPhotoBase64((record.photos && record.photos[1]) || '', record, 1); } catch (e) { }
     }
 
     const hasPhoto1 = Boolean(photo1Base64);
@@ -2230,17 +2231,17 @@
       { label: '점검차수 : ', val: data.inspectRound, x: 11.1666, w: 2.0647 }
     ];
 
-    // 부적합 내용: 14pt Bold 기본, 1./2. 및 1)/2) 인라인 줄바꿈 분리
+    // 부적합 내용: 14pt Bold 기본, 1건이어도 원본 양식과 동일하게 '1. ' 번호 부여 및 상단 정렬
     const rawMainLines = String(data.mainContent || '').replace(/\r\n/g, '\n').split('\n')
       .flatMap(l => l.trim().split(/\s+(?=(?:[2-9]\d?[\.)]\s+|[②③④⑤⑥⑦⑧⑨⑩]\s*|-\s+))/))
       .map(l => l.trim()).filter(Boolean);
     const hasNumPrefix = rawMainLines.some(l => /^(?:\d+[\.)]|[①-⑩])/.test(l));
-    const mainLines = (rawMainLines.length >= 2 && !hasNumPrefix)
+    const mainLines = (rawMainLines.length >= 1 && !hasNumPrefix)
       ? rawMainLines.map((l, i) => `${i + 1}. ${l.replace(/^[-•▪]\s*/, '')}`)
       : rawMainLines;
     const packedMainContent = mainLines.join('\n');
     const mainSz = mainLines.length >= 4 ? 11 : (mainLines.length === 3 ? 12.5 : 14);
-    const mainHtmlLineHeight = mainLines.length >= 3 ? 1.14 : 1.22;
+    const mainHtmlLineHeight = mainLines.length >= 3 ? 1.14 : 1.20;
 
     const propLineSpacing = 1.15;
     const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.033, 12, 9.5, propLineSpacing, [4, 6, 4, 6]);
@@ -2339,20 +2340,21 @@
           부적합<br>개&nbsp;&nbsp;&nbsp;요
         </div>
 
-        <!-- 6-2. 메타 정보 5개 독립 셀 (R1: 14pt Bold, 라벨 #0000ff) -->
-        ${metaCols.map(col => {
-      const sz = calcSingleLineFontSize(`${col.label}${col.val}`, col.w, 14, 11);
+        <!-- 6-2. 메타 정보 5개 독립 셀 (R1: 14pt Bold, 라벨 #0000ff, 클리핑/넘침 방지 및 콜론 공백 보존) -->
+        ${metaCols.map((col, idx) => {
+      const lblName = col.label.replace(/\s*:\s*$/, '').trim();
+      const sz = calcSingleLineFontSize(`${lblName} : ${col.val}`, Math.max(0.8, col.w - 0.16), 14, 10);
       return `
-            <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.2444)}; width: ${pctW(col.w)}; height: ${pctH(0.3769)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.38cqw; box-sizing: border-box; white-space: nowrap;">
-              <strong style="color: #0000ff; font-size: ${pt(sz)}; margin-right: 0.18cqw;">${col.label}</strong>
-              <span style="font-weight: 800; color: #000000; font-size: ${pt(sz)};">${col.val}</span>
+            <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.2444)}; width: ${pctW(col.w)}; height: ${pctH(0.3769)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.30cqw; box-sizing: border-box; white-space: nowrap; overflow: hidden; line-height: 1;">
+              <strong style="color: #0000ff; font-size: ${pt(sz)}; flex-shrink: 0;">${idx === 0 ? `${lblName}&nbsp;:&nbsp;` : lblName}</strong>
+              <span style="font-weight: 800; color: #000000; font-size: ${pt(sz)}; overflow: hidden; text-overflow: ellipsis;">${idx === 0 ? col.val : `&nbsp;:&nbsp;${col.val}`}</span>
             </div>
           `;
     }).join('')}
 
-        <!-- 6-3. 부적합 내용 셀 (R1: 14pt Bold, 1./2. 줄바꿈 및 정렬) -->
-        <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0.18cqw 0.45cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="flex-shrink: 0; white-space: nowrap; align-self: flex-start; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight};">
+        <!-- 6-3. 부적합 내용 셀 (R1: 14pt Bold, 1건이어도 '1.' 상단 정렬로 라벨·본문 동일선상 일치) -->
+        <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: flex-start; padding: ${mainLines.length >= 3 ? '0.28cqw 0.45cqw 0.14cqw' : '0.52cqw 0.45cqw 0.16cqw'}; box-sizing: border-box; overflow: hidden;">
+          <div style="flex-shrink: 0; white-space: nowrap; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight};">
             <strong style="color: #0000ff;">부적합 내용</strong><strong style="color: #000000;">&nbsp;:&nbsp;</strong>
           </div>
           <div style="flex: 1; min-width: 0; font-weight: 800; color: #000000; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight}; word-break: keep-all;">
@@ -2368,27 +2370,27 @@
           <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #f2f2f2; line-height: 1; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
         </div>
 
-        <!-- 7-2. [중앙 상단] Hold Point 위반 박스 (R1 표 32: x = 5.920, y = 2.377, w = 2.259, h = 0.404) -->
+        <!-- 7-2. [중앙 상단] Hold Point 위반 박스 (R1 표 32: x = 5.920, y = 2.377, w = 2.259, h = 0.404, 원본 Calibri/+mn-ea 글꼴) -->
         <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.3772)}; width: ${pctW(2.2594)}; height: ${pctH(0.4039)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
         <div style="position: absolute; left: ${pctX(5.9748)}; top: ${pctY(2.4207)}; width: ${pctW(0.3150)}; height: ${pctH(0.3168)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(15)}; font-weight: 900; color: #000000; box-sizing: border-box;">
           ${data.isHoldPoint ? '✔' : ''}
         </div>
-        <div style="position: absolute; left: ${pctX(6.2898)}; top: ${pctY(2.4207)}; width: ${pctW(1.8897)}; height: ${pctH(0.3168)}; display: flex; align-items: center; padding-left: 0.3cqw; font-size: ${pt(11)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
+        <div style="position: absolute; left: ${pctX(6.2898)}; top: ${pctY(2.4207)}; width: ${pctW(1.8897)}; height: ${pctH(0.3168)}; display: flex; align-items: center; padding-left: 0.25cqw; font-family: 'Calibri', 'Malgun Gothic', '맑은 고딕', sans-serif; letter-spacing: -0.02em; font-size: ${pt(11)}; font-weight: 700; color: #000000; white-space: nowrap; box-sizing: border-box;">
           ${data.isHoldPoint ? (data.holdPointCode ? `Hold Point 위반 (${data.holdPointCode})` : 'Hold Point 위반') : 'Hold Point 위반 (N/A)'}
         </div>
 
-        <!-- 7-3. [좌측 전체] 현장 사진 영역 (R1 꽉 차게: x = 0.202 ~ 8.147, y = 2.838 ~ 7.311, object-fit: cover) -->
+        <!-- 7-3. [좌측 전체] 현장 사진 영역 (좌측 적색 배너 끝 0.3064 ~ 우측 Hold Point 끝 8.1796 정확 정렬, 미등록 샘플 주입 금지) -->
         ${(hasPhoto1 && hasPhoto2) ? `
-          <div style="position: absolute; left: ${pctX(0.2023)}; top: ${pctY(2.8379)}; width: ${pctW(3.9261)}; height: ${pctH(4.4729)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            <img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+          <div style="position: absolute; left: ${pctX(0.3064)}; top: ${pctY(2.8434)}; width: ${pctW(3.8878)}; height: ${pctH(4.4589)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo1Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
           </div>
-          <div style="position: absolute; left: ${pctX(4.2213)}; top: ${pctY(2.8379)}; width: ${pctW(3.9261)}; height: ${pctH(4.4729)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            <img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+          <div style="position: absolute; left: ${pctX(4.2918)}; top: ${pctY(2.8434)}; width: ${pctW(3.8878)}; height: ${pctH(4.4589)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.2023)}; top: ${pctY(2.8379)}; width: ${pctW(7.9451)}; height: ${pctH(4.4729)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+          <div style="position: absolute; left: ${pctX(0.3064)}; top: ${pctY(2.8434)}; width: ${pctW(7.8732)}; height: ${pctH(4.4589)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
             ${(photo1Url || photo2Url)
-              ? `<img src="${photo1Url || photo2Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">`
+              ? `<img src="${photo1Url || photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">`
               : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
@@ -2527,17 +2529,17 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
           <span style="font-size: ${pt(leftBannerSz)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
         </div>
 
-        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치, R1 꽉 차게 object-fit: cover) -->
+        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치, 미등록 샘플 주입 금지) -->
         ${(hasPhoto2 && !isPhoto2RiskDoc) ? `
           <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2207)}; width: ${pctW(2.6848)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
           </div>
           <div style="position: absolute; left: ${pctX(3.6417)}; top: ${pctY(3.2207)}; width: ${pctW(2.6848)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
           </div>
         ` : `
           <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2207)}; width: ${pctW(leftBannerW)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
