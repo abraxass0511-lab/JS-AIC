@@ -1127,7 +1127,7 @@ export const store = {
     return this.backend.readBlob(path);
   },
   async photoURL(path) {
-    if (!path) return 'samples/sample_before.jpg';
+    if (!path) return '';
     if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) return path;
     if (this._photoCache.has(path)) return this._photoCache.get(path);
 
@@ -1160,11 +1160,9 @@ export const store = {
         return workerUrl;
       }
 
-      const fallback = path.includes('fix') || path.includes('p2') ? 'samples/sample_after.jpg' : 'samples/sample_before.jpg';
-      this._photoCache.set(path, fallback);
-      return fallback;
+      return '';
     } catch (e) {
-      return path.includes('fix') || path.includes('p2') ? 'samples/sample_after.jpg' : 'samples/sample_before.jpg';
+      return '';
     }
   },
 

@@ -1,5 +1,5 @@
 import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261108_v11';
+import { store } from './store.js?v=20261119_v55';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
 import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v48';
@@ -3859,14 +3859,6 @@ async function resolvePhotoBase64ForPPT(path, record = null, photoIndex = 0) {
     } else {
       blob = await store.photoBlob(path).catch(() => null);
     }
-    if (!blob) {
-      // 사진 파일이 서버나 로컬에 없을 때, 샘플 이미지가 있으면 샘플로 자동 복구 폴백
-      const fallbackPath = photoIndex === 1 || path.includes('p2') || path.includes('fix') ? 'samples/sample_after.jpg' : 'samples/sample_before.jpg';
-      try {
-        const fallbackRes = await fetch(fallbackPath);
-        if (fallbackRes.ok) blob = await fallbackRes.blob();
-      } catch (err) {}
-    }
     if (!blob) return '';
     return await blobToBase64(blob);
   } catch (e) {
@@ -4054,13 +4046,16 @@ async function updateEduPreview() {
     photo1Url = 'samples/horizontal_photo1.jpg';
     photo2Url = 'samples/horizontal_photo2.jpg';
   } else {
-    if (rec.photos && rec.photos[0]) {
-      try { photo1Url = await store.photoURL(rec.photos[0]); } catch (e) {}
+    const isDemoRec = String(rec.id || '').startsWith('DEMO-');
+    const isDummySample = (p) => !isDemoRec && /^samples\/sample_(?:before|after)\.jpg$/i.test(String(p || '').trim());
+    const p1 = (rec.photos && rec.photos[0]) || rec.photo1 || '';
+    // 사용자가 직접 등록한 부적합 사진만 표시 (조치 후 사진 rec.fix.photo 및 임의 샘플 자동 주입 금지)
+    const p2 = (rec.photos && rec.photos[1]) || rec.photo2 || '';
+    if (p1 && !isDummySample(p1)) {
+      try { photo1Url = await store.photoURL(p1); } catch (e) {}
     }
-    if (rec.photos && rec.photos[1]) {
-      try { photo2Url = await store.photoURL(rec.photos[1]); } catch (e) {}
-    } else if (rec.fix && rec.fix.photo) {
-      try { photo2Url = await store.photoURL(rec.fix.photo); } catch (e) {}
+    if (p2 && !isDummySample(p2)) {
+      try { photo2Url = await store.photoURL(p2); } catch (e) {}
     }
   }
 
