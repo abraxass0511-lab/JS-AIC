@@ -2139,17 +2139,31 @@
 
   /**
    * 점검장표 PPT (.pptx) 프레젠테이션 생성 및 다운로드
+   * - 원칙: 신규 R1 양식(sheet_major_r1.pptx / sheet_minor_r1.pptx)을 네이티브 OOXML로 그대로 패치 생성
    */
   async function generateInspectionSheetPPT(options = {}) {
-    const PptxClass = (typeof window !== 'undefined' && window.PptxGenJS) || (typeof PptxGenJS !== 'undefined' ? PptxGenJS : null);
-    if (!PptxClass) {
-      throw new Error('PptxGenJS 라이브러리가 로드되지 않았습니다.');
-    }
-
-    const { records = [], loadPhotoBase64, download = true, filename } = options;
+    const { records = [], loadPhotoBase64, download = true, filename, rulesFromTaxonomy = [], templateLoader } = options;
     const list = Array.isArray(records) ? records : [records];
     if (!list.length) {
       throw new Error('점검장표를 생성할 부적합 데이터가 선택되지 않았습니다.');
+    }
+
+    const tplEngine = resolveTemplateEngine();
+    if (tplEngine && typeof tplEngine.buildInspectionSheetPptxBlob === 'function') {
+      return await tplEngine.buildInspectionSheetPptxBlob({
+        records: list,
+        normalizeRecord: (r) => normalizeJangpyoData(r, rulesFromTaxonomy, options),
+        isRiskAssessmentSheet,
+        loadPhotoBase64,
+        download,
+        filename,
+        templateLoader,
+      });
+    }
+
+    const PptxClass = (typeof window !== 'undefined' && window.PptxGenJS) || (typeof PptxGenJS !== 'undefined' ? PptxGenJS : null);
+    if (!PptxClass) {
+      throw new Error('PPT 생성 엔진(SafePPTTemplateEngine/PptxGenJS)이 로드되지 않았습니다.');
     }
 
     const pptx = new PptxClass();
@@ -2157,7 +2171,7 @@
     pptx.layout = 'WIDE_16_9';
 
     for (const rec of list) {
-      await addInspectionSheetSlide(pptx, rec, { loadPhotoBase64 });
+      await addInspectionSheetSlide(pptx, rec, { loadPhotoBase64, rulesFromTaxonomy });
     }
 
     let defaultName = `점검장표_${list[0].site || '현장'}_${list.length > 1 ? `${list.length}건_` : ''}${new Date().toISOString().slice(0, 10)}.pptx`;
@@ -2476,55 +2490,55 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
         color: #000000;
         user-select: none;
       ">
-        <!-- 1. 최상단 행: 위험성평가 (x = 0.1031, y = 0.1003, w = 2.4836, h = 0.8331, #bdd7ee, 24pt bold) -->
-        <div style="position: absolute; left: ${pctX(0.1031)}; top: ${pctY(0.1003)}; width: ${pctW(2.4836)}; height: ${pctH(0.8331)}; background: #bdd7ee; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(24)}; font-weight: 800; color: #000000; box-sizing: border-box;">
+        <!-- 1. 최상단 행: 위험성평가 (R1 표 47: x = 0.247, y = 0.100, w = 2.431, h = 0.833, #bdd7ee, 24pt bold) -->
+        <div style="position: absolute; left: ${pctX(0.247)}; top: ${pctY(0.100)}; width: ${pctW(2.431)}; height: ${pctH(0.833)}; background: #bdd7ee; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(24)}; font-weight: 800; color: #000000; box-sizing: border-box;">
           위험성평가
         </div>
 
-        <!-- 2. 최상단 행 우측 타이틀 (x = 2.5867, y = 0.1003, w = 10.6401, h = 0.8331, 18pt bold, 테두리 없음) -->
-        <div style="position: absolute; left: ${pctX(2.5867)}; top: ${pctY(0.1003)}; width: ${pctW(10.6401)}; height: ${pctH(0.8331)}; display: flex; align-items: center; padding-left: 0.7cqw; font-size: ${pt(18)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
+        <!-- 2. 최상단 행 우측 타이틀 (R1: x = 2.678, y = 0.100, w = 10.414, h = 0.833, 18pt bold) -->
+        <div style="position: absolute; left: ${pctX(2.678)}; top: ${pctY(0.100)}; width: ${pctW(10.414)}; height: ${pctH(0.833)}; display: flex; align-items: center; padding-left: 0.7cqw; font-size: ${pt(18)}; font-weight: 800; color: #000000; white-space: nowrap; box-sizing: border-box;">
           위험성평가 확인 - [전사 안전보건경영규칙] 유해·위험요인 파악 및 위험성 관리
         </div>
 
-        <!-- 3. 부적합 사항 라벨 (x = 0.1031, y = 1.0000, w = 0.8364, h = 1.1806, #ffd966, 18pt bold) -->
-        <div style="position: absolute; left: ${pctX(0.1031)}; top: ${pctY(1.0000)}; width: ${pctW(0.8364)}; height: ${pctH(1.1806)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; text-align: center; line-height: 1.15; box-sizing: border-box;">
+        <!-- 3. 부적합 사항 라벨 (R1: x = 0.247, y = 1.000, w = 0.819, h = 1.181, #ffd966, 18pt bold) -->
+        <div style="position: absolute; left: ${pctX(0.247)}; top: ${pctY(1.000)}; width: ${pctW(0.819)}; height: ${pctH(1.181)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(18)}; font-weight: 800; color: #000000; text-align: center; line-height: 1.15; box-sizing: border-box;">
           부적합<br>사&nbsp;&nbsp;&nbsp;항
         </div>
 
-        <!-- 4. 부적합 사항 본문 (x = 0.9395, y = 1.0000, w = 12.2873, h = 1.1806, 17pt bold) -->
-        <div style="position: absolute; left: ${pctX(0.9395)}; top: ${pctY(1.0000)}; width: ${pctW(12.2873)}; height: ${pctH(1.1806)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; justify-content: center; padding: 0 0.7cqw; box-sizing: border-box;">
+        <!-- 4. 부적합 사항 본문 (R1: x = 1.066, y = 1.000, w = 12.026, h = 1.181, 17pt/14pt bold) -->
+        <div style="position: absolute; left: ${pctX(1.066)}; top: ${pctY(1.000)}; width: ${pctW(12.026)}; height: ${pctH(1.181)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; justify-content: center; padding: 0 0.7cqw; box-sizing: border-box;">
           <div style="font-size: ${pt(17)}; font-weight: 800; color: #000000; line-height: 1.35; white-space: nowrap;">
-            ■ 위험요소 안전대책 이행 확인 [<span style="color: #0000ff;">협력사: ${cleanSub}</span>]
+            ■ 위험요소 안전대책 이행 확인 [<span style="color: #0000ff;">협력사: ${cleanSub || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>]
           </div>
-          <div style="font-size: ${pt(contentFontSize)}; font-weight: 800; color: #000000; line-height: 1.35; padding-left: 1.5cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          <div style="font-size: ${pt(Math.min(14, contentFontSize))}; font-weight: 800; color: #000000; line-height: 1.32; padding-left: 1.5cqw; white-space: pre-wrap; word-break: keep-all;">
             - ${cleanMain}
           </div>
         </div>
 
-        <!-- 5. 부적합 사례 헤더 (x = 0.1031, y = 2.1806, w = 13.1237, h = 0.3639, #ffd966, 16pt bold) -->
-        <div style="position: absolute; left: ${pctX(0.1031)}; top: ${pctY(2.1806)}; width: ${pctW(13.1237)}; height: ${pctH(0.3639)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(16)}; font-weight: 800; color: #000000; box-sizing: border-box;">
+        <!-- 5. 부적합 사례 헤더 (R1: x = 0.247, y = 2.181, w = 12.845, h = 0.364, #ffd966, 16pt bold) -->
+        <div style="position: absolute; left: ${pctX(0.247)}; top: ${pctY(2.181)}; width: ${pctW(12.845)}; height: ${pctH(0.364)}; background: #ffd966; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(16)}; font-weight: 800; color: #000000; box-sizing: border-box;">
           부적합 사례
         </div>
 
-        <!-- 6. 하단 사례 컨테이너 (x = 0.1031, y = 2.5445, w = 13.1237, h = 4.8528) -->
-        <div style="position: absolute; left: ${pctX(0.1031)}; top: ${pctY(2.5445)}; width: ${pctW(13.1237)}; height: ${pctH(4.8528)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
+        <!-- 6. 하단 사례 컨테이너 (R1: x = 0.247, y = 2.545, w = 12.845, h = 4.853) -->
+        <div style="position: absolute; left: ${pctX(0.247)}; top: ${pctY(2.545)}; width: ${pctW(12.845)}; height: ${pctH(4.853)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
         <!-- 6-1. 좌측 적색 음영 배너 (SHAPE #3: x = 0.8685, y = 2.8276, w = 5.4580, h = 0.3702, #C00000 @ 60% = #d96666) -->
         <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(2.8276)}; width: ${pctW(leftBannerW)}; height: ${pctH(0.3702)}; background: rgba(192, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw;">
           <span style="font-size: ${pt(leftBannerSz)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
         </div>
 
-        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치) -->
+        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치, 원본 비율 contain 유지) -->
         ${(hasPhoto2 && !isPhoto2RiskDoc) ? `
-          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center;">
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
           </div>
-          <div style="position: absolute; left: ${pctX(3.6465)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+          <div style="position: absolute; left: ${pctX(3.6465)}; top: ${pctY(3.2500)}; width: ${pctW(2.6800)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center;">
+            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.src='samples/sample_after.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2500)}; width: ${pctW(leftBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: #ffffff; display: flex; align-items: center; justify-content: center;">
+            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.src='samples/sample_before.jpg';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
@@ -2534,8 +2548,8 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
         </div>
 
         <!-- 6-4. 우측 위험성평가표 영역 (실제 위험성평가표 문서일 때만 표시, 현장 부적합 사진은 절대 표시하지 않음) -->
-        <div style="position: absolute; left: ${pctX(7.8740)}; top: ${pctY(3.2500)}; width: ${pctW(rightBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: transparent;">
-          ${(hasPhoto2 && isPhoto2RiskDoc && photo2Url) ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: fill; display: block;">` : ''}
+        <div style="position: absolute; left: ${pctX(7.8740)}; top: ${pctY(3.2500)}; width: ${pctW(rightBannerW)}; height: ${pctH(3.9500)}; box-sizing: border-box; overflow: hidden; background: transparent; display: flex; align-items: center; justify-content: center;">
+          ${(hasPhoto2 && isPhoto2RiskDoc && photo2Url) ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: contain; display: block;">` : ''}
         </div>
       </div>
     `;
