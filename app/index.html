@@ -20,12 +20,12 @@
   <script src="js/config.js?v=20261004_2"></script>
   <!-- App logic & Modules -->
   <script src="js/classifier.js?v=20261115_v48"></script>
-  <script src="js/excel-builder.js?v=20261121_v57"></script>
+  <script src="js/excel-builder.js?v=20261121_v58"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-template-engine.js?v=20261121_v57"></script>
-  <script src="js/html-report-builder.js?v=20261121_v57"></script>
-  <script src="js/ppt-generator.js?v=20261121_v57"></script>
-  <script src="js/lmstudio-client.js?v=20261121_v57"></script>
+  <script src="js/ppt-template-engine.js?v=20261121_v58"></script>
+  <script src="js/html-report-builder.js?v=20261121_v58"></script>
+  <script src="js/ppt-generator.js?v=20261121_v58"></script>
+  <script src="js/lmstudio-client.js?v=20261121_v58"></script>
 </head>
 
 <body>
@@ -147,12 +147,14 @@
 
           <!-- 파싱된 장표 목록 미리보기 컨테이너 -->
           <div id="importPreviewArea" style="display: none; margin-bottom: 16px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; flex-wrap: wrap;">
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-weight: 700; font-size: 0.88rem; color: var(--gray-800);">
                   추출된 부적합 장표 (<span id="importCount">0</span>건)
                 </span>
-                <span id="importAiVerifyBadge" style="font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
+                <span id="importAiVerifyBadge"
+                  style="font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;">
                   🤖 AI 자동 검증 활성화
                 </span>
               </div>
@@ -163,8 +165,7 @@
               <!-- 동적 주입 -->
             </div>
             <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
-              <button type="button" id="btnVerifyImportedRecords" class="btn btn-outline"
-                style="display: none;">
+              <button type="button" id="btnVerifyImportedRecords" class="btn btn-outline" style="display: none;">
                 🤖 AI 자동 재검증
               </button>
               <button type="button" id="btnSaveImportedRecords" class="btn btn-primary"
@@ -226,17 +227,24 @@
             <!-- 사진 2장 배치 비율 선택기 (사진 2장 이상 첨부 시 자동 표시) -->
             <div id="boxPhotoRatioSelector"
               style="display: none; margin-top: 8px; padding: 8px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
-              <div style="font-size: 0.78rem; font-weight: 700; color: #1e293b; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+              <div
+                style="font-size: 0.78rem; font-weight: 700; color: #1e293b; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
                 <span>📐 사진 1 · 사진 2 배치 비율 선택 (점검장표 PPT · 미리보기 연동)</span>
                 <span id="lblSelectedPhotoRatio" style="color: #1d4ed8;">자동 (사진 면적·비율 비례)</span>
               </div>
               <div id="photoRatioChips" style="display: flex; flex-wrap: wrap; gap: 5px;">
-                <button type="button" class="chip selected" data-ratio="auto" style="padding: 4px 9px; font-size: 0.74rem;">자동(비율비례)</button>
-                <button type="button" class="chip" data-ratio="50:50" style="padding: 4px 9px; font-size: 0.74rem;">50 : 50</button>
-                <button type="button" class="chip" data-ratio="60:40" style="padding: 4px 9px; font-size: 0.74rem;">60 : 40</button>
-                <button type="button" class="chip" data-ratio="70:30" style="padding: 4px 9px; font-size: 0.74rem;">70 : 30</button>
-                <button type="button" class="chip" data-ratio="40:60" style="padding: 4px 9px; font-size: 0.74rem;">40 : 60</button>
-                <button type="button" class="chip" data-ratio="30:70" style="padding: 4px 9px; font-size: 0.74rem;">30 : 70</button>
+                <button type="button" class="chip selected" data-ratio="auto"
+                  style="padding: 4px 9px; font-size: 0.74rem;">자동(비율비례)</button>
+                <button type="button" class="chip" data-ratio="50:50" style="padding: 4px 9px; font-size: 0.74rem;">50 :
+                  50</button>
+                <button type="button" class="chip" data-ratio="60:40" style="padding: 4px 9px; font-size: 0.74rem;">60 :
+                  40</button>
+                <button type="button" class="chip" data-ratio="70:30" style="padding: 4px 9px; font-size: 0.74rem;">70 :
+                  30</button>
+                <button type="button" class="chip" data-ratio="40:60" style="padding: 4px 9px; font-size: 0.74rem;">40 :
+                  60</button>
+                <button type="button" class="chip" data-ratio="30:70" style="padding: 4px 9px; font-size: 0.74rem;">30 :
+                  70</button>
               </div>
             </div>
           </div>
@@ -297,10 +305,9 @@
                   <span id="lmStudioBtnIcon">✨</span> <span id="lmStudioBtnText">로컬 Qwen AI 정밀 분석 (법령·등급)</span>
                 </button>
               </div>
-              <label style="display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 0.75rem; color: #475569; cursor: pointer;">
-                <input type="checkbox" id="chkUseVisionAI" checked style="width: 14px; height: 14px;">
-                <span><strong>첨부 사진 Qwen Vision 함께 분석</strong> <span style="color: #64748b;">(Vision 포함 일 ~80건 / 해제 시 텍스트 전용 일 ~250건+ 무료)</span></span>
-              </label>
+              <div style="margin-top: 6px; font-size: 0.73rem; color: #64748b;">
+                🤖 평소엔 초고속 텍스트 AI로 무료 한도를 절약하며, 텍스트만으로 판단하기 어려운 모호한 건에만 자동으로 첨부 사진 Vision을 호출합니다.
+              </div>
             </div>
 
             <!-- 스마트 AI 결과 박스 -->
@@ -383,7 +390,8 @@
             </div>
 
             <!-- 장소/위치 + 장소 분류 (표준분류/장소.png 20종) -->
-            <div class="form-group" style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div class="form-group"
+              style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; margin-bottom: 10px;">
               <div>
                 <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">장소/위치<span
                     class="required">*</span></label>
@@ -392,7 +400,8 @@
                 <datalist id="listLocations"></datalist>
               </div>
               <div>
-                <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">장소 분류 <span style="font-size: 0.72rem; color: #2563eb;">(Qwen 자동선택)</span></label>
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700;">장소 분류 <span
+                    style="font-size: 0.72rem; color: #2563eb;">(Qwen 자동선택)</span></label>
                 <input type="text" id="txtLocationCategory" class="form-control" list="listLocationCategories"
                   placeholder="예: 가설물, 지하실, 계단·복도">
                 <datalist id="listLocationCategories"></datalist>
@@ -414,8 +423,10 @@
 
             <!-- 산업안전보건법 조문 & 학습된 안전작업지침 조회 -->
             <div class="form-group" style="margin-bottom: 0;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
-                <label class="form-label" style="font-size: 0.82rem; font-weight: 700; margin-bottom: 0;">산업안전보건법 조문 / 안전작업지침</label>
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
+                <label class="form-label" style="font-size: 0.82rem; font-weight: 700; margin-bottom: 0;">산업안전보건법 조문 /
+                  안전작업지침</label>
                 <button type="button" id="btnOpenGuidelineMemory" class="btn btn-outline"
                   style="padding: 3px 9px; font-size: 0.74rem; font-weight: 700; border-color: #6366f1; color: #4338ca; background: #eef2ff;">
                   📚 학습 지침 보기 (<span id="guidelineMemoryCount">0</span>건)
@@ -966,14 +977,21 @@
         <!-- 2장 사진 비율 실시간 조절 바 (선택 항목에 사진 2장 있을 때 자동 표시) -->
         <div id="boxEduPhotoRatio"
           style="display: none; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; padding: 7px 12px;">
-          <span style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">📐 사진 1 · 사진 2 비율 조절 (미리보기 &amp; PPT 즉시 반영):</span>
+          <span style="font-size: 0.8rem; font-weight: 700; color: #1e3a8a;">📐 사진 1 · 사진 2 비율 조절 (미리보기 &amp; PPT 즉시
+            반영):</span>
           <div id="eduPhotoRatioChips" style="display: flex; flex-wrap: wrap; gap: 5px;">
-            <button type="button" class="chip selected" data-ratio="auto" style="padding: 3px 9px; font-size: 0.74rem;">자동(비율비례)</button>
-            <button type="button" class="chip" data-ratio="50:50" style="padding: 3px 9px; font-size: 0.74rem;">50 : 50</button>
-            <button type="button" class="chip" data-ratio="60:40" style="padding: 3px 9px; font-size: 0.74rem;">60 : 40</button>
-            <button type="button" class="chip" data-ratio="70:30" style="padding: 3px 9px; font-size: 0.74rem;">70 : 30</button>
-            <button type="button" class="chip" data-ratio="40:60" style="padding: 3px 9px; font-size: 0.74rem;">40 : 60</button>
-            <button type="button" class="chip" data-ratio="30:70" style="padding: 3px 9px; font-size: 0.74rem;">30 : 70</button>
+            <button type="button" class="chip selected" data-ratio="auto"
+              style="padding: 3px 9px; font-size: 0.74rem;">자동(비율비례)</button>
+            <button type="button" class="chip" data-ratio="50:50" style="padding: 3px 9px; font-size: 0.74rem;">50 :
+              50</button>
+            <button type="button" class="chip" data-ratio="60:40" style="padding: 3px 9px; font-size: 0.74rem;">60 :
+              40</button>
+            <button type="button" class="chip" data-ratio="70:30" style="padding: 3px 9px; font-size: 0.74rem;">70 :
+              30</button>
+            <button type="button" class="chip" data-ratio="40:60" style="padding: 3px 9px; font-size: 0.74rem;">40 :
+              60</button>
+            <button type="button" class="chip" data-ratio="30:70" style="padding: 3px 9px; font-size: 0.74rem;">30 :
+              70</button>
           </div>
         </div>
         <div id="eduPreviewWrapper"
@@ -1071,10 +1089,12 @@
           선택한 기간의 부적합 발생현황, 유형별 경향(Treemap), PDCA 원인분석, 상관관계, 3E 대책을 핵심 보고서 PPT(.pptx)와 클릭 드릴다운 상세 분석 보고서(.html)로 제작합니다.
         </p>
         <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
-          <button type="button" id="btnDownloadPPT" class="btn btn-accent" style="flex: 1.5; min-width: 220px; padding: 13px;">
+          <button type="button" id="btnDownloadPPT" class="btn btn-accent"
+            style="flex: 1.5; min-width: 220px; padding: 13px;">
             📊 관리자용 보고서 PPT (.pptx) 다운로드
           </button>
-          <button type="button" id="btnDownloadDetailHTML" class="btn btn-primary" style="flex: 1.5; min-width: 220px; padding: 13px;">
+          <button type="button" id="btnDownloadDetailHTML" class="btn btn-primary"
+            style="flex: 1.5; min-width: 220px; padding: 13px;">
             🌐 상세 분석 보고서 (.html) 생성
           </button>
           <button type="button" id="btnEmailPPT" class="btn btn-outline"
@@ -1445,8 +1465,9 @@
   </div>
 
   <!-- LM Studio 연결 설정 모달 -->
-  <div id="lmStudioModal" class="modal-backdrop" style="display: none;">
-    <div class="modal" style="max-width: 440px;">
+  <div id="lmStudioModal" class="modal-overlay" style="display: none; z-index: 99999;">
+    <div class="modal"
+      style="max-width: 440px; width: 92%; background: #ffffff; border-radius: 14px; padding: 20px; box-shadow: 0 20px 50px rgba(15,23,42,0.35);">
       <h3
         style="font-size: 1.15rem; color: var(--gray-900); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
         <span>🤖</span> <span>LM Studio 로컬 AI 연동 설정</span>
@@ -1487,18 +1508,20 @@
   </div>
 
   <!-- 학습된 안전작업지침(SafeGuidelineMemory) 조회·관리 모달 -->
-  <div id="guidelineMemoryModal" class="modal-backdrop" style="display: none;">
-    <div class="modal" style="max-width: 680px; width: 94%; max-height: 84vh; display: flex; flex-direction: column;">
+  <div id="guidelineMemoryModal" class="modal-overlay" style="display: none; z-index: 99999;">
+    <div class="modal"
+      style="max-width: 680px; width: 94%; max-height: 84vh; display: flex; flex-direction: column; background: #ffffff; border-radius: 14px; padding: 18px 20px; box-shadow: 0 20px 50px rgba(15,23,42,0.35);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
         <h3 style="font-size: 1.08rem; color: #1e293b; margin: 0; display: flex; align-items: center; gap: 6px;">
           <span>📚</span> <span>학습된 안전작업지침 저장소 (SafeGuidelineMemory)</span>
         </h3>
         <button type="button" id="btnCloseGuidelineMemory"
-          style="background: none; border: none; font-size: 1.15rem; cursor: pointer; color: #64748b; font-weight: 700;">✕</button>
+          style="background: #f1f5f9; border: none; border-radius: 6px; width: 30px; height: 30px; font-size: 1.05rem; cursor: pointer; color: #475569; font-weight: 700;">✕</button>
       </div>
-      <p style="font-size: 0.78rem; color: #475569; margin: 0 0 10px 0; line-height: 1.45; background: #f8fafc; padding: 8px 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
-        기존 등록된 PDF·PPTX 원본 장표 및 저장된 대장에서 깨끗한 <strong>[안전작업지침 제목 + 세부 본문]</strong>이 자동 누적되는 브라우저 저장소입니다.<br>
-        관련기준이 공란일 때 <strong>Qwen AI가 부적합 내용·사진과 아래 학습 지침이 100% 적합한지 검토 후 적용</strong>하며, 맞지 않으면 산안법 조문을 직접 도출합니다.
+      <p
+        style="font-size: 0.78rem; color: #475569; margin: 0 0 10px 0; line-height: 1.45; background: #f8fafc; padding: 8px 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        기존 등록된 PDF·PPTX 원본 장표 중 <strong>오타·깨짐이 없는 정상 안전작업지침</strong>만 선두 기호(-, 1) 등)를 정리해 자동 누적하는 저장소입니다.<br>
+        관련기준이 공란일 때 <strong>AI가 부적합 내용·사진과 아래 학습 지침이 100% 적합한지 검토 후 적용</strong>하며, 맞지 않으면 산안법 조문을 직접 도출합니다.
       </p>
       <div style="display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;">
         <input type="text" id="txtGuidelineSearch" class="form-control" placeholder="지침코드(예: IZ12B), 키워드, 본문 검색..."
@@ -1515,7 +1538,7 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261121_v57"></script>
+  <script type="module" src="js/app.js?v=20261121_v58"></script>
 </body>
 
 </html>

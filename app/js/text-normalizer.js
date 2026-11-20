@@ -341,7 +341,7 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/(단부|상부|하부|슬래브|작업발판|발판|비계|동바리|거푸집|개구부|안전대|생명줄|분전반|접지선|크레인|지게차|지반|사면|시설|장비|작업자|근로자)의(?=[가-힣]{2,})/g, '$1의 ')
     .replace(/([가-힣])([을를])(?=(?:설치|조치|작성|실시|착용|체결|확보|준수|유지|제거|정비|배치|고정|금지|확인|점검|통제|방지|보호|수립|운영|관리))/g, '$1$2 ')
     .replace(/(처짐|돌출|이격|침하|변형|마모|부식|균열|누설|노출)(과다|불량|미흡|누락|부족)/g, '$1 $2')
-    .replace(/(미고박\s*상태|수평\s*상태|개방\s*상태|무단\s*상태|불안정\s*상태)(?=[가-힣])/g, '$1 ')
+    .replace(/(미고박\s*상태|수평\s*상태|개방\s*상태|무단\s*상태|불안정\s*상태)(?=[가-힣])(?!로(?:\s|$)|에서|에(?:\s|$)|의(?:\s|$)|가(?:\s|$)|를(?:\s|$)|은(?:\s|$)|는(?:\s|$))/g, '$1 ')
     .replace(/상태양중/g, '상태 양중')
     .replace(/쓴아짐/g, '쏟아짐')
     .replace(/(^|[\s(/·\-])미\s+(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호)(?=\s|$|[.,;:)/·\-])/g, '$1미$2')
@@ -726,7 +726,7 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   const cleanSingleClause = (clause) => {
     let s = stripBannerSecondItemTail(normalizeKoreanSpacing(String(clause || '')))
       .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
-      .replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\-•·\s]+/, '')
+      .replace(/^[①②③④⑤⑥⑦⑧⑨⑩\d)\.\-•·:,;\s]+/, '')
       .trim();
 
     // 장소 콜론 접두사 제거 (예: "근생 주변 흙막이 상부: 가설분전반 관리 불량(...)", "104동 수방컨테이너: ...")
@@ -884,10 +884,12 @@ export function stripCircledNumbers(text = '') {
  * 사진 요약 배너 단일 표준 정규화 (엑셀 '사진 요약(배너)' · PPT 상단 적색 배너 100% 공용)
  */
 export function normalizePhotoBannerText(rawBanner = '', content = '', location = '') {
-  let s = stripBannerSecondItemTail(String(rawBanner || '').trim());
+  const rawStr = String(rawBanner || '').trim();
+  if (!rawStr || hasGarbledKoreanNoise(rawStr) || isGarbledBannerText(rawStr)) return '';
+  let s = stripBannerSecondItemTail(rawStr);
   s = stripCircledNumbers(s)
-    .replace(/^[123458\s()\[\].\-_|｜]+(?=[가-힣A-Za-z])/, '')
-    .replace(/^[|｜\[\]()\s]+|[|｜\[\]\s]+$/g, '')
+    .replace(/^[\d①-⑩\s()\[\].\-_·•:,;|｜]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[|｜\[\]().,\-·•\s]+|[|｜\[\]\s]+$/g, '')
     .replace(/벽의음/g, '벽이음')
     .replace(/상부0버팀대8/g, '상부 버팀대 ')
     .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
@@ -895,13 +897,14 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
     .replace(/\s+[1-5]$/, '')
     .replace(/\(\s*$/, '')
     .trim();
-  if (!s) return '';
+  if (!s || hasGarbledKoreanNoise(s) || isGarbledBannerText(s)) return '';
 
   for (const [pattern, replacement] of DOMAIN_TYPO_MAP) {
     s = s.replace(pattern, replacement);
   }
   s = stripBannerSecondItemTail(normalizeKoreanSpacing(s))
     .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
+    .replace(/^[\d\s()\[\].\-_·•:,;|｜]+(?=[가-힣A-Za-z])/, '')
     .replace(/([가-힣])([1-5])([가-힣]{2,})/g, (m, p1, d, p3) => (
       (p1 === '제' || /^(?:차|층|동|번|단|개|인|선|호|일|월|년|회|종|조|항|급|점|매|본|배|종류|구간|코어|단계|면|열|줄|차수|톤|미터|센티|킬로)/.test(p3))
         ? m
@@ -916,6 +919,7 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
     .replace(/\s+/g, ' ')
     .trim();
 
+  if (!s || hasGarbledKoreanNoise(s) || isGarbledBannerText(s)) return '';
   if (location && isLocationOnlyBanner(s, location)) return '';
   return s;
 }
@@ -1071,7 +1075,52 @@ export function normalizeSafetyLawBody(lawBody = '') {
   return unified.join('\n').trim();
 }
 
-const GUIDELINE_MEMORY_STORAGE_KEY = 'sp_learned_guidelines_v1';
+const GUIDELINE_MEMORY_STORAGE_KEY = 'sp_learned_guidelines_v2';
+
+/**
+ * 학습 안전작업지침 및 AI 생성 관련기준 본문에서 불필요한 '-', '1)', '9)', '7.1' 등 선두 기호·번호 제거
+ * (주의: 등록한 원본 PDF/PPTX의 유효 원문에는 적용하지 않고 원본 기호를 그대로 보존!)
+ */
+export function stripGuidelinePrefixes(body = '') {
+  return String(body || '')
+    .split(/\r?\n/)
+    .map(rawLine => {
+      let line = rawLine.trim();
+      // 순수 절 제목 라인(예: '7.1 비계 조립기준', '7.2 양중기준')은 제거
+      if (/^\d+\.\d+(?:\.\d+)?\s*[가-힣A-Za-z\s]{1,18}$/.test(line) && !/[.다함됨]$/.test(line)) return '';
+      for (let i = 0; i < 3; i++) {
+        const next = line
+          .replace(/^\d+\.\d+(?:\.\d+)?\s+/, '')
+          .replace(/^(?:\(\d{1,2}\)|\d{1,2}[\.)]|[①②③④⑤⑥⑦⑧⑨⑩]|[-•*▪※▶▸])\s*/, '')
+          .trim();
+        if (next === line) break;
+        line = next;
+      }
+      return line;
+    })
+    .filter(l => l.length >= 4)
+    .join('\n')
+    .trim();
+}
+
+/**
+ * 사진 배너 전용 깨진 OCR 쓰레기 문자열 감지기 (예: '국ㅂ에T백능세 차 ㅂ으구으보서으-르')
+ */
+export function isGarbledBannerText(text = '') {
+  const s = String(text || '').trim();
+  if (!s) return false;
+  if (/\uFFFD|[ㄱ-ㅎㅏ-ㅣ]/.test(s)) return true;
+  // 정상 약어(E/V, AL, PL, PC, T/C, H빔, A형, Gang Form 등) 제거 후 한글 사이에 낀 뜬금없는 영문 1글자 (예: '에T백')
+  const masked = s.replace(/\b(?:E\/V|EV|AL|PL|PC|STL|T\/C|TC|PTW|LOTO|PPE|ACS|RCS|SLIP|Gang\s*Form|AL\s*Form|Hold\s*Point|Gray\s*Area|Door|RC|SRC|HDPE|PVC|ELCB|D\d{1,2})\b/gi, ' ')
+    .replace(/[A-Z](?=형|빔|종|급|구간|동|층|라인)/g, ' ');
+  if (/[가-힣][A-Za-z][가-힣]/.test(masked)) return true;
+  if (/[가-힣]-[가-힣](?!\s*\d)/.test(masked) && /으-르|보서으|구으|능세/.test(s)) return true;
+  // 자음·모음 조합이 비정상인 OCR 잡음 어절이 많거나 한글 자모/기호 난삽 혼재
+  const tokens = masked.split(/\s+/).filter(Boolean);
+  const weirdTokens = tokens.filter(tk => /(?:[ㄱ-ㅎㅏ-ㅣ]|^[가-힣]-[가-힣]$|으[가-힣]으|능세|보서으|구으|백능)/.test(tk));
+  if (weirdTokens.length >= 1) return true;
+  return false;
+}
 
 /**
  * 한국어 OCR 심각 깨짐(비단어·고립 자모·미닫힘 괄호·혼입 잡음) 감지기
@@ -1082,7 +1131,7 @@ export function hasGarbledKoreanNoise(text = '') {
   if (/\uFFFD|[ㄱ-ㅎㅏ-ㅣ]/.test(s)) return true;
   if (/^[|ㅣ¦!~—_=;:\s]{2,}/.test(s)) return true;
   if (/\[[^\]]*$/.test(s) || /^[^\[]*\]/.test(s)) return true;
-  if (/(?:시심|주탁|닥아|방시시실|방지시실|작입|삭보|식보|업적|화새|에빙|예빙|연상꽃|꽃가실|가실건물|직게차|지게사|지계차|of\s*xi|\/\(K\)|\[\s*직게차)/i.test(s)) return true;
+  if (/(?:시심|주탁|닥아|방시시실|방지시실|작입|삭보|식보|업적|화새|에빙|예빙|연상꽃|꽃가실|가실건물|직게차|지게사|지계차|of\s*xi|\/\(K\)|\[\s*직게차|피장|안전인증증품|구조경로|능세|보서으|구으)/i.test(s)) return true;
   if (/[꽃뀛뜛뿧쬫폋긘뒨듼묠붜쀠쒸쯰]/.test(s)) return true;
   // 대괄호 [IZ...] 뒤에 1글자 이하만 남거나 비정상 짧은 파편으로 끊긴 경우
   if (/\]\s*[가-힣A-Za-z0-9]{0,1}$/.test(s) && !/\]$/.test(s)) return true;
@@ -1121,6 +1170,8 @@ function areSafetyDomainsConflicting(titleDomain = '', ctxDomain = '', rawTitle 
   // 제44조(안전대 부착설비) vs 이동식 사다리 본문/문맥 충돌
   if (/제44조|안전대\s*부착/.test(t) && (ctxDomain === '사다리' || /이동식\s*사다리|A형\s*사다리/.test(c))) return true;
   if (titleDomain && ctxDomain && titleDomain !== ctxDomain) {
+    // 거푸집동바리/철골/PC 공종에서 자재 양중·줄걸이 지침을 쓰는 것은 정상 문맥이므로 허용
+    if (titleDomain === '양중' && /양중|인양|크레인|줄걸이|보\s*설치/.test(c)) return false;
     // 인접 추락/비계/개구부/거푸집 간 세부 규칙 혼용은 문맥상 허용하되, 이종 대분류(전기·지게차·화재·사다리·양중) 간 충돌은 차단
     const strictGroup = new Set(['전기', '지게차', '화재', '사다리', '양중']);
     if (strictGroup.has(titleDomain) || strictGroup.has(ctxDomain)) return true;
@@ -1165,13 +1216,17 @@ export const SafeGuidelineMemory = (() => {
     loadedFromStorage = true;
     try {
       if (typeof localStorage === 'undefined') return;
+      // 구버전 오염 캐시(v1) 정리
+      try { localStorage.removeItem('sp_learned_guidelines_v1'); } catch (_) {}
       const raw = localStorage.getItem(GUIDELINE_MEMORY_STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return;
       for (const item of parsed) {
         if (!item || !item.key || !item.title || hasGarbledKoreanNoise(item.title)) continue;
-        store.set(item.key, item);
+        if (item.body && hasGarbledKoreanNoise(item.body)) continue;
+        const cleanSavedBody = item.body ? stripGuidelinePrefixes(item.body) : '';
+        store.set(item.key, { ...item, body: cleanSavedBody });
       }
     } catch (_) { /* ignore storage read errors */ }
   };
@@ -1208,7 +1263,12 @@ export const SafeGuidelineMemory = (() => {
     if (!cleanTitle || cleanTitle.length < 4 || hasGarbledKoreanNoise(cleanTitle)) return false;
     if (/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙|관계법규\s*적용\s*항목)$/.test(cleanTitle)) return false;
 
-    const cleanBody = body ? normalizeSafetyLawBody(String(body || '')) : '';
+    const rawBodyStr = String(body || '').trim();
+    // 본문에 OCR 오타·자모 깨짐·이상 문구('피장', '안전인증증품', '구조경로' 등)가 있으면 절대 학습 저장 금지
+    if (rawBodyStr && (hasGarbledKoreanNoise(rawBodyStr) || isGarbledBannerText(rawBodyStr))) return false;
+    const cleanBody = rawBodyStr ? stripGuidelinePrefixes(normalizeSafetyLawBody(rawBodyStr)) : '';
+    if (cleanBody && hasGarbledKoreanNoise(cleanBody)) return false;
+
     const code = extractGuidelineCode(cleanTitle);
     const titleDomain = inferSafetyDomain(cleanTitle);
     const bodyDomain = inferSafetyDomain(cleanBody);
@@ -1491,7 +1551,7 @@ export function parseInterviewOpinions(raw = '') {
  * - 2순위: 원본 제목 깨짐/본문 누락 시 학습된 SafeGuidelineMemory 우선 재사용
  * - 3순위: 여전히 공란/깨짐/도메인 모순이면 클라이언트가 임의 법령 조문을 지어내지 않고 needsAiLaw=true로 AI(Qwen3-30B)에 위임
  */
-export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', contextText = '', workGroup = '', type = '' } = {}) {
+export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', contextText = '', workGroup = '', type = '', allowLocalGuidelineFallback = false } = {}) {
   const ctxRaw = String(contextText || '').trim();
   const lawFallbackRaw = String(law || '').trim();
   let title = String(rawLaw || '').trim();
@@ -1570,8 +1630,9 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
     title = '';
   }
 
-  // [2순위] 학습된 SafeGuidelineMemory 조회 (원본 제목이 없거나 깨졌거나 본문이 비어있을 때만 보완, 깨끗한 1순위 원본은 절대 덮어쓰지 않음)
-  if (!title || titleGarbled || !body) {
+  // [2순위] 학습된 SafeGuidelineMemory 조회는 오프라인 폴백(allowLocalGuidelineFallback=true) 시에만 로컬 적용
+  // (온라인 상태에서는 Qwen/LLM이 부적합 내용·사진과의 적합성을 직접 검증한 뒤 채택 여부를 판정!)
+  if (allowLocalGuidelineFallback && (!title || titleGarbled || !body)) {
     const learned = SafeGuidelineMemory.lookup({
       rawLaw: title || (preservedCode ? `[${preservedCode}]` : ''),
       lawBody: body,
@@ -1584,7 +1645,7 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
         title = learned.title;
       }
       if (!body && learned.body) {
-        body = learned.body;
+        body = stripGuidelinePrefixes(learned.body);
       }
     }
   }
@@ -1691,6 +1752,8 @@ if (_globalRoot) {
     resolveUnifiedPhotoBanner,
     normalizeSafetyLawBody,
     normalizeSafetyLawSpec,
+    stripGuidelinePrefixes,
+    isGarbledBannerText,
     hasGarbledKoreanNoise,
     inferSafetyDomain,
     extractGuidelineCode,
