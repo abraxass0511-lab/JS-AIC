@@ -134,21 +134,42 @@
   }
 
   /**
-   * 실시간 Qwen AI 정밀 분석 (부적합 내용 + 첨부 사진 + 학습된 안전작업지침 적합성 검증 + 표준분류 4종 통합 판정)
+   * [v58] 텍스트만으로 분류·판단하기 어려운 경우에만 자동으로 첨부 사진 Vision AI 활성화
+   * - 체크박스 수동 조작 제거: 부적합 내용이 명확하면 Vision 미사용(0 Vision Neuron), 모호·초단문이면 자동 Vision 실행
+   */
+  function shouldAutoUseVision(content = '', photos = []) {
+    const validPhotos = Array.isArray(photos) ? photos.filter(Boolean) : [];
+    if (!validPhotos.length) return false;
+    const t = String(content || '').replace(/[\r\n\s]+/g, ' ').trim();
+    if (!t || t.length < 14) return true;
+    // '불안전 행동', '불안전 상태', '안전미준수', '사진 참조', '현장 불량'처럼 대상·상황이 빠진 모호한 문구
+    if (/^(?:\d+[\.)]?\s*)?(?:불안전\s*(?:행동|상태)|계획\s*미(?:수립|이행)|안전\s*(?:미준수|불량|수칙\s*위반)|작업\s*불량|관리\s*(?:미흡|불량)|사진\s*(?:참조|확인)|현장\s*불량|점검\s*불량|기타)$/.test(t)) {
+      return true;
+    }
+    // 구체적 시설/장비/공도구/작업 대상 단어가 전혀 없으면 사진 판독이 필요함
+    const hasConcreteSubject = /비계|발판|난간|개구부|덮개|동바리|거푸집|유로폼|알폼|갱폼|서포트|철근|철골|데크|PC|크레인|타워크레인|양중|줄걸이|슬링|샤클|지게차|굴착기|펌프카|고소작업대|리프트|곤돌라|사다리|말비계|분전반|분전함|전선|접지|차단기|충전부|전등|소켓|용접|화기|소화기|불티|그라인더|절단기|타카|안전대|안전모|생명줄|안전고리|흙막이|터파기|굴착|보\s*설치|슬래브|단부|계단|야적|적재/i.test(t);
+    if (!hasConcreteSubject && t.length < 28) return true;
+    return false;
+  }
+
+  /**
+   * 실시간 AI 정밀 분석 (부적합 내용 + [필요 시 자동 Vision] + 학습된 안전작업지침 적합성 검증 + 표준분류 4종 통합 판정)
    */
   async function streamAnalyzeSafetyText(content, extraContext = {}, onProgress = () => {}) {
     if (!content || !content.trim()) {
       throw new Error('분석할 지적 내용을 먼저 입력해주세요.');
     }
 
-    const useVision = extraContext.useVision !== false;
     const photos = Array.isArray(extraContext.photos) ? extraContext.photos.filter(Boolean) : [];
+    const useVision = typeof extraContext.useVision === 'boolean'
+      ? extraContext.useVision
+      : shouldAutoUseVision(content, photos);
     let imageBase64 = '';
     if (useVision && photos.length > 0) {
       imageBase64 = await resolvePhotoForVision(photos[0]);
     }
 
-    // [Point #6] 학습된 안전작업지침(SafeGuidelineMemory) 후보를 Qwen에게 전달하여 부적합내용+사진과의 적합성을 직접 판정받음
+    // [Point #6] 학습된 안전작업지침(SafeGuidelineMemory) 후보를 AI에게 전달하여 부적합내용+사진과의 적합성을 직접 판정받음
     const mem = getGuidelineMemory();
     const learnedGuidelines = (mem && typeof mem.findCandidates === 'function')
       ? mem.findCandidates({
@@ -159,10 +180,10 @@
         }).map(c => ({ code: c.code, title: c.title, body: c.body, domain: c.domain }))
       : [];
 
-    // ── [1단계-A] 클라우드 모드: Cloudflare 24시간 Qwen Vision(선택) + Qwen3-30B 통합 분석 ──
+    // ── [1단계-A] 클라우드 모드: Cloudflare 24시간 LLM (+ 모호 시 자동 Vision) 통합 분석 ──
     const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || CLOUDFLARE_AI_URL;
     if (isCloudMode && workerUrl) {
-      onProgress({ phase: 'connecting', message: imageBase64 ? '☁️ Qwen Vision + Qwen3 AI가 사진·산안법·학습지침을 분석 중...' : '☁️ Qwen3 AI가 부적합 내용·산안법·표준분류를 분석 중...' });
+      onProgress({ phase: 'connecting', message: imageBase64 ? '☁️ 텍스트가 모호하여 Vision + Cloud AI가 사진·산안법·학습지침을 자동 판독 중...' : '☁️ Cloud AI가 부적합 내용·산안법·표준분류를 분석 중...' });
       try {
         const pin = storage.getItem('sp_pin') || '111111';
         const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
@@ -175,7 +196,7 @@
             mode: 'manual_analyze',
             content,
             imageBase64: imageBase64 || undefined,
-            useVision,
+            useVision: Boolean(imageBase64),
             workGroup: extraContext.workGroup || '',
             location: extraContext.location || '',
             productType: extraContext.productType || '',
@@ -188,8 +209,11 @@
           const data = await cfRes.json();
           const isRealAi = Boolean(data.source && !String(data.source).includes('rule_engine'));
           const lawTitle = isRealAi ? String(data.law || '').trim() : '';
-          const lawBody = isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '';
           const norm = getNormHelper();
+          let lawBody = isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '';
+          if (lawBody && norm && typeof norm.stripGuidelinePrefixes === 'function') {
+            lawBody = norm.stripGuidelinePrefixes(lawBody);
+          }
           const resolvedWg = data.workGroup ? cleanWorkGroup(data.workGroup, content) : '';
           const resolvedWgMid = (norm && norm.resolveWorkGroupMid)
             ? norm.resolveWorkGroupMid(resolvedWg, data.workGroupMid || '', content)
@@ -202,6 +226,8 @@
             severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
             law: lawTitle,
             lawBody,
+            usedVision: Boolean(imageBase64),
+            model: data.model || '',
             guidelineApplied: Boolean(data.guidelineApplied),
             guidelineReason: String(data.guidelineReason || '').trim(),
             hazardType: data.hazardType || data.type || '',
@@ -1625,6 +1651,17 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               rec.law = aiItem.law;
               if (!rec.rawLaw) rec.rawLaw = aiItem.law;
             }
+            if (aiItem.lawBody && !rec.lawBody) {
+              const normH = getNormHelper();
+              rec.lawBody = (normH && typeof normH.stripGuidelinePrefixes === 'function')
+                ? normH.stripGuidelinePrefixes(aiItem.lawBody)
+                : String(aiItem.lawBody).trim();
+            }
+          }
+          // 깨진 OCR 배너가 잔존해 있으면 최종 제거 후 content 기반 요약으로 대체
+          const normChk = getNormHelper();
+          if (rec.photoBanner && normChk && (normChk.hasGarbledKoreanNoise?.(rec.photoBanner) || normChk.isGarbledBannerText?.(rec.photoBanner))) {
+            rec.photoBanner = summarizeContentToBanner(rec.content);
           }
           const finalLawState = resolveLawWithTieredMemory(rec);
           if (!finalLawState.needAi && rec.rawLaw && rec.lawBody) {
@@ -1886,13 +1923,90 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     };
   }
 
+  /**
+   * [v58] 엑셀 대장 내보내기 전 누락·구버전·깨진 분류/관련근거/배너 항목을 AI(하드코딩 배제)로 자동 보완
+   */
+  async function enrichMissingRecordsForExcel(records = [], onProgress = () => {}) {
+    if (!Array.isArray(records) || !records.length) return { enrichedCount: 0, records };
+    const norm = getNormHelper();
+    const validLocs = new Set((norm && norm.STANDARD_LOCATION_CATEGORIES) || []);
+    const validWgMids = new Set((norm && norm.WORK_GROUP_MID_LIST) || []);
+    const validMethods = new Set((norm && norm.WORK_METHODS_9X9_IMPROVED) || []);
+    const isNeedsEnrich = (r) => {
+      if (!r || !String(r.content || '').trim()) return false;
+      const locCat = String(r.locationCategory || '').trim();
+      const wgMid = String(r.workGroupMid || '').trim();
+      const wg = String(r.workGroup || '').trim();
+      const wm = String(r.workMethod || r.workName || '').trim();
+      const law = String(r.law || r.rawLaw || (r.basis && r.basis.law) || '').trim();
+      const banner = String(r.photoBanner || '').trim();
+      const agMaj = String(r.agentMajor || r.kind || '').trim();
+      const agMid = String(r.agentMid || r.item || '').trim();
+      const isBadLaw = !law || /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(law) ||
+        Boolean(norm?.hasGarbledKoreanNoise?.(law)) ||
+        (/고소작업대/.test(r.content || '') && /제56조|작업발판/.test(law));
+      const isBadBanner = !banner || /^\./.test(banner) ||
+        Boolean(norm?.hasGarbledKoreanNoise?.(banner)) ||
+        Boolean(norm?.isGarbledBannerText?.(banner));
+      const isBadAgent = !agMaj || !agMid || agMaj === '작업장·통로' || agMaj === 'PPE' || agMaj === '작업장' ||
+        (/고소작업대/.test(r.content || '') && agMid !== '탑승장비');
+      return (
+        !locCat || (validLocs.size > 0 && !validLocs.has(locCat)) ||
+        !wgMid || (validWgMids.size > 0 && !validWgMids.has(wgMid)) ||
+        !wg ||
+        !wm || (validMethods.size > 0 && !validMethods.has(wm)) ||
+        isBadAgent ||
+        isBadLaw ||
+        isBadBanner
+      );
+    };
+
+    const targets = records.filter(isNeedsEnrich);
+    if (!targets.length) return { enrichedCount: 0, records };
+
+    let enrichedCount = 0;
+    const CHUNK = 10;
+    for (let i = 0; i < targets.length; i += CHUNK) {
+      const chunk = targets.slice(i, i + CHUNK);
+      onProgress(`🤖 AI가 엑셀 누락 분류·관련기준 자동 보완 중... (${Math.min(i + chunk.length, targets.length)}/${targets.length}건)`);
+      // 고소작업대 오분류 조문·깨진 배너는 AI가 새로 판정하도록 일시 초기화 후 배치 호출
+      chunk.forEach((rec) => {
+        if (/고소작업대/.test(rec.content || '') && /제56조|작업발판/.test(`${rec.law || ''} ${rec.rawLaw || ''}`)) {
+          rec.law = '';
+          rec.rawLaw = '';
+          rec.lawBody = '';
+        }
+        if (rec.photoBanner && (/^\./.test(rec.photoBanner) || norm?.hasGarbledKoreanNoise?.(rec.photoBanner) || norm?.isGarbledBannerText?.(rec.photoBanner))) {
+          rec.photoBanner = '';
+        }
+      });
+      try {
+        await classifyBatchRecords(chunk);
+        chunk.forEach((rec) => {
+          if (rec.law && rec.basis) rec.basis.law = rec.law;
+          if (rec.workMethod) rec.workName = rec.workMethod;
+          if (rec.agentMajor) { rec.kind = rec.agentMajor; rec.matrixArea = rec.agentMajor; }
+          if (rec.agentMid) { rec.item = rec.agentMid; rec.matrixTarget = rec.agentMid; }
+          if (rec.agentMinor) { rec.agent = rec.agentMinor; rec.matrixSpec = rec.agentMinor; }
+        });
+        enrichedCount += chunk.length;
+      } catch (e) {
+        console.warn('[SafePatrol] enrichMissingRecordsForExcel chunk fallback:', e);
+        break;
+      }
+    }
+    return { enrichedCount, records };
+  }
+
   return {
     checkConnection,
     quickRuleAnalysis,
+    shouldAutoUseVision,
     streamAnalyzeSafetyText,
     cleanOcrRecord,
     classifyBatchRecords,
     verifyRecordsBeforeSave,
+    enrichMissingRecordsForExcel,
     isQuotaCoolingDown,
     completeGuidedRecord,
     getEndpoint: () => currentEndpoint,

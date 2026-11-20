@@ -631,18 +631,24 @@ export function findPhotoBoxes(img, area, banners = []) {
     while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
     while (ty1 > ty0 && isRowBlank(ty1)) ty1--;
 
-    // 우측 상단 '[ ] Hold Point 위반 (N/A)' 분리형 소형 박스 제거:
-    // 상단 9.5% 이내의 얇은 박스 아래에 순백 수평 여백이 존재하면 실제 사진 시작점까지 ty0 하향
-    const holdPointLimitY = area.y + Math.round(area.h * 0.22);
-    if (ty0 - area.y <= area.h * 0.06 && ty1 > holdPointLimitY) {
+    // 우측 상단 '[ ] Hold Point 위반 (N/A)' 분리형 소형 박스 완전 제거:
+    // 1) 상단 적색 배너(banners)와 같은 수평 행에 위치한 우측 Hold Point 박스는 배너 하단선(topBannerBottomY)을 기준으로 상단 컷
+    const topBanners = banners.filter(b => (b.y - area.y) <= area.h * 0.18);
+    const topBannerBottomY = topBanners.length
+      ? Math.max(...topBanners.map(b => b.y + b.h)) + Math.max(4, Math.round(4 * sf))
+      : 0;
+    const holdPointLimitY = area.y + Math.round(area.h * 0.24);
+    const startsInTopStrip = (ty0 - area.y) <= area.h * 0.11;
+    if (startsInTopStrip && ty1 > holdPointLimitY) {
       let blankRun = 0;
       let firstBlankY = -1;
       let gapEndY = -1;
-      for (let gy = ty0 + Math.round(area.h * 0.02); gy <= Math.min(ty1 - minSide, holdPointLimitY); gy++) {
+      const scanStartY = Math.max(ty0 + Math.round(area.h * 0.02), topBannerBottomY ? topBannerBottomY - Math.round(area.h * 0.03) : 0);
+      for (let gy = scanStartY; gy <= Math.min(ty1 - minSide, holdPointLimitY); gy++) {
         if (isRowBlank(gy)) {
           if (blankRun === 0) firstBlankY = gy;
           blankRun++;
-          if (blankRun >= Math.max(4, Math.round(4 * sf))) {
+          if (blankRun >= Math.max(3, Math.round(3 * sf))) {
             gapEndY = gy;
           }
         } else if (gapEndY > 0) {
@@ -651,9 +657,23 @@ export function findPhotoBoxes(img, area, banners = []) {
           blankRun = 0;
         }
       }
-      if (gapEndY > 0 && firstBlankY > 0 && (firstBlankY - ty0) <= area.h * 0.095) {
+      if (gapEndY > 0 && firstBlankY > 0 && (firstBlankY - ty0) <= area.h * 0.16) {
         ty0 = gapEndY + 1;
         while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
+      } else if (topBannerBottomY > ty0 && topBannerBottomY < ty1 - minSide && r.x >= area.x + area.w * 0.45) {
+        // 우측 사진 영역 상단이 배너 행과 겹치면서 상단 띠의 흰 배경 비율이 높으면(Hold Point 텍스트 박스) 배너 하단선 아래로 안전 트림
+        let stripWhite = 0, stripTot = 0;
+        for (let gy = ty0; gy < topBannerBottomY; gy += 2) {
+          for (let gx = r.x; gx < r.x + r.w; gx += 2) {
+            stripTot++;
+            const k = (gy * W + gx) * 4;
+            if (data[k] > 215 && data[k + 1] > 215 && data[k + 2] > 215) stripWhite++;
+          }
+        }
+        if (stripTot > 0 && (stripWhite / stripTot) >= 0.62) {
+          ty0 = topBannerBottomY;
+          while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
+        }
       }
     }
 

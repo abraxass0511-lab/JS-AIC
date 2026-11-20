@@ -2311,8 +2311,8 @@
     const d2 = (dims2 && dims2.w > 0 && dims2.h > 0) ? dims2 : null;
 
     let ratio1 = 0.5;
-    let h1 = fullBox.h;
-    let h2 = fullBox.h;
+    const h1 = fullBox.h;
+    const h2 = fullBox.h;
 
     const ratioStr = String(layoutRatio || 'auto').trim();
     const manualMatch = ratioStr.match(/^(\d{1,2})\s*[:/]\s*(\d{1,2})$/);
@@ -2323,46 +2323,24 @@
         ratio1 = Math.max(0.20, Math.min(0.80, n1 / (n1 + n2)));
       }
     } else if (d1 && d2) {
-      const area1 = d1.w * d1.h;
-      const area2 = d2.w * d2.h;
       const ar1 = d1.w / d1.h;
       const ar2 = d2.w / d2.h;
-      const areaSkew = Math.max(area1, area2) / Math.max(1, Math.min(area1, area2));
-
-      if (areaSkew >= 1.12) {
-        // 추출된 사진 면적 차이가 뚜렷하면 면적 비율에 비례 배분 (28% ~ 72% 안전 클램프)
-        ratio1 = Math.max(0.28, Math.min(0.72, area1 / (area1 + area2)));
-      } else {
-        // 해상도 면적이 비슷하면 종횡비(가로/세로 비율)에 비례 배분 (30% ~ 70%)
-        ratio1 = Math.max(0.30, Math.min(0.70, ar1 / (ar1 + ar2)));
-      }
-
-      const w1Cand = roundCoord(usableW * ratio1);
-      const w2Cand = roundCoord(usableW - w1Cand);
-
-      // 작은 면적의 사진은 원본 비율·면적비에 맞춰 높이도 비례 축소 (하단선 일치)
-      if (area1 > area2 * 1.25) {
-        const natH2 = roundCoord(w2Cand / ar2);
-        const areaH2 = roundCoord(fullBox.h * Math.sqrt(area2 / area1));
-        h2 = Math.max(roundCoord(fullBox.h * 0.54), Math.min(fullBox.h, Math.max(natH2, areaH2)));
-      } else if (area2 > area1 * 1.25) {
-        const natH1 = roundCoord(w1Cand / ar1);
-        const areaH1 = roundCoord(fullBox.h * Math.sqrt(area1 / area2));
-        h1 = Math.max(roundCoord(fullBox.h * 0.54), Math.min(fullBox.h, Math.max(natH1, areaH1)));
-      }
+      // [v58] 사진 상단 공란(흰 여백)을 완전히 제거하기 위해 두 사진 모두 fullBox.h 전체 높이를 꽉 채우고,
+      // 가로 폭만 각 사진의 종횡비(ar1 : ar2)에 정확히 비례 배분(30% ~ 70% 안전 클램프)하여 크롭 손실과 여백을 동시에 최소화!
+      ratio1 = Math.max(0.30, Math.min(0.70, ar1 / (ar1 + ar2)));
     }
 
     const w1 = roundCoord(usableW * ratio1);
     const w2 = roundCoord(usableW - w1);
     const leftBox = {
       x: roundCoord(fullBox.x),
-      y: roundCoord(fullBox.y + (fullBox.h - h1)),
+      y: roundCoord(fullBox.y),
       w: w1,
       h: roundCoord(h1),
     };
     const rightBox = {
       x: roundCoord(fullBox.x + w1 + g),
-      y: roundCoord(fullBox.y + (fullBox.h - h2)),
+      y: roundCoord(fullBox.y),
       w: w2,
       h: roundCoord(h2),
     };
