@@ -1230,7 +1230,8 @@ export function parseInterviewOpinions(raw = '') {
       } else if (merged.length > 0 && !/^(?:\d+[.)]|[①-⑩])/.test(merged[merged.length - 1]) && !/(?:다|함|됨|음|요|임|습니다)[.!?]?$/.test(merged[merged.length - 1])) {
         merged[merged.length - 1] = joinWrappedKoreanLines(merged[merged.length - 1], l);
       } else {
-        merged.push(`- ${l.replace(/^[-•*·▪]\s*/, '').trim()}`);
+        // 원문에 '-'가 없을 때는 임의로 '-'를 붙이지 않고 원형 그대로 보존
+        merged.push(l);
       }
     }
     return merged.filter(it => it && it !== '-' && it.length > 2);

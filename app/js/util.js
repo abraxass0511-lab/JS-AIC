@@ -131,15 +131,29 @@ function normalizeBlob(blob, filename) {
   return blob;
 }
 
+function sanitizeDownloadFilename(filename) {
+  const raw = String(filename || 'download.bin').trim();
+  const dot = raw.lastIndexOf('.');
+  const ext = dot > 0 ? raw.slice(dot).replace(/[^a-zA-Z0-9.]/g, '') : '';
+  const base = (dot > 0 ? raw.slice(0, dot) : raw)
+    .replace(/[\/\\:*?"<>|%#&?;=\r\n\t]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 65) || 'SafePatrol_파일';
+  return `${base}${ext}`;
+}
+
 function anchorDownload(href, filename) {
+  const safeName = sanitizeDownloadFilename(filename);
   const a = document.createElement('a');
   a.style.display = 'none';
   a.href = href;
-  a.download = filename;
-  a.rel = 'noopener';
+  a.download = safeName;
+  a.target = '';
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { try { a.remove(); } catch (e) {} }, 1000);
+  setTimeout(() => { try { a.remove(); } catch (e) {} }, 1500);
 }
 
 function blobToDataURL(blob) {
@@ -294,14 +308,21 @@ function toastLite(msg) {
 
 export function downloadBlob(blob, filename) {
   const env = getEnv();
-  const fixed = normalizeBlob(blob, filename);
+  const safeName = sanitizeDownloadFilename(filename);
+  const fixed = normalizeBlob(blob, safeName);
   if (env.isMobile || env.isInApp) {
-    showSaveSheet(fixed, filename, env);
+    showSaveSheet(fixed, safeName, env);
     return;
   }
-  const url = URL.createObjectURL(fixed);
-  anchorDownload(url, filename);
-  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+  // PC 브라우저(Chrome/Edge)의 Office 뷰어·확장프로그램이 .pptx/.xlsx 클릭을 이상한 뷰어 링크로 가로채지 못하도록
+  // 다운로드 전용 octet-stream Blob으로 안전하게 즉시 내려받기 실행
+  const ext = (safeName.split('.').pop() || '').toLowerCase();
+  const dlBlob = ['pptx', 'xlsx', 'html'].includes(ext)
+    ? new Blob([fixed], { type: 'application/octet-stream' })
+    : fixed;
+  const url = URL.createObjectURL(dlBlob);
+  anchorDownload(url, safeName);
+  setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 120000);
 }
 
 if (typeof window !== 'undefined') {

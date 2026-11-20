@@ -604,11 +604,11 @@
     return auth || '시공관리자 및 근로자';
   }
 
-  // 관계자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 및 복수 의견/불릿 보존 함수
+  // 관계자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 및 복수 의견/원본 불릿 유무 보존 함수
   function cleanOpinionText(raw) {
     if (!raw) return '';
     const preCleaned = healSafetyKoreanLexicon(String(raw))
-      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+      .replace(/\[\s*(?:HAT|점검단)\s*제안\s*\][\s\S]*$/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -642,22 +642,22 @@
     const items = [];
     for (let l of rawLines) {
       if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
-      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(l);
+      const hasDash = /^[-•*·▪]\s*/.test(l);
+      const isBulletStart = hasDash || /^\d+[\).]\s*/.test(l);
       let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
       if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
       if (items.length === 0 || isBulletStart) {
-        items.push(text);
+        items.push({ text, hasDash });
       } else {
-        // 불릿 기호 없이 줄바꿈만 된 줄은 한국어 어절/음절 규칙에 따라 자연 병합!
-        items[items.length - 1] = _joinWrapped(items[items.length - 1], text);
+        items[items.length - 1].text = _joinWrapped(items[items.length - 1].text, text);
       }
     }
     if (items.length === 0) return '';
-    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
+    return items.map(it => `${it.hasDash ? '- ' : ''}${_normSpacing(healSafetyKoreanLexicon(it.text))}`).join('\n');
   }
 
-  // 점검자 의견(점검단 제안) 앞단 노이즈('구시 으 기느으', '- SHE SEA', 'De T= ©') 제거 및 2개 항목 '-' 구분 정제 함수
+  // 점검자 의견(점검단 제안) 앞단 노이즈 정제 (원문에 '-'가 있을 때만 유지, 임의 '-' 추가 금지)
   function cleanProposalText(raw) {
     if (!raw) return '';
     let s = healSafetyKoreanLexicon(String(raw))
@@ -677,16 +677,17 @@
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(line);
+      const hasDash = /^[-•*·▪]\s*/.test(line);
+      const isBulletStart = hasDash || /^\d+[\).]\s*/.test(line);
       let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
       if (items.length === 0 || isBulletStart) {
-        items.push(cl);
+        items.push({ text: cl, hasDash });
       } else {
-        items[items.length - 1] = _joinWrapped(items[items.length - 1], cl);
+        items[items.length - 1].text = _joinWrapped(items[items.length - 1].text, cl);
       }
     }
-    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
+    return items.map(it => `${it.hasDash ? '- ' : ''}${_normSpacing(healSafetyKoreanLexicon(it.text))}`).join('\n');
   }
 
   // 사진 요약(배너) 단일 통합 복구 함수 (SafeTextNormalizer.resolveUnifiedPhotoBanner 우선 -> PPT/엑셀 100% 일치, ①② 및 '2) ...' 꼬리 완전 제거)
@@ -872,34 +873,39 @@
     const rawLines = cleanedStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]\s*/.test(line);
+      const hasDash = /^[-•*·▪]\s*/.test(line);
+      const hasExplicitBullet = hasDash || /^\.\s*|^\d+[\).]\s*/.test(line);
       let cl = line.replace(/^[\s|ㅣ¦_!~—\-*•·.&]+/, '').replace(/[\s|ㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
       if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
+        return `${hasDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
       }
 
       if (items.length === 0 || hasExplicitBullet) {
-        items.push(cl);
+        items.push({ text: cl, hasDash });
       } else {
         // 불릿 없는 줄바꿈 줄은 한국어 어절/음절 규칙에 따라 이전 항목에 병합
-        items[items.length - 1] = _joinWrapped(items[items.length - 1], cl);
+        items[items.length - 1].text = _joinWrapped(items[items.length - 1].text, cl);
       }
     }
-    return items.length > 0 ? items.map(l => `- ${_normSpacing(healSafetyKoreanLexicon(l))}`).join('\n') : '(미조치)';
+    return items.length > 0 ? items.map(l => `${l.hasDash ? '- ' : ''}${_normSpacing(healSafetyKoreanLexicon(l.text))}`).join('\n') : '(미조치)';
   }
 
-  // PM 판정결과 분류 자동 판정 ('시스템 개선', '교육/코칭', '페널티', '제재/징계' - 복수 지원)
-  // 주의: 명시된 PM 판정결과는 절대 [점검단 제안] 값으로 덮어쓰지 않음!
+  // PM 판정결과 분류 반환 (PDF/사용자 입력에 명시된 경우만 표시 — 미입력 시 공란 유지, 시스템 개선 자동 주입 금지)
   function getPmVerdictType(r) {
-    if (!r) return '시스템 개선';
+    if (!r) return '';
     if (Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0) {
       return r.pmVerdictItems.map(p => p.type).join(', ');
     }
     const raw = String(r.pmVerdictType || r.pmVerdict || '').trim();
     const rawSub = String(r.pmVerdictSub || '').trim();
+    const hasActionPlan = Boolean((r.actionPlan && String(r.actionPlan).trim()) || (r.fix && r.fix.content && String(r.fix.content).trim()));
+    // 과거 자동 복사 버그로 _hasExplicitPmVerdict 없이 inspectorOpinionType만 복제된 경우 공란 처리
+    if (!r._hasExplicitPmVerdict && !rawSub && !hasActionPlan && raw && raw === String(r.inspectorOpinionType || '시스템 개선').trim()) {
+      return '';
+    }
     const combined = `${raw} ${rawSub}`.trim();
     if (combined) {
       const types = [];
@@ -908,10 +914,9 @@
       if (combined.includes('교육') || combined.includes('코칭')) types.push('교육/코칭');
       if (combined.includes('페널티') || combined.includes('패널티') || combined.includes('벌점') || combined.includes('박탈')) types.push('페널티');
       if (types.length > 0) return types.join(', ');
-      if (raw) return raw;
+      if (r._hasExplicitPmVerdict && raw) return raw;
     }
-    if (r._hasExplicitPmVerdict) return raw || '제재/징계';
-    return getInspectorOpinionType(r);
+    return '';
   }
 
   // 기인물 9×9 대-중-소 정규화 및 오류 방지 판정

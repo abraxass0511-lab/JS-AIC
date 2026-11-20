@@ -87,286 +87,70 @@
   }
 
   /**
-   * 고속 규칙 매칭 엔진 (특정 키워드가 명확할 때만 즉시 보조, 기본값 추락 강제 금지)
+   * 사진 URL/Blob → Qwen Vision 전송용 압축 JPEG DataURL 변환 헬퍼 (Point #8)
+   */
+  async function resolvePhotoForVision(photoInput) {
+    if (!photoInput) return '';
+    try {
+      const rawUrl = typeof photoInput === 'string'
+        ? photoInput
+        : (photoInput.dataUrl || photoInput.previewUrl || photoInput.url || '');
+      let blob = (photoInput && typeof photoInput === 'object' && photoInput.blob instanceof Blob) ? photoInput.blob : null;
+      if (!blob && rawUrl && (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:image/'))) {
+        if (rawUrl.startsWith('data:image/') && rawUrl.length < 320000) return rawUrl;
+        const r = await fetch(rawUrl);
+        if (r.ok) blob = await r.blob();
+      }
+      if (!blob) return rawUrl.startsWith('data:image/') ? rawUrl : '';
+      if (typeof document !== 'undefined' && typeof createImageBitmap === 'function') {
+        const bmp = await createImageBitmap(blob);
+        const maxSide = 768;
+        const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(bmp.width * scale));
+        c.height = Math.max(1, Math.round(bmp.height * scale));
+        c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+        bmp.close?.();
+        return c.toDataURL('image/jpeg', 0.78);
+      }
+      return await new Promise((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ''));
+        fr.onerror = () => resolve('');
+        fr.readAsDataURL(blob);
+      });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /**
+   * 오프라인 비상 백업 (하드코딩 산안법 조문·PM 판정결과 자동 주입 전면 폐지 — Qwen AI가 직접 판단)
    */
   function quickRuleAnalysis(content) {
     if (!content) return null;
-    const text = content.toLowerCase();
-
-    // 0. 양중작업 / 크레인 / 유도로프 (이미지 4, 5번 실물 점검장표 100% 동일 일치)
-    if (text.includes('양중') || text.includes('크레인') || text.includes('줄걸이') || text.includes('유도로프') || text.includes('수평양중') || text.includes('호이스트') || text.includes('손으로')) {
-      const isHand = text.includes('손으로') || text.includes('직접 잡');
-      const isHorizontal = text.includes('수평') || text.includes('로프간격') || text.includes('수평양중');
-      return {
-        severity: '중부적합',
-        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등)',
-        item: '양중장비',
-        hazardType: text.includes('낙하') ? '낙하' : '추락',
-        mgmtCauses: ['계획 미이행', '불안전 행동'],
-        holdPoint: true,
-        photoBanner: isHand ? '양중작업 시 화물을 직접 손으로 잡음' : (isHorizontal ? '양중작업 시 화물의 수평양중 미실시' : '양중작업 시 유도로프 미사용'),
-        photo2Banner: isHand ? '양중작업 시 유도로프 미사용' : (isHorizontal ? '지상에서 보 거푸집 로프체결 간격 미준수' : ''),
-        analysis: '양중작업 시 유도로프 미사용 및 인양화물 수평 미유지로 낙하 및 협착 위험',
-        pmVerdict: '양중 즉시 중지 및 규격 유도로프(2개소 이상) 체결 후 재작업'
-      };
-    }
-
-    // 0-B. 말비계 / 우마 (산안규칙 제67조, 제13조)
-    if (text.includes('말비계') || text.includes('우마')) {
-      const isEdge = text.includes('모서리') || text.includes('단부') || text.includes('추락');
-      return {
-        severity: '중부적합',
-        law: '안전보건규칙 제67조(말비계의 구조), 제13조(안전난간의 구조 및 요건)',
-        item: '말비계',
-        hazardType: '추락',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: true,
-        photoBanner: isEdge ? '말비계 모서리 구간 단부 추락방지 미조치' : '말비계 안전기준 및 전도방지 미조치',
-        analysis: '말비계 설치범위 모서리 구간 단부 안전난간 또는 추락방지조치 미실시로 단부 추락 위험',
-        pmVerdict: '즉시 말비계 작업중지 및 모서리 단부 안전난간/추락방지망 설치 후 재검측'
-      };
-    }
-
-    // 0-C. 가설전선 / 통로 정리 (이미지 1번 정밀 일치: "통로 바닥에 전선이 정리되지 않아...")
-    if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) && 
-        (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
-      return {
-        severity: '경부적합',
-        law: '안전보건규칙 제304조(가설전선 등) 및 제22조(통로의 설치)',
-        item: '가설전선',
-        hazardType: '전도',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: false,
-        photoBanner: '통로 바닥 가설전선 거치 및 정리 미실시',
-        analysis: '통로 바닥에 가설전선이 거치되지 않고 방치되어 통행 근로자의 걸림 및 전도 재해 위험',
-        pmVerdict: '즉시 전선 거치대를 설치하여 바닥으로부터 띄우고 보행 안전통로 구획 정리'
-      };
-    }
-
-    // 0-D. 보 상부작업 / 다이빙 자세 / 미승인 작업 (이미지 2번 정밀 일치: "1. 보 상부작업 미승인 2. 다이빙 자세")
-    if (text.includes('보 상부') || text.includes('다이빙') || (text.includes('보') && text.includes('승인') && (text.includes('자세') || text.includes('작업')))) {
-      return {
-        severity: '중부적합',
-        law: '안전보건규칙 제38조(사전조사 및 작업계획서의 작성 등), 제44조',
-        item: '보 거푸집',
-        hazardType: '추락',
-        mgmtCauses: ['불안전 행동', '계획 미이행'],
-        holdPoint: true,
-        photoBanner: '보 상부 승인 미실시 및 불안전 자세 작업',
-        photo2Banner: '보 상부작업 시 다이빙 자세 취함',
-        analysis: '사전 승인 없는 보 상부 작업 및 다이빙 자세 등 불안전 행동으로 추락 위험 극심',
-        pmVerdict: '보 상부 작업 즉시 중지 및 사전 승인 절차 이행, 안전대 체결 설비 보강 후 재개'
-      };
-    }
-
-    // 0-E. 안전통로 내 거푸집/자재 방치 (이미지 3번 정밀 일치: "구획된 바닥 안전통로에 거푸집 자재 방치")
-    if ((text.includes('통로') || text.includes('통행')) && (text.includes('자재') || text.includes('거푸집') || text.includes('방치') || text.includes('적치'))) {
-      return {
-        severity: '경부적합',
-        law: '안전보건규칙 제22조(통로의 설치)',
-        item: '가설통로',
-        hazardType: '전도',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: false,
-        photoBanner: '구획된 바닥 안전통로 내 거푸집 자재 방치',
-        analysis: '구획된 바닥 안전통로에 거푸집 등 자재를 무단 방치하여 통행 방해 및 전도 위험',
-        pmVerdict: '안전통로 내 적치 자재 즉시 반출 및 지정 야적 구역으로 이동 조치'
-      };
-    }
-
-    // 1. 밀폐공간 및 질식/유해가스 (산안규칙 제619조~)
-    if (text.includes('밀폐') || text.includes('농도') || text.includes('산소') || text.includes('유해가스') || text.includes('질식') || text.includes('환기팬') || text.includes('송기마스크')) {
-      return {
-        severity: '중부적합',
-        law: '산안규칙 제619조의2(산소 및 유해가스 농도의 측정)',
-        item: '밀폐공간',
-        hazardType: '질식',
-        mgmtCauses: ['계획 미이행', '불안전 행동'],
-        holdPoint: true,
-        photoBanner: '밀폐공간 유해가스 농도 미측정 진입',
-        analysis: '밀폐공간 작업 전 산소 및 유해가스 농도 미측정 또는 환기 미실시로 질식 사망 위험',
-        pmVerdict: '즉시 작업 중지, 적정 공기 측정(산소 18~23.5%) 및 송풍기 가동 확인 후 재개'
-      };
-    }
-    // 2. 비계 및 작업발판
-    if (text.includes('비계') || text.includes('발판') || text.includes('틈새')) {
-      return {
-        item: '비계',
-        law: '산안규칙 제56조(작업발판의 구조)',
-        hazardType: '추락',
-        severity: '중부적합',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: true,
-        photoBanner: '비계 작업발판 미설치 및 틈새 과다',
-        analysis: '비계 작업발판 틈새 3cm 초과 또는 발판 폭 기준 미달로 추락 위험',
-        pmVerdict: '즉시 해당 구간 작업중지 및 발판 틈새 3cm 이하 보강 후 재검측'
-      };
-    }
-    // 3. 개구부
-    if (text.includes('개구부') || text.includes('피트') || text.includes('덮개')) {
-      return {
-        item: '개구부',
-        law: '산안규칙 제43조(개구부 등의 방호 조치)',
-        hazardType: '추락',
-        severity: '중부적합',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: true,
-        photoBanner: '바닥 개구부 덮개 미설치',
-        analysis: '바닥 개구부 고정 덮개 미설치 또는 임의 개방으로 추락 위험 극심',
-        pmVerdict: '즉시 위험구역 출입통제 및 규격 덮개(고정/추락주의 표지) 설치'
-      };
-    }
-    // 4. 안전난간
-    if (text.includes('난간') || text.includes('단부') || text.includes('슬래브')) {
-      return {
-        item: '안전난간',
-        law: '산안규칙 제13조(안전난간의 구조 및 요건)',
-        hazardType: '추락',
-        severity: '중부적합',
-        mgmtCauses: ['불안전 상태', '불안전 행동'],
-        holdPoint: true,
-        photoBanner: '슬래브 단부 안전난간 미설치',
-        analysis: '높이 2m 이상 슬래브 단부 안전난간 미설치로 추락 사망 위험',
-        pmVerdict: '즉시 단부 접근 금지 및 상부·중간난간대 완벽 설치 후 검측'
-      };
-    }
-    // 5. 안전대
-    if (text.includes('안전대') || text.includes('구명줄')) {
-      return {
-        item: '안전대',
-        law: '산안규칙 제44조(안전대의 부착설비 등)',
-        hazardType: '추락',
-        severity: '중부적합',
-        mgmtCauses: ['불안전 행동', '계획 미이행'],
-        holdPoint: true,
-        photoBanner: '고소작업 시 안전대 미체결',
-        analysis: '고소작업자 안전대 미체결 또는 수직/수평 구명줄 미설치',
-        pmVerdict: '즉시 안전대 이중고리 체결 지도 및 구명줄 보강 설치'
-      };
-    }
-    // 6. 화재 및 용접
-    if (text.includes('용접') || text.includes('불티') || text.includes('화재')) {
-      return {
-        item: '화기작업',
-        law: '산안규칙 제241조(화재위험작업 시의 안전조치)',
-        hazardType: '화재·폭발',
-        severity: '중부적합',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        holdPoint: true,
-        photoBanner: '용접 시 불티 비산방지포 미설치',
-        analysis: '용접 불티 비산방지포 미설치 또는 소화기 미비치로 화재 위험',
-        pmVerdict: '화기작업 즉시 중지, 가연물 제거 및 방염시트 차단 후 재개'
-      };
-    }
-    // 7. 가설전기 / 감전 / 분전함·전등 소켓 충전부 노출·접지 불량
-    if (text.includes('전기') || text.includes('분전') || text.includes('접지') || text.includes('차단기') || text.includes('충전부') || text.includes('감전') || text.includes('전등') || text.includes('소켓') || text.includes('투광등') || text.includes('심선')) {
-      const isLivePart = text.includes('충전부') || text.includes('노출');
-      const isLight = text.includes('전등') || text.includes('소켓') || text.includes('심선') || text.includes('투광등');
-      const isGroundBolt = text.includes('접지선') && (text.includes('고정') || text.includes('볼트') || text.includes('용량') || text.includes('미연결'));
-      return {
-        item: isLight ? '전등/전선' : '분전반',
-        workGroup: '가설전기공사',
-        workMethod: '설치조립작업',
-        agentMajor: '전기·화기·설비',
-        agentMid: '전기시설',
-        agentMinor: isLight ? '가설전선/이동릴선' : (isGroundBolt ? '접지시설' : (isLivePart ? '분전함' : '누전차단기')),
-        law: isLivePart
-          ? '안전보건규칙 제301조(전기기계ㆍ기구 충전부 방호)'
-          : (isGroundBolt || text.includes('접지') ? '안전보건규칙 제302조(전기 기계ㆍ기구의 접지)' : '안전보건규칙 제304조(누전차단기에 의한 감전방지)'),
-        hazardType: '감전',
-        type: '감전',
-        severity: '중부적합',
-        mgmtCauses: ['불안전 상태', '계획 미이행'],
-        condition: '방호장치 결함 (덮개·난간 미설치 등)',
-        action: '해당없음',
-        rootCauseMgmt: '관리감독자 지정 및 역할 수행 미흡',
-        rootCauseSystem: '안전시설물 설치/인계인수 프로세스 미흡',
-        stakeholder: '협력사 관리감독자',
-        holdPoint: false,
-        photoBanner: isLight
-          ? '전등 소켓 충전부 노출 및 절연 불량'
-          : (isLivePart ? '분전함 차단기 충전부 노출' : (isGroundBolt ? '접지선 볼트 고정 불량 및 용량 부족' : '가설분전반 관리 및 접지 불량')),
-        analysis: isLight
-          ? '작업등·전등 소켓 충전부 노출 및 전선 절연 불량으로 감전 위험'
-          : (isLivePart ? '가설컨테이너 분전함 내 차단기 충전부 방호커버 미설치로 감전 위험' : '임시 분전함 외함 접지 미시행 또는 접지선 체결 불량'),
-        pmVerdict: '즉시 전원 차단 및 충전부 절연 방호·접지 보강 후 사용'
-      };
-    }
-    // 7-B. 지게차 / 하역운반 / 유도원 근접 충돌
-    if (text.includes('지게차') || text.includes('하역') || text.includes('유도원') || text.includes('신호수') || text.includes('충돌')) {
-      const isWindow = /pl\s*창호|창호|유리/i.test(text);
-      const isPc = /p\.?c\s*공사|피씨|프리캐스트|\bpc\b/i.test(text);
-      return {
-        item: '운반장비',
-        workGroup: isWindow ? '창호공사(PL)' : (isPc ? 'PC공사' : '가설공사(건설장비)'),
-        workMethod: '하역운반작업',
-        agentMajor: '건설장비',
-        agentMid: '운반장비',
-        agentMinor: '지게차',
-        law: '안전보건규칙 제172조(접촉의 방지), 제38조(사전조사 및 작업계획서의 작성 등)',
-        hazardType: '충돌',
-        type: '충돌',
-        severity: '중부적합',
-        mgmtCauses: ['계획 미이행', '불안전 행동'],
-        condition: '해당없음',
-        action: '위험장소 접근 (출입통제 구역 진입 등)',
-        rootCauseMgmt: '작업계획서 미수립 또는 형식적 작성',
-        rootCauseSystem: '표준작업절차서(SOP) 미배포 또는 현장 부적합',
-        stakeholder: '협력사 근로자',
-        holdPoint: true,
-        photoBanner: '유도원·근로자 지게차 근접 작업',
-        analysis: '지게차 자재 하역작업 중 유도원 및 근로자가 안전거리(5m) 미확보 상태로 장비에 근접하여 충돌 위험',
-        pmVerdict: '지게차 유도원 안전거리 확보 기준 재교육 및 하역장소 통제 모니터링 강화'
-      };
-    }
-    // 8. 거푸집 동바리 / 붕괴
-    if (text.includes('동바리') || text.includes('서포트') || text.includes('거푸집') || text.includes('붕괴')) {
-      return {
-        item: '거푸집동바리',
-        law: '산안규칙 제332조(거푸집동바리등의 안전조치)',
-        hazardType: '붕괴·도괴',
-        severity: '중부적합',
-        mgmtCauses: ['계획 미이행', '불안전 상태'],
-        holdPoint: true,
-        photoBanner: '동바리 수평연결재 미체결',
-        analysis: '파이프서포트 수평연결재 미체결 또는 2본 이상 연결 사용',
-        pmVerdict: '타설작업 중지, 구조검토서 기준 수평연결재 2방향 보강 완료 후 타설 승인'
-      };
-    }
-    // 9. 통로 / 전도
-    if (text.includes('조명') || text.includes('어두') || text.includes('통로') || text.includes('넘어')) {
-      return {
-        item: '가설통로',
-        law: '산안규칙 제21조(통로의 조명), 제22조(통로의 설치)',
-        hazardType: '전도',
-        severity: '경부적합',
-        mgmtCauses: ['불안전 상태'],
-        holdPoint: false,
-        photoBanner: '가설통로 통행방해물 방치',
-        analysis: '가설통로 조도 75럭스 미달 또는 통로 상 자재 방치로 보행 장애',
-        pmVerdict: '당일 작업 종료 전 통로 자재 구획 정리 및 고효율 LED 조명 추가 설치'
-      };
-    }
-
-    // 일치하는 특정 규칙이 없으면 임의로 추락을 부여하지 않고 null 반환 (AI가 자유롭게 전 조항 분석하도록 위임)
+    // 관련근거(산안법) 및 PM 판정결과는 절대 하드코딩하지 않고 Qwen AI가 부적합 내용+사진을 분석해 직접 도출
     return null;
   }
 
   /**
-   * 실시간 스트리밍으로 Qwen AI 정밀 분석 (onProgress 콜백 지원)
+   * 실시간 Qwen AI 정밀 분석 (부적합 내용 + 첨부 사진 통합 분석으로 산업안전보건법 직접 판정)
    */
   async function streamAnalyzeSafetyText(content, extraContext = {}, onProgress = () => {}) {
     if (!content || !content.trim()) {
       throw new Error('분석할 지적 내용을 먼저 입력해주세요.');
     }
 
-    // 1단계: 0.05초 즉시 룰 엔진 결과 생성
-    const instantResult = quickRuleAnalysis(content);
+    const photos = Array.isArray(extraContext.photos) ? extraContext.photos.filter(Boolean) : [];
+    let imageBase64 = '';
+    if (photos.length > 0) {
+      imageBase64 = await resolvePhotoForVision(photos[0]);
+    }
 
-    // ── [2단계-A] 클라우드 모드이거나 LM Studio가 오프라인인 경우: Cloudflare 24시간 AI 즉시 호출 ──
-    const workerUrl = window.SAFEPATROL_CONFIG?.workerUrl;
+    // ── [1단계-A] 클라우드 모드: Cloudflare 24시간 Qwen Vision + Qwen3-30B 통합 분석 ──
+    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || CLOUDFLARE_AI_URL;
     if (isCloudMode && workerUrl) {
-      onProgress({ phase: 'connecting', message: '☁️ Cloudflare 24시간 클라우드 AI 분석 중...' });
+      onProgress({ phase: 'connecting', message: imageBase64 ? '☁️ Qwen Vision + Qwen3 AI가 사진과 산안법을 분석 중...' : '☁️ Qwen3 AI가 부적합 내용과 산안법을 분석 중...' });
       try {
         const pin = storage.getItem('sp_pin') || '111111';
         const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
@@ -376,8 +160,11 @@
             'X-PIN': pin
           },
           body: JSON.stringify({
+            mode: 'manual_analyze',
             content,
+            imageBase64: imageBase64 || undefined,
             workGroup: extraContext.workGroup || '',
+            location: extraContext.location || '',
             productType: extraContext.productType || '',
             progressRate: extraContext.progressRate || 35
           })
@@ -385,61 +172,51 @@
 
         if (cfRes.ok) {
           const data = await cfRes.json();
+          const isRealAi = Boolean(data.source && !String(data.source).includes('rule_engine'));
+          const lawTitle = isRealAi ? String(data.law || '').trim() : '';
+          const lawBody = isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '';
           return {
             severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
-            law: data.law || (instantResult ? instantResult.law : '산안법 관련 조항 검토'),
-            hazardType: data.hazardType || (instantResult ? instantResult.hazardType : '기타'),
-            item: data.item || (instantResult ? instantResult.item : '기타'),
-            mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : (instantResult ? instantResult.mgmtCauses : ['불안전 상태']),
-            holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : (instantResult ? instantResult.holdPoint : false),
-            analysis: data.analysis || (instantResult ? instantResult.analysis : '산업안전보건기준에 관한 규칙 위반 사항'),
-            pmVerdict: data.pmVerdict || (instantResult ? instantResult.pmVerdict : '즉시 시정 조치 및 현장 점검 완료 후 작업'),
-            photoBanner: data.photoBanner || (instantResult ? instantResult.photoBanner : ''),
-            photo2Banner: data.photo2Banner || (instantResult ? instantResult.photo2Banner : ''),
-            source: 'cloudflare_cloud_qwen'
+            law: lawTitle,
+            lawBody,
+            hazardType: data.hazardType || data.type || '',
+            item: data.item || '',
+            mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : [],
+            holdPoint: Boolean(data.holdPoint),
+            analysis: data.analysis || (lawBody ? lawBody : 'Qwen AI 산업안전보건기준에 관한 규칙 분석 완료'),
+            pmVerdict: '',
+            photoBanner: data.photoBanner || '',
+            photo2Banner: data.photo2Banner || '',
+            source: data.source || 'cloudflare_cloud_qwen'
           };
         }
       } catch (cfErr) {
-        console.warn('Cloudflare AI 호출 오류, 룰 엔진으로 대체:', cfErr);
+        console.warn('Cloudflare AI 호출 오류, 로컬 LM Studio 시도:', cfErr);
       }
     }
 
-    // ── [2단계-B] 내 노트북이 켜져 있는 경우: 로컬 LM Studio 스트리밍 추론 ──
+    // ── [1단계-B] 로컬 LM Studio 스트리밍 추론 (사진 Vision + 부적합 내용 통합 분석) ──
     const systemPrompt = `너는 대한민국 건설현장 최고 안전감사관이자 고용노동부 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 전문 AI이다.
-주어진 현장 부적합 지적사항과 첨부된 사진(또는 작업상황)을 정밀 분석하여, 실물 점검장표 사진 상단 적색 음영 배너(photoBanner, photo2Banner) 및 위반 법령을 도출하라.
+주어진 현장 부적합 지적사항과 첨부된 사진을 정밀 분석하여, 실제 적용되는 산업안전보건기준에 관한 규칙 조항(law), 핵심 기준 본문(lawBody), 사진 상단 배너(photoBanner)를 직접 도출하라.
 
-[핵심 작성 원칙 - 사진 상단 적색 배너 (photoBanner / photo2Banner)]
-1. 배너 안에는 반드시 구체적으로 '어떤 작업/상황'에서 '어떤 안전기준을 안 지켰는지 / 어떤 위험 행동을 했는지'를 직접적으로 작성하라 (15~20자 내외).
-   - [올바른 작성 예시]:
-     • '양중작업 시 화물을 직접 손으로 잡음'
-     • '양중작업 시 유도로프 미사용'
-     • '양중작업 시 화물의 수평양중 미실시'
-     • '말비계 모서리 구간 단부 추락방지 미조치'
-     • '통로 바닥 가설전선 거치 및 정리 미실시'
-     • '보 상부 승인 미실시 및 불안전 자세 작업'
-     • '구획된 바닥 안전통로 내 거푸집 자재 방치'
-     • '작업발판 단부 안전난간 미설치'
-     • '바닥 개구부 덮개 미설치 및 고정 미흡'
-     • '고소작업 시 안전대 미체결'
-2. [절대 금지 사항 - 위반 시 엄격히 반려]:
-   - ❌ '표준 안전작업절차 및 안전수칙 미준수', '안전수칙 미준수' 같은 모호하고 추상적인 문구를 절대 넣지 말 것!
-   - ❌ '작업방법 불량(동작/자세 불량)', '보호구 착용 불량', '불안전 행동', '불안전 상태' 같은 통계 분류 카테고리 명칭을 그대로 넣지 말 것!
-3. 지적내용에 2가지 독립된 지적사항(예: 1. 손으로 잡음, 2. 유도로프 미사용)이 있거나 사진이 2장인 경우:
-   - photoBanner: 1번 사진용 구체적 위반 문구 (예: '양중작업 시 화물을 직접 손으로 잡음')
-   - photo2Banner: 2번 사진용 구체적 위반 문구 (예: '양중작업 시 유도로프 미사용', 단일 지적이면 빈 문자열 '')
+[핵심 작성 원칙]
+1. law: 반드시 실제 위반에 해당하는 '산업안전보건기준에 관한 규칙 제OO조(조항명)' 형식으로 직접 판단하라.
+2. lawBody: 해당 조항의 핵심 준수 기준 1~2문장을 간결하게 작성하라 ('~하여야 한다.' 종결, 임의 '-' 불릿 불필요).
+3. photoBanner: 구체적으로 어떤 작업/상황에서 어떤 안전기준을 위반했는지 15~20자 내외 명사구로 작성하라.
+4. 추상 문구('안전수칙 미준수', '불안전 행동' 등) 금지.
 
-생각 과정(<think>)은 3~4문장 이내로 아주 짧게 끝내고, 반드시 </think> 태그 뒤에 아래 JSON 형식으로만 최종 답을 출력하라:
+반드시 아래 JSON 형식으로만 답을 출력하라:
 {
   "severity": "중부적합" 또는 "경부적합",
-  "law": "안전보건규칙 제OO조(조항명 전문)",
-  "hazardType": "추락" 또는 "낙하" 또는 "붕괴·도괴" 또는 "협착" 또는 "전도" 또는 "화재·폭발" 또는 "감전" 또는 "질식",
+  "law": "산업안전보건기준에 관한 규칙 제OO조(조항명)",
+  "lawBody": "해당 조항의 핵심 안전기준 1~2문장",
+  "hazardType": "추락" 또는 "낙하" 또는 "붕괴" 또는 "협착" 또는 "전도" 또는 "화재" 또는 "감전" 또는 "질식" 또는 "충돌",
   "item": "해당 작업 또는 기인물 명칭",
   "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 위반 문구",
   "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 위반 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
-  "analysis": "법적 위반 판단 이유 1~2문장",
-  "pmVerdict": "현장 PM 조치 권고 문장"
+  "analysis": "법적 위반 판단 이유 1~2문장"
 }`;
 
     const userPrompt = `지적사항: "${content.trim()}"
@@ -448,36 +225,29 @@ ${extraContext.location ? `작업장소: ${extraContext.location}` : ''}
 ${extraContext.productType ? `건물용도: ${extraContext.productType}` : ''}
 ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
-위 지적사항 및 현장 사진/상황을 분석하여 사진 상단 배너(구체적으로 어떤 점이 안 되었는지 직시)와 산안법 위반을 분석하라.`;
+위 지적사항과 첨부 사진을 종합 분석하여 사진 상단 배너와 정확한 산업안전보건기준에 관한 규칙(law, lawBody)을 도출하라.`;
 
-    // 사진 첨부 시 멀티모달(Vision) 지원 포맷 구성 (미지원 모델 시 자동 텍스트 폴백)
-    const photos = Array.isArray(extraContext.photos) ? extraContext.photos.filter(Boolean) : [];
     let messages = [
       { role: 'system', content: systemPrompt }
     ];
 
-    if (photos.length > 0) {
-      const contentParts = [{ type: 'text', text: userPrompt }];
-      photos.slice(0, 2).forEach((p, idx) => {
-        const url = typeof p === 'string' ? p : (p.previewUrl || p.url || '');
-        if (url && (url.startsWith('data:image/') || url.startsWith('http'))) {
-          contentParts.push({
-            type: 'image_url',
-            image_url: { url }
-          });
-        }
+    if (imageBase64) {
+      messages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: userPrompt },
+          { type: 'image_url', image_url: { url: imageBase64 } }
+        ]
       });
-      messages.push({ role: 'user', content: contentParts });
     } else {
       messages.push({ role: 'user', content: userPrompt });
     }
 
     let ctrl = new AbortController();
-    // 35초 초과 시 자동 타임아웃하여 룰 기반 결과 반환
     const timeout = setTimeout(() => ctrl.abort(), 35000);
 
     try {
-      onProgress({ phase: 'connecting', message: 'LM Studio 로컬 AI 연결 중...' });
+      onProgress({ phase: 'connecting', message: 'LM Studio 로컬 Qwen AI 연결 중...' });
 
       let res;
       try {
@@ -487,15 +257,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           body: JSON.stringify({
             model: currentModel,
             messages,
-            temperature: 0.4,
+            temperature: 0.2,
             max_tokens: 800,
             stream: true
           }),
           signal: ctrl.signal
         });
       } catch (postErr) {
-        // 비전 미지원 모델일 경우 텍스트 단독으로 즉시 재시도
-        if (photos.length > 0) {
+        if (imageBase64) {
           res = await fetch(`${currentEndpoint}/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -505,7 +274,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
               ],
-              temperature: 0.4,
+              temperature: 0.2,
               max_tokens: 800,
               stream: true
             }),
@@ -517,10 +286,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       }
 
       clearTimeout(timeout);
-
-      if (!res.ok) {
-        throw new Error(`LM Studio HTTP 오류 (${res.status})`);
-      }
+      if (!res.ok) throw new Error(`LM Studio HTTP 오류 (${res.status})`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -529,7 +295,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       let fullContent = '';
       let thinkTokens = 0;
 
-      onProgress({ phase: 'thinking', message: 'AI가 사진과 부적합사항 정밀 분석 중 (🤔 추론 토큰 수신)...' });
+      onProgress({ phase: 'thinking', message: 'Qwen AI가 사진과 산안법 정밀 분석 중...' });
 
       while (!done) {
         const { value, done: isDone } = await reader.read();
@@ -546,18 +312,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   fullReasoning += delta.reasoning_content;
                   thinkTokens++;
                   if (thinkTokens % 15 === 0) {
-                    onProgress({ 
-                      phase: 'thinking', 
-                      message: `AI 추론 중... (${thinkTokens} 토큰 생성 중)` 
-                    });
+                    onProgress({ phase: 'thinking', message: `Qwen AI 추론 중... (${thinkTokens} 토큰)` });
                   }
                 }
                 if (delta?.content) {
                   fullContent += delta.content;
-                  onProgress({ 
-                    phase: 'generating', 
-                    message: 'AI 사진 배너 및 법률 분석 결과 수신 중...' 
-                  });
+                  onProgress({ phase: 'generating', message: 'Qwen AI 산안법 및 사진 분석 결과 수신 중...' });
                 }
               } catch (e) {}
             }
@@ -565,78 +325,85 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         }
       }
 
-      // JSON 파싱 시도 (content 우선, 없으면 reasoning 전체에서 탐색)
       const parsed = extractJSON(fullContent) || extractJSON(fullReasoning);
-
       if (parsed) {
         return {
           severity: parsed.severity?.includes('중부적합') ? '중부적합' : '경부적합',
-          law: parsed.law || instantResult.law,
-          hazardType: parsed.hazardType || instantResult.hazardType,
-          item: parsed.item || instantResult.item,
-          mgmtCauses: Array.isArray(parsed.mgmtCauses) && parsed.mgmtCauses.length ? parsed.mgmtCauses : instantResult.mgmtCauses,
-          holdPoint: parsed.holdPoint !== undefined ? !!parsed.holdPoint : instantResult.holdPoint,
-          analysis: parsed.analysis || instantResult.analysis,
-          pmVerdict: parsed.pmVerdict || instantResult.pmVerdict,
-          photoBanner: parsed.photoBanner || instantResult.photoBanner || '',
-          photo2Banner: parsed.photo2Banner || instantResult.photo2Banner || '',
+          law: parsed.law || '',
+          lawBody: parsed.lawBody || '',
+          hazardType: parsed.hazardType || '',
+          item: parsed.item || '',
+          mgmtCauses: Array.isArray(parsed.mgmtCauses) && parsed.mgmtCauses.length ? parsed.mgmtCauses : [],
+          holdPoint: Boolean(parsed.holdPoint),
+          analysis: parsed.analysis || '',
+          pmVerdict: '',
+          photoBanner: parsed.photoBanner || '',
+          photo2Banner: parsed.photo2Banner || '',
           source: 'local_qwen'
         };
       }
 
-      // JSON 파싱 안 되어도 추론 텍스트에 중부적합/산안법이 언급되었으면 반영
       if (fullReasoning || fullContent) {
         const allText = fullReasoning + fullContent;
-        const isMajor = allText.includes('중부적합') || allText.includes('작업중지') || allText.includes('위험 극심');
-        const lawMatch = allText.match(/산안규칙\s*제\d+조(?:\([^\)]+\))?/);
+        const isMajor = allText.includes('중부적합') || allText.includes('작업중지');
+        const lawMatch = allText.match(/(?:산업)?안전보건(?:기준에\s*관한\s*)?규칙\s*제\d+조(?:의\d+)?(?:\([^\)]+\))?/);
         return {
-          ...instantResult,
-          severity: isMajor ? '중부적합' : instantResult.severity,
-          law: lawMatch ? lawMatch[0] : instantResult.law,
-          analysis: '로컬 Qwen AI 분석 완료: ' + instantResult.analysis,
+          severity: isMajor ? '중부적합' : '경부적합',
+          law: lawMatch ? lawMatch[0] : '',
+          lawBody: '',
+          hazardType: '',
+          item: '',
+          mgmtCauses: [],
+          holdPoint: false,
+          analysis: '로컬 Qwen AI 분석 완료',
+          pmVerdict: '',
+          photoBanner: '',
+          photo2Banner: '',
           source: 'local_qwen_reasoning'
         };
       }
 
-      return instantResult;
+      throw new Error('Qwen AI 응답을 파싱할 수 없습니다.');
     } catch (err) {
-      console.warn('LM Studio 호출 실패, Cloudflare 24시간 클라우드로 2차 재시도:', err);
+      console.warn('로컬 Qwen AI 호출 실패, Cloudflare 클라우드 재시도:', err);
       if (workerUrl) {
         try {
-          onProgress({ phase: 'connecting', message: '☁️ 24시간 클라우드 AI로 전환하여 분석 중...' });
+          onProgress({ phase: 'connecting', message: '☁️ Cloudflare Qwen AI로 전환하여 분석 중...' });
           const pin = storage.getItem('sp_pin') || '111111';
           const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-PIN': pin },
             body: JSON.stringify({
+              mode: 'manual_analyze',
               content,
+              imageBase64: imageBase64 || undefined,
               workGroup: extraContext.workGroup || '',
+              location: extraContext.location || '',
               productType: extraContext.productType || '',
               progressRate: extraContext.progressRate || 35
             })
           });
           if (cfRes.ok) {
             const data = await cfRes.json();
+            const isRealAi = Boolean(data.source && !String(data.source).includes('rule_engine'));
             return {
               severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
-              law: data.law || instantResult.law,
-              hazardType: data.hazardType || instantResult.hazardType,
-              item: data.item || instantResult.item,
-              mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : instantResult.mgmtCauses,
-              holdPoint: data.holdPoint !== undefined ? !!data.holdPoint : instantResult.holdPoint,
-              analysis: data.analysis || instantResult.analysis,
-              pmVerdict: data.pmVerdict || instantResult.pmVerdict,
-              source: 'cloudflare_cloud_qwen'
+              law: isRealAi ? String(data.law || '').trim() : '',
+              lawBody: isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '',
+              hazardType: data.hazardType || data.type || '',
+              item: data.item || '',
+              mgmtCauses: Array.isArray(data.mgmtCauses) ? data.mgmtCauses : [],
+              holdPoint: Boolean(data.holdPoint),
+              analysis: data.analysis || '',
+              pmVerdict: '',
+              photoBanner: data.photoBanner || '',
+              photo2Banner: data.photo2Banner || '',
+              source: data.source || 'cloudflare_cloud_qwen'
             };
           }
         } catch (cfErr) {}
       }
-
-      // 오프라인 룰 엔진 결과 반환
-      return {
-        ...instantResult,
-        warning: err.name === 'AbortError' ? 'AI 추론 시간 초과로 기본 안전기준이 적용되었습니다.' : `산안법 안전기준이 적용되었습니다.`
-      };
+      throw new Error('Qwen AI 서버에 연결할 수 없습니다. 네트워크 또는 LM Studio 연결을 확인해주세요.');
     }
   }
 
@@ -898,7 +665,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   function cleanOpinionText(txt) {
     if (!txt) return '';
     let s = healSafetyKoreanLexicon(String(txt))
-      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+      .replace(/\[\s*(?:HAT|점검단)\s*제안\s*\][\s\S]*$/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -932,22 +699,24 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const items = [];
     for (let l of rawLines) {
       if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
-      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(l);
+      const hasDash = /^[-•*·▪]\s*/.test(l);
+      const isBulletStart = hasDash || /^\d+[\).]/s.test(l);
       let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
       if (/^\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(text)) continue;
       if (items.length === 0 || isBulletStart) {
-        items.push(text);
+        items.push({ text, hasDash });
       } else {
-        items[items.length - 1] = norm?.joinWrappedKoreanLines
-          ? norm.joinWrappedKoreanLines(items[items.length - 1], text)
-          : `${items[items.length - 1]} ${text}`.replace(/\s+/g, ' ');
+        items[items.length - 1].text = norm?.joinWrappedKoreanLines
+          ? norm.joinWrappedKoreanLines(items[items.length - 1].text, text)
+          : `${items[items.length - 1].text} ${text}`.replace(/\s+/g, ' ');
       }
     }
     if (items.length === 0) return '';
     return items.map(it => {
-      const h = healSafetyKoreanLexicon(it);
-      return `- ${norm?.normalizeKoreanSpacing ? norm.normalizeKoreanSpacing(h) : h}`;
+      const h = healSafetyKoreanLexicon(it.text);
+      const body = norm?.normalizeKoreanSpacing ? norm.normalizeKoreanSpacing(h) : h;
+      return it.hasDash ? `- ${body}` : body;
     }).join('\n');
   }
 
@@ -970,20 +739,22 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]/s.test(line);
+      const hasDash = /^[-•*·▪]\s*/.test(line);
+      const isBulletStart = hasDash || /^\d+[\).]/s.test(line);
       let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
       if (items.length === 0 || isBulletStart) {
-        items.push(cl);
+        items.push({ text: cl, hasDash });
       } else {
-        items[items.length - 1] = window.SafeTextNormalizer?.joinWrappedKoreanLines
-          ? window.SafeTextNormalizer.joinWrappedKoreanLines(items[items.length - 1], cl)
-          : `${items[items.length - 1]} ${cl}`.replace(/\s+/g, ' ');
+        items[items.length - 1].text = window.SafeTextNormalizer?.joinWrappedKoreanLines
+          ? window.SafeTextNormalizer.joinWrappedKoreanLines(items[items.length - 1].text, cl)
+          : `${items[items.length - 1].text} ${cl}`.replace(/\s+/g, ' ');
       }
     }
     return items.map(it => {
-      const h = healSafetyKoreanLexicon(it);
-      return `- ${window.SafeTextNormalizer?.normalizeKoreanSpacing ? window.SafeTextNormalizer.normalizeKoreanSpacing(h) : h}`;
+      const h = healSafetyKoreanLexicon(it.text);
+      const body = window.SafeTextNormalizer?.normalizeKoreanSpacing ? window.SafeTextNormalizer.normalizeKoreanSpacing(h) : h;
+      return it.hasDash ? `- ${body}` : body;
     }).join('\n');
   }
 
@@ -991,7 +762,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!txt) return '';
     const rawStr = healSafetyKoreanLexicon(String(txt));
     if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-      return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
+      return `${/^[-•▪]\s*/.test(rawStr.trim()) ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
     }
     let cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
@@ -1009,27 +780,29 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const items = [];
 
     for (const line of rawLines) {
-      const hasExplicitBullet = /^[-•*·▪.]\s*|^\d+[\).]/s.test(line);
+      const hasDash = /^[-•*·▪]\s*/.test(line);
+      const hasExplicitBullet = hasDash || /^\.\s*|^\d+[\).]/s.test(line);
       let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
       if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업팀\s*교육)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
+        return `${hasDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
       }
 
       if (items.length === 0 || hasExplicitBullet) {
-        items.push(cl);
+        items.push({ text: cl, hasDash });
       } else {
-        items[items.length - 1] = window.SafeTextNormalizer?.joinWrappedKoreanLines
-          ? window.SafeTextNormalizer.joinWrappedKoreanLines(items[items.length - 1], cl)
-          : `${items[items.length - 1]} ${cl}`.replace(/\s+/g, ' ');
+        items[items.length - 1].text = window.SafeTextNormalizer?.joinWrappedKoreanLines
+          ? window.SafeTextNormalizer.joinWrappedKoreanLines(items[items.length - 1].text, cl)
+          : `${items[items.length - 1].text} ${cl}`.replace(/\s+/g, ' ');
       }
     }
 
     return items.map(it => {
-      const h = healSafetyKoreanLexicon(it);
-      return `- ${window.SafeTextNormalizer?.normalizeKoreanSpacing ? window.SafeTextNormalizer.normalizeKoreanSpacing(h) : h}`;
+      const h = healSafetyKoreanLexicon(it.text);
+      const body = window.SafeTextNormalizer?.normalizeKoreanSpacing ? window.SafeTextNormalizer.normalizeKoreanSpacing(h) : h;
+      return it.hasDash ? `- ${body}` : body;
     }).join('\n');
   }
   function cleanContent(txt) {
@@ -1179,21 +952,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               }
               if (cfData.pmVerdict) {
                 const incomingPm = String(cfData.pmVerdict).trim();
-                const hasExplicitPm = Boolean(
-                  fallbackRecord._hasExplicitPmVerdict ||
-                  (Array.isArray(fallbackRecord.pmVerdictItems) && fallbackRecord.pmVerdictItems.length > 0)
-                );
                 const hasSheetPropType = Boolean(
                   fallbackRecord._hasExplicitPropType ||
                   (Array.isArray(fallbackRecord.proposalItems) && fallbackRecord.proposalItems.length > 0 && fallbackRecord.inspectorOpinionType)
                 );
-                if (!hasSheetPropType) {
+                if (!hasSheetPropType && /^(?:시스템\s*개선|교육\s*\/\s*코칭|페널티|제재\s*\/\s*징계)/.test(incomingPm)) {
                   fallbackRecord.inspectorOpinionType = incomingPm;
                 }
-                if (!hasExplicitPm) {
-                  fallbackRecord.pmVerdict = incomingPm;
-                  fallbackRecord.pmVerdictType = incomingPm;
-                }
+                // 주의: 원본 PDF에 [PM판정결과]가 명시되지 않았으면 AI 추론값을 PM 판정결과로 강제 주입하지 않음!
               }
               // 주의: 장표에서 픽셀로 직접 감지한 4대 발생요인(mgmtCauses)이 이미 있으면 AI 추론값으로 절대 덮어쓰지 않음!
               if ((!Array.isArray(fallbackRecord.mgmtCauses) || fallbackRecord.mgmtCauses.length === 0) && Array.isArray(cfData.mgmtCauses) && cfData.mgmtCauses.length > 0) {
@@ -1827,11 +1593,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (norm?.normalizeFieldText) {
         if (rec.content) rec.content = norm.normalizeFieldText(rec.content, 'content');
         if (rec.location) rec.location = cleanLocation(norm.normalizeFieldText(rec.location, 'location'), rec.content) || rec.location;
-        if (rec.interviewOpinion) rec.interviewOpinion = cleanOpinionText(norm.normalizeFieldText(rec.interviewOpinion, 'interview'));
-        if (rec.auditProposal) rec.auditProposal = cleanProposalText(norm.normalizeFieldText(rec.auditProposal, 'proposalText'));
-        if (rec.actionPlan) {
-          rec.actionPlan = cleanActionPlan(norm.normalizeFieldText(rec.actionPlan, 'actionPlan'));
-          rec.countermeasure = rec.actionPlan;
+        // 사용자가 직접 입력한 레코드(_manualEntry)의 인터뷰 의견·점검단 제안·개선대책은 입력 원문을 100% 그대로 보존
+        if (!rec._manualEntry) {
+          if (rec.interviewOpinion) rec.interviewOpinion = cleanOpinionText(norm.normalizeFieldText(rec.interviewOpinion, 'interview'));
+          if (rec.auditProposal) rec.auditProposal = cleanProposalText(norm.normalizeFieldText(rec.auditProposal, 'proposalText'));
+          if (rec.actionPlan) {
+            rec.actionPlan = cleanActionPlan(norm.normalizeFieldText(rec.actionPlan, 'actionPlan'));
+            rec.countermeasure = rec.actionPlan;
+          }
         }
       }
       if (rec.photoBanner) {
@@ -1971,14 +1740,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               }
               if (typeof corr.content === 'string' && corr.content.trim() && !/\uFFFD/.test(corr.content)) rec.content = cleanContent(corr.content);
               if (typeof corr.location === 'string' && corr.location.trim() && !/\uFFFD/.test(corr.location)) rec.location = cleanLocation(corr.location, rec.content);
-              if (typeof corr.interviewOpinion === 'string' && corr.interviewOpinion.trim()) {
-                rec.interviewOpinion = cleanOpinionText(corr.interviewOpinion);
-                syncParsedOpinionsOnRecord(rec);
-              }
-              if (typeof corr.auditProposal === 'string' && corr.auditProposal.trim()) rec.auditProposal = cleanProposalText(corr.auditProposal);
-              if (typeof corr.actionPlan === 'string' && corr.actionPlan.trim()) {
-                rec.actionPlan = cleanActionPlan(corr.actionPlan);
-                rec.countermeasure = rec.actionPlan;
+              if (!rec._manualEntry) {
+                if (typeof corr.interviewOpinion === 'string' && corr.interviewOpinion.trim()) {
+                  rec.interviewOpinion = cleanOpinionText(corr.interviewOpinion);
+                  syncParsedOpinionsOnRecord(rec);
+                }
+                if (typeof corr.auditProposal === 'string' && corr.auditProposal.trim()) rec.auditProposal = cleanProposalText(corr.auditProposal);
+                if (typeof corr.actionPlan === 'string' && corr.actionPlan.trim()) {
+                  rec.actionPlan = cleanActionPlan(corr.actionPlan);
+                  rec.countermeasure = rec.actionPlan;
+                }
               }
               if (typeof corr.subcontractor === 'string' && !/\uFFFD/.test(corr.subcontractor)) rec.subcontractor = corr.subcontractor.trim();
               if (typeof corr.inspectRound === 'string' && corr.inspectRound.trim()) {

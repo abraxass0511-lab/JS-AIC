@@ -1,9 +1,9 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261004_10';
-import { store } from './store.js?v=20261119_v55';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261121_v56';
+import { store } from './store.js?v=20261121_v56';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261115_v48';
-import './text-normalizer.js?v=20261115_v48';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261121_v56';
+import './text-normalizer.js?v=20261121_v56';
 
 const WORK_METHODS_9X9 = [
   '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
@@ -48,6 +48,7 @@ let selectedCauses = new Set();
 let smartResult = null;
 let smartRecommendationApplied = false;
 let appliedSmartResult = null;
+let aiAnalyzedLawBody = '';
 let pinInput = '';
 let targetFixRecord = null;
 let fixPhotoData = null;
@@ -2089,11 +2090,16 @@ function bindEvents() {
       photoBanner: $('#txtPhotoBanner')?.value.trim() || '',
       photo2Banner: $('#txtPhoto2Banner')?.value.trim() || '',
       interviewOpinion: $('#txtInterviewOpinion')?.value.trim() || '',
-      inspectorOpinionType: $('#selInspectorOpinionType')?.value || '시스템 개선',
+      inspectorOpinionType: $('#selInspectorOpinionType')?.value || '',
       auditProposal: $('#txtAuditProposal')?.value.trim() || '',
       pmVerdict: $('#txtPmVerdict')?.value.trim() || '',
+      pmVerdictType: $('#txtPmVerdict')?.value.trim() || '',
+      _hasExplicitPmVerdict: Boolean($('#txtPmVerdict')?.value.trim()),
+      _manualEntry: true,
       workMethod: workName,
       workPlan: '해당없음',
+      rawLaw: $('#txtLaw').value.trim(),
+      lawBody: aiAnalyzedLawBody || '',
       basis: {
         ra: '반영',
         cp: '해당없음',
@@ -2288,18 +2294,30 @@ function bindEvents() {
   // ── 현장 패트롤 점검장표 PPT 자동 생성 및 다운로드 핸들러 ──
   $('#btnPreviewEdu')?.addEventListener('click', () => updateEduPreview());
   
-  $('#btnDownloadJangpyoPpt')?.addEventListener('click', function () {
+  $('#btnDownloadJangpyoPpt')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.disabled) return;
     downloadSingleJangpyoPPT(this);
   });
-  $('#btnDownloadJangpyoPptBottom')?.addEventListener('click', function () {
+  $('#btnDownloadJangpyoPptBottom')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.disabled) return;
     downloadSingleJangpyoPPT(this);
   });
 
-  $('#btnDownloadAllJangpyoPpt')?.addEventListener('click', function () {
+  $('#btnDownloadAllJangpyoPpt')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.disabled) return;
     downloadBatchJangpyoPPT(currentEduRecords, this, currentEduPeriodLabel || '전체');
   });
 
-  $('#btnTableBatchJangpyo')?.addEventListener('click', function () {
+  $('#btnTableBatchJangpyo')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (this.disabled) return;
     const checkedBoxes = Array.from(document.querySelectorAll('.chk-record-item:checked'));
     let records = [];
     if (checkedBoxes.length > 0) {
@@ -2470,9 +2488,9 @@ function bindEvents() {
   }
 
   // ── 관리자용 PPT / 상세 HTML / 근로자용 PPT 자동 생성 핸들러 (월별 또는 기간 직접지정 지원) ──
-  $('#btnDownloadPPT')?.addEventListener('click', () => runPptDownload('manager'));
-  $('#btnDownloadDetailHTML')?.addEventListener('click', () => runPptDownload('detailHtml'));
-  $('#btnDownloadWorkerPPT')?.addEventListener('click', () => runPptDownload('worker'));
+  $('#btnDownloadPPT')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); runPptDownload('manager'); });
+  $('#btnDownloadDetailHTML')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); runPptDownload('detailHtml'); });
+  $('#btnDownloadWorkerPPT')?.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); runPptDownload('worker'); });
 
   // Fix Action Dialog
   $('#btnCancelFix').addEventListener('click', () => { $('#fixModal').style.display = 'none'; });
@@ -3705,7 +3723,7 @@ function initLmStudio() {
     if (resultCard) resultCard.style.display = 'none';
   });
 
-    // ── ✨ 로컬 Qwen AI 자동 분석 버튼 실행 (즉시 반영 + 스트리밍 보강) ──
+    // ── ✨ Qwen AI 자동 분석 버튼 실행 (하드코딩 법령 규칙 전면 제거 · 부적합 내용 + 첨부 사진 Qwen 통합 판정) ──
   btnAnalyze?.addEventListener('click', async () => {
     const content = $('#txtContent')?.value.trim();
     if (!content) {
@@ -3717,46 +3735,15 @@ function initLmStudio() {
     const btnIcon = $('#lmStudioBtnIcon');
     const btnText = $('#lmStudioBtnText');
 
-    // [0단계] 기존 스마트 AI 분류가 나와 있다면 먼저 자동 적용하여 완벽 동기화
+    // [0단계] 기존 스마트 AI 분류가 나와 있다면 먼저 자동 적용하여 동기화
     if (smartResult && !smartRecommendationApplied) {
       $('#btnApplySmart')?.click();
     }
 
-    // [1단계] 0.05초 고속 규칙 매칭 (명확한 규칙이 있고, 스마트 AI가 아직 적용 안 된 경우만 보조)
-    const instant = window.SafeLocalAI ? window.SafeLocalAI.quickRuleAnalysis(content) : null;
-    if (instant && !smartRecommendationApplied) {
-      if (instant.severity === '중부적합') $('#btnSeverityMajor')?.click();
-      else $('#btnSeverityMinor')?.click();
-      if (instant.law && $('#txtLaw')) $('#txtLaw').value = instant.law;
-      if (instant.hazardType && $('#txtType')) $('#txtType').value = instant.hazardType;
-      if (instant.item && $('#txtItem')) $('#txtItem').value = instant.item;
-      if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = instant.mgmtCauses.includes('계획 미수립');
-      if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = instant.mgmtCauses.includes('계획 미이행');
-      if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = instant.mgmtCauses.includes('불안전 행동');
-      if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = instant.mgmtCauses.includes('불안전 상태');
-      if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!instant.holdPoint;
-      if (instant.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = instant.pmVerdict;
-      if (instant.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = instant.photoBanner;
-
-      // 1차 즉시 요약 카드 렌더링
-      if (resultCard && resultBody) {
-        resultBody.innerHTML = `
-          <div style="margin-bottom: 4px; font-weight:700; color:#1e40af;">
-            ⚡ 1차 즉시 판정 완료 (${instant.law})
-          </div>
-          ${instant.photoBanner ? `<div style="margin-bottom: 4px; font-weight:700; color:#c00000; font-size:0.8rem;">🚩 사진 상단 배너: ${instant.photoBanner}</div>` : ''}
-          <div style="font-size:0.78rem; color:#64748b; margin-bottom:4px;">
-            Qwen AI가 사진과 산안법 세부 기준을 실시간 검증하고 있습니다...
-          </div>
-        `;
-        resultCard.style.display = 'block';
-      }
-    }
-
-    // [2단계] 로컬 Qwen AI 실시간 스트리밍 심층 분석 (사진 + 지적내용 통합 분석)
+    // [1단계] Qwen Vision + Qwen3-30B AI 실시간 심층 분석 (첨부 사진 + 부적합 내용 통합 판정, 하드코딩 법령 주입 금지)
     btnAnalyze.disabled = true;
     if (btnIcon) btnIcon.textContent = '⏳';
-    if (btnText) btnText.textContent = 'Qwen AI 추론 시작...';
+    if (btnText) btnText.textContent = currentPhotos.length ? 'Qwen Vision 사진+내용 분석 중...' : 'Qwen AI 산안법 분석 중...';
 
     try {
       const extraContext = {
@@ -3764,21 +3751,27 @@ function initLmStudio() {
         location: $('#txtLocation')?.value || '',
         productType: $('#selProductType')?.value || '공동주택',
         progressRate: $('#txtProgressRate')?.value || 35,
-        photos: currentPhotos.map(p => p.previewUrl).filter(Boolean)
+        photos: currentPhotos.slice()
       };
 
       const res = await window.SafeLocalAI.streamAnalyzeSafetyText(content, extraContext, (prog) => {
         if (btnText) btnText.textContent = prog.message;
       });
 
-      // 최종 정밀 결과로 보강 업데이트
+      // Qwen AI 판정 결과 반영 (PM 판정결과는 PDF/사용자 직접 입력 전용이므로 AI가 임의 주입하지 않음)
       if (res.severity === '중부적합') $('#btnSeverityMajor')?.click();
-      else $('#btnSeverityMinor')?.click();
+      else if (res.severity === '경부적합') $('#btnSeverityMinor')?.click();
       if (res.law && $('#txtLaw')) $('#txtLaw').value = res.law;
+      aiAnalyzedLawBody = res.lawBody || '';
       if (res.hazardType && $('#txtType')) $('#txtType').value = res.hazardType;
       if (res.item && $('#txtItem')) $('#txtItem').value = res.item;
+      if (Array.isArray(res.mgmtCauses) && res.mgmtCauses.length) {
+        if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = res.mgmtCauses.includes('계획 미수립');
+        if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = res.mgmtCauses.includes('계획 미이행');
+        if ($('#chkMgmtUnsafeAction')) $('#chkMgmtUnsafeAction').checked = res.mgmtCauses.includes('불안전 행동');
+        if ($('#chkMgmtUnsafeCondition')) $('#chkMgmtUnsafeCondition').checked = res.mgmtCauses.includes('불안전 상태');
+      }
       if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!res.holdPoint;
-      if (res.pmVerdict && $('#txtPmVerdict')) $('#txtPmVerdict').value = res.pmVerdict;
       if (res.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = res.photoBanner;
 
       if (resultCard && resultBody) {
@@ -3793,23 +3786,22 @@ function initLmStudio() {
             </div>
           ` : ''}
           <div style="margin-bottom: 5px;">
-            <strong>위반 법령:</strong> <span style="color:#1e40af; font-weight:700;">${res.law}</span>
+            <strong>관련 근거 (Qwen 산안법 판단):</strong> <span style="color:#1e40af; font-weight:700;">${res.law || '(AI 판정 없음)'}</span>
           </div>
+          ${res.lawBody ? `
+            <div style="margin-bottom: 5px; font-size: 0.78rem; color: #334155; background: #eff6ff; padding: 5px 8px; border-radius: 4px; white-space: pre-line;">${res.lawBody}</div>
+          ` : ''}
           <div style="margin-bottom: 5px;">
-            <strong>법적 판단:</strong> <span>${res.analysis}</span>
-          </div>
-          <div>
-            <strong>조치 권고:</strong> <span style="color:#475569;">${res.pmVerdict}</span>
+            <strong>법적 판단:</strong> <span>${res.analysis || ''}</span>
           </div>
         `;
         resultCard.style.display = 'block';
       }
 
-      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] 및 위반 법조항이 완벽히 반영되었습니다!`, 'success');
+      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] 및 산안법 관련근거가 반영되었습니다!`, 'success');
     } catch (err) {
-      console.warn('AI 분석 처리:', err);
-      // 오류나 Mixed Content 차단 시에도 1단계 즉시 룰 결과는 이미 적용되어 있으므로 안전하게 안내
-      toast(`안내: 1차 룰 엔진 기준이 적용되었습니다. (${err.message})`, 'info');
+      console.warn('Qwen AI 분석 오류:', err);
+      toast(`Qwen AI 분석 실패: ${err.message} (네트워크 또는 LM Studio 연결을 확인하세요)`, 'warning', 4500);
     } finally {
       btnAnalyze.disabled = false;
       if (btnText) btnText.textContent = '로컬 Qwen AI 자동 분석 (법령·등급·원인)';
@@ -4059,6 +4051,44 @@ async function updateEduPreview() {
     }
   }
 
+  // [Point #1 & #7] 이미지 실제 존재 여부 및 원본 픽셀 크기(w×h)를 선행 검증하여
+  //  - 404/깨진 2번 사진 URL로 인해 웹 프리뷰가 반절만 표시되는 버그를 근본 차단 (PPTX와 100% 일치)
+  //  - 2장 사진의 실제 추출 면적(픽셀 크기·종횡비)을 HTML 프리뷰에 전달하여 PPTX와 동일 비율로 렌더링
+  const probeImageMeta = (url) => new Promise((resolve) => {
+    if (!url) {
+      resolve({ ok: false, url: '', w: 0, h: 0 });
+      return;
+    }
+    const img = new Image();
+    let settled = false;
+    const finish = (ok, w = 0, h = 0) => {
+      if (settled) return;
+      settled = true;
+      resolve({ ok, url: ok ? url : '', w, h });
+    };
+    const timer = setTimeout(() => finish(false), 6000);
+    img.onload = () => {
+      clearTimeout(timer);
+      const w = img.naturalWidth || 0;
+      const h = img.naturalHeight || 0;
+      finish(w > 0 && h > 0, w, h);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      finish(false);
+    };
+    img.src = url;
+  });
+
+  const [meta1, meta2] = await Promise.all([
+    probeImageMeta(photo1Url),
+    probeImageMeta(photo2Url)
+  ]);
+  const validPhoto1Url = meta1.ok ? meta1.url : '';
+  const validPhoto2Url = meta2.ok ? meta2.url : '';
+  const photo1Dims = meta1.ok ? { w: meta1.w, h: meta1.h } : null;
+  const photo2Dims = meta2.ok ? { w: meta2.w, h: meta2.h } : null;
+
   const inferredSev = (window.SafePPT && typeof window.SafePPT.inferRecordSeverity === 'function')
     ? window.SafePPT.inferRecordSeverity(rec)
     : (rec.severity === '중부적합' || (!rec.severity && rec.status !== '조치완료') ? '중부적합' : '경부적합');
@@ -4080,8 +4110,10 @@ async function updateEduPreview() {
 
   if (window.SafePPT && window.SafePPT.renderInspectionSheetHTML) {
     const html = window.SafePPT.renderInspectionSheetHTML(rec, {
-      photo1Url,
-      photo2Url,
+      photo1Url: validPhoto1Url,
+      photo2Url: validPhoto2Url,
+      photo1Dims,
+      photo2Dims,
       rulesFromTaxonomy: rules
     });
     $('#eduContainer').innerHTML = html;
@@ -4219,6 +4251,7 @@ function clearForm() {
   selectedCauses.clear();
   smartRecommendationApplied = false;
   appliedSmartResult = null;
+  aiAnalyzedLawBody = '';
   renderPhotoPreviews();
   updateCauseChips();
   $('#txtContent').value = '';
@@ -5470,6 +5503,13 @@ async function handleSaveImportedRecords() {
         ? window.SafeTextNormalizer.parseInterviewOpinions(cleanedFinalOpinion)
         : null;
 
+      const explicitPmVal = (rec.pmVerdictType || rec.pmVerdict || '').trim();
+      const hasExplicitPm = Boolean(
+        rec._hasExplicitPmVerdict ||
+        (Array.isArray(rec.pmVerdictItems) && rec.pmVerdictItems.length > 0) ||
+        explicitPmVal
+      );
+
       const finalRecord = {
         site,
         productType,
@@ -5516,16 +5556,16 @@ async function handleSaveImportedRecords() {
         interviewOpinion: cleanedFinalOpinion,
         interviewOpinions: (parsedFinalOpinions?.sections && parsedFinalOpinions.sections.length >= 2) ? parsedFinalOpinions.sections : (rec.interviewOpinions || []),
         proposalItems: rec.proposalItems || [],
-        inspectorOpinionType: rec.inspectorOpinionType || '시스템 개선',
+        inspectorOpinionType: rec.inspectorOpinionType || '',
         inspectorOpinionSub: rec.inspectorOpinionSub || '',
         auditProposal: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.auditProposal || rec.inspectorOpinion || '') : (rec.auditProposal || '')),
         actionPlan: (window.SafeExcel?.resolveActionPlanText ? window.SafeExcel.resolveActionPlanText(rec) : (rec.actionPlan || '')),
         countermeasure: (window.SafeExcel?.resolveActionPlanText ? window.SafeExcel.resolveActionPlanText(rec) : (rec.countermeasure || rec.actionPlan || '')),
-        pmVerdict: rec.pmVerdict || rec.pmVerdictType || rec.inspectorOpinionType || '시스템 개선',
-        pmVerdictType: rec.pmVerdictType || rec.pmVerdict || rec.inspectorOpinionType || '시스템 개선',
-        pmVerdictSub: rec.pmVerdictSub || '',
-        pmVerdictItems: rec.pmVerdictItems || [],
-        _hasExplicitPmVerdict: Boolean(rec._hasExplicitPmVerdict || rec.pmVerdictItems?.length > 0),
+        pmVerdict: hasExplicitPm ? (rec.pmVerdict || rec.pmVerdictType || '') : '',
+        pmVerdictType: hasExplicitPm ? (rec.pmVerdictType || rec.pmVerdict || '') : '',
+        pmVerdictSub: hasExplicitPm ? (rec.pmVerdictSub || '') : '',
+        pmVerdictItems: hasExplicitPm ? (rec.pmVerdictItems || []) : [],
+        _hasExplicitPmVerdict: hasExplicitPm,
         _aiCleaned: Boolean(rec._aiCleaned),
         _aiVerified: Boolean(rec._aiVerified),
         fix: rec.actionPlan ? { content: rec.actionPlan } : {},

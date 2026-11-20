@@ -386,17 +386,69 @@
     return { plan, runs };
   }
 
-  function renderInterviewOpinionBoxHTML(data, ptFn) {
-    const plan = resolveInterviewOpinionLayout(data);
-    if (!plan.isMulti) {
-      const single = plan.sections[0];
-      return `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #181717; margin-bottom: 0.28cqw;">${_escHtmlText(single.title)}</div>\n`
-        + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: 1.18; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(single.bodyText)}</div>`;
+  function _splitBulletLinesShared(rawText) {
+    const src = String(rawText || '').replace(/\r\n/g, '\n').trim();
+    if (!src) return [];
+    const out = [];
+    src.split('\n').forEach((line) => {
+      const cleaned = line.trim();
+      if (!cleaned) return;
+      const parts = cleaned.split(/\s+(?=-\s+|[•▪]\s*)/).map((s) => s.trim()).filter(Boolean);
+      parts.forEach((p) => out.push(p));
+    });
+    return out;
+  }
+
+  function renderInterviewOpinionBoxHTML(data, ptFn, tplEngine) {
+    const fitSingle = (tplEngine && tplEngine.fitSingleLineByAbbr) || ((s) => String(s || '').trim());
+    const fitMulti = (tplEngine && tplEngine.fitMultilineByAbbr) || ((lines) => (Array.isArray(lines) ? lines : _splitBulletLinesShared(lines)));
+
+    let sections = [];
+    if (Array.isArray(data && data.interviewSections) && data.interviewSections.length) {
+      sections = data.interviewSections.map((sec) => ({
+        title: sec.title || '',
+        lines: (Array.isArray(sec.items) && sec.items.length)
+          ? sec.items
+          : ((Array.isArray(sec.lines) && sec.lines.length) ? sec.lines : _splitBulletLinesShared(sec.text || sec.body || ''))
+      }));
+    } else {
+      const rawIv = String((data && data.interviewOpinion) || '').replace(/\r\n/g, '\n').trim();
+      const headerRe = /\[[^\]]*의견[^\]]*\]/g;
+      const matches = [...rawIv.matchAll(headerRe)];
+      if (matches.length >= 1) {
+        matches.forEach((m, idx) => {
+          const start = m.index + m[0].length;
+          const end = idx + 1 < matches.length ? matches[idx + 1].index : rawIv.length;
+          sections.push({
+            title: m[0].trim(),
+            lines: _splitBulletLinesShared(rawIv.slice(start, end))
+          });
+        });
+      } else {
+        sections = [{
+          title: (data && data.interviewAuthorTitle) || '[의견 : 시공관리자 및 안전관리자]',
+          lines: _splitBulletLinesShared(rawIv)
+        }];
+      }
     }
-    return plan.sections.map((sec, idx) => (
-      `          <div style="font-size: ${ptFn(Math.max(11.5, plan.headerFontSize))}; font-weight: 800; color: #181717; margin-top: ${idx > 0 ? '0.45cqw' : '0'}; margin-bottom: 0.18cqw; line-height: 1.15;">${_escHtmlText(sec.title)}</div>\n`
-      + `          <div style="font-size: ${ptFn(plan.fontSize)}; line-height: 1.18; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(sec.bodyText)}</div>`
-    )).join('\n');
+
+    const ivHeaderCount = sections.filter((s) => s.title).length;
+    const ivAvailBodyH = Math.max(0.45, 1.48 - ivHeaderCount * 0.34);
+    const ivPerSecH = ivAvailBodyH / Math.max(1, sections.length);
+    const gap9pt = ptFn(9);
+
+    return sections.map((sec, idx) => {
+      const isLastSec = idx === sections.length - 1;
+      const titleStr = sec.title ? fitSingle(sec.title, 4.75, 14) : '';
+      const bodyLines = fitMulti(sec.lines || [], 4.75, ivPerSecH, 12, 1.0, 9);
+      const titleHtml = titleStr
+        ? `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #000000; line-height: 1.08; margin: 0 0 ${gap9pt} 0;">${_escHtmlText(titleStr)}</div>\n`
+        : '';
+      const bodyHtml = bodyLines.length
+        ? `          <div style="font-size: ${ptFn(12)}; font-weight: 400; line-height: 1.08; color: #000000; word-break: keep-all; margin: 0 0 ${isLastSec ? '0' : gap9pt} 0;">${renderHangingLinesHTML(bodyLines.join('\n'), gap9pt)}</div>`
+        : '';
+      return titleHtml + bodyHtml;
+    }).join('\n');
   }
 
   function cleanContent(raw) {
@@ -442,8 +494,12 @@
 
   function cleanOpinionText(raw, options = {}) {
     if (!raw) return '';
+    // 수기 직접 입력된 인터뷰 의견은 원문 그대로 보존 (자름/임의 '-' 부착/문장 변형 전면 금지)
+    if (options && options.preserveVerbatim) {
+      return String(raw).replace(/\r\n/g, '\n').trim();
+    }
     const preCleaned = healSafetyKoreanLexicon(String(raw))
-      .replace(/(?:\[?\s*(?:HAT|점검단)\s*제안\]?|시스템\s*개선|교육\/코칭)[\s\S]*$/gi, '')
+      .replace(/\[?\s*(?:HAT|점검단)\s*제안\]?[\s\S]*$/gi, '')
       .replace(/oo\s*(?:Tle|기느으|기느|기|©)[\s\S]*?(?=-|[가-힣])/gi, '')
       .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|SHE\s*SEA|[—\-_]{3,})[\s\S]*$/gi, '')
       .replace(/^[^\n]*?(?:절경\s*열수\s*갤|BT\s*ROSH|Deen\s*lp)[^\n]*?=\s*-\s*/i, '- ')
@@ -471,8 +527,6 @@
       .replace(/^\s*[-•·▪]?\s*(?:관리자|근로자|작업자|담당자|관계자)\s*의견\s*[:：][^\n]*\n?/gim, '')
       .trim();
 
-    // 문장 종결 후 새 항목 분리 (예: 못함 갱폼 인양팀 -> 못함\n- 갱폼 인양팀)
-    s = s.replace(/(?<=(?:못함|했음|하였음|설치함|확인함|판단됨|간과함|발생함|요청함|부족함|미흡함|않음|보완하겠음|개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립))\s*[-•·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|작업팀|시공사|협력사|향후|사전|2단|상부|하부|점검|유관부서|당사|본사|1차|2차|갱폼인양팀장|인양팀장))/g, '\n- ');
     s = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
       ? window.SafeTextNormalizer.splitInlineBullets(s)
       : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
@@ -481,17 +535,19 @@
     const items = [];
     for (let l of rawLines) {
       if (/^[-•*·▪\s]*\[?\s*(?:관리자|근로자|관계자|담당자|시공자|해당\s*근로자)?\s*의견\s*[:;：]/i.test(l)) continue;
-      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(l);
+      const hasDash = /^[-•*·▪]\s*/.test(l);
+      const isBulletStart = hasDash || /^\d+[\).]\s*/.test(l);
       let text = l.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!text || text.length < 2) continue;
       if (items.length === 0 || isBulletStart) {
-        items.push(text);
+        items.push({ text, hasDash });
       } else {
-        items[items.length - 1] = _joinWrapped(items[items.length - 1], text);
+        items[items.length - 1].text = _joinWrapped(items[items.length - 1].text, text);
       }
     }
     if (items.length === 0) return '';
-    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
+    // 원본/PDF 스캔에 '-'가 있을 때만 '- ' 유지, 없으면 임의 '-' 부착 금지 (Point #5)
+    return items.map(it => `${it.hasDash ? '- ' : ''}${_normSpacing(healSafetyKoreanLexicon(it.text))}`).join('\n');
   }
 
   function cleanProposalText(raw) {
@@ -505,32 +561,33 @@
       .replace(/[\s|ㅣ¦_!~—\-]*[블를클르|ㅣ¦_!~—\-]+$/g, '')
       .trim();
 
-    // 분리 규칙 (영문/괄호 시작 불릿 포함):
+    // 원문에 불릿('-'/'•')이 포함된 경우에만 줄바꿈 분리
     s = typeof window !== 'undefined' && window.SafeTextNormalizer?.splitInlineBullets
       ? window.SafeTextNormalizer.splitInlineBullets(s)
       : s.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
-    s = s.replace(/(?<=(?:개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립|점검\s*실시|교육\s*실시|내실화|구축|적용|설치|존치|수렴|확인|완료))\s*[-•*·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|점검단|유관부서|당사|본사|1차|2차|향후|사전|정기|수시|형식적|비계설치|상가동|외벽|갱폼인양팀장|인양팀장))/g, '\n- ');
 
     const rawLines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const isBulletStart = /^[-•*·▪]\s*|^\d+[\).]\s*/.test(line);
+      const hasDash = /^[-•*·▪]\s*/.test(line);
+      const isBulletStart = hasDash || /^\d+[\).]\s*/.test(line);
       let cl = line.replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!\-•·~—*.©=]+/, '').replace(/[|\sㅣ¦_!~—\-*]+$/, '').trim();
       if (!cl || cl.length < 2 || /^[블를클르]$/.test(cl)) continue;
       if (items.length === 0 || isBulletStart) {
-        items.push(cl);
+        items.push({ text: cl, hasDash });
       } else {
-        items[items.length - 1] = _joinWrapped(items[items.length - 1], cl);
+        items[items.length - 1].text = _joinWrapped(items[items.length - 1].text, cl);
       }
     }
-    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
+    return items.map(it => `${it.hasDash ? '- ' : ''}${_normSpacing(healSafetyKoreanLexicon(it.text))}`).join('\n');
   }
 
   function cleanActionPlan(raw) {
     if (!raw) return '';
     const rawStr = healSafetyKoreanLexicon(String(raw));
+    const origStartsWithDash = /^\s*[-•*·▪]\s*/.test(rawStr);
     if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-      return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
+      return `${origStartsWithDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
     }
     const cleanedStr = rawStr
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
@@ -548,36 +605,34 @@
       ? window.SafeTextNormalizer.splitInlineBullets(cleanedStr)
       : cleanedStr.replace(/(?:(?<=[.!?\]\)])\s*|(?<=[가-힣A-Za-z0-9])\s+)[-•*·▪]\s*(?=[가-힣A-Za-z0-9(\[])/g, '\n- ');
     const finalActionStr = bulletSplitStr
-      .replace(/(?<=(?:개선\s*필요|점검\s*필요|강화\s*필요|조치\s*필요|방안\s*수립|점검\s*실시|교육\s*실시|내실화|구축|적용|설치|존치|수렴|확인|완료))\s*[-•*·▪]?\s*(?=(?:갱폼|비계|동바리|인양팀|점검단|유관부서|당사|본사|1차|2차|향후|사전|정기|수시|형식적|비계설치|상가동|외벽|갱폼인양팀장|인양팀장))/g, '\n- ')
-      .replace(/(교육\s*실시|점검\s*실시\s*\([^)]+\)|존치\)|추가\s*설치)\s*[.,·•-]?\s*(?=거푸집\s*전도|비계\s*잭베이스|시스템\s*비계\s*설치계획서)/g, '$1\n- ')
       .replace(/,\s*-\s*/g, '\n- ')
       .trim();
 
     const rawLines = finalActionStr.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const items = [];
     for (const line of rawLines) {
-      const hasExplicitBullet = /^[-•*·▪.]\s*/.test(line);
+      const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
       let cl = line.replace(/^[|ㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
       if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
+        return `${hasExplicitBullet || origStartsWithDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
       }
 
       const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|이격거리\s*표기|설치\s*완료|조치완료\s*후|방안\s*수립)/.test(cl);
       const isDistinctNewItem = hasExplicitBullet || (!isContinuation && (
         /^(?:벽체\s*거푸집|거푸집\s*전도\s*예방|벽이음용\s*상부|비계\s*잭베이스\s*구간|비계와\s*구조물|시스템\s*비계\s*설치계획서|비계\s*승인점검|비계\s*설치\s*작업\s*시|작업\s*전\s*풍속|갱폼|동바리|인양팀|당사|본사|유관부서|1차적으로|2차적으로|형식적인)/.test(cl) ||
-        (items.length > 0 && /(?:필요|수립|실시|적용|조치|완료|확인|구축|반영)[.!?]?$/.test(items[items.length - 1]))
+        (items.length > 0 && /(?:필요|수립|실시|적용|조치|완료|확인|구축|반영)[.!?]?$/.test(items[items.length - 1].text))
       ));
 
       if (items.length === 0 || isDistinctNewItem) {
-        items.push(cl);
+        items.push({ text: cl, hasDash: hasExplicitBullet });
       } else {
-        items[items.length - 1] = _joinWrapped(items[items.length - 1], cl);
+        items[items.length - 1].text = _joinWrapped(items[items.length - 1].text, cl);
       }
     }
-    return items.map(it => `- ${_normSpacing(healSafetyKoreanLexicon(it))}`).join('\n');
+    return items.map(it => `${it.hasDash ? '- ' : ''}${_normSpacing(healSafetyKoreanLexicon(it.text))}`).join('\n');
   }
 
   /**
@@ -686,17 +741,18 @@
 
   /**
    * 줄바꿈 시 불릿(-, *, 1), 2), 9), 10), →) 기준 내어쓰기(Hanging Indent) HTML 렌더링 헬퍼
+   * - paraGapCss: 원본 R1 단락 뒤 간격 (발생원인 9pt, 점검단제안 3pt, 개선대책 6pt, 관련기준 0)
    */
-  function renderHangingLinesHTML(text) {
+  function renderHangingLinesHTML(text, paraGapCss = '0') {
     if (!text) return '';
     const lines = String(text).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     return lines.map((line, idx) => {
-      const mb = idx < lines.length - 1 ? '0.12cqw' : '0';
-      const m = line.match(/^([-*•·▪]\s+|\d{1,2}[\.)]\s*|→\s*)(.+)$/);
+      const mb = idx < lines.length - 1 ? paraGapCss : '0';
+      const m = line.match(/^([-*•·▪]\s+|\d{1,2}[\.)]\s+|→\s*)(.+)$/);
       if (m) {
-        return `<div style="display:flex;align-items:flex-start;margin:0 0 ${mb} 0;"><span style="flex:0 0 auto;white-space:pre;">${m[1]}</span><span style="flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:break-word;">${m[2]}</span></div>`;
+        return `<div style="display:flex;align-items:flex-start;margin:0 0 ${mb} 0;"><span style="flex:0 0 auto;white-space:pre;">${_escHtmlText(m[1])}</span><span style="flex:1 1 auto;min-width:0;word-break:keep-all;overflow-wrap:break-word;">${_escHtmlText(m[2])}</span></div>`;
       }
-      return `<div style="margin:0 0 ${mb} 0;word-break:keep-all;overflow-wrap:break-word;">${line}</div>`;
+      return `<div style="margin:0 0 ${mb} 0;word-break:keep-all;overflow-wrap:break-word;">${_escHtmlText(line)}</div>`;
     }).join('');
   }
 
@@ -1294,8 +1350,9 @@
     }
     const photoBannerTitle = mainContent || '부적합 현장 확인';
 
-    // 발생원인 의견 (인터뷰 결과: 복수 '[근로자 의견]/[관리자 의견]' 블록 모두 보존)
+    // 발생원인 의견 (인터뷰 결과: 사용자 입력 원문 100% 보존 + 복수 '[근로자 의견]/[관리자 의견]' 블록 모두 보존, 임의 더미 텍스트 주입 금지)
     const rawInterview = r.interviewOpinion || r.workerOpinion || '';
+    const isManualEntry = Boolean(r._manualEntry);
     const normOp = _getNorm();
     let interviewOpinion = rawInterview;
     let interviewSections = Array.isArray(r.interviewOpinions) && r.interviewOpinions.length >= 2
@@ -1307,26 +1364,19 @@
         interviewSections = parsedMulti.sections;
       }
     }
-    if (!interviewOpinion && interviewSections.length === 0) {
-      if (text.includes('수평') || text.includes('로프간격')) {
-        interviewOpinion = '거푸집 제작장에서 양중로프를 걸 때 같은 간격으로 맞추지 못했다. 양중로프를 걸 수 있는 위치가 어느 정도 적당하다고 생각되는 곳에 로프를 걸었다.';
-      } else if (text.includes('양중') || text.includes('유도로프')) {
-        interviewOpinion = '양중작업 시 유도로프의 사용기준은 1줄을 설치하는 대로 유도로프를 설치하였으나, 화물을 다루기 어려워 손으로 직접 잡고 당기었다.';
-      } else {
-        interviewOpinion = r.action
-          ? `현장 시공 여건 상 ${r.action} 사유로 기준이 미준수되었으며, 관리감독자의 사전 작업지휘가 미흡한 상태에서 작업이 진행됨.`
-          : '현장 작업진행 과정에서 안전작업수칙에 대한 관리감독 및 작업자 간 소통이 미흡하여 규정 절차가 누락됨.';
-      }
+    if (isManualEntry) {
+      interviewOpinion = String(rawInterview || '').replace(/\r\n/g, '\n').trim();
+    } else if (interviewOpinion) {
+      interviewOpinion = cleanOpinionText(interviewOpinion, { preserveHeaders: interviewSections.length >= 2 });
     }
-    interviewOpinion = cleanOpinionText(interviewOpinion, { preserveHeaders: interviewSections.length >= 2 });
-    if (interviewSections.length >= 2 && normOp && typeof normOp.parseInterviewOpinions === 'function') {
+    if (!isManualEntry && interviewSections.length >= 2 && normOp && typeof normOp.parseInterviewOpinions === 'function') {
       const reParsed = normOp.parseInterviewOpinions(interviewOpinion);
       if (reParsed && reParsed.sections && reParsed.sections.length >= 2) {
         interviewSections = reParsed.sections;
       }
     }
 
-    // 점검단 제안 분류 (복수 선택 지원 - 본문 '재교육' 단어로 교육/코칭 오인 금지)
+    // 점검단 제안 분류 (복수 선택 지원 - 입력/추출된 분류가 있을 때만 표시, 임의 '시스템 개선' 주입 금지)
     let proposalItems = Array.isArray(r.proposalItems) && r.proposalItems.length > 0 ? r.proposalItems : [];
     if (proposalItems.length === 0) {
       const rawProp = (r.inspectorOpinionType || r.auditType || '').trim();
@@ -1342,19 +1392,15 @@
       if (/제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업\s*중지|작업\s*대기/i.test(rawProp)) {
         proposalItems.push({ type: '제재/징계', sub: r.inspectorOpinionSub || '(해당작업팀대기)' });
       }
-      if (proposalItems.length === 0) {
-        proposalItems.push({ type: '시스템 개선', sub: r.inspectorOpinionSub || '(이행강화안 수립)' });
-      }
     }
-    const proposalType = proposalItems[0].type;
-    const proposalSub = proposalItems[0].sub || '';
+    const proposalType = proposalItems.length > 0 ? proposalItems[0].type : '';
+    const proposalSub = proposalItems.length > 0 ? (proposalItems[0].sub || '') : '';
 
-    // 점검단 제안 본문: 등록된 auditProposal 최우선 사용 (더미 텍스트 덮어쓰기 절대 금지)
+    // 점검단 제안 본문: 등록된 auditProposal 원문 그대로 사용 (미입력 시 공란, 더미 텍스트 주입 절대 금지)
     let proposalContent = (r.auditProposal || r.inspectorOpinion || '').trim();
-    if (!proposalContent) {
-      proposalContent = '- 현장 작업팀 대상 안전작업절차 교육을 의무화하고 현장 관리감독자의 일일 이행 모니터링을 대폭 강화할 필요가 있음.';
+    if (proposalContent && !isManualEntry) {
+      proposalContent = cleanProposalText(proposalContent);
     }
-    proposalContent = cleanProposalText(proposalContent);
 
     // 개선대책 본문 & PM 판정결과
     let countermeasureContent = '';
@@ -1371,21 +1417,36 @@
     } else if (rawPm && rawPm.length > 12) {
       countermeasureContent = rawPm;
     }
-    countermeasureContent = cleanActionPlan(countermeasureContent);
+    if (countermeasureContent && !isManualEntry) {
+      countermeasureContent = cleanActionPlan(countermeasureContent);
+    }
 
-    // PM 판정결과 분류 (복수 선택 지원 - 원문 괄호 부제 우선 보존, 점검단 제안 부제로 오염 금지)
-    let pmVerdictItems = Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0 ? r.pmVerdictItems : [];
-    if (pmVerdictItems.length === 0) {
-      const rawPmType = String(r.pmVerdictType || r.pmVerdict || '').trim();
+    // PM 판정결과 분류 (Point #6: PDF/사용자 입력에 실제 명시된 경우에만 표시, 없으면 완전 공란 — '시스템 개선' 강제 주입 금지!)
+    const rawPmType = String(r.pmVerdictType || r.pmVerdict || '').trim();
+    const isLegacyAutoPollutedPm = Boolean(
+      r._hasExplicitPmVerdict === false ||
+      (
+        !r._hasExplicitPmVerdict &&
+        !(Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length) &&
+        !String(r.pmVerdictSub || '').trim() &&
+        !rawPlan &&
+        !rawFix &&
+        rawPmType &&
+        (rawPmType === String(r.inspectorOpinionType || '').trim() || rawPmType === '시스템 개선')
+      )
+    );
+    let pmVerdictItems = (!isLegacyAutoPollutedPm && Array.isArray(r.pmVerdictItems) && r.pmVerdictItems.length > 0)
+      ? r.pmVerdictItems
+      : [];
+    if (!isLegacyAutoPollutedPm && pmVerdictItems.length === 0 && rawPmType) {
       const parenMatch = rawPmType.match(/(\([^)]+\))/);
       const rawPmSub = String(r.pmVerdictSub || (parenMatch ? parenMatch[1] : '') || '').trim();
       const pmScan = `${rawPmType} ${rawPmSub}`.trim();
-      const preservedSub = rawPmSub || '(계획 재수립)';
       if (/제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업\s*중지|작업\s*대기/i.test(pmScan)) {
         pmVerdictItems.push({ type: '제재/징계', sub: rawPmSub || '(해당작업팀대기)' });
       }
       if (/시스템\s*개선|시스템개선/i.test(pmScan)) {
-        pmVerdictItems.push({ type: '시스템 개선', sub: preservedSub });
+        pmVerdictItems.push({ type: '시스템 개선', sub: rawPmSub || '(계획 재수립)' });
       }
       if (/교육\s*[\/·]\s*코칭|(?:근로자|협력사|작업팀|해당\s*작업팀)\s*교육|코칭/i.test(pmScan)) {
         pmVerdictItems.push({ type: '교육/코칭', sub: rawPmSub || '(근로자 교육)' });
@@ -1393,15 +1454,12 @@
       if (/패널티|페널티/i.test(pmScan)) {
         pmVerdictItems.push({ type: '페널티', sub: rawPmSub || '(관리감독자 경고)' });
       }
-      if (pmVerdictItems.length === 0 && (rawPlan || rawFix || rawPm)) {
-        pmVerdictItems.push({ type: '시스템 개선', sub: preservedSub });
-      }
     }
     let pmVerdictType = pmVerdictItems.length > 0 ? pmVerdictItems[0].type : '';
-    let pmVerdictSub = pmVerdictItems.length > 0 ? pmVerdictItems[0].sub : '';
+    let pmVerdictSub = pmVerdictItems.length > 0 ? (pmVerdictItems[0].sub || '') : '';
 
     // 등록된 장표에 이미 개선대책/PM판정결과가 기입되어 있는 경우 그대로 표시, 없는 경우에만 공란 처리
-    const hasRegisteredPostAction = Boolean(rawPlan || r.pmVerdictType || r.pmVerdictSub || pmVerdictItems.length > 0);
+    const hasRegisteredPostAction = Boolean(countermeasureContent || pmVerdictItems.length > 0);
     const isPostActionFilled = Boolean((options && options.includePostActions) || hasRegisteredPostAction);
     if (!isPostActionFilled) {
       countermeasureContent = '';
@@ -2181,7 +2239,7 @@
 
     const pptxBlob = await pptx.write({ outputType: 'blob' });
     const mimeBlob = new Blob([pptxBlob], {
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+      type: 'application/octet-stream'
     });
 
     if (download !== false) {
@@ -2193,6 +2251,7 @@
         a.style.display = 'none';
         a.href = url;
         a.download = finalFilename;
+        a.target = '';
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {
@@ -2200,7 +2259,7 @@
             if (a.parentNode) a.parentNode.removeChild(a);
             URL.revokeObjectURL(url);
           } catch (e) { }
-        }, 60000);
+        }, 120000);
       }
     }
 
@@ -2209,9 +2268,20 @@
 
   /**
    * [중부적합] 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합장표(중부적합)_R1.pptx 100% 정밀 연동)
+   * - 모든 글자크기·단락간격·줄임·사진 면적비례 배치를 SafePPTTemplateEngine(PPTX 생성기)과 동일 함수로 100% 일치
    */
   function renderMajorInspectionSheetHTML(record, data, options = {}) {
-    const { photo1Url = '', photo2Url = '' } = options;
+    const { photo1Url = '', photo2Url = '', photo1Dims = null, photo2Dims = null } = options;
+    const tplEngine = resolveTemplateEngine();
+    const fitSingle = (tplEngine && tplEngine.fitSingleLineByAbbr) || ((s) => String(s || '').trim());
+    const fitMulti = (tplEngine && tplEngine.fitMultilineByAbbr) || ((lines) => (Array.isArray(lines) ? lines : _splitBulletLinesShared(lines)));
+    const computeTwoPhotos = (tplEngine && tplEngine.computeProportionalTwoPhotoBoxes) || ((box, _d1, _d2, gap = 0.0976) => {
+      const wEach = Number(((box.w - gap) / 2).toFixed(4));
+      return {
+        leftBox: { x: box.x, y: box.y, w: wEach, h: box.h },
+        rightBox: { x: Number((box.x + wEach + gap).toFixed(4)), y: box.y, w: wEach, h: box.h }
+      };
+    });
 
     const pctX = (x) => `${((x / 13.3333) * 100).toFixed(4)}%`;
     const pctY = (y) => `${((y / 7.5000) * 100).toFixed(4)}%`;
@@ -2220,44 +2290,54 @@
     const pt = (n) => `${(n * 0.104167).toFixed(4)}cqw`;
     const glowTextShadow = '0 0 4px rgba(0,0,0,0.85), -0.5px -0.5px 1.5px rgba(0,0,0,0.85), 0.5px 0.5px 1.5px rgba(0,0,0,0.85)';
 
-    const lawTitleFontSize = calcSingleLineFontSize(data.lawTitle, 5.55, 16, 11);
-    const lawBodyFontSize = calcFitMultilineFontSize(data.lawBody, 5.5644, 0.656, 11, 8.5, 1.12, [2, 4, 2, 4]);
+    // 원본 R1 100% 고정 글자크기 (초과 시 글자크기 축소 금지, 내용 자연 축약)
+    const typeMainText = fitSingle(String(data.typeMain || data.type || '안전').trim(), 1.48, 20);
+    const lawTitleText = fitSingle(String(data.lawTitle || ''), 5.50, 16);
+    const lawBodyLines = fitMulti(_splitBulletLinesShared(data.lawBody || ''), 5.42, 0.64, 11, 1.0, 0);
 
     const metaCols = [
-      { label: '협력사 : ', val: data.subcontractor, x: 0.9375, w: 2.3333 },
-      { label: '공종명 : ', val: data.workGroup, x: 3.2708, w: 2.9688 },
-      { label: '작업장소 : ', val: data.location, x: 6.2396, w: 3.1215 },
-      { label: '점검자 : ', val: data.inspector, x: 9.3611, w: 1.8055 },
-      { label: '점검차수 : ', val: data.inspectRound, x: 11.1666, w: 2.0647 }
+      { label: '협력사 : ', prefix: '협력사 : ', val: fitSingle(String(data.subcontractor || ''), 2.30, 14, '협력사 : '), x: 0.9375, w: 2.3333 },
+      { label: '공종명 : ', prefix: '공종명 : ', val: fitSingle(String(data.workGroup || ''), 2.94, 14, '공종명 : '), x: 3.2708, w: 2.9688 },
+      { label: '작업장소 : ', prefix: '작업장소 : ', val: fitSingle(String(data.location || ''), 3.10, 14, '작업장소 : '), x: 6.2396, w: 3.1215 },
+      { label: '점검자 : ', prefix: '점검자 : ', val: fitSingle(String(data.inspector || ''), 1.78, 14, '점검자 : '), x: 9.3611, w: 1.8055 },
+      { label: '점검차수 : ', prefix: '점검차수 : ', val: fitSingle(String(data.inspectRound || ''), 2.04, 14, '점검차수 : '), x: 11.1666, w: 2.0647 }
     ];
 
-    // 부적합 내용: 14pt Bold 기본, 1건이어도 원본 양식과 동일하게 '1. ' 번호 부여 및 상단 정렬
+    // 부적합 내용: 원본 14pt Bold 100% 고정, 1건이어도 '1. ' 번호 부여 및 상단 정렬 (초과 시 내용 축약)
     const rawMainLines = String(data.mainContent || '').replace(/\r\n/g, '\n').split('\n')
       .flatMap(l => l.trim().split(/\s+(?=(?:[2-9]\d?[\.)]\s+|[②③④⑤⑥⑦⑧⑨⑩]\s*|-\s+))/))
       .map(l => l.trim()).filter(Boolean);
     const hasNumPrefix = rawMainLines.some(l => /^(?:\d+[\.)]|[①-⑩])/.test(l));
-    const mainLines = (rawMainLines.length >= 1 && !hasNumPrefix)
+    const numberedMainLines = (rawMainLines.length >= 1 && !hasNumPrefix)
       ? rawMainLines.map((l, i) => `${i + 1}. ${l.replace(/^[-•▪]\s*/, '')}`)
       : rawMainLines;
+    const mainLines = fitMulti(numberedMainLines, 10.65, 0.62, 14, 1.10, 0);
     const packedMainContent = mainLines.join('\n');
-    const mainSz = mainLines.length >= 4 ? 11 : (mainLines.length === 3 ? 12.5 : 14);
-    const mainHtmlLineHeight = mainLines.length >= 3 ? 1.14 : 1.20;
 
-    const propLineSpacing = 1.15;
-    const propSz = calcFitMultilineFontSize(data.proposalContent || '', 3.3871, 1.033, 12, 9.5, propLineSpacing, [4, 6, 4, 6]);
-
-    const counterLineSpacing = 1.15;
-    const counterSz = calcFitMultilineFontSize(data.countermeasureContent || '', 3.3858, 1.396, 12, 9.5, counterLineSpacing, [4, 6, 4, 6]);
+    const propLines = fitMulti(_splitBulletLinesShared(data.proposalContent || ''), 3.24, 0.94, 12, 1.0, 3);
+    const cmLines = fitMulti(_splitBulletLinesShared(data.countermeasureContent || ''), 3.24, 1.28, 11, 1.0, 6);
 
     const hasPhoto1 = Boolean(photo1Url);
     const hasPhoto2 = Boolean(photo2Url);
     const bannerWidth = 5.4580;
-    const bannerFontSize = calcSingleLineFontSize(data.photoBanner, bannerWidth, 16, 11);
+    const bannerText = fitSingle(String(data.photoBanner || ''), 5.35, 16);
 
-    const ensureVerdictList = (items, singleType, singleSub, fallback) => {
-      const list = Array.isArray(items) && items.length ? items : (singleType ? [{ type: singleType, sub: singleSub }] : fallback);
+    // 좌측 사진 영역 (PPTX fullPhotoBox와 동일 좌표: x=0.3064in ~ 8.1796in, w=7.8732in, h=4.4589in)
+    const fullPhotoBox = { x: 0.3064, y: 2.8434, w: 7.8732, h: 4.4589 };
+    const twoPhotoBoxes = (hasPhoto1 && hasPhoto2)
+      ? computeTwoPhotos(fullPhotoBox, photo1Dims, photo2Dims, 0.0976)
+      : null;
+    const fullPhotoCssRect = `left:${pctX(fullPhotoBox.x)};top:${pctY(fullPhotoBox.y)};width:${pctW(fullPhotoBox.w)};height:${pctH(fullPhotoBox.h)};`;
+    const onImg2ErrorRecoverFull = `this.onerror=null;var p2=this.parentElement;if(p2)p2.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p1=root&&root.querySelector('[data-sheet-photo=\\'1\\']');if(p1){p1.style.left='${pctX(fullPhotoBox.x)}';p1.style.top='${pctY(fullPhotoBox.y)}';p1.style.width='${pctW(fullPhotoBox.w)}';p1.style.height='${pctH(fullPhotoBox.h)}';}`;
+    const onImg1ErrorRecoverFull = `this.onerror=null;var p1=this.parentElement;if(p1)p1.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p2=root&&root.querySelector('[data-sheet-photo=\\'2\\']');if(p2){p2.style.left='${pctX(fullPhotoBox.x)}';p2.style.top='${pctY(fullPhotoBox.y)}';p2.style.width='${pctW(fullPhotoBox.w)}';p2.style.height='${pctH(fullPhotoBox.h)}';}`;
+
+    const ensureVerdictList = (items, singleType, singleSub) => {
+      const list = Array.isArray(items) && items.length
+        ? items
+        : (singleType ? [{ type: singleType, sub: singleSub }] : []);
       return list.map(it => {
-        const t = String((it && it.type) || '시스템 개선').trim();
+        const t = String((it && it.type) || '').trim();
+        if (!t) return null;
         let s = String((it && it.sub) || '').trim();
         if (!s) {
           if (/교육|코칭/.test(t)) s = '(근로자 교육)';
@@ -2266,10 +2346,10 @@
           else s = '(계획 재수립)';
         }
         return { type: t, sub: s.startsWith('(') ? s : `(${s})` };
-      });
+      }).filter(Boolean);
     };
-    const propDisplayItems = ensureVerdictList(data.proposalItems, data.proposalType, data.proposalSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
-    const pmDisplayItems = ensureVerdictList(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
+    const propDisplayItems = ensureVerdictList(data.proposalItems, data.proposalType, data.proposalSub);
+    const pmDisplayItems = ensureVerdictList(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub);
 
     const factorItems = [
       { boxX: 10.7738, labelX: 11.0573, y: 0.2453, checked: data.isUnplanned, label: '계획 미수립' },
@@ -2299,10 +2379,10 @@
           시설물/법규
         </div>
 
-        <!-- 2. 사고유형 & 등급 (20pt bold, 순수 흰색 + 3px 황색 #ffc000 테두리) -->
+        <!-- 2. 사고유형 & 등급 (원본 R1: 둘 다 20pt Bold 고정, 순수 흰색 + 3px 황색 #ffc000 테두리) -->
         <div style="position: absolute; left: ${pctX(2.1666)}; top: ${pctY(0.1216)}; width: ${pctW(1.5186)}; height: ${pctH(1.0535)}; background: #ffffff; border: 3px solid #ffc000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box;">
-          <div style="font-size: ${pt(20)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center;">${data.typeMain}</div>
-          <div style="font-size: ${pt(18)}; font-weight: 800; color: #000000; line-height: 1.15; text-align: center; margin-top: 0.05cqw;">[${data.severity}]</div>
+          <div style="font-size: ${pt(20)}; font-weight: 800; color: #000000; line-height: 1.08; text-align: center;">${_escHtmlText(typeMainText)}</div>
+          <div style="font-size: ${pt(20)}; font-weight: 800; color: #000000; line-height: 1.08; text-align: center; margin-top: 0.04cqw;">[${_escHtmlText(data.severity)}]</div>
         </div>
 
         <!-- 3. 관련기준 라벨 (20pt bold) -->
@@ -2313,14 +2393,14 @@
         <!-- 4. 관련기준 내용 외곽 사각형 -->
         <div style="position: absolute; left: ${pctX(4.8185)}; top: ${pctY(0.1216)}; width: ${pctW(5.6949)}; height: ${pctH(1.0535)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 4-1. 관련기준 제목 (R1: 16pt Bold, 초과 시만 축소) -->
-        <div style="position: absolute; left: ${pctX(4.8840)}; top: ${pctY(0.1450)}; width: ${pctW(5.5640)}; height: ${pctH(0.3100)}; display: flex; align-items: center; font-size: ${pt(lawTitleFontSize)}; font-weight: 800; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;">
-          ${data.lawTitle}
+        <!-- 4-1. 관련기준 제목 (원본 R1: 16pt Bold 고정, 초과 시 축약) -->
+        <div style="position: absolute; left: ${pctX(4.8840)}; top: ${pctY(0.1450)}; width: ${pctW(5.5640)}; height: ${pctH(0.3100)}; display: flex; align-items: center; font-size: ${pt(16)}; font-weight: 800; color: #000000; white-space: nowrap; overflow: hidden; box-sizing: border-box;">
+          ${_escHtmlText(lawTitleText)}
         </div>
 
-        <!-- 4-2. 관련기준 본문 (R1 TextBox 1: 연파랑 반투명 음영, 선명한 일반체 + '-' 내어쓰기) -->
+        <!-- 4-2. 관련기준 본문 (원본 R1 TextBox 1: 11pt 일반체 고정, 단락간격 0, 초과 시 축약) -->
         <div style="position: absolute; left: ${pctX(4.8840)}; top: ${pctY(0.4580)}; width: ${pctW(5.5640)}; height: ${pctH(0.6560)}; background: rgba(217, 226, 243, 0.72); padding: 0.22cqw 0.45cqw; box-sizing: border-box; display: flex; align-items: flex-start; overflow: hidden;">
-          <div style="width: 100%; font-size: ${pt(lawBodyFontSize)}; font-weight: 400; color: #000000; line-height: 1.15; word-break: keep-all;">${renderHangingLinesHTML(data.lawBody)}</div>
+          <div style="width: 100%; font-size: ${pt(11)}; font-weight: 400; color: #000000; line-height: 1.08; word-break: keep-all;">${renderHangingLinesHTML(lawBodyLines.join('\n'), '0')}</div>
         </div>
 
         <!-- 5. 4대 발생요인 (R1 표 36: 정사각형 체크박스 4개 + 가로 구분선) -->
@@ -2340,55 +2420,54 @@
           부적합<br>개&nbsp;&nbsp;&nbsp;요
         </div>
 
-        <!-- 6-2. 메타 정보 5개 독립 셀 (R1: 14pt Bold, 라벨 #0000ff, 클리핑/넘침 방지 및 콜론 공백 보존) -->
+        <!-- 6-2. 메타 정보 5개 독립 셀 (원본 R1: 모두 14pt Bold 고정, 초과 시 내용 축약) -->
         ${metaCols.map((col, idx) => {
       const lblName = col.label.replace(/\s*:\s*$/, '').trim();
-      const sz = calcSingleLineFontSize(`${lblName} : ${col.val}`, Math.max(0.8, col.w - 0.16), 14, 10);
       return `
             <div style="position: absolute; left: ${pctX(col.x)}; top: ${pctY(1.2444)}; width: ${pctW(col.w)}; height: ${pctH(0.3769)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; padding: 0 0.30cqw; box-sizing: border-box; white-space: nowrap; overflow: hidden; line-height: 1;">
-              <strong style="color: #0000ff; font-size: ${pt(sz)}; flex-shrink: 0;">${idx === 0 ? `${lblName}&nbsp;:&nbsp;` : lblName}</strong>
-              <span style="font-weight: 800; color: #000000; font-size: ${pt(sz)}; overflow: hidden; text-overflow: ellipsis;">${idx === 0 ? col.val : `&nbsp;:&nbsp;${col.val}`}</span>
+              <strong style="color: #0000ff; font-size: ${pt(14)}; flex-shrink: 0;">${idx === 0 ? `${lblName}&nbsp;:&nbsp;` : lblName}</strong>
+              <span style="font-weight: 800; color: #000000; font-size: ${pt(14)}; overflow: hidden;">${idx === 0 ? _escHtmlText(col.val) : `&nbsp;:&nbsp;${_escHtmlText(col.val)}`}</span>
             </div>
           `;
     }).join('')}
 
-        <!-- 6-3. 부적합 내용 셀 (R1: 14pt Bold, 1건이어도 '1.' 상단 정렬로 라벨·본문 동일선상 일치) -->
+        <!-- 6-3. 부적합 내용 셀 (원본 R1: 14pt Bold 고정, 1건이어도 '1.' 상단 정렬) -->
         <div style="position: absolute; left: ${pctX(0.9375)}; top: ${pctY(1.6213)}; width: ${pctW(12.2938)}; height: ${pctH(0.6925)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: flex-start; padding: ${mainLines.length >= 3 ? '0.28cqw 0.45cqw 0.14cqw' : '0.52cqw 0.45cqw 0.16cqw'}; box-sizing: border-box; overflow: hidden;">
-          <div style="flex-shrink: 0; white-space: nowrap; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight};">
+          <div style="flex-shrink: 0; white-space: nowrap; font-size: ${pt(14)}; line-height: 1.12;">
             <strong style="color: #0000ff;">부적합 내용</strong><strong style="color: #000000;">&nbsp;:&nbsp;</strong>
           </div>
-          <div style="flex: 1; min-width: 0; font-weight: 800; color: #000000; font-size: ${pt(mainSz)}; line-height: ${mainHtmlLineHeight}; word-break: keep-all;">
-            ${renderHangingLinesHTML(packedMainContent)}
+          <div style="flex: 1; min-width: 0; font-weight: 800; color: #000000; font-size: ${pt(14)}; line-height: 1.12; word-break: keep-all;">
+            ${renderHangingLinesHTML(packedMainContent, '0')}
           </div>
         </div>
 
         <!-- 7. 하단 통합 본문 컨테이너 (R1 표 47 R4: x = 0.107, y = 2.314, w = 13.124, h = 5.063) -->
         <div style="position: absolute; left: ${pctX(0.1070)}; top: ${pctY(2.3138)}; width: ${pctW(13.1243)}; height: ${pctH(5.0632)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 7-1. [좌측 상단] 적색 음영 배너 (R1 TextBox 29: x = 0.306, y = 2.411, w = 5.458, h = 0.370, 수직·수평 정중앙) -->
+        <!-- 7-1. [좌측 상단] 적색 음영 배너 (원본 R1 TextBox 29: 16pt Bold 고정, 정중앙) -->
         <div style="position: absolute; left: ${pctX(0.3064)}; top: ${pctY(2.4114)}; width: ${pctW(bannerWidth)}; height: ${pctH(0.3702)}; background: rgba(192, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw;">
-          <span style="font-size: ${pt(bannerFontSize)}; font-weight: 800; color: #f2f2f2; line-height: 1; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
+          <span style="font-size: ${pt(16)}; font-weight: 800; color: #f2f2f2; line-height: 1; text-shadow: ${glowTextShadow};">${_escHtmlText(bannerText)}</span>
         </div>
 
-        <!-- 7-2. [중앙 상단] Hold Point 위반 박스 (R1 표 32: x = 5.920, y = 2.377, w = 2.259, h = 0.404, 원본 Calibri/+mn-ea 글꼴) -->
+        <!-- 7-2. [중앙 상단] Hold Point 위반 박스 (R1 표 32: 원본 Calibri/+mn-ea 11pt Bold) -->
         <div style="position: absolute; left: ${pctX(5.9202)}; top: ${pctY(2.3772)}; width: ${pctW(2.2594)}; height: ${pctH(0.4039)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
         <div style="position: absolute; left: ${pctX(5.9748)}; top: ${pctY(2.4207)}; width: ${pctW(0.3150)}; height: ${pctH(0.3168)}; background: #ffffff; border: 1px solid #000000; display: flex; align-items: center; justify-content: center; font-size: ${pt(15)}; font-weight: 900; color: #000000; box-sizing: border-box;">
           ${data.isHoldPoint ? '✔' : ''}
         </div>
         <div style="position: absolute; left: ${pctX(6.2898)}; top: ${pctY(2.4207)}; width: ${pctW(1.8897)}; height: ${pctH(0.3168)}; display: flex; align-items: center; padding-left: 0.25cqw; font-family: 'Calibri', 'Malgun Gothic', '맑은 고딕', sans-serif; letter-spacing: -0.02em; font-size: ${pt(11)}; font-weight: 700; color: #000000; white-space: nowrap; box-sizing: border-box;">
-          ${data.isHoldPoint ? (data.holdPointCode ? `Hold Point 위반 (${data.holdPointCode})` : 'Hold Point 위반') : 'Hold Point 위반 (N/A)'}
+          ${data.isHoldPoint ? (data.holdPointCode ? `Hold Point 위반 (${_escHtmlText(data.holdPointCode)})` : 'Hold Point 위반') : 'Hold Point 위반 (N/A)'}
         </div>
 
-        <!-- 7-3. [좌측 전체] 현장 사진 영역 (좌측 적색 배너 끝 0.3064 ~ 우측 Hold Point 끝 8.1796 정확 정렬, 미등록 샘플 주입 금지) -->
-        ${(hasPhoto1 && hasPhoto2) ? `
-          <div style="position: absolute; left: ${pctX(0.3064)}; top: ${pctY(2.8434)}; width: ${pctW(3.8878)}; height: ${pctH(4.4589)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            <img src="${photo1Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+        <!-- 7-3. [좌측 전체] 현장 사진 영역 (PPTX와 100% 동일 좌표 · 2장 시 추출 면적 비례 배치 · 2번 로드 실패 시 1번 전체 확장) -->
+        ${(hasPhoto1 && hasPhoto2 && twoPhotoBoxes) ? `
+          <div data-sheet-photo="1" style="position: absolute; left: ${pctX(twoPhotoBoxes.leftBox.x)}; top: ${pctY(twoPhotoBoxes.leftBox.y)}; width: ${pctW(twoPhotoBoxes.leftBox.w)}; height: ${pctH(twoPhotoBoxes.leftBox.h)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo1Url}" onerror="${onImg1ErrorRecoverFull}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
           </div>
-          <div style="position: absolute; left: ${pctX(4.2918)}; top: ${pctY(2.8434)}; width: ${pctW(3.8878)}; height: ${pctH(4.4589)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            <img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+          <div data-sheet-photo="2" style="position: absolute; left: ${pctX(twoPhotoBoxes.rightBox.x)}; top: ${pctY(twoPhotoBoxes.rightBox.y)}; width: ${pctW(twoPhotoBoxes.rightBox.w)}; height: ${pctH(twoPhotoBoxes.rightBox.h)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo2Url}" onerror="${onImg2ErrorRecoverFull}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.3064)}; top: ${pctY(2.8434)}; width: ${pctW(7.8732)}; height: ${pctH(4.4589)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+          <div data-sheet-photo="1" style="position: absolute; ${fullPhotoCssRect} box-sizing: border-box; overflow: hidden; background: #ffffff;">
             ${(photo1Url || photo2Url)
               ? `<img src="${photo1Url || photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">`
               : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
@@ -2400,9 +2479,9 @@
           발생원인 (인터뷰 결과)
         </div>
 
-        <!-- [의견 : ] 박스 (R1 TextBox 45: x = 8.245, y = 2.823, w = 4.921, h = 1.575) -->
+        <!-- [의견 : ] 박스 (원본 R1 TextBox 45: 제목 14pt Bold / 본문 12pt Regular, 단락 뒤 9pt, 임의 '-' 금지) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(2.8227)}; width: ${pctW(4.9213)}; height: ${pctH(1.5748)}; background: #ffffff; border: 1px solid #000000; padding: 0.45cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-${renderInterviewOpinionBoxHTML(data, pt)}
+${renderInterviewOpinionBoxHTML(data, pt, tplEngine)}
         </div>
 
         <!-- [점검단 제안] 헤더 셀 (R1 TextBox 53: x = 8.245, y = 4.398, w = 1.534, h = 0.354) -->
@@ -2410,17 +2489,17 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
           [점검단 제안]
         </div>
 
-        <!-- [점검단 제안] 분류 셀 (R1 TextBox 54: x = 8.245, y = 4.752, w = 1.534, h = 0.679) -->
+        <!-- [점검단 제안] 분류 셀 (원본 R1 TextBox 54: 14pt Bold / 11pt Regular 고정, 단락 뒤 3pt) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(4.7522)}; width: ${pctW(1.5342)}; height: ${pctH(0.6790)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px; overflow: hidden;">
           ${propDisplayItems.map(it => `
-            <div style="font-size: ${pt(propDisplayItems.length > 1 ? 11.5 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.12;">${it.type}</div>
-            <div style="font-size: ${pt(propDisplayItems.length > 1 ? 9.5 : 11)}; font-weight: 500; color: #000000; line-height: 1.12; margin-bottom: 2px;">${it.sub}</div>
+            <div style="font-size: ${pt(14)}; font-weight: 800; color: #0000ff; line-height: 1.08; margin-bottom: ${pt(3)};">${_escHtmlText(it.type)}</div>
+            <div style="font-size: ${pt(11)}; font-weight: 400; color: #000000; line-height: 1.08;">${_escHtmlText(it.sub)}</div>
           `).join('')}
         </div>
 
-        <!-- [점검단 제안] 본문 셀 (R1 TextBox 52: x = 9.779, y = 4.398, w = 3.387, h = 1.033) -->
+        <!-- [점검단 제안] 본문 셀 (원본 R1 TextBox 52: 12pt Regular 고정, 단락 뒤 3pt, 임의 '-' 금지) -->
         <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.3979)}; width: ${pctW(3.3871)}; height: ${pctH(1.0333)}; background: #ffffff; border: 1px solid #000000; padding: 0.40cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(propSz)}; line-height: ${propLineSpacing}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(data.proposalContent)}</div>
+          <div style="font-size: ${pt(12)}; font-weight: 400; line-height: 1.08; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(propLines.join('\n'), pt(3))}</div>
         </div>
 
         <!-- 개선대책 (현장 협의 결과) 헤더 (R1 TextBox 26: x = 8.245, y = 5.495, w = 4.921, h = 0.404, 18pt bold) -->
@@ -2428,9 +2507,9 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
           개선대책 (현장 협의 결과)
         </div>
 
-        <!-- 개선대책 본문 셀 (R1 TextBox 38: x = 8.245, y = 5.906, w = 3.386, h = 1.396) -->
-        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.45cqw 0.6cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(counterSz)}; font-weight: 400; line-height: ${counterLineSpacing}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(data.countermeasureContent || '')}</div>
+        <!-- 개선대책 본문 셀 (원본 R1 TextBox 38: 11pt Regular 고정, 단락 뒤 6pt, 임의 '-' 금지) -->
+        <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.45cqw 0.42cqw; box-sizing: border-box; overflow: hidden;">
+          <div style="font-size: ${pt(11)}; font-weight: 400; line-height: 1.08; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(cmLines.join('\n'), pt(6))}</div>
         </div>
 
         <!-- [PM 판정결과] 헤더 셀 (R1 TextBox 27: x = 11.631, y = 5.906, w = 1.535, h = 0.333) -->
@@ -2438,11 +2517,11 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
           [PM 판정결과]
         </div>
 
-        <!-- [PM 판정결과] 값 셀 (R1 TextBox 28: x = 11.631, y = 6.239, w = 1.535, h = 1.063, () 소분류 항상 포함) -->
+        <!-- [PM 판정결과] 값 셀 (원본 R1 TextBox 28: 14pt Bold / 11pt Regular 고정 · 미입력 시 완전 공란) -->
         <div style="position: absolute; left: ${pctX(11.6307)}; top: ${pctY(6.2394)}; width: ${pctW(1.5354)}; height: ${pctH(1.0630)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; padding: 2px;">
           ${pmDisplayItems.map(it => `
-            <div style="font-size: ${pt(pmDisplayItems.length > 1 ? 11.5 : 14)}; font-weight: 800; color: #0000ff; line-height: 1.15;">${it.type}</div>
-            <div style="font-size: ${pt(pmDisplayItems.length > 1 ? 9.5 : 11)}; font-weight: 500; color: #000000; line-height: 1.15; margin-bottom: 2px;">${it.sub}</div>
+            <div style="font-size: ${pt(14)}; font-weight: 800; color: #0000ff; line-height: 1.08; margin-bottom: ${pt(3)};">${_escHtmlText(it.type)}</div>
+            <div style="font-size: ${pt(11)}; font-weight: 400; color: #000000; line-height: 1.08;">${_escHtmlText(it.sub)}</div>
           `).join('')}
         </div>
       </div>
@@ -2450,10 +2529,21 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
   }
 
   /**
-   * [경부적합] 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합장표(경부적합).pptx 100% 정밀 일치)
+   * [경부적합] 브라우저 실시간 16:9 슬라이드 프리뷰 HTML 렌더링 (템플릿/부적합장표(경부적합)_R1.pptx 100% 정밀 일치)
+   * - 모든 글자크기 원본 R1 고정 (17pt / 14pt / 16pt) — 초과 시 글자크기 축소 금지, 내용 자연 축약 (Point #10)
    */
   function renderMinorInspectionSheetHTML(record, data, options = {}) {
-    const { photo1Url = '', photo2Url = '' } = options;
+    const { photo1Url = '', photo2Url = '', photo1Dims = null, photo2Dims = null } = options;
+    const tplEngine = resolveTemplateEngine();
+    const fitSingle = (tplEngine && tplEngine.fitSingleLineByAbbr) || ((s) => String(s || '').trim());
+    const fitMulti = (tplEngine && tplEngine.fitMultilineByAbbr) || ((lines) => (Array.isArray(lines) ? lines : _splitBulletLinesShared(lines)));
+    const computeTwoPhotos = (tplEngine && tplEngine.computeProportionalTwoPhotoBoxes) || ((box, _d1, _d2, gap = 0.0884) => {
+      const wEach = Number(((box.w - gap) / 2).toFixed(4));
+      return {
+        leftBox: { x: box.x, y: box.y, w: wEach, h: box.h },
+        rightBox: { x: Number((box.x + wEach + gap).toFixed(4)), y: box.y, w: wEach, h: box.h }
+      };
+    });
 
     const pctX = (x) => `${((x / 13.3333) * 100).toFixed(4)}%`;
     const pctY = (y) => `${((y / 7.5000) * 100).toFixed(4)}%`;
@@ -2462,12 +2552,13 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
     const pt = (n) => `${(n * 0.104167).toFixed(4)}cqw`;
     const glowTextShadow = '0 0 4px rgba(0,0,0,0.85), -0.6px -0.6px 1.6px rgba(0,0,0,0.9), 0.6px 0.6px 1.6px rgba(0,0,0,0.9), -0.6px 0.6px 1.6px rgba(0,0,0,0.9), 0.6px -0.6px 1.6px rgba(0,0,0,0.9)';
 
-    const cleanSub = (data.subcontractor || '').replace(/[\r\n\t]+/g, ' ').trim();
-    const cleanMain = (data.mainContent || '').replace(/[\r\n\t]+/g, '  ').trim();
-    const contentFontSize = calcSingleLineFontSize(`    - ${cleanMain}`, 12.10, 17, 11);
+    const cleanSub = fitSingle((data.subcontractor || '').replace(/[\r\n\t]+/g, ' ').trim(), 6.50, 17, '■ 위험요소 안전대책 이행 확인 [협력사: ]');
+    const minorContentLines = fitMulti(_splitBulletLinesShared(data.mainContent || data.content || ''), 11.40, 0.72, 14, 1.0, 6)
+      .map(ln => (/^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`));
     const leftBannerW = 5.4580;
-    const leftBannerSz = calcSingleLineFontSize(data.photoBanner, leftBannerW, 16, 9.5);
+    const leftBannerText = fitSingle(String(data.photoBanner || ''), 5.35, 16);
     const rightBannerW = 4.4082;
+    const hasPhoto1 = Boolean(photo1Url);
     const hasPhoto2 = Boolean(photo2Url);
     const isPhoto2RiskDoc = Boolean(
       record.rightPhotoIsReference === true ||
@@ -2475,8 +2566,15 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
       /위험성\s*평가표|평가표|문서|서식|도면|작업절차서|매뉴얼/i.test(record.photo2Banner || record.photo2Type || '')
     );
 
+    const minorFullBox = { x: 0.8685, y: 3.2207, w: leftBannerW, h: 4.0409 };
+    const minorTwoBoxes = (hasPhoto1 && hasPhoto2 && !isPhoto2RiskDoc)
+      ? computeTwoPhotos(minorFullBox, photo1Dims, photo2Dims, 0.0884)
+      : null;
+    const onMinorImg2Err = `this.onerror=null;var p2=this.parentElement;if(p2)p2.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p1=root&&root.querySelector('[data-sheet-photo=\\'1\\']');if(p1){p1.style.left='${pctX(minorFullBox.x)}';p1.style.top='${pctY(minorFullBox.y)}';p1.style.width='${pctW(minorFullBox.w)}';p1.style.height='${pctH(minorFullBox.h)}';}`;
+    const onMinorImg1Err = `this.onerror=null;var p1=this.parentElement;if(p1)p1.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p2=root&&root.querySelector('[data-sheet-photo=\\'2\\']');if(p2){p2.style.left='${pctX(minorFullBox.x)}';p2.style.top='${pctY(minorFullBox.y)}';p2.style.width='${pctW(minorFullBox.w)}';p2.style.height='${pctH(minorFullBox.h)}';}`;
+
     return `
-      <div id="jangpyoSlidePreview" data-severity="경부적합" style="
+      <div id="jangpyoSlidePreview" data-severity="경부적합" data-template="R1" style="
         width: 100%;
         aspect-ratio: 16 / 9;
         position: relative;
@@ -2506,13 +2604,13 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
           부적합<br>사&nbsp;&nbsp;&nbsp;항
         </div>
 
-        <!-- 4. 부적합 사항 본문 (R1: x = 1.066, y = 1.000, w = 12.026, h = 1.181, 17pt/14pt bold) -->
-        <div style="position: absolute; left: ${pctX(1.066)}; top: ${pctY(1.000)}; width: ${pctW(12.026)}; height: ${pctH(1.181)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; justify-content: center; padding: 0 0.7cqw; box-sizing: border-box;">
-          <div style="font-size: ${pt(17)}; font-weight: 800; color: #000000; line-height: 1.35; white-space: nowrap;">
-            ■ 위험요소 안전대책 이행 확인 [<span style="color: #0000ff;">협력사: ${cleanSub || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>]
+        <!-- 4. 부적합 사항 본문 (원본 R1: 17pt Bold 헤더 / 14pt Bold 본문 고정, 단락 뒤 6pt, 초과 시 내용 축약) -->
+        <div style="position: absolute; left: ${pctX(1.066)}; top: ${pctY(1.000)}; width: ${pctW(12.026)}; height: ${pctH(1.181)}; background: #ffffff; border: 1px solid #000000; display: flex; flex-direction: column; justify-content: center; padding: 0 0.7cqw; box-sizing: border-box; overflow: hidden;">
+          <div style="font-size: ${pt(17)}; font-weight: 800; color: #000000; line-height: 1.08; margin-bottom: ${pt(6)}; white-space: nowrap;">
+            ■ 위험요소 안전대책 이행 확인 [<span style="color: #0000ff;">협력사: ${cleanSub ? _escHtmlText(cleanSub) : '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span>]
           </div>
-          <div style="font-size: ${pt(Math.min(14, contentFontSize))}; font-weight: 800; color: #000000; line-height: 1.32; padding-left: 1.5cqw; white-space: pre-wrap; word-break: keep-all;">
-            - ${cleanMain}
+          <div style="font-size: ${pt(14)}; font-weight: 800; color: #000000; line-height: 1.08; padding-left: 1.3cqw; word-break: keep-all;">
+            ${renderHangingLinesHTML(minorContentLines.length ? minorContentLines.join('\n') : '- ', pt(6))}
           </div>
         </div>
 
@@ -2524,22 +2622,24 @@ ${renderInterviewOpinionBoxHTML(data, pt)}
         <!-- 6. 하단 사례 컨테이너 (R1: x = 0.247, y = 2.545, w = 12.845, h = 4.853) -->
         <div style="position: absolute; left: ${pctX(0.247)}; top: ${pctY(2.545)}; width: ${pctW(12.845)}; height: ${pctH(4.853)}; background: #ffffff; border: 1px solid #000000; box-sizing: border-box;"></div>
 
-        <!-- 6-1. 좌측 적색 음영 배너 (SHAPE #3: x = 0.8685, y = 2.8276, w = 5.4580, h = 0.3702, #C00000 @ 60% = #d96666) -->
+        <!-- 6-1. 좌측 적색 음영 배너 (원본 R1: 16pt Bold 고정, 초과 시 내용 축약) -->
         <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(2.8276)}; width: ${pctW(leftBannerW)}; height: ${pctH(0.3702)}; background: rgba(192, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; box-sizing: border-box; white-space: nowrap; padding: 0 0.4cqw;">
-          <span style="font-size: ${pt(leftBannerSz)}; font-weight: 800; color: #f2f2f2; text-shadow: ${glowTextShadow};">${data.photoBanner}</span>
+          <span style="font-size: ${pt(16)}; font-weight: 800; color: #f2f2f2; line-height: 1; text-shadow: ${glowTextShadow};">${_escHtmlText(leftBannerText)}</span>
         </div>
 
-        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 나란히 배치, 1장이면 전체 배치, 미등록 샘플 주입 금지) -->
-        ${(hasPhoto2 && !isPhoto2RiskDoc) ? `
-          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2207)}; width: ${pctW(2.6848)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 1</div>`}
+        <!-- 6-2. 좌측 부적합 사례 사진 (2장이면 면적 비례 배치, 1장이면 전체 배치, 2번 실패 시 1번 전체 확장) -->
+        ${(hasPhoto1 && hasPhoto2 && !isPhoto2RiskDoc && minorTwoBoxes) ? `
+          <div data-sheet-photo="1" style="position: absolute; left: ${pctX(minorTwoBoxes.leftBox.x)}; top: ${pctY(minorTwoBoxes.leftBox.y)}; width: ${pctW(minorTwoBoxes.leftBox.w)}; height: ${pctH(minorTwoBoxes.leftBox.h)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo1Url}" onerror="${onMinorImg1Err}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
           </div>
-          <div style="position: absolute; left: ${pctX(3.6417)}; top: ${pctY(3.2207)}; width: ${pctW(2.6848)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo2Url ? `<img src="${photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(13)};">📸 사진 2</div>`}
+          <div data-sheet-photo="2" style="position: absolute; left: ${pctX(minorTwoBoxes.rightBox.x)}; top: ${pctY(minorTwoBoxes.rightBox.y)}; width: ${pctW(minorTwoBoxes.rightBox.w)}; height: ${pctH(minorTwoBoxes.rightBox.h)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            <img src="${photo2Url}" onerror="${onMinorImg2Err}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
           </div>
         ` : `
-          <div style="position: absolute; left: ${pctX(0.8685)}; top: ${pctY(3.2207)}; width: ${pctW(leftBannerW)}; height: ${pctH(4.0409)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
-            ${photo1Url ? `<img src="${photo1Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">` : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
+          <div data-sheet-photo="1" style="position: absolute; left: ${pctX(minorFullBox.x)}; top: ${pctY(minorFullBox.y)}; width: ${pctW(minorFullBox.w)}; height: ${pctH(minorFullBox.h)}; box-sizing: border-box; overflow: hidden; background: #ffffff;">
+            ${(photo1Url || (!isPhoto2RiskDoc && photo2Url))
+              ? `<img src="${photo1Url || photo2Url}" onerror="this.onerror=null; this.style.display='none';" style="width: 100%; height: 100%; object-fit: cover; display: block;">`
+              : `<div style="width: 100%; height: 100%; background: #f8fafc; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: ${pt(14)};">📸 현장 사진</div>`}
           </div>
         `}
 
