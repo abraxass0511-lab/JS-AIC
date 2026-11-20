@@ -1442,25 +1442,41 @@
       return await customLoader(filename);
     }
     if (typeof fetch === 'function') {
-      const res = await fetch(`templates/${filename}?v=20261119_v55`);
+      const res = await fetch(`templates/${filename}?v=20261121_v56`);
       if (!res.ok) throw new Error(`템플릿 로드 실패 (${filename}: HTTP ${res.status})`);
       return await res.arrayBuffer();
     }
     throw new Error(`템플릿 로더가 없습니다: ${filename}`);
   }
 
+  function sanitizeSheetFilename(filename) {
+    const raw = String(filename || '점검장표.pptx').trim();
+    const dot = raw.lastIndexOf('.');
+    const ext = dot > 0 ? raw.slice(dot).replace(/[^a-zA-Z0-9.]/g, '') : '.pptx';
+    const base = (dot > 0 ? raw.slice(0, dot) : raw)
+      .replace(/[\/\\:*?"<>|%#&?;=\r\n\t]+/g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 65) || '점검장표';
+    return `${base}${ext}`;
+  }
+
   function triggerDownloadIfRequested(blob, filename, download) {
     if (download === false) return;
+    const safeName = sanitizeSheetFilename(filename);
     if (typeof window !== 'undefined' && window.SafeUtil && window.SafeUtil.downloadBlob) {
-      window.SafeUtil.downloadBlob(blob, filename);
+      window.SafeUtil.downloadBlob(blob, safeName);
       return;
     }
     if (typeof document !== 'undefined') {
-      const url = URL.createObjectURL(blob);
+      const dlBlob = new Blob([blob], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(dlBlob);
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = filename;
+      a.download = safeName;
+      a.target = '';
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
@@ -1468,7 +1484,7 @@
           if (a.parentNode) a.parentNode.removeChild(a);
           URL.revokeObjectURL(url);
         } catch (_) { }
-      }, 60000);
+      }, 120000);
     }
   }
 
@@ -2185,6 +2201,166 @@
     return Math.round(pt * 2) * 50; // 0.5pt 단위 반올림
   }
 
+  /**
+   * [원본 글자크기 100% 고정] 1줄 셀/제목이 지정 폭(widthIn)을 초과할 때만 어절 단위로 자연 축약 (말줄임표 '...' 금지, 글자크기 축소 금지)
+   */
+  function fitSingleLineByAbbr(text, widthIn, fontPt, prefixText = '') {
+    let s = String(text || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    const availPt = Math.max(24, widthIn * 72 - 5);
+    const prefixPt = estimateVisualWidthUnits(prefixText) * fontPt;
+    const budgetPt = Math.max(fontPt * 2, availPt - prefixPt);
+    if (estimateVisualWidthUnits(s) * fontPt <= budgetPt) return s;
+
+    // 1차: 불필요한 괄호/법인 표기/장황한 접두어 간소화
+    let compact = s
+      .replace(/산업안전보건기준에\s*관한\s*규칙/g, '안전보건규칙')
+      .replace(/^(?:\(주\)|㈜|주식회사|\(유\))\s*/g, '')
+      .replace(/\s*(?:\(주\)|㈜|주식회사|\(유\))$/g, '')
+      .replace(/20(\d{2})년\s*상반기\s*/g, '$1년上')
+      .replace(/20(\d{2})년\s*하반기\s*/g, '$1년下')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (estimateVisualWidthUnits(compact) * fontPt <= budgetPt) return compact;
+
+    // 2차: 어절 단위 완결 축약 (toCompletePhrase 활용, '...' 절대 미사용)
+    let lo = 2;
+    let hi = compact.length;
+    let best = compact.slice(0, Math.max(2, Math.floor(budgetPt / fontPt)));
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const cand = toCompletePhrase(compact, mid);
+      if (estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
+        best = cand;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    // 그래도 초과 시 문자 단위 정밀 절단
+    while (best.length > 2 && estimateVisualWidthUnits(best) * fontPt > budgetPt) {
+      best = best.slice(0, -1).replace(/[,/;·\-:(\s]+$/g, '').trim();
+    }
+    return best;
+  }
+
+  /**
+   * [원본 글자크기 100% 고정] 다중 줄 박스가 높이를 초과할 때만 문장/어절 단위로 축약 (말줄임표 '...' 금지, 글자크기 축소 금지)
+   */
+  function fitMultilineByAbbr(lines, widthIn, heightIn, fontPt, lnSpcRatio = 1.0, spcAftPt = 0) {
+    const cleanLines = (Array.isArray(lines) ? lines : [lines])
+      .map((l) => String(l || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    if (!cleanLines.length) return [];
+
+    const lineWidthPt = Math.max(36, widthIn * 72 - 8);
+    const availH = Math.max(fontPt * 1.3, heightIn * 72 - 4);
+    const singleLineH = fontPt * lnSpcRatio * 1.24;
+
+    const countWrapped = (str) => Math.max(1, Math.ceil((estimateVisualWidthUnits(str) * fontPt) / lineWidthPt));
+    const totalHeight = (arr) => arr.reduce((sum, l, i) => (
+      sum + countWrapped(l) * singleLineH + (i < arr.length - 1 ? spcAftPt : 0)
+    ), 0);
+
+    if (totalHeight(cleanLines) <= availH) return cleanLines;
+
+    // 박스 높이에 들어갈 최대 단락 수 및 단락당 허용 줄 수 계산
+    const maxItems = Math.max(1, Math.min(cleanLines.length, Math.floor((availH + spcAftPt) / (singleLineH + spcAftPt))));
+    const kept = cleanLines.slice(0, maxItems);
+    if (totalHeight(kept) <= availH) return kept;
+
+    const totalAvailLines = Math.max(kept.length, Math.floor((availH - Math.max(0, kept.length - 1) * spcAftPt) / singleLineH));
+    const maxLinesPerItem = Math.max(1, Math.floor(totalAvailLines / kept.length));
+
+    return kept.map((ln) => {
+      if (countWrapped(ln) <= maxLinesPerItem) return ln;
+      const prefixMatch = ln.match(/^((?:[-•▪]\s+|\d+[\.)]\s+))/);
+      const prefix = prefixMatch ? prefixMatch[1] : '';
+      const body = prefix ? ln.slice(prefix.length).trim() : ln;
+      const budgetPt = lineWidthPt * maxLinesPerItem - estimateVisualWidthUnits(prefix) * fontPt - fontPt * 0.4;
+      let lo = 4;
+      let hi = body.length;
+      let best = body.slice(0, Math.max(4, Math.floor(budgetPt / fontPt)));
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const cand = toCompletePhrase(body, mid);
+        if (estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
+          best = cand;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      while (best.length > 4 && estimateVisualWidthUnits(best) * fontPt > budgetPt) {
+        best = best.slice(0, -1).replace(/[,/;·\-:(\s]+$/g, '').trim();
+      }
+      return `${prefix}${best}`.trim();
+    });
+  }
+
+  /**
+   * [Point #7] 2장 사진의 추출 면적(픽셀 크기·종횡비)에 비례한 좌/우 박스 좌표 계산
+   * - PPTX와 웹 프리뷰가 100% 동일한 함수를 공용 사용하여 완벽히 동일하게 표시
+   */
+  function computeProportionalTwoPhotoBoxes(fullBox, dims1, dims2, gap) {
+    const isEmu = fullBox.w > 100;
+    const roundCoord = (v) => (isEmu ? Math.round(v) : Number(v.toFixed(4)));
+    const g = gap !== undefined ? gap : roundCoord(fullBox.w * 0.0124);
+    const usableW = Math.max(isEmu ? 10 : 0.1, fullBox.w - g);
+    const d1 = (dims1 && dims1.w > 0 && dims1.h > 0) ? dims1 : null;
+    const d2 = (dims2 && dims2.w > 0 && dims2.h > 0) ? dims2 : null;
+
+    let ratio1 = 0.5;
+    let h1 = fullBox.h;
+    let h2 = fullBox.h;
+
+    if (d1 && d2) {
+      const area1 = d1.w * d1.h;
+      const area2 = d2.w * d2.h;
+      const ar1 = d1.w / d1.h;
+      const ar2 = d2.w / d2.h;
+      const areaSkew = Math.max(area1, area2) / Math.max(1, Math.min(area1, area2));
+
+      if (areaSkew >= 1.12) {
+        // 추출된 사진 면적 차이가 뚜렷하면 면적 비율에 비례 배분 (28% ~ 72% 안전 클램프)
+        ratio1 = Math.max(0.28, Math.min(0.72, area1 / (area1 + area2)));
+      } else {
+        // 해상도 면적이 비슷하면 종횡비(가로/세로 비율)에 비례 배분 (30% ~ 70%)
+        ratio1 = Math.max(0.30, Math.min(0.70, ar1 / (ar1 + ar2)));
+      }
+
+      const w1Cand = roundCoord(usableW * ratio1);
+      const w2Cand = roundCoord(usableW - w1Cand);
+
+      // 작은 면적의 사진은 원본 비율·면적비에 맞춰 높이도 비례 축소 (하단선 일치)
+      if (area1 > area2 * 1.25) {
+        const natH2 = roundCoord(w2Cand / ar2);
+        const areaH2 = roundCoord(fullBox.h * Math.sqrt(area2 / area1));
+        h2 = Math.max(roundCoord(fullBox.h * 0.54), Math.min(fullBox.h, Math.max(natH2, areaH2)));
+      } else if (area2 > area1 * 1.25) {
+        const natH1 = roundCoord(w1Cand / ar1);
+        const areaH1 = roundCoord(fullBox.h * Math.sqrt(area1 / area2));
+        h1 = Math.max(roundCoord(fullBox.h * 0.54), Math.min(fullBox.h, Math.max(natH1, areaH1)));
+      }
+    }
+
+    const w1 = roundCoord(usableW * ratio1);
+    const w2 = roundCoord(usableW - w1);
+    const leftBox = {
+      x: roundCoord(fullBox.x),
+      y: roundCoord(fullBox.y + (fullBox.h - h1)),
+      w: w1,
+      h: roundCoord(h1),
+    };
+    const rightBox = {
+      x: roundCoord(fullBox.x + w1 + g),
+      y: roundCoord(fullBox.y + (fullBox.h - h2)),
+      w: w2,
+      h: roundCoord(h2),
+    };
+    return { leftBox, rightBox, ratio1 };
+  }
+
   function splitBulletLines(rawText) {
     const src = String(rawText || '').replace(/\r\n/g, '\n').trim();
     if (!src) return [];
@@ -2230,13 +2406,15 @@
     return '(계획 재수립)';
   }
 
-  function resolveVerdictItems(items, singleType, singleSub, fallbackDefault) {
+  function resolveVerdictItems(items, singleType, singleSub, fallbackDefault = []) {
     const rawList = Array.isArray(items) && items.length
       ? items
-      : (singleType ? [{ type: singleType, sub: singleSub }] : fallbackDefault);
+      : (singleType ? [{ type: singleType, sub: singleSub }] : (Array.isArray(fallbackDefault) ? fallbackDefault : []));
+    if (!rawList.length) return [];
     return rawList.map((it) => {
-      let type = String((it && it.type) || '시스템 개선').trim();
+      let type = String((it && it.type) || '').trim();
       let sub = String((it && it.sub) || '').trim();
+      if (!type) return null;
       if (!sub) {
         const m = type.match(/(\([^)]+\))/);
         if (m) {
@@ -2247,8 +2425,8 @@
         }
       }
       if (sub && !sub.startsWith('(')) sub = `(${sub})`;
-      return { type: type || '시스템 개선', sub };
-    });
+      return { type, sub };
+    }).filter(Boolean);
   }
 
   function appendSheetPic(slideXml, relsXml, zip, ctXml, mediaName, parsedPhoto, box, picTitle, mode = 'cover') {
@@ -2315,52 +2493,45 @@
     const BLUE = '0000FF';
     const BLACK = '000000';
 
-    // 1. 표 47 (id=48): 유형/등급, 관련기준 상단 16pt Bold, 메타 5칸 14pt Bold, 부적합 내용 14pt Bold (1./2. 정렬)
-    const typeMain = String(data.typeMain || data.type || '안전').trim();
+    // 1. 표 47 (id=48): 모든 글자크기 원본 R1 100% 고정 (초과 시 글자크기 축소 금지, 내용 축약)
+    //    - 유형/등급: 20pt Bold / 20pt Bold
+    //    - 관련기준 제목: 16pt Bold
+    //    - 메타 5칸(협력사/공종명/작업장소/점검자/점검차수): 모두 14pt Bold
+    //    - 부적합 내용: 14pt Bold (1건도 '1. ' + 상단 정렬)
+    const typeMain = fitSingleLineByAbbr(String(data.typeMain || data.type || '안전').trim(), 1.48, 20);
     const sevText = `[${data.severity || '중부적합'}]`;
-    const typeSz = calcFitFontSz(typeMain, 1.48, 2000, 1400);
 
-    const lawTitleText = String(data.lawTitle || '').replace(/\r?\n/g, ' ').trim();
-    const lawTitleSz = calcFitFontSz(lawTitleText, 5.55, 1600, 1100);
+    const lawTitleText = fitSingleLineByAbbr(String(data.lawTitle || ''), 5.50, 16);
 
-    const subText = String(data.subcontractor || '').replace(/\r?\n/g, ' ').trim();
-    const workText = String(data.workGroup || '').replace(/\r?\n/g, ' ').trim();
-    const locText = String(data.location || '').replace(/\r?\n/g, ' ').trim();
-    const inspText = String(data.inspector || '').replace(/\r?\n/g, ' ').trim();
-    const roundText = String(data.inspectRound || '').replace(/\r?\n/g, ' ').trim();
+    const subText = fitSingleLineByAbbr(String(data.subcontractor || ''), 2.30, 14, '협력사 : ');
+    const workText = fitSingleLineByAbbr(String(data.workGroup || ''), 2.94, 14, '공종명 : ');
+    const locText = fitSingleLineByAbbr(String(data.location || ''), 3.10, 14, '작업장소 : ');
+    const inspText = fitSingleLineByAbbr(String(data.inspector || ''), 1.78, 14, '점검자 : ');
+    const roundText = fitSingleLineByAbbr(String(data.inspectRound || ''), 2.04, 14, '점검차수 : ');
 
-    const subSz = calcFitFontSz(`협력사 : ${subText}`, 2.30, 1400, 1100);
-    const workSz = calcFitFontSz(`공종명 : ${workText}`, 2.94, 1400, 1100);
-    const locSz = calcFitFontSz(`작업장소 : ${locText}`, 3.10, 1400, 1100);
-    const inspSz = calcFitFontSz(`점검자 : ${inspText}`, 1.78, 1400, 1100);
-    const roundSz = calcFitFontSz(`점검차수 : ${roundText}`, 2.04, 1400, 1150);
-
-    const contentLines = splitNumberedContentLines(data.mainContent || data.content || '');
-    const maxLineUnits = contentLines.reduce((m, l) => Math.max(m, estimateVisualWidthUnits(l)), 0);
-    const contentSz = contentLines.length >= 4
-      ? 1100
-      : (contentLines.length === 3 ? 1250 : (maxLineUnits > 56 ? 1250 : 1400));
+    const rawContentLines = splitNumberedContentLines(data.mainContent || data.content || '');
+    const contentLines = fitMultilineByAbbr(rawContentLines, 10.65, 0.62, 14, 1.10, 0);
     // malgunbd.ttf 실측: 14pt '부적합 내용 : ' = 1,122,680 EMU, '1. ' = 212,090 EMU
-    const labelHangEmu = Math.round((contentSz / 1400) * 1122680);
-    const numHangEmu = Math.round((contentSz / 1400) * 212090);
+    const labelHangEmu = 1122680;
+    const numHangEmu = 212090;
     const totalContentHangEmu = labelHangEmu + numHangEmu;
     const contentParas = contentLines.length
       ? contentLines.map((line, idx) => (idx === 0
         ? {
-            algn: 'l', spcAft: contentLines.length > 1 ? 150 : 0, lnSpc: 110000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 110000,
             marL: totalContentHangEmu, indent: -totalContentHangEmu, buNone: true,
             runs: [
-              { text: '부적합 내용 ', sz: contentSz, bold: true, color: BLUE },
-              { text: `: ${line}`, sz: contentSz, bold: true, color: BLACK },
+              { text: '부적합 내용 ', sz: 1400, bold: true, color: BLUE },
+              { text: `: ${line}`, sz: 1400, bold: true, color: BLACK },
             ],
           }
         : {
-            algn: 'l', spcAft: idx < contentLines.length - 1 ? 150 : 0, lnSpc: 110000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 110000,
             marL: totalContentHangEmu, indent: -numHangEmu, buNone: true,
-            runs: [{ text: line, sz: contentSz, bold: true, color: BLACK }],
+            runs: [{ text: line, sz: 1400, bold: true, color: BLACK }],
           }))
       : [{
-          algn: 'l', spcAft: 0, lnSpc: 110000, marL: 0, indent: 0, buNone: true,
+          algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 110000, marL: 0, indent: 0, buNone: true,
           runs: [
             { text: '부적합 내용 ', sz: 1400, bold: true, color: BLUE },
             { text: ': 1. ', sz: 1400, bold: true, color: BLACK },
@@ -2371,32 +2542,32 @@
       0: {
         3: {
           paragraphs: [
-            { algn: 'ctr', spcAft: 0, lnSpc: 105000, runs: [{ text: typeMain, sz: typeSz, bold: true, color: BLACK }] },
-            { algn: 'ctr', spcAft: 0, lnSpc: 105000, runs: [{ text: sevText, sz: 1800, bold: true, color: BLACK }] },
+            { algn: 'ctr', spcBef: 0, spcAft: 0, lnSpc: 100000, runs: [{ text: typeMain, sz: 2000, bold: true, color: BLACK }] },
+            { algn: 'ctr', spcBef: 0, spcAft: 0, lnSpc: 100000, runs: [{ text: sevText, sz: 2000, bold: true, color: BLACK }] },
           ],
         },
         7: {
           paragraphs: [
-            { algn: 'l', spcAft: 0, lnSpc: 100000, runs: [{ text: lawTitleText, sz: lawTitleSz, bold: true, color: BLACK }] },
+            { algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000, runs: [{ text: lawTitleText, sz: 1600, bold: true, color: BLACK }] },
           ],
         },
       },
       2: {
         1: {
           paragraphs: [{
-            algn: 'l', spcAft: 0, lnSpc: 100000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000,
             runs: [
-              { text: '협력사 : ', sz: subSz, bold: true, color: BLUE },
-              { text: subText, sz: subSz, bold: true, color: BLACK },
+              { text: '협력사 : ', sz: 1400, bold: true, color: BLUE },
+              { text: subText, sz: 1400, bold: true, color: BLACK },
             ],
           }],
         },
         4: {
           paragraphs: [{
-            algn: 'l', spcAft: 0, lnSpc: 100000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000,
             runs: [
-              { text: '공종명', sz: workSz, bold: true, color: BLUE },
-              { text: ` : ${workText}`, sz: workSz, bold: true, color: BLACK },
+              { text: '공종명', sz: 1400, bold: true, color: BLUE },
+              { text: ` : ${workText}`, sz: 1400, bold: true, color: BLACK },
             ],
           }],
         },
@@ -2404,29 +2575,29 @@
         7: { clearMerged: true },
         8: {
           paragraphs: [{
-            algn: 'l', spcAft: 0, lnSpc: 100000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000,
             runs: [
-              { text: '작업장소', sz: locSz, bold: true, color: BLUE },
-              { text: ` : ${locText}`, sz: locSz, bold: true, color: BLACK },
+              { text: '작업장소', sz: 1400, bold: true, color: BLUE },
+              { text: ` : ${locText}`, sz: 1400, bold: true, color: BLACK },
             ],
           }],
         },
         9: {
           paragraphs: [{
-            algn: 'l', spcAft: 0, lnSpc: 100000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000,
             runs: [
-              { text: '점검자', sz: inspSz, bold: true, color: BLUE },
-              { text: ` : ${inspText}`, sz: inspSz, bold: true, color: BLACK },
+              { text: '점검자', sz: 1400, bold: true, color: BLUE },
+              { text: ` : ${inspText}`, sz: 1400, bold: true, color: BLACK },
             ],
           }],
         },
         10: { clearMerged: true },
         11: {
           paragraphs: [{
-            algn: 'l', spcAft: 0, lnSpc: 100000,
+            algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000,
             runs: [
-              { text: '점검차수', sz: roundSz, bold: true, color: BLUE },
-              { text: ` : ${roundText}`, sz: roundSz, bold: true, color: BLACK },
+              { text: '점검차수', sz: 1400, bold: true, color: BLUE },
+              { text: ` : ${roundText}`, sz: 1400, bold: true, color: BLACK },
             ],
           }],
         },
@@ -2441,33 +2612,31 @@
       },
     });
 
-    // 2. 관련기준 본문 박스 (TextBox 1, id=2): lstStyle glow 제거 + 선명한 일반체 + '-' 실측 내어쓰기
-    const lawBodyLines = splitBulletLines(data.lawBody || '');
-    const lawBodyChars = lawBodyLines.reduce((a, l) => a + l.length, 0);
-    const lawBodySz = lawBodyLines.length >= 4 || lawBodyChars > 180
-      ? 900
-      : (lawBodyLines.length >= 3 || lawBodyChars > 110 ? 1000 : 1100);
-    // malgun.ttf 실측: 11pt '- ' = 106,680 EMU
-    const lawHangEmu = Math.round((lawBodySz / 1100) * 106680);
+    // 2. 관련기준 본문 박스 (TextBox 1, id=2): 원본 11pt 일반체 100% 고정 (초과 시 축약) + lstStyle glow 제거
+    const rawLawBodyLines = splitBulletLines(data.lawBody || '');
+    const lawBodyLines = fitMultilineByAbbr(rawLawBodyLines, 5.42, 0.64, 11, 1.0, 0);
+    // malgun.ttf 실측: 11pt '- ' = 106,680 EMU (원문에 '-'가 있을 때만 내어쓰기 적용)
+    const lawHangEmu = 106680;
     const lawBodyParas = lawBodyLines.length
-      ? lawBodyLines.map((line, idx) => {
+      ? lawBodyLines.map((line) => {
           const isDash = /^[-•▪]\s+/.test(line);
           return {
             text: line,
-            sz: lawBodySz,
+            sz: 1100,
             bold: false,
             color: BLACK,
             algn: 'l',
-            spcAft: idx < lawBodyLines.length - 1 ? 220 : 0,
-            lnSpc: 112000,
+            spcBef: 0,
+            spcAft: 0,
+            lnSpc: 100000,
             marL: isDash ? lawHangEmu : 0,
             indent: isDash ? -lawHangEmu : 0,
             buNone: true,
           };
         })
-      : [{ text: '', sz: 1100, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
+      : [{ text: '', sz: 1100, bold: false, color: BLACK, algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true }];
     sXml = setShapeParagraphs(sXml, 2, lawBodyParas, {
-      algn: 'l', lIns: 55000, rIns: 50000, tIns: 30000, bIns: 25000,
+      algn: 'l', lIns: 45000, rIns: 45000, tIns: 25000, bIns: 20000,
       anchor: 't', noAutofit: true, clearLstStyle: true,
     });
 
@@ -2498,14 +2667,15 @@
       sXml = insertIntoSpTree(sXml, buildCheckmarkPicXml(spId, cm.name, 'rId3', cm));
     });
 
-    // 4. 좌측 사진 상단 적색 배너 (TextBox 29, id=30) — 수직·수평 정중앙 배치
-    const bannerTxt = String(data.photoBanner || '').replace(/\r?\n/g, ' ').trim();
-    const bannerSz = calcFitFontSz(bannerTxt, 5.35, 1600, 1100);
+    // 4. 좌측 사진 상단 적색 배너 (TextBox 29, id=30) — 원본 16pt Bold 고정 (초과 시 축약) + 정중앙 배치
+    const bannerTxt = fitSingleLineByAbbr(String(data.photoBanner || ''), 5.35, 16);
     sXml = setShapeParagraphs(sXml, 30, [
-      { text: bannerTxt, sz: bannerSz, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true },
+      { text: bannerTxt, sz: 1600, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true },
     ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true });
 
-    // 5. 발생원인 인터뷰 결과 (그룹 41 내 TextBox 45, id=46) — 원본 단락 간격 + '-' 내어쓰기 정렬
+    // 5. 발생원인 인터뷰 결과 (TextBox 45, id=46)
+    //    - 원본 R1 정확 수치: 제목 14pt Bold / 본문 12pt Regular, 단락 앞 0pt, 단락 뒤 9pt(900), 줄 간격 1줄(100000)
+    //    - 원본 양식에 '-'가 없으므로 임의 '-' 추가 금지! (원문/PDF 스캔에 '-'가 있을 때만 유지 + 실측 내어쓰기)
     let sections = [];
     if (Array.isArray(data.interviewSections) && data.interviewSections.length) {
       sections = data.interviewSections.map((sec) => ({
@@ -2534,127 +2704,143 @@
         }];
       }
     }
-    const ivTotalLines = sections.reduce((acc, sec) => acc + (sec.title ? 1 : 0) + ((sec.lines && sec.lines.length) || 0), 0);
-    const ivTitleSz = ivTotalLines >= 7 ? 1150 : (ivTotalLines >= 5 ? 1250 : 1400);
-    const ivBodySz = ivTotalLines >= 7 ? 1000 : (ivTotalLines >= 5 ? 1100 : 1200);
-    // malgun.ttf 실측: 12pt '- ' = 115,570 EMU (초과 들여쓰기 제거, 첫 글자 수직 직렬 일치)
-    const ivHangEmu = Math.round((ivBodySz / 1200) * 115570);
+    const ivHangEmu = 115570; // 12pt '- ' 실측 폭
+    // 박스 높이 1.48in 내에서 14pt 제목 + 12pt 본문(단락 뒤 9pt)이 넘치지 않도록 본문만 자연 축약
+    const ivHeaderCount = sections.filter((s) => s.title).length;
+    const ivAvailBodyH = Math.max(0.45, 1.48 - ivHeaderCount * 0.34);
+    const ivPerSecH = ivAvailBodyH / Math.max(1, sections.length);
     const ivParas = [];
-    sections.forEach((sec, sIdx) => {
+    sections.forEach((sec) => {
       if (sec.title) {
         ivParas.push({
-          text: sec.title,
-          sz: ivTitleSz,
+          text: fitSingleLineByAbbr(sec.title, 4.75, 14),
+          sz: 1400,
           bold: true,
           color: BLACK,
           algn: 'l',
-          spcBef: sIdx > 0 ? 650 : 0,
-          spcAft: 350,
-          lnSpc: 112000,
+          spcBef: 0,
+          spcAft: 900,
+          lnSpc: 100000,
           marL: 0,
           indent: 0,
           buNone: true,
         });
       }
-      const secLines = sec.lines || [];
-      secLines.forEach((ln, lIdx) => {
-        const cleanLn = /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`;
+      const secLines = fitMultilineByAbbr(sec.lines || [], 4.75, ivPerSecH, 12, 1.0, 9);
+      secLines.forEach((ln) => {
+        const hasDash = /^[-•▪]\s+/.test(ln);
         ivParas.push({
-          text: cleanLn,
-          sz: ivBodySz,
+          text: ln,
+          sz: 1200,
           bold: false,
           color: BLACK,
           algn: 'l',
-          spcAft: lIdx < secLines.length - 1 ? 350 : 250,
-          lnSpc: 115000,
-          marL: ivHangEmu,
-          indent: -ivHangEmu,
+          spcBef: 0,
+          spcAft: 900,
+          lnSpc: 100000,
+          marL: hasDash ? ivHangEmu : 0,
+          indent: hasDash ? -ivHangEmu : 0,
           buNone: true,
         });
       });
     });
     if (!ivParas.length) {
-      ivParas.push({ text: '[의견 : 시공관리자 및 안전관리자]', sz: 1400, bold: true, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true });
+      ivParas.push({ text: '[의견 : 시공관리자 및 안전관리자]', sz: 1400, bold: true, color: BLACK, algn: 'l', spcBef: 0, spcAft: 900, lnSpc: 100000, marL: 0, indent: 0, buNone: true });
     }
     sXml = setShapeParagraphs(sXml, 46, ivParas, {
-      algn: 'l', lIns: 55000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 55000, rIns: 45000, tIns: 45000, bIns: 35000, anchor: 't', noAutofit: true,
     });
 
-    // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53) — () 소분류 보장 + '-' 실측 내어쓰기
-    const propItems = resolveVerdictItems(data.proposalItems, data.proposalType, data.proposalSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
-    const propMulti = propItems.length > 1;
+    // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53)
+    //    - 원본 R1 정확 수치: 분류 14pt Bold(파랑)/11pt(검정), 본문 12pt Regular, 단락 뒤 3pt(300), 줄 간격 1줄(100000), 임의 '-' 추가 금지
+    const propItems = resolveVerdictItems(data.proposalItems, data.proposalType, data.proposalSub, []);
     const propTypeParas = [];
-    propItems.forEach((it, idx) => {
+    propItems.forEach((it) => {
       propTypeParas.push({
-        text: it.type, sz: propMulti ? 1150 : 1400, bold: true, color: BLUE, algn: 'ctr',
-        spcBef: idx > 0 ? 250 : 0, spcAft: 120, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+        text: it.type, sz: 1400, bold: true, color: BLUE, algn: 'ctr',
+        spcBef: 0, spcAft: 300, lnSpc: 100000, marL: 0, indent: 0, buNone: true,
       });
       if (it.sub) {
         propTypeParas.push({
-          text: it.sub, sz: propMulti ? 950 : 1100, bold: false, color: BLACK, algn: 'ctr',
-          spcAft: 0, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+          text: it.sub, sz: 1100, bold: false, color: BLACK, algn: 'ctr',
+          spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true,
         });
       }
     });
+    if (!propTypeParas.length) {
+      propTypeParas.push({ text: '', sz: 1400, bold: true, color: BLUE, algn: 'ctr', spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true });
+    }
     sXml = setShapeParagraphs(sXml, 55, propTypeParas, {
-      algn: 'ctr', lIns: 20000, rIns: 20000, tIns: 20000, bIns: 20000, anchor: 'ctr', noAutofit: true,
+      algn: 'ctr', lIns: 0, rIns: 0, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true,
     });
 
-    const propLines = splitBulletLines(data.proposalContent || '');
-    const propSz = propLines.length >= 5 ? 1000 : (propLines.length >= 4 ? 1100 : 1200);
-    const propHangEmu = Math.round((propSz / 1200) * 115570);
+    const rawPropLines = splitBulletLines(data.proposalContent || '');
+    const propLines = fitMultilineByAbbr(rawPropLines, 3.24, 0.94, 12, 1.0, 3);
+    const propHangEmu = 115570;
     const propParas = propLines.length
-      ? propLines.map((ln, idx) => ({
-          text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`,
-          sz: propSz, bold: false, color: BLACK, algn: 'l',
-          spcAft: idx < propLines.length - 1 ? 350 : 0, lnSpc: 115000,
-          marL: propHangEmu, indent: -propHangEmu, buNone: true,
-        }))
-      : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
+      ? propLines.map((ln) => {
+          const hasDash = /^[-•▪]\s+/.test(ln);
+          return {
+            text: ln,
+            sz: 1200, bold: false, color: BLACK, algn: 'l',
+            spcBef: 0, spcAft: 300, lnSpc: 100000,
+            marL: hasDash ? propHangEmu : 0, indent: hasDash ? -propHangEmu : 0, buNone: true,
+          };
+        })
+      : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcBef: 0, spcAft: 300, lnSpc: 100000, marL: 0, indent: 0, buNone: true }];
     sXml = setShapeParagraphs(sXml, 53, propParas, {
-      algn: 'l', lIns: 55000, rIns: 55000, tIns: 50000, bIns: 40000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 55000, rIns: 45000, tIns: 45000, bIns: 35000, anchor: 't', noAutofit: true,
     });
 
-    // 7. 개선대책 본문 (TextBox 38, id=39) 및 PM 판정 분류 (TextBox 28, id=29) — () 내용 항상 포함
-    const cmLines = splitBulletLines(data.countermeasureContent || '');
-    const cmSz = cmLines.length >= 6 ? 1000 : (cmLines.length >= 4 ? 1100 : 1200);
-    const cmHangEmu = Math.round((cmSz / 1200) * 115570);
+    // 7. 개선대책 본문 (TextBox 38, id=39) 및 PM 판정 분류 (TextBox 28, id=29)
+    //    - 개선대책 본문 원본 R1: 11pt Regular, 단락 뒤 6pt(600), 줄 간격 1줄(100000), lIns=36000, 임의 '-' 추가 금지
+    //    - PM 판정결과: PDF/사용자 입력에 명시된 경우만 표시, 없으면 완전 공란 (시스템 개선 강제 주입 금지!)
+    const rawCmLines = splitBulletLines(data.countermeasureContent || '');
+    const cmLines = fitMultilineByAbbr(rawCmLines, 3.24, 1.28, 11, 1.0, 6);
+    const cmHangEmu = 106680; // 11pt '- ' 실측 폭
     const cmParas = cmLines.length
-      ? cmLines.map((ln, idx) => ({
-          text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`,
-          sz: cmSz, bold: false, color: BLACK, algn: 'l',
-          spcAft: idx < cmLines.length - 1 ? 420 : 0, lnSpc: 115000,
-          marL: cmHangEmu, indent: -cmHangEmu, buNone: true,
-        }))
-      : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcAft: 0, marL: 0, indent: 0, buNone: true }];
+      ? cmLines.map((ln) => {
+          const hasDash = /^[-•▪]\s+/.test(ln);
+          return {
+            text: ln,
+            sz: 1100, bold: false, color: BLACK, algn: 'l',
+            spcBef: 0, spcAft: 600, lnSpc: 100000,
+            marL: hasDash ? cmHangEmu : 0, indent: hasDash ? -cmHangEmu : 0, buNone: true,
+          };
+        })
+      : [{ text: '', sz: 1100, bold: false, color: BLACK, algn: 'l', spcBef: 0, spcAft: 600, lnSpc: 100000, marL: 0, indent: 0, buNone: true }];
     sXml = setShapeParagraphs(sXml, 39, cmParas, {
-      algn: 'l', lIns: 55000, rIns: 55000, tIns: 55000, bIns: 45000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 36000, rIns: 45000, tIns: 45000, bIns: 35000, anchor: 't', noAutofit: true,
     });
 
-    const pmItems = resolveVerdictItems(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, [{ type: '시스템 개선', sub: '(계획 재수립)' }]);
-    const pmMulti = pmItems.length > 1;
+    const pmItems = resolveVerdictItems(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, []);
     const pmParas = [];
-    pmItems.forEach((it, idx) => {
+    pmItems.forEach((it) => {
       pmParas.push({
-        text: it.type, sz: pmMulti ? 1150 : 1400, bold: true, color: BLUE, algn: 'ctr',
-        spcBef: idx > 0 ? 250 : 0, spcAft: 150, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+        text: it.type, sz: 1400, bold: true, color: BLUE, algn: 'ctr',
+        spcBef: 0, spcAft: 300, lnSpc: 100000, marL: 0, indent: 0, buNone: true,
       });
       if (it.sub) {
         pmParas.push({
-          text: it.sub, sz: pmMulti ? 950 : 1100, bold: false, color: BLACK, algn: 'ctr',
-          spcAft: 0, lnSpc: 105000, marL: 0, indent: 0, buNone: true,
+          text: it.sub, sz: 1100, bold: false, color: BLACK, algn: 'ctr',
+          spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true,
         });
       }
     });
+    if (!pmParas.length) {
+      pmParas.push({ text: '', sz: 1400, bold: true, color: BLUE, algn: 'ctr', spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true });
+    }
     sXml = setShapeParagraphs(sXml, 29, pmParas, {
-      algn: 'ctr', lIns: 20000, rIns: 20000, tIns: 20000, bIns: 20000, anchor: 'ctr', noAutofit: true,
+      algn: 'ctr', lIns: 36000, rIns: 0, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true,
     });
 
     // 8. 좌측 실사 사진 임베딩 — 좌측 적색 배너 끝(280152) ~ 우측 Hold Point 박스 끝(7479378) 정확 정렬
+    //    2장일 때는 균등 분할하지 않고 각 사진의 추출 면적(픽셀 크기·종횡비)에 비례해 배치 (Point #7)
     const fullPhotoBox = { x: 280152, y: 2600000, w: 7199226, h: 4077270 };
     if (photo1Parsed && photo2Parsed) {
-      const leftBox = { x: 280152, y: 2600000, w: 3555000, h: 4077270 };
-      const rightBox = { x: 3924378, y: 2600000, w: 3555000, h: 4077270 };
+      const dims1 = getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64);
+      const dims2 = getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64);
+      const { leftBox, rightBox } = computeProportionalTwoPhotoBoxes(fullPhotoBox, dims1, dims2, 89226);
       const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, leftBox, '현장사진_1', 'cover');
       sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
       const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, rightBox, '현장사진_2', 'cover');
@@ -2677,20 +2863,17 @@
     const BLUE = '0000FF';
     const BLACK = '000000';
 
-    // 1. 표 47 (id=48): R0C0('위험성평가'), R0C2, R2C0('부적합 사항'), R3C0('부적합 사례')은 원본 양식 그대로 유지
-    //    R2C1: ■ 위험요소 안전대책 이행 확인 [협력사: ...] + - 부적합 내용 (14pt Bold + 내어쓰기)
-    const cleanSub = String(data.subcontractor || '').replace(/[\r\n\t]+/g, ' ').trim();
-    const contentLines = splitBulletLines(data.mainContent || data.content || '');
-    const maxLineUnits = contentLines.reduce((m, l) => Math.max(m, estimateVisualWidthUnits(l)), 0);
-    const bodySz = contentLines.length >= 3
-      ? 1200
-      : (maxLineUnits > 64 ? 1250 : 1400);
+    // 1. 표 47 (id=48): 경부적합 원본 R1 글자크기 100% 고정 (헤더 17pt Bold, 본문 14pt Bold, 단락 뒤 6pt, 줄 간격 1줄)
+    //    길면 글자크기 축소 금지 — 내용 자연 축약 (Point #10)
+    const cleanSub = fitSingleLineByAbbr(String(data.subcontractor || ''), 6.50, 17, '■ 위험요소 안전대책 이행 확인 [협력사: ]');
+    const rawContentLines = splitBulletLines(data.mainContent || data.content || '');
+    const contentLines = fitMultilineByAbbr(rawContentLines, 11.40, 0.72, 14, 1.0, 6);
     // malgunbd.ttf 실측: 14pt '- ' = 135,890 EMU
     const minorBaseIndent = 160000;
-    const minorDashW = Math.round((bodySz / 1400) * 135890);
+    const minorDashW = 135890;
     const r2c1Paras = [
       {
-        algn: 'l', spcAft: 350, lnSpc: 112000, marL: 0, indent: 0, buNone: true,
+        algn: 'l', spcBef: 0, spcAft: 600, lnSpc: 100000, marL: 0, indent: 0, buNone: true,
         runs: [
           { text: '■ 위험요소 안전대책 이행 확인 [', sz: 1700, bold: true, color: BLACK },
           { text: `협력사: ${cleanSub || '                 '}`, sz: 1700, bold: true, color: BLUE },
@@ -2698,13 +2881,13 @@
         ],
       },
       ...(contentLines.length
-        ? contentLines.map((ln, idx) => ({
-            algn: 'l', spcAft: idx < contentLines.length - 1 ? 220 : 0, lnSpc: 112000,
+        ? contentLines.map((ln) => ({
+            algn: 'l', spcBef: 0, spcAft: 600, lnSpc: 100000,
             marL: minorBaseIndent + minorDashW, indent: -minorDashW, buNone: true,
-            runs: [{ text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`, sz: bodySz, bold: true, color: BLACK }],
+            runs: [{ text: /^[-•▪]\s+/.test(ln) ? ln : `- ${ln.replace(/^[-•▪]\s*/, '')}`, sz: 1400, bold: true, color: BLACK }],
           }))
         : [{
-            algn: 'l', spcAft: 0, lnSpc: 112000, marL: minorBaseIndent + minorDashW, indent: -minorDashW, buNone: true,
+            algn: 'l', spcBef: 0, spcAft: 600, lnSpc: 100000, marL: minorBaseIndent + minorDashW, indent: -minorDashW, buNone: true,
             runs: [{ text: '- ', sz: 1400, bold: true, color: BLACK }],
           }]),
     ];
@@ -2715,20 +2898,20 @@
       },
     });
 
-    // 2. 좌측 적색 배너 (TextBox 11, id=12) — 수직·수평 정중앙 배치, 우측 [위험성평가표] (id=17) 원본 보존
-    const bannerTxt = String(data.photoBanner || '').replace(/\r?\n/g, ' ').trim();
-    const bannerSz = calcFitFontSz(bannerTxt, 5.35, 1600, 1100);
+    // 2. 좌측 적색 배너 (TextBox 11, id=12) — 원본 16pt Bold 고정 (초과 시 축약) + 정중앙 배치
+    const bannerTxt = fitSingleLineByAbbr(String(data.photoBanner || ''), 5.35, 16);
     sXml = setShapeParagraphs(sXml, 12, [
-      { text: bannerTxt, sz: bannerSz, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true },
+      { text: bannerTxt, sz: 1600, bold: true, color: 'F2F2F2', glow: true, algn: 'ctr', spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true },
     ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true });
 
-    // 3. 좌측 부적합 사례 사진(꽉 차게 cover) & 우측 위험성평가표(문서 잘림 방지 contain)
+    // 3. 좌측 부적합 사례 사진(2장 시 면적 비례 배치, 꽉 차게 cover) & 우측 위험성평가표(문서 잘림 방지 contain)
     const leftFullBox = { x: 794187, y: 2945000, w: 4990796, h: 3695000 };
     const rightDocBox = { x: 7199964, y: 2945000, w: 4030878, h: 3695000 };
 
     if (photo2Parsed && !isPhoto2RiskDoc) {
-      const halfLeft = { x: 794187, y: 2945000, w: 2455000, h: 3695000 };
-      const halfRight = { x: 3329983, y: 2945000, w: 2455000, h: 3695000 };
+      const dims1 = photo1Parsed ? getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64) : null;
+      const dims2 = getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64);
+      const { leftBox: halfLeft, rightBox: halfRight } = computeProportionalTwoPhotoBoxes(leftFullBox, dims1, dims2, 80796);
       if (photo1Parsed) {
         const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, halfLeft, '부적합사례_1', 'cover');
         sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
@@ -2911,6 +3094,9 @@
     buildWorkerPptxBlob,
     buildInspectionSheetPptxBlob,
     triggerDownloadIfRequested,
+    fitSingleLineByAbbr,
+    fitMultilineByAbbr,
+    computeProportionalTwoPhotoBoxes,
     _internal: {
       normalizeHazardType,
       normalizeSeverity,

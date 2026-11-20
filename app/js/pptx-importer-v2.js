@@ -1513,16 +1513,16 @@ export function parseStructuredTextFromSheet(rawText, defaultMgmtCauses = ['계�
     actionPlan = cleanActionPlan(mPlan[1]);
   }
 
-  // PM 판정결과 (점검단 제안과 독립적으로 원문 유형 및 괄호 부제 보존)
+  // PM 판정결과 (원문 PDF/장표에 명시된 경우만 반영 — 비어있으면 공란 유지, 점검단 제안 복사/강제주입 금지)
   const pmScanTxt = pmRegionMatch ? pmRegionMatch[1] : '';
   const pmOpinionTypes = pmScanTxt ? extractOpinionTypes(pmScanTxt) : [];
   const hasExplicitPmVerdict = pmOpinionTypes.length > 0;
-  const effectivePmTypes = hasExplicitPmVerdict ? pmOpinionTypes : opinionTypes;
-  const mIhSub = (pmScanTxt || txt).match(/\(?\s*이행\s*강화[^)\n]{0,16}\)?/);
+  const effectivePmTypes = hasExplicitPmVerdict ? pmOpinionTypes : [];
+  const mIhSub = pmScanTxt ? pmScanTxt.match(/\(?\s*이행\s*강화[^)\n]{0,16}\)?/) : null;
   const normalizedIhSub = mIhSub ? (/방안|수립/.test(mIhSub[0]) ? '(이행강화방안수립)' : (mIhSub[0].startsWith('(') ? mIhSub[0] : `(${mIhSub[0]})`)) : '';
   const mTeamWaitSub = (pmScanTxt || '').match(/\(?\s*해당\s*작업팀\s*대기\s*\)?/);
   const mTeamEduSub = (pmScanTxt || '').match(/\(?\s*작업팀\s*교육\s*\)?/);
-  const pmVerdict = effectivePmTypes.length > 0 ? effectivePmTypes.join(', ') : inspectorOpinionType;
+  const pmVerdict = effectivePmTypes.length > 0 ? effectivePmTypes.join(', ') : '';
   const pmVerdictType = pmVerdict;
   const pmVerdictItems = effectivePmTypes.map(t => {
     let sub = '';
@@ -2223,8 +2223,8 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     pmVerdictItems = proposalItems.map(it => ({ ...it }));
   }
   const hasExplicitPmVerdict = Boolean(pmVerdictItems.length > 0 || (tPmClean && tPmClean.length >= 2));
-  const pmVerdictType = pmVerdictItems.map(p => p.type).join(', ') || (hasExplicitPmVerdict ? tPmClean : inspectorOpinionType);
-  const pmVerdictSub = pmVerdictItems.length > 0 ? (pmVerdictItems[0].sub || '') : (hasExplicitPmVerdict ? '' : (inspectorOpinionSub || ''));
+  const pmVerdictType = hasExplicitPmVerdict ? (pmVerdictItems.map(p => p.type).join(', ') || tPmClean) : '';
+  const pmVerdictSub = hasExplicitPmVerdict ? (pmVerdictItems.length > 0 ? (pmVerdictItems[0].sub || '') : '') : '';
 
   const detectedSev = detectSeverityFromTypeBox(canvas, layout?.typeCell, tType);
   const severity = detectedSev || (allowDefaults ? '중부적합' : '');

@@ -1220,14 +1220,14 @@ JSON 형식:
         }
 
         const content = body.content || body.rawOcrText || '';
-        if (!content && !body.stripImageBase64) {
-          return new Response(JSON.stringify({ error: '지적 내용(content) 또는 이미지(stripImageBase64)가 필요합니다.' }), {
+        if (!content && !body.stripImageBase64 && !body.imageBase64) {
+          return new Response(JSON.stringify({ error: '지적 내용(content) 또는 이미지(stripImageBase64/imageBase64)가 필요합니다.' }), {
             status: 400,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
         }
 
-        // 산안법 룰 기반 즉시 백업 판정 데이터 생성 (Qwen AI 호출 실패 시 백업용)
+        // 산안법 룰 기반 즉시 백업 판정 데이터 생성 (Qwen AI 호출 실패 시 백업용 · 법령/PM판정결과 임의 주입 금지)
         const quickFallback = analyzeRuleFallback(content);
         const makeRuleFallbackResponse = (errs, isQuota = false) => {
           const fallbackCleaned = buildFallbackCleanedFields(content, body.fallbackRecord);
@@ -1243,6 +1243,7 @@ JSON 형식:
                 severity: '',
                 photoBanner: '',
                 workGroup: '',
+                pmVerdict: '',
                 cleanedFields: {}
               }
             : {
@@ -1253,6 +1254,8 @@ JSON 형식:
                 aiErrors: errs,
                 model: 'SanAn Rule Engine (Cloudflare Cloud)',
                 ...quickFallback,
+                law: '',
+                pmVerdict: '',
                 cleanedFields: fallbackCleaned
               };
           return new Response(JSON.stringify(payload), {
@@ -1346,6 +1349,12 @@ JSON 형식:
               const visionPrompt = `이 이미지는 건설현장 안전점검 장표의 텍스트 셀들을 섹션 라벨([유형/등급], [관련기준], [점검체크], [협력사/공종명/작업장소/점검자/점검차수], [부적합내용], [발생원인/관리자의견], [점검단제안_판정], [점검단제안_내용], [개선대책], [PM판정결과], [사진1배너], [사진2배너])과 함께 위에서 아래로 모아놓은 이미지입니다.
 각 라벨 아래에 있는 모든 한국어, 한자(上/下/中), 영문 코드, 숫자, 단위(cm/mm/도), 체크박스(☑/✓/□), 불릿 기호(-, *)를 오탈자 없이 보이는 그대로 빠짐없이 읽어서 출력하세요. /no_think`;
               visionText = await runQwenVisionOcr(cleanB64, visionPrompt);
+            } else if (body.imageBase64 && body.mode !== 'ocr_clean') {
+              // [Point #8] 직접 등록 시 첨부된 현장 사진을 Qwen Vision AI가 직접 판독하여 부적합 내용과 함께 산안법 조문 도출
+              const cleanPhotoB64 = String(body.imageBase64).replace(/^data:image\/\w+;base64,/, '');
+              const photoHazardPrompt = `이 이미지는 건설현장 안전점검 중 촬영한 현장 부적합 사진입니다.
+사진 속에서 관찰되는 작업 대상(가시설/비계/거푸집/동바리/전기/양중장비/개구부/단부/사다리 등), 불안전 상태(방호시설 누락·결함·노출 등), 불안전 행동(안전대 미체결·보호구 미착용·위험자세 등), 그리고 관련 위험요인을 한국어 3~4줄로 객관적이고 구체적으로 묘사하세요. /no_think`;
+              visionText = await runQwenVisionOcr(cleanPhotoB64, photoHazardPrompt);
             }
 
             // rightPhotoBase64 도면/사진 제외 판별 생략 (잭베이스 불량·비계설치도면 등 모든 사진 보존 및 5~15초 지연 제거)
@@ -1361,12 +1370,12 @@ ${TAXONOMY_STANDARD_PROMPT}
 - 협력사가 빈칸이면 절대 임의로 넣지 말고 ""로 둘 것 (공종명 '비계공사', '거푸집동바리공사' 등을 협력사에 넣지 말 것)
 - 작업장소에 테두리 노이즈('서검자', '집십사수', '|')가 있으면 완전히 제거하고 정확한 동·층·구간명만 남길 것 (예: '106동 지하2층', '102동', '101동 상가동')
 - [부적합내용]에서는 머리말 '부적합 내용 :'을 제거하되 1), 2) 등 다중 항목과 핵심 수치(60도, 30cm, 3개소 등)를 정확히 보존할 것
-- 여러 항목이 '- '로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우는 공백 하나로 자연스럽게 이어붙일 것
+- 여러 항목이 '- '로 구분된 경우 줄바꿈(\\n- )으로 구분하되, 한 문장이 표 셀 폭 때문에 단순 줄바꿈된 경우는 공백 하나로 자연스럽게 이어붙일 것 (단, 원본에 '-'가 없으면 임의로 '-'를 붙이지 말 것)
 - [점검단제안_내용]과 [개선대책]에는 판정 라벨('시스템 개선', '교육/코칭', '페널티', '(현장모니터링 강화)', '(근로자 교육)', 'PM 판정결과')을 절대 섞지 말고 오직 조치/제안 본문만 넣을 것
-- 본문 문장에 단순히 '재교육', '교육 실시'가 포함되어 있다고 해서 pmVerdict에 '교육/코칭'을 추가하지 말고, 오직 [점검단제안_판정] 또는 [PM판정결과] 칸에 실제 적힌 분류(예: '시스템 개선')만 그대로 출력할 것
+- 본문 문장에 단순히 '재교육', '교육 실시'가 포함되어 있다고 해서 pmVerdict에 '교육/코칭'을 추가하지 말고, 오직 [PM판정결과] 칸에 실제 적힌 분류만 그대로 출력하며 빈칸이면 반드시 ""(빈 문자열)로 출력할 것 (임의로 '시스템 개선'을 채우지 말 것!)
 - 관련기준의 '*' 항목이 3개인 경우 각각 줄바꿈(\\n* )으로 구분하고, '①②③' 조항은 '한다.\n② ', '한다.\n③ ' 형태로 항목별 줄바꿈하며, '방지하기. 위한'→'방지하기 위한', '고려되어야하며'→'고려되어야 하며', '이상유무를'→'이상 유무를'로 정확히 교정할 것
 - [관련기준] 제목에 깨진 한글('연상꽃가실건물 화새에빙', '전사 안전작업지침 [직게차' 등)이 있으면 지침코드([IZ12B-110(K)] 등) + 본문(충전구역/화재 감시 등)을 추론해 정확한 한국어 지침명('화재예방' 등) 또는 산업안전보건기준에 관한 규칙 적정 조문으로 교정하며, 원본에 이미 올바른 안전작업지침이 있으면 절대 다른 조문으로 임의 변경하지 말 것 (단, 본문과 도메인 모순되는 지게차 등은 실제 위반 기준으로 교정)
-- [발생원인/관리자의견]에 '[근로자 의견 : ...]', '[관리자 의견 : ...]' 등 2개 이상 역할 의견이 있으면 절대 합치거나 '[... 의견 : ...]' 헤더를 지우지 말고 모든 헤더와 불릿 본문을 그대로 보존할 것
+- [발생원인/관리자의견]에 '[근로자 의견 : ...]', '[관리자 의견 : ...]' 등 2개 이상 역할 의견이 있으면 절대 합치거나 '[... 의견 : ...]' 헤더를 지우지 말고 모든 헤더와 본문을 그대로 보존할 것
 - 1차 OCR 텍스트에 섞인 자모/단어 오탈자(예: 부적함→부적합, 가관/각관, 잭배이스/잭베이스, 버팀때/버팀대, 벽의음/벽이음, 비계공ㅅ/비계공사, 직게차/지계차→지게차)와 셀 테두리/영문 노이즈('HEY', 'ERE', '6/', 'OO', 'R=', 'Naas NS')는 건설안전 문맥에 맞게 완벽히 교정·제거할 것
 
 JSON 형식:
@@ -1390,7 +1399,7 @@ JSON 형식:
   "photo2Banner": "사진 2 상단 배너용 15~25자 구체적 미준수 문구 (원문 [사진2배너]가 있으면 정제하여 반영, 단일 사진이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 체크된 1~2개],
   "holdPoint": true 또는 false,
-  "pmVerdict": "시스템 개선" 또는 "교육/코칭" 또는 "페널티" (복수면 쉼표 구분),
+  "pmVerdict": "[PM판정결과] 칸에 실제 기재된 분류만 출력 (빈칸이면 반드시 \"\" 출력, 임의로 '시스템 개선' 생성 금지)",
   "cleanedFields": {
     "subcontractor": "교정된 협력사명 (공란이면 '')",
     "workGroup": "교정된 공종명",
@@ -1401,13 +1410,16 @@ JSON 형식:
     "law": "교정된 관련기준 공식 법령 (대한민국 산업안전보건기준에 관한 규칙 기준)",
     "rawLaw": "교정된 관련기준 제목 원문 (원본 유효 지침 보존 / 깨진 제목 복원 / 공란이면 산안규칙)",
     "lawBody": "교정된 관련기준 세부 본문 원문 ('- ~다.' 종결 통일)",
-    "interviewOpinion": "교정된 관계자 의견 ('- ' 불릿 및 복수의견 헤더 100% 유지)",
-    "auditProposal": "교정된 점검단 제안 본문 ('- ' 불릿 구분)",
-    "actionPlan": "교정된 개선대책 본문 ('- ' 불릿 구분, 단순 줄바꿈 병합)"
+    "interviewOpinion": "교정된 관계자 의견 (원본 '-' 유무 및 복수의견 헤더 100% 유지)",
+    "auditProposal": "교정된 점검단 제안 본문 (원본 '-' 유무 유지)",
+    "actionPlan": "교정된 개선대책 본문 (원본 '-' 유무 유지, 단순 줄바꿈 병합)"
   }
 }`
-              : `너는 대한민국 산업안전보건법 및 건설현장 안전감사 전문가 AI이다.
-주어진 부적합 지적내용과 사진 상황을 엄밀히 분석하여, 사진 상단 배너(photoBanner, photo2Banner)와 표준 분류 목록에서 선택한 분류를 JSON으로만 출력하라.
+              : `너는 대한민국 산업안전보건법(산업안전보건기준에 관한 규칙) 및 건설현장 안전감사 전문가 AI이다.
+주어진 [현장 지적사항]과 [첨부 현장 사진 Vision AI 분석](있는 경우)을 종합·정밀 분석하여:
+1. 해당 부적합 상황에 정확히 부합하는 대한민국 산업안전보건기준에 관한 규칙 공식 조문(law)과 핵심 법적 준수 기준 1~2문장(lawBody, '~다.' 종결)을 직접 판단하라.
+2. 사진 상단 배너(photoBanner, photo2Banner)와 건설안전 표준 분류 목록(Taxonomy)에서 가장 정확한 항목을 선택하라.
+3. pmVerdict는 현장 PM이 추후 직접 기입하는 항목이므로 반드시 빈 문자열("")로 출력하라.
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -1420,7 +1432,9 @@ JSON 형식:
   "agentMajor": "표준 기인물 대분류",
   "agentMid": "표준 기인물 중분류",
   "agentMinor": "표준 기인물 소분류",
-  "law": "산안규칙 제OO조(조항명)",
+  "law": "산업안전보건기준에 관한 규칙 제OO조(조항명)",
+  "lawBody": "해당 산안규칙 조문의 핵심 의무 준수 기준 1~2문장 ('~다.' 종결)",
+  "analysis": "사진 및 부적합 내용 기반 산안법 위반 판단 근거 1~2문장",
   "hazardType": "표준 재해 형태",
   "condition": "표준 불안전 상태",
   "action": "표준 불안전 행동",
@@ -1428,11 +1442,11 @@ JSON 형식:
   "rootCauseSystem": "표준 안전시스템",
   "stakeholder": "표준 관리/책임주체",
   "item": "기인물/작업 명칭",
-  "photoBanner": "사진 1 상단 배너용 15~20자 구체적 미준수 문구",
-  "photo2Banner": "사진 2 상단 배너용 15~20자 구체적 미준수 문구 (단일 지적이면 '')",
+  "photoBanner": "사진 1 상단 배너용 12~22자 구체적 위반 핵심 명사구",
+  "photo2Banner": "사진 2 상단 배너용 12~22자 구체적 미준수 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
-  "pmVerdict": "현장 PM 조치 권고 문장"
+  "pmVerdict": ""
 }`;
 
             const seedFields = {};
@@ -1444,11 +1458,16 @@ JSON 형식:
             if (body.auditProposal) seedFields.auditProposal = body.auditProposal;
             if (body.actionPlan) seedFields.actionPlan = body.actionPlan;
 
+            const manualMetaLine = [
+              body.workGroup ? `공종: ${body.workGroup}` : '',
+              body.location ? `작업장소: ${body.location}` : '',
+              body.productType ? `현장유형: ${body.productType}` : ''
+            ].filter(Boolean).join(' / ');
             const userPrompt = isOcrClean
               ? `${visionText ? `[Vision AI 직접 판독 원문]:\n${visionText}\n\n` : ''}${body.rawOcrText ? `[디지털/보조 텍스트]:\n${body.rawOcrText}\n\n` : ''}${Object.keys(seedFields).length ? `[1차 추출 필드]:\n${JSON.stringify(seedFields)}` : ''}`
-              : `[현장 지적사항]: "${content.trim()}"`;
+              : `${visionText ? `[첨부 현장 사진 Vision AI 분석]:\n${visionText}\n\n` : ''}${manualMetaLine ? `[현장 정보]: ${manualMetaLine}\n` : ''}[현장 지적사항]: "${content.trim()}"`;
 
-            const hasValidParsed = (p) => p && (p.workGroup || p.agentMajor) && (!isOcrClean || (p.cleanedFields && p.cleanedFields.content));
+            const hasValidParsed = (p) => p && (p.workGroup || p.agentMajor || p.law) && (!isOcrClean || (p.cleanedFields && p.cleanedFields.content));
 
             // 1순위: 고속 Qwen3-30B-A3B-FP8 (약 1~3.5초, /no_think)
             if (!quotaHit && (isOcrClean || content.trim())) {
@@ -1458,7 +1477,7 @@ JSON 형식:
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: `${userPrompt}\n/no_think` }
                   ],
-                  max_tokens: isOcrClean ? 1300 : 500,
+                  max_tokens: isOcrClean ? 1300 : 750,
                   temperature: 0.05
                 });
                 const cand = extractJsonFromAiRes(q3Res);
@@ -1629,6 +1648,9 @@ JSON 형식:
                 rightPhotoIsReference,
                 ...quickFallback,
                 ...parsed,
+                law: typeof parsed.law === 'string' ? parsed.law.trim() : '',
+                lawBody: typeof parsed.lawBody === 'string' ? finalizeWorkerLawBullets(parsed.lawBody) : '',
+                pmVerdict: isOcrClean ? (typeof parsed.pmVerdict === 'string' ? parsed.pmVerdict.trim() : '') : '',
                 severity: parsed.severity?.includes('중부적합') ? '중부적합' : (parsed.severity?.includes('경부적합') ? '경부적합' : quickFallback.severity),
                 workGroup: parsed.workGroup || quickFallback.workGroup,
                 workMethod: parsed.workMethod || quickFallback.workMethod,
