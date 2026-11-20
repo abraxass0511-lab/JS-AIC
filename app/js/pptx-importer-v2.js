@@ -7,7 +7,7 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261121_v58';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261121_v59';
 import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v48';
 import {
   normalizeRoundText,
@@ -23,6 +23,7 @@ import {
   stripCircledNumbers,
   stripBannerSecondItemTail,
   normalizePhotoBannerText,
+  isValidOriginalSheetBanner,
   resolveUnifiedPhotoBanner,
   normalizeSafetyLawBody,
   normalizeSafetyLawSpec,
@@ -31,7 +32,7 @@ import {
   inferSafetyDomain,
   SafeGuidelineMemory,
   parseInterviewOpinions
-} from './text-normalizer.js?v=20261121_v58';
+} from './text-normalizer.js?v=20261121_v59';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -624,52 +625,39 @@ export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
 }
 
 export function cleanBannerText(rawBanner, content = '', location = '') {
+  // 1순위: 원본 장표의 적색 배너 텍스트가 유효하게 존재하면 요약·축약·괄호삭제·하드코딩 치환 없이 원문 그대로 보존!
   const cleanedRaw = normalizePhotoBannerText(rawBanner, content, location);
-  if (cleanedRaw) {
-    const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(cleanedRaw);
-    const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(cleanedRaw);
-    const hangulCount = (cleanedRaw.match(/[가-힣]/g) || []).length;
+  if (cleanedRaw && isValidOriginalSheetBanner(cleanedRaw, content, location)) {
     const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
-    if (!hasDigitHangulCorruption && (isTechnicalForm || hangulCount >= 4) && cleanedRaw.length >= 5 && cleanedRaw.replace(/\s+/g, '') !== normContent.replace(/\s+/g, '')) {
-      const condensed = stripCircledNumbers(extractCoreViolationBanner(cleanedRaw, content, location));
-      if (condensed && condensed.length >= 5) return condensed;
+    const isRawCopyOfLongContent = normContent.length > 36 && cleanedRaw.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
+    if (!isRawCopyOfLongContent) {
+      return cleanedRaw;
     }
   }
 
   let b = stripCircledNumbers(String(rawBanner || '').trim());
   b = healSafetyKoreanLexicon(b)
-    .replace(/^[123458\s()\[\].\-_]+(?=[가-힣A-Za-z])/, '')
+    .replace(/타설\s{2,}계단참/g, '타설 中 계단참')
+    .replace(/^[123458\s()\[\].\-_|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
     .replace(/벽의음/g, '벽이음')
     .replace(/6055/g, '60도↓')
     .replace(/6\/『|6\//g, 'E/V')
     .replace(/\(\s*불량/g, '불량')
-    .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ\s/()\-↓↑.,]/g, ' ')
+    .replace(/[^\w가-힣ㄱ-ㅎㅏ-ㅣ\s/()\-↓↑.,:]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  b = healSafetyKoreanLexicon(b);
-
-  // 말줄임표(...) 절단 원천 복원
-  if ((b.endsWith('...') || b.endsWith('…') || b.endsWith('..') || /\.\.\.$/.test(b) || b.length < 5) && content) {
-    const c = healSafetyKoreanLexicon(String(content).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
-    if (/Gang\s*Form|갱폼|선해체/i.test(c)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
-    if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-    if (/밑둥잡이|워킹타워/i.test(c)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
-    if (/버팀대|설치각도/.test(c)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
+  b = healSafetyKoreanLexicon(b).replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
+  if (b && isValidOriginalSheetBanner(b, content, location)) {
+    const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
+    const isRawCopyOfLongContent = normContent.length > 36 && b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
+    if (!isRawCopyOfLongContent) {
+      return normalizePhotoBannerText(b, content, location) || b;
+    }
   }
 
-  b = b.replace(/\.{2,}/g, '').replace(/[.·\s]+$/, '').trim();
-  if (/Gang\s*Form|갱폼|선해체/i.test(b) && (b.includes('절곡부위') || b.includes('간섭')) && !b.includes('설치 불량') && !b.includes('설치불량')) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
-  if (/AL\s*Form|알폼|동바리/i.test(b) && /계단참/.test(b) && !b.includes('미복구')) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-
-  const isTechnicalForm = /Gang\s*Form|AL\s*Form|갱폼/i.test(b);
-  const hasDigitHangulCorruption = /\d[가-힣]|[가-힣]\d(?!\s*(?:도|단|호|개|개소|층|동|차|m|cm|mm|%|명))/i.test(b);
-  const hangulCount = (b.match(/[가-힣]/g) || []).length;
-  const normContent = String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').replace(/\s+/g, ' ').trim();
-  if (!b || b.replace(/\s+/g, '') === normContent.replace(/\s+/g, '') || hasDigitHangulCorruption || (!isTechnicalForm && hangulCount < 4) || b.length < 5 || (hangulCount / b.length < 0.4 && !isTechnicalForm)) {
-    return stripCircledNumbers(deriveConcreteBanner(content));
-  }
-  return stripCircledNumbers(extractCoreViolationBanner(b, content, location));
+  // 2순위: 원본 장표에 적색 배너가 없거나 깨진 경우에만 부적합 내용(content)에서 도출
+  return stripCircledNumbers(deriveConcreteBanner(content));
 }
 
 export function cleanWorkGroup(rawWork, contentText = '') {
@@ -2179,10 +2167,17 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   const tBanner2 = cellTexts.banner2 || '';
 
   const content = normalizeFieldText(cleanContent(tContent), 'content');
+  const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
+  const location = cleanLocation(tLocCell || (mLoc ? mLoc[1] : ''), tLocCell, content);
+
   const safeRawBanner1 = (tBanner.trim() && !hasGarbledKoreanNoise(tBanner) && !isGarbledBannerText(tBanner)) ? tBanner : '';
   const safeRawBanner2 = (tBanner2.trim() && !hasGarbledKoreanNoise(tBanner2) && !isGarbledBannerText(tBanner2)) ? tBanner2 : '';
-  const photoBanner = (safeRawBanner1 || content) ? normalizeFieldText(cleanBannerText(safeRawBanner1, content), 'banner') : '';
-  const photo2Banner = safeRawBanner2 ? normalizeFieldText(cleanBannerText(safeRawBanner2, content), 'banner2') : '';
+  const _hasOriginalBanner = Boolean(safeRawBanner1 && isValidOriginalSheetBanner(safeRawBanner1, content, location));
+  const _originalBannerText = _hasOriginalBanner ? normalizePhotoBannerText(safeRawBanner1, content, location) : '';
+  const photoBanner = _hasOriginalBanner
+    ? _originalBannerText
+    : ((safeRawBanner1 || content) ? normalizeFieldText(cleanBannerText(safeRawBanner1, content, location), 'banner') : '');
+  const photo2Banner = safeRawBanner2 ? normalizeFieldText(cleanBannerText(safeRawBanner2, content, location), 'banner2') : '';
 
   const mSub = tMeta.match(/협력사\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:공종명|공종|작업장소|점검자|점검차수|$))/i);
   const subcontractor = cleanSubcontractor(tSubCell || (mSub ? mSub[1] : ''));
@@ -2190,9 +2185,6 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   const mWork = tMeta.match(/공종명?\s*[:;：]?\s*([\s\S]*?)(?=\s*(?:작업장소|장소|점검자|점검차수|부적합|$))/i);
   const rawWorkInput = tWorkCell || (mWork ? mWork[1] : '');
   const workGroup = (rawWorkInput.trim() || content.trim()) ? cleanWorkGroup(rawWorkInput, content) : '';
-
-  const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
-  const location = cleanLocation(tLocCell || (mLoc ? mLoc[1] : ''), tLocCell, content);
 
   let inspectUser = '';
   if (tUserCell && tUserCell.trim()) {
@@ -2302,6 +2294,8 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     content,
     photoBanner,
     photo2Banner: photo2Banner || undefined,
+    _hasOriginalBanner,
+    _originalBannerText,
     mgmtCauses,
     condition: mgmtCauses.includes('불안전 상태') ? '물(物) 자체의 결함 (자재·부재 손상)' : '해당없음',
     action: mgmtCauses.includes('불안전 행동') ? '불안전한 동작·자세' : '해당없음',

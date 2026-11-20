@@ -27,10 +27,46 @@ function isReddishFringe(d, k) {
   return r > 120 && g < 165 && b < 165 && (r - g) > 18 && (r - b) > 18;
 }
 
-function trimRedBannerFromBox(data, W, box) {
+function trimRedBannerFromBox(data, W, box, banners = null) {
   let { x, y, w, h } = box;
   let y0 = y;
   let y1 = y + h - 1;
+
+  // banners 배열이 전달된 경우: 실제 검출된 상/하단 배너와 인접한 경계 잔영(Fringe, 최대 6px)만 정밀 제거하고,
+  // 배너가 없는 영역의 붉은색 갱폼(pg05)·붉은 벽돌(pg17) 등 실제 현장 사진 피사체는 절대 잘라내지 않음!
+  if (Array.isArray(banners)) {
+    const horizOverlap = (b) => Math.max(0, Math.min(x + w, b.x + b.w) - Math.max(x, b.x)) >= Math.min(w, b.w) * 0.20;
+    const nearTopBanners = banners.filter(b => horizOverlap(b) && (b.y + b.h) >= y0 - 16 && b.y <= y0 + Math.max(28, Math.round(h * 0.10)));
+    if (nearTopBanners.length > 0) {
+      const cutTop = Math.max(...nearTopBanners.map(b => b.y + b.h)) + 2;
+      if (cutTop > y0) y0 = cutTop;
+      const fringeLimit = Math.min(y1 - 20, y0 + 6);
+      while (y0 <= fringeLimit) {
+        let fringeCount = 0;
+        for (let cx = x; cx < x + w; cx += 2) {
+          if (isReddishFringe(data, (y0 * W + cx) * 4)) fringeCount++;
+        }
+        if (fringeCount / Math.max(1, w / 2) > 0.12) y0++;
+        else break;
+      }
+    }
+    const nearBotBanners = banners.filter(b => horizOverlap(b) && b.y <= y1 + 16 && (b.y + b.h) >= y1 - Math.max(28, Math.round(h * 0.10)));
+    if (nearBotBanners.length > 0) {
+      const cutBot = Math.min(...nearBotBanners.map(b => b.y)) - 2;
+      if (cutBot < y1) y1 = cutBot;
+      const fringeLimit = Math.max(y0 + 20, y1 - 6);
+      while (y1 >= fringeLimit) {
+        let fringeCount = 0;
+        for (let cx = x; cx < x + w; cx += 2) {
+          if (isReddishFringe(data, (y1 * W + cx) * 4)) fringeCount++;
+        }
+        if (fringeCount / Math.max(1, w / 2) > 0.12) y1--;
+        else break;
+      }
+    }
+    return rect(x, y0, x + w, Math.max(y0 + 10, y1 + 1));
+  }
+
   const minBandRows = Math.max(5, Math.round(h * 0.018));
 
   const isBannerBand = (startY, endY) => {
@@ -398,8 +434,14 @@ export function analyzeSheetLayout(img) {
   };
 }
 
-/** 사진 영역 내 적색 음영 배너(사진 제목) 탐색 */
+function isSemiRedBanner(d, k) {
+  const r = d[k], g = d[k + 1], b = d[k + 2];
+  return r > 95 && g < 170 && b < 170 && (r - g) > 18 && (r - b) > 18;
+}
+
+/** 사진 영역 내 적색 음영 배너(사진 제목 — 상단 단색 적색 박스 및 하단 반투명 적색 오버레이 바 공용) 탐색 */
 export function findRedBanners(img, area) {
+  if (!img || !area || !area.w || !area.h) return [];
   const { data, width: W } = img;
   const out = [];
   const minBannerH = Math.max(12, Math.round(area.h * 0.025));
@@ -409,44 +451,83 @@ export function findRedBanners(img, area) {
     for (let x = area.x; x < area.x + area.w; x += 2) if (isRedBanner(data, (y * W + x) * 4)) c++;
     return c > (area.w / 2) * 0.12;
   }, minBannerH);
+
+  const maxBridgeGapX = Math.max(36, Math.round(area.w * 0.048));
+  const minSegW = Math.round(area.w * 0.18);
+
   for (const [a, b] of rows) {
     const h = b - a + 1;
-    if (h > img.height * 0.165) continue;
-    const isTopBanner = a <= area.h * 0.20;
-    const isBottomBanner = b >= area.h * 0.78;
+    if (h > area.h * 0.165) continue;
+    const isTopBanner = a <= area.h * 0.08 && b <= area.h * 0.22;
+    const isBottomBanner = a >= area.h * 0.78 && b >= area.h * 0.84;
     if (!isTopBanner && !isBottomBanner) continue;
-    // 같은 행 안에 배너가 여러 개일 수 있으므로 x 방향 구간 분리 (좌/우 줄 수가 달라도 모두 검출되도록 0.18 적용)
-    const xs = bands(area.w, dx => {
-      let c = 0;
-      for (let y = area.y + a; y <= area.y + b; y += 2) if (isRedBanner(data, (y * W + area.x + dx) * 4)) c++;
-      return c > Math.max(2, (h / 2) * 0.18);
-    }, Math.round(area.w * 0.10));
-    if (isBottomBanner && xs.length >= 1) {
-      const minXa = xs[0][0];
-      const maxXb = xs[xs.length - 1][1];
-      if (maxXb - minXa >= area.w * 0.45) {
-        // 하단 배너는 가운데 흰 글씨 때문에 좌/우로 갈라지므로 전체 폭으로 병합하여 사진 하단 잔영 원천 차단
-        out.push(rect(area.x + minXa, area.y + a, area.x + maxXb, area.y + b));
+    if (isBottomBanner && out.length > 0) continue;
+
+    // 1px 수직 스텝으로 반투명 적색/상하 얇은 여백 행까지 정밀 카운트하고, 사진 간 순백 거터(colIsWhiteGutter)에서만 좌/우 배너를 분리
+    const minColRed = Math.max(2, Math.round(Math.min(h, 56) * 0.05));
+    const colPass = new Uint8Array(area.w);
+    const colIsWhiteGutter = new Uint8Array(area.w);
+    for (let dx = 0; dx < area.w; dx++) {
+      let c = 0, whiteC = 0;
+      for (let y = area.y + a; y <= area.y + b; y++) {
+        const k = (y * W + area.x + dx) * 4;
+        if (isSemiRedBanner(data, k)) c++;
+        if (data[k] > 225 && data[k + 1] > 225 && data[k + 2] > 225) whiteC++;
       }
-    } else {
-      for (const [xa, xb] of xs) {
-        if (xb - xa >= area.w * 0.22) {
-          // 각 좌/우 배너별 실제 상하 적색 행 범위(ya..yb) 정밀 피팅 (1줄 배너와 2줄 배너가 나란히 있을 때 높이 개별 맞춤)
-          let ya = a, yb = b;
-          const segW = xb - xa + 1;
-          const rowHasRed = dy => {
-            let rc = 0;
-            const gy = area.y + dy;
-            for (let gx = area.x + xa; gx <= area.x + xb; gx += 2) {
-              if (isRedBanner(data, (gy * W + gx) * 4)) rc++;
+      if (c >= minColRed) colPass[dx] = 1;
+      if (whiteC >= h * 0.72 && c === 0) colIsWhiteGutter[dx] = 1;
+    }
+
+    // 배너 내부 굵은 흰 글자/검은 테두리로 인한 적색 끊김 구간(<= maxBridgeGapX)은 순백 거터(>=3px)가 없는 한 하나로 브릿징
+    let gapStart = -1;
+    for (let dx = 0; dx < area.w; dx++) {
+      if (colPass[dx]) {
+        if (gapStart > 0 && (dx - gapStart) <= maxBridgeGapX) {
+          let wRun = 0, maxWRun = 0;
+          for (let gx = gapStart; gx < dx; gx++) {
+            if (colIsWhiteGutter[gx]) {
+              wRun++;
+              if (wRun > maxWRun) maxWRun = wRun;
+            } else {
+              wRun = 0;
             }
-            return rc > (segW / 2) * 0.15;
-          };
-          while (ya < yb && !rowHasRed(ya)) ya++;
-          while (yb > ya && !rowHasRed(yb)) yb--;
-          out.push(rect(area.x + xa, area.y + ya, area.x + xb, area.y + yb));
+          }
+          if (maxWRun < 3) {
+            for (let gx = gapStart; gx < dx; gx++) colPass[gx] = 1;
+          }
         }
+        gapStart = -1;
+      } else if (gapStart < 0 && dx > 0 && colPass[dx - 1]) {
+        gapStart = dx;
       }
+    }
+
+    const xs = [];
+    let xs0 = -1;
+    for (let dx = 0; dx < area.w; dx++) {
+      if (colPass[dx]) {
+        if (xs0 < 0) xs0 = dx;
+      } else if (xs0 >= 0) {
+        if (dx - xs0 >= minSegW) xs.push([xs0, dx - 1]);
+        xs0 = -1;
+      }
+    }
+    if (xs0 >= 0 && area.w - xs0 >= minSegW) xs.push([xs0, area.w - 1]);
+
+    for (const [xa, xb] of xs) {
+      let ya = a, yb = b;
+      const segW = xb - xa + 1;
+      const rowHasRed = dy => {
+        let rc = 0;
+        const gy = area.y + dy;
+        for (let gx = area.x + xa; gx <= area.x + xb; gx += 2) {
+          if (isSemiRedBanner(data, (gy * W + gx) * 4)) rc++;
+        }
+        return rc > (segW / 2) * 0.12;
+      };
+      while (ya < yb && !rowHasRed(ya)) ya++;
+      while (yb > ya && !rowHasRed(yb)) yb--;
+      out.push(rect(area.x + xa, area.y + ya, area.x + xb, area.y + yb));
     }
   }
   // 근접 배너 병합 (두 줄 배너 및 문자 폭으로 상하 분리된 단일 배너 조각) 및 좌->우(① -> ②) 정렬
@@ -616,7 +697,7 @@ export function findPhotoBoxes(img, area, banners = []) {
     if (y1 - y0 + 1 < minSide) continue;
 
     let r = rect(area.x + xa, area.y + y0, area.x + xb + 1, area.y + y1 + 1);
-    r = trimRedBannerFromBox(data, W, r);
+    r = trimRedBannerFromBox(data, W, r, banners);
     if (r.w < minSide || r.h < minSide) continue;
 
     // 상/하단 공백 재정밀 트림 (적색 배너 제거 후 남은 여백 정리)

@@ -135,6 +135,42 @@ async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 
       if (isQuotaErr(e)) quotaHit = true;
     }
   }
+
+  // [외부 무료 AI 자동 폴백] Cloudflare 일일 한도(10,000 Neurons/일) 소진 시 환경변수 GEMINI_API_KEY(Google AI Studio 무료 티어 1,500건/일)가 있으면 자동 우회
+  if (env.GEMINI_API_KEY) {
+    try {
+      const sysMsg = messages.find(m => m.role === 'system')?.content || '';
+      const usrMsg = messages.filter(m => m.role !== 'system').map(m => m.content).join('\n\n');
+      const gRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${env.GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: sysMsg ? { parts: [{ text: sysMsg }] } : undefined,
+          contents: [{ role: 'user', parts: [{ text: usrMsg }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: maxTokens,
+            responseMimeType: requireJson ? 'application/json' : 'text/plain'
+          }
+        })
+      });
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        const raw = gData?.candidates?.[0]?.content?.parts?.map(p => p?.text || '').join('\n') || '';
+        if (requireJson) {
+          const parsed = parseJsonObjectFromAiText(raw);
+          if (parsed && typeof parsed === 'object') {
+            return { ok: true, parsed, raw, modelId: 'gemini-2.5-flash', modelLabel: 'Gemini-2.5-Flash (Free Fallback)', errors, quotaHit: false };
+          }
+        } else if (raw.trim()) {
+          return { ok: true, parsed: null, raw, modelId: 'gemini-2.5-flash', modelLabel: 'Gemini-2.5-Flash (Free Fallback)', errors, quotaHit: false };
+        }
+      }
+    } catch (ge) {
+      errors.push(`gemini-2.5-flash: ${String(ge?.message || ge || '')}`);
+    }
+  }
+
   return { ok: false, parsed: null, raw: '', modelId: '', modelLabel: '', errors, quotaHit };
 }
 
@@ -780,6 +816,60 @@ export default {
       try {
         const body = await request.json().catch(() => ({}));
 
+        // [v59 신규] 학습된 안전작업지침(SafeGuidelineMemory) AI 자동 품질 검수·부적합/오타/파편 지침 자동 필터링 모드
+        if (body.mode === 'filter_guidelines' && Array.isArray(body.guidelines) && body.guidelines.length > 0) {
+          const guidelines = body.guidelines.slice(0, 15);
+          const filterSystemPrompt = `너는 대한민국 건설안전작업지침 및 산업안전보건법 품질 검수 AI이다.
+입력된 학습 안전작업지침 목록(guidelines)의 각 항목(key, code, title, body, domain)을 검토하여 부적합하거나 품질이 불량한 지침을 필터링(keep: false)하고, 정상 지침만 정제(keep: true)하라.
+
+[반드시 폐기(keep: false)해야 하는 경우]:
+1. 본문(body)이 단순 절 제목/목차 파편(예: "7.2.3 분전반", "7.1 비계 조립기준")뿐이거나 구체적인 안전 수칙 문장(예: "~해야 한다", "~을 설치한다")이 없는 경우
+2. 제목(title)의 안전 분야(예: 전기작업, 비계 작업, 거푸집, 양중)와 본문(body)의 실제 내용이 서로 다른 분야이거나 모순되는 경우
+3. 본문이나 제목에 OCR 깨짐·비단어 오타(예: "피장", "안전인증증품", "구조경로 결과", 자모 깨짐, 의미 불명 문장)가 포함된 경우
+
+[유지(keep: true) 시 정제 규칙]:
+- cleanTitle: 제목 앞뒤 불필요 기호 제거 및 자연스러운 띄어쓰기 교정
+- cleanBody: 본문 각 줄 앞의 '-', '•', '1)', '2)', '9)', '10)', '7.1', '7.2.3' 등 번호·기호·절 제목을 모두 제거하고 순수한 완결 평서문('~해야 한다.', '~한다.')만 줄바꿈으로 정리
+
+반드시 아래 JSON 형식으로만 응답하라 (설명 금지):
+{
+  "results": [
+    {
+      "key": "원본 key 그대로",
+      "keep": true,
+      "cleanTitle": "정제된 지침 제목",
+      "cleanBody": "기호·번호 제거된 순수 본문",
+      "domain": "비계/전기/거푸집동바리/양중/지게차/화재/추락안전대/개구부/사다리/굴착 중 택1",
+      "reason": "판정 사유 요약"
+    }
+  ]
+}`;
+          const llmRes = await runCloudTextLLM(env, [
+            { role: 'system', content: filterSystemPrompt },
+            { role: 'user', content: JSON.stringify(guidelines) }
+          ], { maxTokens: 2000, temperature: 0.05, requireJson: true });
+          if (llmRes.ok && Array.isArray(llmRes.parsed?.results)) {
+            return new Response(JSON.stringify({
+              ok: true,
+              source: 'cloud_ai_guideline_filter',
+              model: llmRes.modelLabel,
+              results: llmRes.parsed.results
+            }), {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+            });
+          }
+          return new Response(JSON.stringify({
+            ok: true,
+            source: 'local_guideline_filter',
+            quotaExceeded: Boolean(llmRes.quotaHit),
+            results: []
+          }), {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+          });
+        }
+
         // [v2.0 신규] 다건 묶음(Multi-Page Batch) 표준 분류 + 핀포인트 오타 패치 모드 (0 Vision · 고속 텍스트 LLM 배치)
         if (body.mode === 'batch_classify' && Array.isArray(body.items) && body.items.length > 0) {
           const items = body.items.slice(0, 10);
@@ -830,9 +920,9 @@ export default {
 1. 건설안전 9x9 및 작업분류표(작업분류표.jpg) 표준 분류코드 매핑:
    - "양중 및 운반작업", "양중작업"은 workGroup으로 절대 금지! 입력 cells.workTypeRaw에 PC공사/거푸집동바리공사 등 유효한 공종이 있으면 부적합 내용에 "양중"이 있어도 반드시 원문 공종(workGroup)을 그대로 유지하고 workMethod만 "양중작업"으로 선택하라.
    - 가설전기 분전반/접지/전등 불량은 절대 "굴착작업"으로 분류하지 말고 건설안전 9×9 개선(1) 기준 "설치해체작업"으로 선택하라.
-2. 사진 상단용 10~24자 핵심 위반 명사구/종결구 요약 배너(photoBanner):
-   - 입력 cells.banner에 한글 자모 깨짐(예: '국ㅂ에T백능세...', 'ㅂ으구으'), 선두 마침표('. 보 설치...'), 오타가 있거나 공란이면 기존 banner를 완전히 폐기하고 반드시 cells.content의 첫 번째 핵심 위반 항목만 10~24자 완성된 한국어 명사구로 새로 작성하라!
-   - '1. ', '. ', '2) ...', '(2) ...', '② ...', '③ ...', 원문자, 내부 사진번호, 미완성 어미('~상태로', '~않는'), 꼬리절('우려', '위험') 절대 금지!
+2. 사진 배너(photoBanner) — **[원본 적색 배너 100% 그대로 보존 원칙]**:
+   - **원본 배너가 있는 경우(hasOriginalBanner === true 또는 cells.banner에 정상 한국어 배너 문구가 있는 경우)**: 절대 새로 요약·축약하거나 괄호((60도↓), (볼트 노출), (L/C 설치구간) 등)를 지우지 말고 **원본 cells.banner 문구 그대로** photoBanner에 출력하라!
+   - **원본 장표에 적색 배너 박스가 아예 없거나(cells.banner 공란) 자모가 깨진 경우에만**: cells.content의 첫 번째 핵심 위반 항목을 10~24자 완성된 한국어 명사구로 작성하라. (선두 마침표 '. ', '1. ', '2) ...', 미완성 어미 '~상태로', '~않는' 절대 금지!)
 3. **[관련 기준] 3단계 우선순위 + 학습 지침 적합성 검증 + 대한민국 산업안전보건법 일관 판단**:
    - **[1순위 — 원본 유효 기준 보존]**: 입력 lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 도메인 모순·깨짐 없이 존재하면, 원본 지침과 원본의 기호('-', '1)' 등)를 그대로 보존하고 오타·띄어쓰기만 교정하라(단 28자 초과 시에만 제목 축약).
    - **[2순위 — 학습된 안전작업지침 AI 적합성 검증 후 적용]**: 입력에 learnedGuidelines 후보 배열이 제공된 경우, 반드시 **부적합 내용(cells.content)·작업상황과 100% 적합한지, 또한 학습 지침 본문에 OCR 오타/이상 문구가 없는지 직접 검토**하라. 완벽히 적합하고 정상 문장일 때만 채택("guidelineApplied": true)하며 본문 앞의 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 문장으로 정리하라. 조금이라도 맞지 않거나 이상하면 기각("guidelineApplied": false)하고 3순위로 직접 판단하라.
@@ -911,7 +1001,12 @@ ${TAXONOMY_STANDARD_PROMPT}
                 if (out.workGroup === '양중 및 운반작업' || out.workGroup === '양중작업' || out.workGroup === '안전시설공사' || out.workGroup === '콘크리트공사') {
                   out.workGroup = '';
                 }
-                if (typeof out.photoBanner === 'string') {
+                if (srcItem.hasOriginalBanner && srcCells.banner && !hasWorkerGarbledText(srcCells.banner)) {
+                  const origClean = stripWorkerBannerTail(srcCells.banner);
+                  if (origClean && origClean.length >= 4) {
+                    out.photoBanner = origClean;
+                  }
+                } else if (typeof out.photoBanner === 'string') {
                   out.photoBanner = out.photoBanner.includes('\uFFFD')
                     ? ''
                     : stripWorkerBannerTail(out.photoBanner);
