@@ -1,31 +1,25 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261121_v56';
-import { store } from './store.js?v=20261121_v56';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261121_v57';
+import { store } from './store.js?v=20261121_v57';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261121_v56';
-import './text-normalizer.js?v=20261121_v56';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261121_v57';
+import {
+  WORK_GROUP_TREE,
+  WORK_GROUP_MID_LIST,
+  resolveWorkGroupMid,
+  STANDARD_LOCATION_CATEGORIES,
+  inferLocationCategory,
+  WORK_METHODS_9X9_IMPROVED,
+  normalizeWorkMethod9x9,
+  SafeGuidelineMemory
+} from './text-normalizer.js?v=20261121_v57';
 
-const WORK_METHODS_9X9 = [
-  '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
-  '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
-];
+const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
 function resolveDisplayWorkMethod(r) {
-  if (!r) return '설치조립작업';
+  if (!r) return '설치해체작업';
   const wm = (r.workMethod || r.workName || '').trim();
-  const wg = (r.workGroup || '').trim();
-  const contentText = (r.content || '').trim();
-  const isElectrical = wg === '가설전기공사' || /가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량/.test(`${wg} ${contentText}`);
-  const isGenuineDemolition = /석면\s*해체|구조물\s*해체|비계\s*해체|동바리\s*해체|철거\s*작업|해체\s*작업/.test(contentText);
-  const isGenuineExcavation = /굴착\s*작업|터파기|토류판|어스앙카|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(contentText.replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' '));
-  if (isElectrical && !isGenuineDemolition && !isGenuineExcavation && (wm === '해체작업' || wm === '굴착작업' || !wm)) {
-    return '설치조립작업';
-  }
-  if (wm === '굴착작업' && !isGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${r.location || ''} ${contentText}`)) {
-    return isElectrical ? '설치조립작업' : '고소작업';
-  }
-  if (WORK_METHODS_9X9.includes(wm)) return wm;
-  return inferWorkMethod(r.content || wm);
+  return normalizeWorkMethod9x9(wm, r.workGroup || '', r.content || '', r.location || '');
 }
 
 function resolveDisplayCondition(r) {
@@ -44,6 +38,7 @@ function resolveDisplayAction(r) {
 
 let classifier = null;
 let currentPhotos = []; // [{ blob, previewUrl, dateTaken }]
+let selectedPhotoLayoutRatio = 'auto';
 let selectedCauses = new Set();
 let smartResult = null;
 let smartRecommendationApplied = false;
@@ -111,6 +106,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     renderSites();
     populateDatalists();
+    updateGuidelineMemoryCount();
     checkAuth();
     if (!$('#txtSite')?.value) {
       setTimeout(() => openSiteSelectModal(), 200);
@@ -280,13 +276,13 @@ const FieldFrequencyManager = {
     workMethod: {
       '양중작업': 25,
       '고소작업': 22,
-      '설치조립작업': 20,
+      '설치해체작업': 20,
       '하역운반작업': 14,
-      '해체작업': 10,
+      '가공조립작업': 10,
       '굴착작업': 8,
       '중량물취급작업': 6,
-      '밀폐공간작업': 4,
-      '협소공간작업': 2
+      '운전조정작업': 4,
+      '기타': 2
     },
     workGroup: {
       '가설공사': 25,
@@ -1213,7 +1209,7 @@ function populateDatalists() {
       "코어드릴",
       "마그네틱드릴",
       "콘크리트 샌딩기",
-      "파이프홀가공기"
+      "파이프홈가공기"
     ],
     "압력기구": [
       "압력용기",
@@ -1223,8 +1219,8 @@ function populateDatalists() {
     ],
     "타정기구": [
       "타카",
-      "인슬레이션 타카",
-      "타징자동총"
+      "인슐레이션 타카",
+      "타정자동총"
     ],
     "양중기구": [
       "와이어로프 슬링",
@@ -1242,9 +1238,9 @@ function populateDatalists() {
       "레버블럭"
     ],
     "운반기구": [
-      "손동력카트",
-      "전동샤키",
-      "핸드자키"
+      "전동팔레트",
+      "전동쟈키",
+      "핸드쟈키"
     ],
     "다짐기구": [
       "콘크리트 다짐기",
@@ -1596,13 +1592,9 @@ function populateDatalists() {
       });
     }
   }
-  const locationsList = (window.SafeExcel && window.SafeExcel.ACCIDENT_LOCATIONS) || [
-    '건축물', '본구조물', '가설물', '기계·기구', '설비·장치',
-    '적재물', '옥상·지붕', '계단·복도', '엘리베이터홀', '천장 내부',
-    '탱크 내부', '실내 작업장', '지하실', '실외 작업장', '외부',
-    '도로', '야적장', '수상', '수중', '공중'
-  ];
+  const locationsList = (window.SafeExcel && window.SafeExcel.ACCIDENT_LOCATIONS) || STANDARD_LOCATION_CATEGORIES;
   addOpts('listLocations', locationsList, 'location');
+  addOpts('listLocationCategories', STANDARD_LOCATION_CATEGORIES, 'locationCategory');
 
   const typesList = (window.SafeExcel && window.SafeExcel.ACCIDENT_TYPES) || [
     '추락', '낙하', '비래', '붕괴', '도괴', '전복', '전도', '협착',
@@ -1611,36 +1603,55 @@ function populateDatalists() {
   ];
   addOpts('listTypes', typesList, 'type');
 
-  const workMethods = (window.SafeExcel && window.SafeExcel.WORK_METHODS_9X9) || [
-    '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
-  ];
-  const workGroups = (window.SafeTextNormalizer && Array.isArray(window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS) && window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS.length > 0)
+  const workMethods = (window.SafeExcel && window.SafeExcel.WORK_METHODS_9X9) || WORK_METHODS_9X9_IMPROVED;
+  const allStdWorkGroups = (window.SafeTextNormalizer && Array.isArray(window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS) && window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS.length > 0)
     ? window.SafeTextNormalizer.OFFICIAL_WORK_GROUPS
-    : ((window.SafeExcel && window.SafeExcel.WORK_GROUPS) || [
-      '현장관리', '청소', '비계공사', 'PC공사', '거푸집동바리공사', '거푸집공사(갱폼)', '철근공사', '철골공사',
-      '창호공사(PL)', '창호공사(AL)', '창호공사(STL)', '유리공사', '가설전기공사', '수변전설비공사',
-      '흙막이/차수공사', '터파기공사', '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(건설장비)',
-      '가설공사(안전시설물)', '가설공사(기타)', '철거공사(구조물)', '건축공사(기타)', '기타'
-    ]);
-  addOpts('listWorkGroups', [...new Set([...workGroups, ...tax.workTypes.list.map(w => w.group)])], 'workGroup');
+    : Object.values(WORK_GROUP_TREE).flat();
+  const refreshWorkGroupMinorList = (midVal) => {
+    const mid = String(midVal || '').trim();
+    const list = (mid && WORK_GROUP_TREE[mid]) ? WORK_GROUP_TREE[mid] : allStdWorkGroups;
+    addOpts('listWorkGroups', [...new Set(list)], 'workGroup');
+  };
+  refreshWorkGroupMinorList($('#selWorkGroupMid')?.value || '');
+  if ($('#selWorkGroupMid') && !$('#selWorkGroupMid')._boundWorkGroupMid) {
+    $('#selWorkGroupMid')._boundWorkGroupMid = true;
+    $('#selWorkGroupMid').addEventListener('change', () => {
+      refreshWorkGroupMinorList($('#selWorkGroupMid').value);
+      saveDraft();
+    });
+  }
+  if ($('#txtWorkGroup') && !$('#txtWorkGroup')._boundWorkGroupSync) {
+    $('#txtWorkGroup')._boundWorkGroupSync = true;
+    const syncMidFromMinor = () => {
+      const minorVal = $('#txtWorkGroup').value.trim();
+      if (!minorVal) return;
+      const inferredMid = resolveWorkGroupMid(minorVal, '', '');
+      if (inferredMid && $('#selWorkGroupMid') && $('#selWorkGroupMid').value !== inferredMid) {
+        $('#selWorkGroupMid').value = inferredMid;
+        refreshWorkGroupMinorList(inferredMid);
+      }
+    };
+    $('#txtWorkGroup').addEventListener('change', syncMidFromMinor);
+    $('#txtWorkGroup').addEventListener('blur', syncMidFromMinor);
+  }
   addOpts('listWorkNames', workMethods, 'workMethod');
   addOpts('listConditions', (tax9 && tax9.unsafeConditionsList) || tax.unsafeConditions.list, 'condition');
   addOpts('listActions', (tax9 && tax9.unsafeActionsList) || tax.unsafeActions.list, 'action');
 
   // 9×9 점검인자 및 근본원인 datalist
   const m9Areas = (tax9 && tax9.matrix9x9 && tax9.matrix9x9.areas.map(a => a.name)) || [
-    '가시설', '건설장비', '작업방법', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'
+    '가시설', '건설장비', '작업방법', '작업공도구', '작업발판', '작업장소(환경)', '전기시설', '소방시설', '개인보호구'
   ];
   const m9Targets = (tax9 && tax9.matrix9x9 && tax9.matrix9x9.areas.flatMap(a => a.items)) || [
-    '비계', '흙막이', '동바리', '거푸집', '특수거푸집', '데크', '철골', 'PC', '안전시설',
-    '양중장비', '탑승장비', '운반장비', '차량계건설기계', '생산장비', '굴착장비', '천공장비', '토공장비', '해상장비',
-    '굴착작업', '하역운반작업', '양중작업', '설치조립작업', '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업',
-    '용접기', '화기', '절단기구', '회전기구', '압력기구', '타정기구', '운반기구', '양중기구', '수공구',
-    '틀비계', '말비계', '달비계', '달대비계', '각립비계', '이동식 사다리', '낮은 발판', '현장제작발판', '지붕발판',
-    '안전모', '보안경/면', '귀덮개/마개', '호흡기보호구', '안전대', '추락방지대', '안전장갑', '안전장화', '안전화',
-    '수전시설', '분전반', '냉난방기', '전선', '전등시설', '전열시설', '전기기구', '접지시설', '누전차단기',
-    '비상대피시설', '화재수신반', '화재감지시설', '스프링쿨러', '소화시설', '불티비산방지', '충전시설', '가설건물', '생활화재',
-    '비상통로', '작업구획', '통제구역', '가설통로', '자재야적장', '위험물보관소', '폐기물보관소', '조도확보', '청결상태'
+    '비계', '흙막이', '거푸집/동바리', '특수거푸집', '철골', '데크플레이트', 'PC', '안전시설',
+    '굴착장비', '천공장비', '하역운반장비', '양중장비', '탑승장비', '타설장비', '토공장비', '해상장비',
+    '굴착작업', '하역운반작업', '양중작업', '중량물취급작업', '설치해체작업', '가공조립작업', '운전조정작업', '고소작업', '기타',
+    '화기', '절단기구', '회전기구', '압력기구', '타정기구', '양중기구', '운반기구', '다짐기구',
+    '이동식틀비계', '사다리', '말비계', '각립비계', '달비계', '달대비계', '낮은발판', '현장제작발판',
+    '안전모', '보안경', '귀마개/덮개', '호흡기 마스크', '안전대', '안전장갑', '안전화', '절연장화',
+    '수전시설', '전선이송설비', '분전반', '전선', '접지시설', '조명시설', '냉난방기', '충전시설',
+    '비상통로', '화재수신반', '화재감지시설', '스프링쿨러', '임시소방시설', '불티비산방지', '가설건물', '생활화재',
+    '습윤장소', '밀폐공간', '협소공간', '조명채광부족', '소음진동', '개구부/단부주변', '중량물 하부/주변', '통로/계단'
   ];
   const m9Specs = (tax9 && tax9.temporaryStructuresDetail && Object.values(tax9.temporaryStructuresDetail).flat()) || [
     '시스템비계', '강관비계', '이동식틀비계', '달비계', '달대비계', '말비계', '각립비계',
@@ -1902,6 +1913,50 @@ function bindEvents() {
     saveDraft();
   });
 
+  // ── 📐 사진 2장 배치 비율 선택 칩 (직접 등록 화면) ──
+  const PHOTO_RATIO_LABELS = {
+    'auto': '자동 (사진 면적·비율 비례)',
+    '50:50': '50 : 50 균등 분할',
+    '60:40': '60 : 40 (사진1 강조)',
+    '70:30': '70 : 30 (사진1 확대)',
+    '40:60': '40 : 60 (사진2 강조)',
+    '30:70': '30 : 70 (사진2 확대)'
+  };
+  $$('#photoRatioChips .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      selectedPhotoLayoutRatio = chip.dataset.ratio || 'auto';
+      $$('#photoRatioChips .chip').forEach(c => c.classList.toggle('selected', c === chip));
+      if ($('#lblSelectedPhotoRatio')) {
+        $('#lblSelectedPhotoRatio').textContent = PHOTO_RATIO_LABELS[selectedPhotoLayoutRatio] || selectedPhotoLayoutRatio;
+      }
+      saveDraft();
+    });
+  });
+
+  // ── 📚 학습된 안전작업지침(SafeGuidelineMemory) 조회·관리 모달 ──
+  $('#btnOpenGuidelineMemory')?.addEventListener('click', () => {
+    if ($('#txtGuidelineSearch')) $('#txtGuidelineSearch').value = '';
+    renderGuidelineMemoryModal('');
+    if ($('#guidelineMemoryModal')) $('#guidelineMemoryModal').style.display = 'flex';
+  });
+  $('#btnCloseGuidelineMemory')?.addEventListener('click', () => {
+    if ($('#guidelineMemoryModal')) $('#guidelineMemoryModal').style.display = 'none';
+  });
+  $('#guidelineMemoryModal')?.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'guidelineMemoryModal') {
+      $('#guidelineMemoryModal').style.display = 'none';
+    }
+  });
+  $('#txtGuidelineSearch')?.addEventListener('input', (e) => {
+    renderGuidelineMemoryModal(e.target.value || '');
+  });
+  $('#btnExportGuidelineMemory')?.addEventListener('click', () => {
+    const entries = SafeGuidelineMemory.getAll();
+    const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json;charset=utf-8' });
+    downloadBlob(blob, `SafeGuidelineMemory_${todayStr()}.json`);
+    toast(`학습된 안전작업지침 ${entries.length}건을 JSON 파일로 내보냈습니다.`, 'success');
+  });
+
   // ── [기존 스마트 AI] 내용 기반 온디바이스 자동분류 이벤트 리스너 ──
 
   // Realtime Smart Auto-classifier on Content Input
@@ -2032,6 +2087,14 @@ function bindEvents() {
     const progressVal = parseFloat($('#txtProgressRate')?.value || 35);
     const productTypeVal = $('#selProductType')?.value || '공동주택';
     const workGroupVal = $('#txtWorkGroup')?.value.trim() || '';
+    const workGroupMidVal = $('#selWorkGroupMid')?.value || resolveWorkGroupMid(workGroupVal, '', content);
+    const locationCategoryVal = $('#txtLocationCategory')?.value.trim() || inferLocationCategory('', location, content);
+    const normalizedWorkMethod = normalizeWorkMethod9x9(
+      (workName === '안전점검' ? '' : workName),
+      workGroupVal,
+      content,
+      location
+    );
     const stageObj = determineStandardStage(progressVal, workGroupVal, productTypeVal);
 
     const mgmtCauses = selectedCauses.size > 0 ? [...selectedCauses] : [
@@ -2067,9 +2130,12 @@ function bindEvents() {
       },
       content,
       location,
-      workName: (workName === '안전점검' || !workName) ? inferWorkMethod(content) : (WORK_METHODS_9X9.includes(workName) ? workName : inferWorkMethod(content || workName)),
-      workMethod: (workName === '안전점검' || !workName) ? inferWorkMethod(content) : (WORK_METHODS_9X9.includes(workName) ? workName : inferWorkMethod(content || workName)),
+      locationCategory: locationCategoryVal,
+      workName: normalizedWorkMethod,
+      workMethod: normalizedWorkMethod,
+      workGroupMid: workGroupMidVal,
       workGroup: workGroupVal,
+      photoLayoutRatio: selectedPhotoLayoutRatio || 'auto',
       agentMajor: $('#txtAgentMajor')?.value.trim() || $('#txtKind')?.value.trim() || '가시설',
       agentMid: $('#txtAgentMid')?.value.trim() || $('#txtItem')?.value.trim() || '비계',
       agentMinor: $('#txtAgentMinor')?.value.trim() || $('#txtAgent')?.value.trim() || '',
@@ -2096,7 +2162,6 @@ function bindEvents() {
       pmVerdictType: $('#txtPmVerdict')?.value.trim() || '',
       _hasExplicitPmVerdict: Boolean($('#txtPmVerdict')?.value.trim()),
       _manualEntry: true,
-      workMethod: workName,
       workPlan: '해당없음',
       rawLaw: $('#txtLaw').value.trim(),
       lawBody: aiAnalyzedLawBody || '',
@@ -2161,6 +2226,7 @@ function bindEvents() {
           populateDatalists();
         }
         window.SafeGuidelineMemory?.learnFromRecord?.(record, 'user_saved');
+        updateGuidelineMemoryCount();
       } catch (freqErr) {
         console.warn('FieldFrequency update error:', freqErr);
       }
@@ -2666,6 +2732,21 @@ function bindEvents() {
 
   $('#btnSwitchMajorTemplate')?.addEventListener('click', () => switchSelectedEduTemplate('중부적합'));
   $('#btnSwitchMinorTemplate')?.addEventListener('click', () => switchSelectedEduTemplate('경부적합'));
+
+  // ── 📐 점검장표 미리보기·PPT 2장 사진 비율 실시간 변경 ──
+  $$('#eduPhotoRatioChips .chip').forEach(chip => {
+    chip.addEventListener('click', async () => {
+      const sel = $('#selEduRecord');
+      const recordId = sel?.value;
+      if (!recordId) return;
+      const rec = currentEduRecords.find(r => r.id === recordId) || currentLoadedRecords.find(r => r.id === recordId);
+      if (!rec) return;
+      const newRatio = chip.dataset.ratio || 'auto';
+      await store.updateRecordPhotoLayoutRatio(rec, newRatio);
+      await updateEduPreview();
+      toast(`사진 배치 비율이 [${newRatio === 'auto' ? '자동(비율비례)' : newRatio}]로 적용되었습니다. (미리보기 & PPT 즉시 반영)`, 'success', 2000);
+    });
+  });
 
   // ── 엑셀/PPT 내보내기 기간 선택 모드 전환 (전체 vs 월별 vs 직접지정) ──
   $('#btnExportModeAll')?.addEventListener('click', () => {
@@ -3740,18 +3821,24 @@ function initLmStudio() {
       $('#btnApplySmart')?.click();
     }
 
-    // [1단계] Qwen Vision + Qwen3-30B AI 실시간 심층 분석 (첨부 사진 + 부적합 내용 통합 판정, 하드코딩 법령 주입 금지)
+    // [1단계] Qwen Vision + Qwen3-30B AI 실시간 심층 분석 (첨부 사진 + 부적합 내용 + 학습지침 적합성 통합 판정)
+    const useVision = $('#chkUseVisionAI') ? $('#chkUseVisionAI').checked : true;
     btnAnalyze.disabled = true;
     if (btnIcon) btnIcon.textContent = '⏳';
-    if (btnText) btnText.textContent = currentPhotos.length ? 'Qwen Vision 사진+내용 분석 중...' : 'Qwen AI 산안법 분석 중...';
+    if (btnText) btnText.textContent = (useVision && currentPhotos.length)
+      ? 'Qwen Vision 사진+내용+표준분류 분석 중...'
+      : 'Qwen AI 표준분류·산안법 분석 중...';
 
     try {
       const extraContext = {
+        workGroupMid: $('#selWorkGroupMid')?.value || '',
         workGroup: $('#txtWorkGroup')?.value || '',
         location: $('#txtLocation')?.value || '',
+        locationCategory: $('#txtLocationCategory')?.value || '',
         productType: $('#selProductType')?.value || '공동주택',
         progressRate: $('#txtProgressRate')?.value || 35,
-        photos: currentPhotos.slice()
+        useVision,
+        photos: useVision ? currentPhotos.slice() : []
       };
 
       const res = await window.SafeLocalAI.streamAnalyzeSafetyText(content, extraContext, (prog) => {
@@ -3763,8 +3850,46 @@ function initLmStudio() {
       else if (res.severity === '경부적합') $('#btnSeverityMinor')?.click();
       if (res.law && $('#txtLaw')) $('#txtLaw').value = res.law;
       aiAnalyzedLawBody = res.lawBody || '';
+      if (res.locationCategory && $('#txtLocationCategory')) {
+        $('#txtLocationCategory').value = res.locationCategory;
+      }
+      if (res.workGroupMid && $('#selWorkGroupMid')) {
+        $('#selWorkGroupMid').value = res.workGroupMid;
+        $('#selWorkGroupMid').dispatchEvent(new Event('change'));
+      }
+      if (res.workGroup && $('#txtWorkGroup')) {
+        $('#txtWorkGroup').value = res.workGroup;
+        if (!$('#selWorkGroupMid')?.value && $('#selWorkGroupMid')) {
+          const inferredMid = resolveWorkGroupMid(res.workGroup, '', content);
+          if (inferredMid) {
+            $('#selWorkGroupMid').value = inferredMid;
+            $('#selWorkGroupMid').dispatchEvent(new Event('change'));
+          }
+        }
+      }
+      if (res.workMethod && $('#txtWorkName')) {
+        $('#txtWorkName').value = normalizeWorkMethod9x9(res.workMethod, `${res.workGroup || ''} ${content}`);
+      }
       if (res.hazardType && $('#txtType')) $('#txtType').value = res.hazardType;
-      if (res.item && $('#txtItem')) $('#txtItem').value = res.item;
+      if (res.agentMajor) {
+        if ($('#txtAgentMajor')) $('#txtAgentMajor').value = res.agentMajor;
+        if ($('#txtKind')) $('#txtKind').value = res.agentMajor;
+        if ($('#txtMatrixArea')) $('#txtMatrixArea').value = res.agentMajor;
+      }
+      if (res.agentMid || res.item) {
+        const midVal = res.agentMid || res.item;
+        if ($('#txtAgentMid')) $('#txtAgentMid').value = midVal;
+        if ($('#txtItem')) $('#txtItem').value = midVal;
+        if ($('#txtMatrixTarget')) $('#txtMatrixTarget').value = midVal;
+      }
+      if (res.agentMinor) {
+        if ($('#txtAgentMinor')) $('#txtAgentMinor').value = res.agentMinor;
+        if ($('#txtAgent')) $('#txtAgent').value = res.agentMinor;
+        if ($('#txtMatrixSpec')) $('#txtMatrixSpec').value = res.agentMinor;
+      }
+      if (res.agentMajor && (res.agentMid || res.item) && typeof setPackageSelection === 'function') {
+        try { setPackageSelection(res.agentMajor, res.agentMid || res.item, res.agentMinor || ''); } catch (e) {}
+      }
       if (Array.isArray(res.mgmtCauses) && res.mgmtCauses.length) {
         if ($('#chkMgmtPlanNotMade')) $('#chkMgmtPlanNotMade').checked = res.mgmtCauses.includes('계획 미수립');
         if ($('#chkMgmtPlanNotFollowed')) $('#chkMgmtPlanNotFollowed').checked = res.mgmtCauses.includes('계획 미이행');
@@ -3775,10 +3900,21 @@ function initLmStudio() {
       if (res.photoBanner && $('#txtPhotoBanner')) $('#txtPhotoBanner').value = res.photoBanner;
 
       if (resultCard && resultBody) {
+        const guidelineBadge = res.guidelineApplied
+          ? `<span style="background:#dcfce7; color:#166534; padding:1px 6px; border-radius:4px; font-size:0.72rem; font-weight:700;">📚 학습 안전작업지침 Qwen 적합검증 통과</span>`
+          : `<span style="background:#dbeafe; color:#1e40af; padding:1px 6px; border-radius:4px; font-size:0.72rem; font-weight:700;">⚖️ Qwen 산안법 직접 판정</span>`;
         resultBody.innerHTML = `
-          <div style="margin-bottom: 5px;">
+          <div style="margin-bottom: 5px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
             <strong>등급 판정:</strong> <span style="font-weight: 700; color: ${res.severity === '중부적합' ? '#dc2626' : '#d97706'};">${res.severity === '중부적합' ? '🚨 중부적합 (즉시 작업중지 요건)' : '⚠️ 경부적합 (시정조치 권고)'}</span>
-            ${res.holdPoint ? ' <span style="background:#fee2e2; color:#dc2626; padding:1px 5px; border-radius:3px; font-size:0.75rem; font-weight:700;">🚨 Hold Point 위반</span>' : ''}
+            ${res.holdPoint ? '<span style="background:#fee2e2; color:#dc2626; padding:1px 5px; border-radius:3px; font-size:0.75rem; font-weight:700;">🚨 Hold Point 위반</span>' : ''}
+            ${guidelineBadge}
+          </div>
+          <div style="margin-bottom: 5px; font-size: 0.78rem; color: #334155;">
+            <strong>표준분류:</strong>
+            장소분류 <b>${res.locationCategory || '-'}</b> ·
+            공종 <b>${res.workGroupMid || '-'} &gt; ${res.workGroup || '-'}</b> ·
+            작업방법 <b>${res.workMethod || '-'}</b> ·
+            기인물 <b>${res.agentMajor || '-'} &gt; ${res.agentMid || '-'} &gt; ${res.agentMinor || '-'}</b>
           </div>
           ${res.photoBanner ? `
             <div style="margin-bottom: 5px;">
@@ -3786,7 +3922,8 @@ function initLmStudio() {
             </div>
           ` : ''}
           <div style="margin-bottom: 5px;">
-            <strong>관련 근거 (Qwen 산안법 판단):</strong> <span style="color:#1e40af; font-weight:700;">${res.law || '(AI 판정 없음)'}</span>
+            <strong>관련 근거:</strong> <span style="color:#1e40af; font-weight:700;">${res.law || '(AI 판정 없음)'}</span>
+            ${res.guidelineReason ? `<div style="font-size:0.74rem; color:#475569; margin-top:2px;">↳ 검토 사유: ${res.guidelineReason}</div>` : ''}
           </div>
           ${res.lawBody ? `
             <div style="margin-bottom: 5px; font-size: 0.78rem; color: #334155; background: #eff6ff; padding: 5px 8px; border-radius: 4px; white-space: pre-line;">${res.lawBody}</div>
@@ -3798,7 +3935,7 @@ function initLmStudio() {
         resultCard.style.display = 'block';
       }
 
-      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] 및 산안법 관련근거가 반영되었습니다!`, 'success');
+      toast(`🎉 Qwen AI 분석 완료: [${res.severity}] · 표준분류(장소/공종/작업방법/기인물) · 관련근거가 반영되었습니다!`, 'success');
     } catch (err) {
       console.warn('Qwen AI 분석 오류:', err);
       toast(`Qwen AI 분석 실패: ${err.message} (네트워크 또는 LM Studio 연결을 확인하세요)`, 'warning', 4500);
@@ -4108,12 +4245,23 @@ async function updateEduPreview() {
     btnMinor.style.color = !isMajorRec ? '#ffffff' : '#b45309';
   }
 
+  // 사진 2장 있을 때만 비율 선택 바 표시 & 현재 레코드 비율 칩 동기화
+  const eduRatioBox = $('#boxEduPhotoRatio');
+  const currentRatio = rec.photoLayoutRatio || 'auto';
+  if (eduRatioBox) {
+    eduRatioBox.style.display = (validPhoto1Url && validPhoto2Url) ? 'flex' : 'none';
+    $$('#eduPhotoRatioChips .chip').forEach(ch => {
+      ch.classList.toggle('selected', (ch.dataset.ratio || 'auto') === currentRatio);
+    });
+  }
+
   if (window.SafePPT && window.SafePPT.renderInspectionSheetHTML) {
     const html = window.SafePPT.renderInspectionSheetHTML(rec, {
       photo1Url: validPhoto1Url,
       photo2Url: validPhoto2Url,
       photo1Dims,
       photo2Dims,
+      photoLayoutRatio: currentRatio,
       rulesFromTaxonomy: rules
     });
     $('#eduContainer').innerHTML = html;
@@ -4244,10 +4392,81 @@ function renderPhotoPreviews() {
     const item = h('div.preview-item', { style: 'position: relative;' }, ...children);
     container.append(item);
   });
+
+  // 사진이 2장 이상이면 비율 선택 UI 노출, 1장 이하면 숨김
+  const ratioBox = $('#boxPhotoRatioSelector');
+  if (ratioBox) {
+    ratioBox.style.display = currentPhotos.length >= 2 ? 'block' : 'none';
+    $$('#photoRatioChips .chip').forEach(ch => {
+      ch.classList.toggle('selected', (ch.dataset.ratio || 'auto') === (selectedPhotoLayoutRatio || 'auto'));
+    });
+  }
+}
+
+// ── 📚 학습된 안전작업지침(SafeGuidelineMemory) 카운트 & 조회 모달 렌더러 ──
+function updateGuidelineMemoryCount() {
+  try {
+    const count = SafeGuidelineMemory.getAll().length;
+    const el = $('#guidelineMemoryCount');
+    if (el) el.textContent = String(count);
+  } catch (e) {}
+}
+
+function renderGuidelineMemoryModal(query = '') {
+  const listEl = $('#guidelineMemoryList');
+  if (!listEl) return;
+  const q = String(query || '').trim().toLowerCase();
+  const entries = SafeGuidelineMemory.getAll().filter(e => {
+    if (!q) return true;
+    const hay = `${e.code || ''} ${e.title || ''} ${e.body || ''} ${e.domain || ''} ${e.workGroup || ''} ${e.type || ''}`.toLowerCase();
+    return hay.includes(q);
+  });
+  updateGuidelineMemoryCount();
+  if (!entries.length) {
+    listEl.innerHTML = `
+      <div style="text-align:center; padding: 28px 14px; color: #64748b; font-size: 0.84rem; line-height: 1.55;">
+        ${q ? `"${q}" 검색 결과가 없습니다.` : '아직 학습된 안전작업지침이 없습니다.'}<br>
+        <span style="font-size: 0.76rem; color: #94a3b8;">안전작업지침(예: IZ12B 등)이 포함된 원본 장표 PDF·PPTX를 불러오거나 대장을 조회하면 자동 누적됩니다.</span>
+      </div>
+    `;
+    return;
+  }
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  listEl.innerHTML = entries.map(e => `
+    <div style="border: 1px solid #e2e8f0; border-radius: 7px; padding: 9px 11px; margin-bottom: 8px; background: #f8fafc;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px;">
+        <div style="font-size: 0.83rem; font-weight: 700; color: #1e3a8a; line-height: 1.35;">
+          ${e.code ? `<span style="background:#dbeafe; color:#1d4ed8; padding:1px 5px; border-radius:3px; font-size:0.72rem; margin-right:5px;">${esc(e.code)}</span>` : ''}
+          ${esc(e.title)}
+        </div>
+        <button type="button" class="btn-del-guideline" data-key="${esc(e.key)}"
+          style="border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; border-radius: 4px; padding: 2px 7px; font-size: 0.72rem; cursor: pointer; flex-shrink: 0;">삭제</button>
+      </div>
+      <div style="font-size: 0.72rem; color: #64748b; margin-bottom: 5px; display: flex; flex-wrap: wrap; gap: 6px;">
+        ${e.domain ? `<span>분야: <b>${esc(e.domain)}</b></span>` : ''}
+        ${e.workGroup ? `<span>공종: <b>${esc(e.workGroup)}</b></span>` : ''}
+        ${e.type ? `<span>유형: <b>${esc(e.type)}</b></span>` : ''}
+        <span>누적학습: <b>${e.count || 1}회</b></span>
+        <span>출처: ${esc(e.source || '원본장표')}</span>
+      </div>
+      ${e.body ? `<div style="font-size: 0.76rem; color: #334155; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 5px; padding: 6px 8px; white-space: pre-line; line-height: 1.45;">${esc(e.body)}</div>` : ''}
+    </div>
+  `).join('');
+
+  listEl.querySelectorAll('.btn-del-guideline').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.key;
+      if (!k) return;
+      SafeGuidelineMemory.remove(k);
+      renderGuidelineMemoryModal($('#txtGuidelineSearch')?.value || '');
+      toast('선택한 학습 안전작업지침을 삭제했습니다.', 'info', 1800);
+    });
+  });
 }
 
 function clearForm() {
   currentPhotos = [];
+  selectedPhotoLayoutRatio = 'auto';
   selectedCauses.clear();
   smartRecommendationApplied = false;
   appliedSmartResult = null;
@@ -4257,12 +4476,14 @@ function clearForm() {
   $('#txtContent').value = '';
   if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = '';
   $('#txtLocation').value = '';
+  if ($('#txtLocationCategory')) $('#txtLocationCategory').value = '';
   if ($('#txtAgentMajor')) $('#txtAgentMajor').value = '';
   if ($('#txtAgentMid')) $('#txtAgentMid').value = '';
   if ($('#txtAgentMinor')) $('#txtAgentMinor').value = '';
   if ($('#txtKind')) $('#txtKind').value = '';
   if ($('#txtItem')) $('#txtItem').value = '';
   if ($('#txtAgent')) $('#txtAgent').value = '';
+  if ($('#selWorkGroupMid')) $('#selWorkGroupMid').value = '';
   $('#txtWorkGroup').value = '';
   if ($('#txtWorkName')) $('#txtWorkName').value = '';
   $('#txtType').value = '';
@@ -4275,6 +4496,7 @@ function clearForm() {
   if ($('#txtRootCauseMgmt')) $('#txtRootCauseMgmt').value = '';
   if ($('#txtRootCauseSystem')) $('#txtRootCauseSystem').value = '';
   if ($('#txtStakeholder')) $('#txtStakeholder').value = '';
+  if ($('#lblSelectedPhotoRatio')) $('#lblSelectedPhotoRatio').textContent = '자동 (사진 면적·비율 비례)';
   $('#smartClassifyBox').classList.remove('active');
   document.querySelectorAll('.quick-chip-btn').forEach(b => b.classList.remove('active'));
 }
@@ -4285,13 +4507,17 @@ function saveDraft() {
     site: $('#txtSite')?.value || '',
     content: $('#txtContent')?.value || '',
     location: $('#txtLocation')?.value || '',
+    locationCategory: $('#txtLocationCategory')?.value || '',
+    photoLayoutRatio: selectedPhotoLayoutRatio || 'auto',
     agentMajor: $('#txtAgentMajor')?.value || '',
     agentMid: $('#txtAgentMid')?.value || '',
     agentMinor: $('#txtAgentMinor')?.value || '',
     kind: $('#txtAgentMajor')?.value || $('#txtKind')?.value || '',
     item: $('#txtAgentMid')?.value || $('#txtItem')?.value || '',
     agent: $('#txtAgentMinor')?.value || $('#txtAgent')?.value || '',
+    workGroupMid: $('#selWorkGroupMid')?.value || '',
     workGroup: $('#txtWorkGroup')?.value || '',
+    workName: $('#txtWorkName')?.value || '',
     type: $('#txtType')?.value || '',
     law: $('#txtLaw')?.value || '',
     condition: $('#txtCondition')?.value || '',
@@ -4325,6 +4551,8 @@ function loadDraft() {
       setTimeout(() => runSmartClassification(false), 120);
     }
     if (d.location) $('#txtLocation').value = d.location;
+    if (d.locationCategory && $('#txtLocationCategory')) $('#txtLocationCategory').value = d.locationCategory;
+    if (d.photoLayoutRatio) selectedPhotoLayoutRatio = d.photoLayoutRatio;
     if (d.workName) $('#txtWorkName').value = d.workName;
     if (d.agentMajor || d.agentMid || d.agentMinor || d.kind || d.item || d.agent) {
       setPackageSelection(d.agentMajor || d.kind || '가시설', d.agentMid || d.item || '비계', d.agentMinor || d.agent || '');
@@ -4344,6 +4572,7 @@ function loadDraft() {
       if ($('#txtAgent')) $('#txtAgent').value = d.agent;
       if ($('#txtAgentMinor') && !$('#txtAgentMinor').value) $('#txtAgentMinor').value = d.agent;
     }
+    if (d.workGroupMid && $('#selWorkGroupMid')) $('#selWorkGroupMid').value = d.workGroupMid;
     if (d.workGroup) $('#txtWorkGroup').value = d.workGroup;
     if (d.type) $('#txtType').value = d.type;
     if (d.law) $('#txtLaw').value = d.law;
@@ -4390,7 +4619,7 @@ async function renderRecordList(triggerSync = true) {
   if (!store.user) {
     const msg = '🔒 부적합 대장은 PIN 번호 인증된 점검자만 열람할 수 있습니다.';
     if (c) c.innerHTML = `<div style="text-align:center; padding:36px; color:var(--gray-600); font-weight:600; background:#f8fafc; border-radius:10px; border:1px dashed #cbd5e1;">${msg}</div>`;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="36" style="padding:36px; color:var(--gray-600); font-weight:600;">${msg}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="38" style="padding:36px; color:var(--gray-600); font-weight:600;">${msg}</td></tr>`;
     showPinModal();
     return;
   }
@@ -4424,7 +4653,7 @@ async function renderRecordList(triggerSync = true) {
   }
 
   if (c) c.innerHTML = '<div style="text-align:center; padding:20px; color:var(--gray-400);">목록을 불러오는 중...</div>';
-  if (tbody) tbody.innerHTML = '<tr><td colspan="36" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="38" style="padding:20px; color:var(--gray-400);">데이터를 불러오는 중...</td></tr>';
   
   if ($('#chkAllRecords')) $('#chkAllRecords').checked = false;
   updateSelectedCount();
@@ -4478,6 +4707,7 @@ async function renderRecordList(triggerSync = true) {
     }
     if (currentLoadedRecords.length > 0) {
       window.SafeGuidelineMemory?.seedFromRecords?.(currentLoadedRecords);
+      updateGuidelineMemoryCount();
     }
   } catch (seedErr) {
     console.warn('FieldFrequency seeding error:', seedErr);
@@ -4564,7 +4794,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
       msg = '해당 월에 등록된 내역이 없습니다.';
     }
     if (c) c.innerHTML = `<div style="text-align:center; padding:30px; color:var(--gray-500); font-weight:500;">${msg}</div>`;
-    if (tbody) tbody.innerHTML = `<tr><td colspan="37" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="38" style="padding:30px; color:var(--gray-500); font-weight:500;">${msg}</td></tr>`;
     return;
   }
 
@@ -4579,7 +4809,12 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
   const markCauseFn = se.markCause || ((r, k) => ((r.mgmtCauses || []).includes(k) || (r.causes || []).includes(k) ? '●' : ''));
   const getOpType = se.getInspectorOpinionType || (r => r.inspectorOpinionType || '시스템 개선');
   const getPmType = se.getPmVerdictType || (r => r.pmVerdictType || getOpType(r));
-  const cleanWorkGroupFn = se.cleanWorkGroup || (w => String(w || '가설공사').replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ').trim() || '가설공사');
+  const cleanWorkGroupFn = se.cleanWorkGroup || (w => String(w || '가설공사(기타)').replace(/[_|ㅣ¦!\[\]\r\n]+/g, ' ').trim() || '가설공사(기타)');
+  const resolveWgHierFn = se.resolveWorkGroupHierarchy || (r => ({
+    mid: resolveWorkGroupMid(r.workGroup, r.workGroupMid, r.content),
+    minor: cleanWorkGroupFn(r.workGroup, r.content)
+  }));
+  const resolveLocCatFn = se.resolveLocationCategory || (r => inferLocationCategory(r.locationCategory, r.location, r.content));
   const cleanOpinionFn = se.cleanOpinionText || (t => String(t || '').trim());
   const cleanProposalFn = se.cleanProposalText || cleanOpinionFn;
   const cleanContentFn = se.cleanContent || (t => String(t || '').trim());
@@ -4601,9 +4836,12 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
     const accType = mapType(r.type, r.content);
     const opType = getOpType(r);
     const pmType = getPmType(r);
-    const cleanedWorkGroup = cleanWorkGroupFn(r.workGroup, r.content);
+    const wgHier = resolveWgHierFn(r);
+    const cleanedWorkGroupMid = wgHier.mid || '건축공사';
+    const cleanedWorkGroup = wgHier.minor || cleanWorkGroupFn(r.workGroup, r.content);
     const cleanedContent = cleanContentFn(r.content || '');
     const cleanedLocation = cleanLocationFn(r.location || '', cleanedContent || r.content || '');
+    const resolvedLocationCategory = resolveLocCatFn(r);
     const cleanedInterviewOp = cleanOpinionFn(r.interviewOpinion || r.workerOpinion || '');
     const cleanedAuditProp = cleanProposalFn(r.auditProposal || r.inspectorOpinion || '');
     const actionPlanText = resolveActionPlanFn(r);
@@ -4706,7 +4944,7 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         ),
         cardBody,
         (cleanedWorkGroup || r.workMethod || r.workName) ? h('div', { style: { fontSize: '0.76rem', color: '#0f766e', background: '#f0fdfa', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
-          `🔨 공종·작업방법: ${cleanedWorkGroup || '가설공사'} › ${resolveDisplayWorkMethod(r)}`
+          `🔨 공종·작업방법: ${cleanedWorkGroupMid} › ${cleanedWorkGroup || '가설공사(기타)'} › ${resolveDisplayWorkMethod(r)} · 장소분류: ${resolvedLocationCategory}`
         ) : '',
         (r.productType || r.progressRate !== undefined || r.subcontractor) ? h('div', { style: { fontSize: '0.76rem', color: '#4338ca', background: '#eef2ff', padding: '4px 8px', borderRadius: '4px', marginBottom: '6px' } },
           `🏢 ${r.productType || '공동주택'} · 공정률: ${r.progressRate !== undefined && r.progressRate !== null ? r.progressRate : 0}% (${r.stage || '지하 골조 단계'}) ${r.subcontractor ? '· 협력사: ' + r.subcontractor : ''}`
@@ -4757,6 +4995,8 @@ async function applyListFiltersAndRender(thisSeq = listRenderSeq) {
         <td style="padding:8px 10px; text-align:left; white-space:pre-line; font-weight:500; color:var(--gray-900); min-width:220px;">${cleanedContent || ''}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${r.subcontractor || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700); font-weight:500;">${cleanedLocation || '-'}</td>
+        <td style="padding:8px 6px; color:#1d4ed8; font-weight:600;">${resolvedLocationCategory || '-'}</td>
+        <td style="padding:8px 6px; color:#0f766e; font-weight:600;">${cleanedWorkGroupMid || '-'}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${cleanedWorkGroup}</td>
         <td style="padding:8px 6px; color:var(--gray-700);">${resolveDisplayWorkMethod(r)}</td>
         <td style="padding:8px 6px;"><span class="badge" style="font-size:0.74rem;">${accType}</span></td>
@@ -5170,21 +5410,9 @@ function renderImportedCards() {
   }
 }
 
-// 9×9 핵심 작업방법(9종) 추론 함수 (절대 '안전점검' 등 비표준 값 배제)
+// 9×9 개선 표준 작업방법(9종 — 건설안전 9,9 개선(1).jpg 기준) 추론 함수
 function inferWorkMethod(text) {
-  const t = String(text || '');
-  const strippedExcav = t.replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' ');
-  if (t.includes('하역') || t.includes('운반') || t.includes('상차') || t.includes('하차') || t.includes('지게차')) return '하역운반작업';
-  if (t.includes('양중') || t.includes('크레인') || t.includes('슬링') || t.includes('샤클') || t.includes('인양') || t.includes('호이스트') || t.includes('유도로프')) return '양중작업';
-  if (/굴착\s*작업|터파기|토류판|어스앙카|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(strippedExcav)) return '굴착작업';
-  if (/가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량/.test(t) && !/석면\s*해체|구조물\s*해체|철거\s*작업|해체\s*작업/.test(t)) return '설치조립작업';
-  if (t.includes('해체') || t.includes('철거')) return '해체작업';
-  if (t.includes('동바리') || t.includes('멍에') || t.includes('거푸집') || t.includes('서포트') || t.includes('조립') || t.includes('설치') || t.includes('체결') || t.includes('조립도') || t.includes('골조')) return '설치조립작업';
-  if (t.includes('비계') || t.includes('발판') || t.includes('고소') || t.includes('난간') || t.includes('개구부') || t.includes('추락') || t.includes('사다리') || t.includes('단부') || t.includes('달비계')) return '고소작업';
-  if (t.includes('중량물') || t.includes('인력운반')) return '중량물취급작업';
-  if (t.includes('밀폐') || t.includes('산소') || t.includes('질식') || t.includes('유해가스') || t.includes('맨홀') || t.includes('탱크')) return '밀폐공간작업';
-  if (t.includes('협소') || t.includes('피트') || t.includes('덕트')) return '협소공간작업';
-  return '설치조립작업';
+  return normalizeWorkMethod9x9('', text);
 }
 
 // 표준 불안전한 상태 추론 함수 (계획미이행 등 발생원인 텍스트 원천 차단)
@@ -5260,9 +5488,15 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtPhotoBanner')) $('#txtPhotoBanner').value = rec.photoBanner || '';
   if ($('#txtLaw')) $('#txtLaw').value = filterOnlyOccupationalSafetyLaw(rec.law);
   if ($('#txtSubcontractor')) $('#txtSubcontractor').value = rec.subcontractor || '';
+  if ($('#selWorkGroupMid')) {
+    $('#selWorkGroupMid').value = rec.workGroupMid || resolveWorkGroupMid(rec.workGroup, '', rec.content);
+    $('#selWorkGroupMid').dispatchEvent(new Event('change'));
+  }
   if ($('#txtWorkGroup')) $('#txtWorkGroup').value = rec.workGroup || '';
-  if ($('#txtWorkName')) $('#txtWorkName').value = determinedWorkMethod;
+  if ($('#txtWorkName')) $('#txtWorkName').value = normalizeWorkMethod9x9(determinedWorkMethod, `${rec.workGroup || ''} ${rec.content || ''}`);
   if ($('#txtLocation')) $('#txtLocation').value = rec.location || '';
+  if ($('#txtLocationCategory')) $('#txtLocationCategory').value = rec.locationCategory || inferLocationCategory('', rec.location, rec.content);
+  selectedPhotoLayoutRatio = rec.photoLayoutRatio || 'auto';
   const isAlForm = /알폼|al\s*form|alform|알루미늄/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
   const isGangForm = isAlForm || /갱폼|gang\s*form|gangform|특수거푸집|선해체/i.test(`${rec.content || ''} ${rec.agent || ''} ${rec.item || ''}`);
   const maj = rec.agentMajor || rec.kind || (isGangForm ? '가시설' : (m9 && m9.점검영역9x9) || '가시설');
@@ -5448,7 +5682,7 @@ async function handleSaveImportedRecords() {
       const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
       const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
 
-      // 3단계 관련기준 우선순위 적용 (1순위 원본 -> 2순위 학습된 지침 저장소 -> 3순위 AI 판단 결과, 클라이언트 하드코딩 조문 지어내기 금지)
+      // 3단계 관련기준 우선순위 적용 (1순위 원본 -> 2순위 Qwen이 적합 검증 완료한 학습 지침 -> 3순위 AI 산안법 판정; 온라인 Qwen 검증이 끝난 건은 로컬이 임의 덮어쓰기 금지)
       const recCtxForLaw = `${resolvedWorkGroup} ${rec.content || ''} ${resolvedType}`;
       let sanitizedRawLaw = rec.rawLaw || '';
       let sanitizedLawBody = rec.lawBody || '';
@@ -5462,7 +5696,8 @@ async function handleSaveImportedRecords() {
           workGroup: resolvedWorkGroup,
           type: resolvedType
         });
-        if (specNorm.needsAiLaw && window.SafeGuidelineMemory?.lookup) {
+        // 오프라인/AI 미검증 상태일 때만 로컬 학습 지침 최후 폴백 (온라인 Qwen 검증이 완료된 _aiVerified 건은 Qwen 판단 존중)
+        if (specNorm.needsAiLaw && !rec._aiVerified && window.SafeGuidelineMemory?.lookup) {
           const learned = window.SafeGuidelineMemory.lookup({
             rawLaw: sanitizedRawLaw,
             lawBody: sanitizedLawBody,
@@ -5510,6 +5745,11 @@ async function handleSaveImportedRecords() {
         explicitPmVal
       );
 
+      const cleanedFinalLoc = window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '');
+      const resolvedLocationCategory = inferLocationCategory(rec.locationCategory || '', cleanedFinalLoc, `${rec.content || ''} ${unifiedBanner}`);
+      const resolvedWorkGroupMid = resolveWorkGroupMid(resolvedWorkGroup, rec.workGroupMid || '', rec.content || '');
+      const normalizedFinalWorkMethod = normalizeWorkMethod9x9(workMethod, resolvedWorkGroup, rec.content || '', cleanedFinalLoc);
+
       const finalRecord = {
         site,
         productType,
@@ -5530,9 +5770,12 @@ async function handleSaveImportedRecords() {
         content: rec.content || '부적합 사항 지적',
         photoBanner: unifiedBanner,
         photo2Banner: rec.photo2Banner || '',
-        location: (window.SafeExcel?.cleanLocation ? window.SafeExcel.cleanLocation(rec.location || '', rec.content || '') : (rec.location || '')),
-        workName: workMethod,
-        workMethod: workMethod,
+        photoLayoutRatio: rec.photoLayoutRatio || 'auto',
+        location: cleanedFinalLoc,
+        locationCategory: resolvedLocationCategory,
+        workName: normalizedFinalWorkMethod,
+        workMethod: normalizedFinalWorkMethod,
+        workGroupMid: resolvedWorkGroupMid,
         workGroup: resolvedWorkGroup,
         kind: matrixArea,
         item: matrixTarget,
@@ -5609,6 +5852,7 @@ async function handleSaveImportedRecords() {
       batchItems.forEach(item => {
         if (item?.rec) window.SafeGuidelineMemory.learnFromRecord(item.rec, 'batch_saved');
       });
+      updateGuidelineMemoryCount();
     }
     if (savedRecs.length > 0) {
       window._lastImportedRecordId = savedRecs[savedRecs.length - 1].id;

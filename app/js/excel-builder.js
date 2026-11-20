@@ -85,10 +85,16 @@
       '조경식재공사', '조경시설물공사', '기타'
     ];
 
-  // 건설안전점검 9×9 기반 작업방법 (9대 핵심 작업)
+  // 건설안전 9×9 개선(1).jpg 공식 3번 열 작업방법 (9종)
   const WORK_METHODS_9X9 = [
-    '굴착작업', '하역운반작업', '양중작업', '설치조립작업',
-    '해체작업', '중량물취급작업', '고소작업', '밀폐공간작업', '협소공간작업'
+    '굴착작업', '하역운반작업', '양중작업', '중량물취급작업',
+    '설치해체작업', '가공조립작업', '운전조정작업', '고소작업', '기타'
+  ];
+
+  // 작업분류표.jpg 공식 공종(중) 8종
+  const WORK_GROUPS_MID = [
+    '공통공사', '건축공사', '전기공사', '설비공사',
+    '플랜트공사', '토목공사', '조경공사', '기타'
   ];
 
   // 점검자 의견 / PM 판정 분류 (4대 표준 유형)
@@ -139,59 +145,90 @@
     return '추락';
   }
 
-  // 9×9 핵심 작업방법(9종) 정규화 및 추론 함수
+  // 건설안전 9×9 개선(1).jpg 공식 작업방법(9종) 정규화 및 추론 함수
   function resolveWorkMethod(r) {
     const raw = (r.workMethod || r.workName || '').trim();
     const wg = (r.workGroup || '').trim();
     const contentText = (r.content || '').trim();
+    const locText = (r.location || '').trim();
+    const norm = _getNorm();
+    if (norm && typeof norm.normalizeWorkMethod9x9 === 'function') {
+      return norm.normalizeWorkMethod9x9(raw, wg, `${contentText} ${r.photoBanner || ''}`, locText);
+    }
     const textForExcavation = `${contentText} ${r.item || ''} ${r.agent || ''}`
       .replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' ');
     const text = `${contentText} ${r.item || ''} ${r.agent || ''} ${r.agentMajor || ''} ${r.agentMid || ''} ${r.photoBanner || ''}`;
-
     const isElectrical = wg === '가설전기공사' || /가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선|절연\s*불량|누설전류/.test(`${wg} ${text}`);
-    const isGenuineDemolition = /석면\s*해체|구조물\s*해체|비계\s*해체|동바리\s*해체|슬래브\s*철거|벽체\s*철거|철거\s*작업|해체\s*작업/.test(contentText);
     const isGenuineExcavation = /굴착\s*작업|터파기|토류판|어스앙카|집수정\s*굴착|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(textForExcavation);
 
-    // 1) 구체적 작업 시그널(하역운반/양중/굴착/밀폐) 우선 적용 (장소성 '흙막이 상부/주변'은 제외)
-    if (/하역|운반|상차|하차|지게차/.test(text)) {
-      return '하역운반작업';
-    }
-    if (/양중|크레인|슬링|샤클|인양|호이스트|유도로프/.test(text)) {
-      return '양중작업';
-    }
-    if (isGenuineExcavation) {
-      return '굴착작업';
-    }
-    if (/밀폐|산소|질식|유해가스|맨홀|탱크/.test(text)) {
-      return '밀폐공간작업';
-    }
-    if (/협소|피트|덕트/.test(text)) {
-      return '협소공간작업';
-    }
-    // 가설전기공사(분전반/접지선/전등 등)인데 AI/OCR이 해체작업·굴착작업으로 오분류한 경우 보정
-    if (isElectrical && !isGenuineDemolition && !isGenuineExcavation) {
-      if (!raw || raw === '해체작업' || raw === '굴착작업') {
-        return '설치조립작업';
+    if (raw && WORK_METHODS_9X9.includes(raw)) {
+      if (raw === '굴착작업' && !isGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${locText} ${contentText}`)) {
+        return isElectrical ? '설치해체작업' : '고소작업';
       }
+      return raw;
     }
-    if (raw === '굴착작업' && !isGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${r.location || ''} ${contentText}`)) {
-      return isElectrical ? '설치조립작업' : '고소작업';
-    }
-    if (WORK_METHODS_9X9.includes(raw)) return raw;
+    if (raw === '설치조립작업' || raw === '해체작업') return '설치해체작업';
+    if (raw === '밀폐공간작업' || raw === '협소공간작업') return '기타';
+    if (/하역|운반|상차|하차|지게차/.test(text)) return '하역운반작업';
+    if (/양중|크레인|슬링|샤클|인양|호이스트|유도로프/.test(text)) return '양중작업';
+    if (isGenuineExcavation) return '굴착작업';
+    if (/중량물|인력운반/.test(text)) return '중량물취급작업';
+    if (/운전|조정|장비\s*주행|후진|유도원|신호/.test(text)) return '운전조정작업';
+    if (/가공|절단|용접|철근\s*조립|목공|그라인더/.test(text)) return '가공조립작업';
+    if (/비계|발판|고소|난간|개구부|추락|사다리|단부|달비계|안전대|생명줄/.test(text)) return '고소작업';
+    if (isElectrical || /설치|조립|해체|철거|체결|거푸집|동바리|분전반|분전함|접지/.test(text)) return '설치해체작업';
+    return '기타';
+  }
 
-    if (/비계|발판|고소|난간|개구부|추락|사다리|단부|달비계/.test(text)) {
-      return '고소작업';
+  // 표준분류/장소.png 공식 20종 장소 분류 결정 함수 (Qwen AI 선택값 최우선)
+  function resolveLocationCategory(r) {
+    if (!r) return '';
+    const norm = _getNorm();
+    if (norm && typeof norm.inferLocationCategory === 'function') {
+      return norm.inferLocationCategory(r.locationCategory || '', r.location || '', `${r.content || ''} ${r.photoBanner || ''}`);
     }
-    if (isElectrical || /설치|조립|체결|조립도|세우기|골조|분전반|분전함|접지|가설전기/.test(text)) {
-      return '설치조립작업';
+    const raw = String(r.locationCategory || '').trim();
+    if (raw && ACCIDENT_LOCATIONS.includes(raw)) return raw;
+    const txt = `${r.location || ''} ${r.content || ''}`;
+    if (!txt.trim()) return '';
+    if (/엘리베이터|E\/V|EV\s*홀|승강기/i.test(txt)) return '엘리베이터홀';
+    if (/옥상|지붕/.test(txt)) return '옥상·지붕';
+    if (/계단|복도|통로/.test(txt)) return '계단·복도';
+    if (/천장\s*내부/.test(txt)) return '천장 내부';
+    if (/탱크|저수조|정화조|맨홀|밀폐/.test(txt)) return '탱크 내부';
+    if (/지하|B\d+F?|피트|PIT/i.test(txt)) return '지하실';
+    if (/야적장|적치장/.test(txt)) return '야적장';
+    if (/도로|차도/.test(txt)) return '도로';
+    if (/비계|동바리|거푸집|갱폼|알폼|작업발판|가설/.test(txt)) return '가설물';
+    if (/크레인|지게차|굴착기|펌프카|고소작업대|리프트/.test(txt)) return '기계·기구';
+    if (/분전반|분전함|배전반|설비|배관|덕트|전기/.test(txt)) return '설비·장치';
+    if (/외부|외벽|후면|전면|측면/.test(r.location || '')) return '외부';
+    if (/실외|옥외/.test(txt)) return '실외 작업장';
+    if (/실내|세대|내부/.test(txt)) return '실내 작업장';
+    if (/보\s*상부|슬래브|기둥|옹벽|벽체|코어/.test(txt)) return '본구조물';
+    return '건축물';
+  }
+
+  // 표준분류/작업분류표.jpg 공종(중) · 공종(소) 계층 결정 함수
+  function resolveWorkGroupHierarchy(r) {
+    if (!r) return { mid: '', minor: '' };
+    const minor = cleanWorkGroup(r.workGroup || '', r.content || '');
+    const norm = _getNorm();
+    if (norm && typeof norm.resolveWorkGroupMid === 'function') {
+      const mid = norm.resolveWorkGroupMid(minor, r.workGroupMid || '', `${r.content || ''} ${r.workGroup || ''}`);
+      return { mid, minor };
     }
-    if (/해체|철거/.test(text)) {
-      return '해체작업';
-    }
-    if (/중량물|인력운반/.test(text)) {
-      return '중량물취급작업';
-    }
-    return '고소작업';
+    const rawMid = String(r.workGroupMid || '').trim();
+    if (rawMid && WORK_GROUPS_MID.includes(rawMid)) return { mid: rawMid, minor };
+    const comb = `${minor} ${r.content || ''}`;
+    if (/현장관리|청소/.test(minor)) return { mid: '공통공사', minor };
+    if (/전기|수변전|전선|전등|전열|접지|피뢰|통신|엘리베이터|에스컬레이터|자동제어|CCTV|Busduct|MCC/i.test(minor)) return { mid: '전기공사', minor };
+    if (/설비|배관공사\(|덕트|위생기구|보온|PCW|정화조|에어컨|환기|모듈|실링|어세스플로어|파이프렉/.test(minor)) return { mid: '설비공사', minor };
+    if (/터빈|보일러|탈황|집진|암모니아|석탄|연돌|탱크공사/.test(minor)) return { mid: '플랜트공사', minor };
+    if (/지장물|터파기|발파|부지정지|사면|연약지반|가시설공사|흙막이|배수|말뚝|오수|토목|공동구|옹벽|포장공사/.test(minor)) return { mid: '토목공사', minor };
+    if (/조경/.test(minor)) return { mid: '조경공사', minor };
+    if (minor === '기타') return { mid: '기타', minor };
+    return { mid: minor || comb.trim() ? '건축공사' : '', minor };
   }
 
   // 표준 불안전한 상태 정규화 및 추론 함수
@@ -919,73 +956,85 @@
     return '';
   }
 
-  // 기인물 9×9 대-중-소 정규화 및 오류 방지 판정
-    function resolveAgentHierarchy(r) {
-    let major = r.agentMajor || '';
-    let mid = r.agentMid || '';
-    let minor = r.agentMinor || r.agent || '';
+  // 기인물 9×9 개선(1)(2).jpg 대-중-소 정규화 및 오류 방지 판정
+  function resolveAgentHierarchy(r) {
+    let major = String(r.agentMajor || '').trim();
+    let mid = String(r.agentMid || '').trim();
+    let minor = String(r.agentMinor || r.agent || '').trim();
 
-    // Qwen AI가 직접 선택한 표준 기인물 계층이 있으면 최우선 적용 (단, 지게차/전기시설 등이 거푸집/비계 기본값으로 잘못 들어간 경우는 즉시 교정)
+    // 구버전 명칭 → 건설안전 9×9 개선(1)(2).jpg 공식 명칭 정규화
+    if (major === 'PPE') major = '개인보호구';
+    if (major === '작업장' || major === '작업장·통로') major = '작업장소(환경)';
+    if (major === '전기·화기·설비') major = /소화|화재|불티/.test(`${mid} ${minor} ${r.content || ''}`) ? '소방시설' : '전기시설';
+    if (major === '양중·줄걸이') { major = '작업공도구'; mid = '양중기구'; }
+    if (major === '건설장비') {
+      if (mid === '운반장비') mid = '하역운반장비';
+      if (mid === '생산장비') mid = '타설장비';
+      if (mid === '굴착·토공장비') mid = /굴착기|불도저/.test(`${minor} ${r.content || ''}`) ? '굴착장비' : '토공장비';
+      if (mid === '콘크리트장비') mid = '타설장비';
+      if (mid === '고소작업장비') mid = '탑승장비';
+    }
+    if (major === '전기시설' && mid === '전기시설') {
+      mid = /분전|차단기/.test(`${minor} ${r.content || ''}`) ? '분전반'
+        : (/접지/.test(`${minor} ${r.content || ''}`) ? '접지시설'
+          : (/전등|조명|투광등|소켓/.test(`${minor} ${r.content || ''}`) ? '조명시설' : '전선'));
+    }
+
+    const contentOnly = String(r.content || '');
+    const fullCtx = `${r.workGroup || ''} ${minor} ${mid} ${contentOnly}`;
+
+    // 1) 건설안전 9×9 개선(1)(2).jpg 명시적 장비/공도구/시설 오분류 교정 (Qwen 선택 우선 + 명확한 기인물 정합성 보정)
     if (major && mid && minor) {
-      const fullCtx = `${r.workGroup || ''} ${minor} ${mid} ${r.content || ''}`;
-      const contentOnly = String(r.content || '');
-      if (contentOnly.includes('지게차')) {
-        return { major: '건설장비', mid: '운반장비', minor: '지게차' };
+      if (/굴착기|백호|포크레인/.test(contentOnly)) return { major: '건설장비', mid: '굴착장비', minor: '굴착기' };
+      if (/불도저/.test(contentOnly)) return { major: '건설장비', mid: '굴착장비', minor: '불도저' };
+      if (/지게차/.test(contentOnly)) return { major: '건설장비', mid: '하역운반장비', minor: '지게차' };
+      if (/페이로더|로더/.test(contentOnly)) return { major: '건설장비', mid: '하역운반장비', minor: '페이로더' };
+      if (/덤프트럭/.test(contentOnly)) return { major: '건설장비', mid: '하역운반장비', minor: '덤프트럭' };
+      if (/펌프카/.test(contentOnly)) return { major: '건설장비', mid: '타설장비', minor: '펌프카' };
+      if (/레미콘/.test(contentOnly)) return { major: '건설장비', mid: '타설장비', minor: '레미콘믹스트럭' };
+      if (/고소작업대/.test(contentOnly)) return { major: '건설장비', mid: '탑승장비', minor: '고소작업대' };
+      if (/고소작업차/.test(contentOnly)) return { major: '건설장비', mid: '탑승장비', minor: '고소작업차' };
+      if (/건설용\s*리프트/.test(contentOnly)) return { major: '건설장비', mid: '탑승장비', minor: '건설용 리프트' };
+      if (/타워크레인/.test(contentOnly)) return { major: '건설장비', mid: '양중장비', minor: '타워크레인' };
+      if (/카고크레인/.test(contentOnly)) return { major: '건설장비', mid: '양중장비', minor: '카고크레인' };
+      if (/호이스트/.test(contentOnly)) return { major: '건설장비', mid: '양중장비', minor: '호이스트' };
+      if (/이동식\s*크레인|크레인/.test(contentOnly) && major !== '작업공도구') {
+        return { major: '건설장비', mid: '양중장비', minor: /타이어/.test(contentOnly) ? '타이어식크레인' : (/무한궤도|크롤러/.test(contentOnly) ? '무한궤도식크레인' : (minor || '타워크레인')) };
       }
-      if (contentOnly.includes('굴착기') || contentOnly.includes('백호')) {
-        return { major: '건설장비', mid: '굴착장비', minor: '굴착기' };
+      if (/분전함|분전반|차단기|누전/.test(contentOnly)) {
+        return { major: '전기시설', mid: '분전반', minor: /누전차단기|차단기/.test(contentOnly) ? '누전차단기(ELCB)' : '가설분전함' };
       }
-      if (contentOnly.includes('펌프카')) {
-        return { major: '건설장비', mid: '생산장비', minor: '펌프카' };
-      }
-      if (contentOnly.includes('크레인') || contentOnly.includes('타워크레인')) {
-        return { major: '건설장비', mid: '양중장비', minor: '타워크레인' };
-      }
-      if (/분전함|분전반|차단기|충전부|누전/.test(contentOnly)) {
-        return {
-          major: '전기시설',
-          mid: '누전차단기',
-          minor: /분전함|분전반/.test(contentOnly) ? '분전함' : '누전차단기'
-        };
+      if (/접지선|접지\s*불량|외함\s*접지/.test(contentOnly) && !/분전함|분전반/.test(contentOnly)) {
+        return { major: '전기시설', mid: '접지시설', minor: '접지선연결' };
       }
       if (/갱폼|gang\s*form|선해체/i.test(fullCtx)) {
-        major = '가시설';
-        mid = '특수거푸집';
-        minor = '갱폼';
+        major = '가시설'; mid = '특수거푸집'; minor = '갱폼';
       } else if (/AL\s*Form|알폼|알루미늄/i.test(fullCtx)) {
-        major = '가시설';
-        mid = '특수거푸집';
-        minor = '알폼';
-      } else if (/거푸집|동바리|전도방지|벽체|유로폼/i.test(fullCtx) && !/전기|전선|누전|분전함|비계|지게차|창호/i.test(r.content || '')) {
+        major = '가시설'; mid = '특수거푸집'; minor = '알폼';
+      } else if (/거푸집|동바리|전도방지|벽체|유로폼/i.test(fullCtx) && !/전기|전선|누전|분전함|비계|지게차|창호/i.test(contentOnly)) {
         if (/전기|비계/.test(major) || /전기|누전|비계/.test(mid)) {
-          major = '가시설';
-          mid = '거푸집/동바리';
+          major = '가시설'; mid = '거푸집/동바리';
           minor = /서포트/.test(fullCtx) ? '파이프서포트' : (/동바리/.test(fullCtx) ? '시스템동바리' : '유로폼');
         }
       }
       return { major, mid, minor };
     }
 
-    const validMajors = ['가시설', '건설장비', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
-    const areaNames = ['건설장비', '작업공도구', '작업발판', 'PPE', '전기시설', '소방시설', '작업장'];
+    const validMajors = ['가시설', '건설장비', '작업공도구', '작업발판', '작업장소(환경)', '전기시설', '소방시설', '개인보호구'];
+    const areaNames = ['건설장비', '작업공도구', '작업발판', '작업장소(환경)', '전기시설', '소방시설', '개인보호구'];
 
-    // 비정상 조합 원천 차단:
-    // 1) 9×9 대분류 영역명이 중분류에 잘못 들어간 경우 (예: 가시설 > 전기시설 > 전등) -> 대분류로 승격
     if (areaNames.includes(mid)) {
       major = mid;
-      if (major === '전기시설') mid = (minor.includes('등') ? '전등시설' : (minor.includes('차단기') ? '누전차단기' : '전선'));
-      else if (major === '소방시설') mid = '소화시설';
-      else if (major === '건설장비') mid = '차량계건설기계';
+      if (major === '전기시설') mid = (minor.includes('등') ? '조명시설' : (minor.includes('차단기') || minor.includes('분전') ? '분전반' : '전선'));
+      else if (major === '소방시설') mid = '임시소방시설';
+      else if (major === '건설장비') mid = '하역운반장비';
     }
 
-    // 2) 건설안전 9×9 표준(가시설 > 거푸집/동바리 / 특수거푸집) 정규화
-    //    '동바리', '거푸집', '거푸집동바리' 등 분리/변형 표기를 모두 '거푸집/동바리'로 통일
-    //    (갱폼·ACS·RCS·SLIP·Gang Form 등은 9×9 표준상 '특수거푸집')
-    const isSpecialForm = /갱폼|gang\s*form|gangform|ACS|RCS|SLIP|슬립폼|선해체|알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${mid} ${r.content || ''}`);
+    const isSpecialForm = /갱폼|gang\s*form|gangform|ACS|RCS|SLIP|슬립폼|선해체|알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${mid} ${contentOnly}`);
     if (isSpecialForm) {
       major = '가시설';
       mid = '특수거푸집';
-      if (/알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${r.content || ''}`)) {
+      if (/알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${contentOnly}`)) {
         minor = '알폼';
       } else {
         minor = (minor && !/거푸집|동바리|파이프서포트|비계/.test(minor)) ? minor : '갱폼';
@@ -994,99 +1043,105 @@
       mid = '거푸집/동바리';
     }
 
-    // 3) 비계 하위에 거푸집이 들어간 경우 (예: 비계 > 거푸집) -> 교정
     if (mid === '비계' && (minor.includes('거푸집') || minor.includes('폼') || /gang|알폼/i.test(minor))) {
       mid = isSpecialForm ? '특수거푸집' : '거푸집/동바리';
-      if (isSpecialForm) minor = /알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${r.content || ''}`) ? '알폼' : '갱폼';
+      if (isSpecialForm) minor = /알폼|al\s*form|alform|알루미늄/i.test(`${minor} ${contentOnly}`) ? '알폼' : '갱폼';
     }
 
-    // 이미 유효한 대/중이 정해져 있다면 즉시 반환
     if (major && mid && validMajors.includes(major)) {
       if (mid === '특수거푸집' && (!minor || /파이프서포트|시스템비계/.test(minor))) {
-        minor = /알폼|al\s*form|alform|알루미늄/i.test(`${r.content || ''}`) ? '알폼' : '갱폼';
+        minor = /알폼|al\s*form|alform|알루미늄/i.test(contentOnly) ? '알폼' : '갱폼';
       }
       return { major, mid, minor: minor || mid };
     }
 
-    // 미지정 레거시 레코드인 경우 키워드로 자동 추론
-    const text = `${r.workGroup || ''} ${r.content || ''} ${r.item || ''} ${r.agent || ''} ${r.workName || ''}`;
+    // 미지정 레거시 레코드 추론 (건설안전 9×9 개선(1)(2).jpg 기준)
+    const text = `${r.workGroup || ''} ${contentOnly} ${r.item || ''} ${r.agent || ''} ${r.workName || ''}`;
     if (/갱폼|gang\s*form|gangform|특수거푸집|선해체|알폼|al\s*form|alform|알루미늄/i.test(text)) {
-      major = '가시설';
-      mid = '특수거푸집';
-      minor = /알폼|al\s*form|alform|알루미늄/i.test(text) ? '알폼' : '갱폼';
-    } else if (text.includes('전등') || text.includes('투광등') || text.includes('조도') || text.includes('조명')) {
-      major = '전기시설';
-      mid = '전등시설';
-      minor = minor || '투광등';
-    } else if (text.includes('누전차단기') || text.includes('멀티작업선') || text.includes('접지')) {
-      major = '전기시설';
-      if (text.includes('누전차단기')) mid = '누전차단기';
-      else if (text.includes('접지')) mid = '접지시설';
-      else mid = '전선';
-      minor = minor || (text.includes('누전차단기') ? '누전차단기' : '가설전선/이동릴선');
-    } else if (text.includes('소화기') || text.includes('화재')) {
-      major = '소방시설';
-      mid = '소화시설';
-      minor = minor || '분말소화기';
-    } else if (text.includes('펌프카') || text.includes('크레인') || text.includes('지게차') || text.includes('굴착기')) {
-      major = '건설장비';
-      if (text.includes('펌프카')) { mid = '생산장비'; minor = '펌프카'; }
-      else if (text.includes('크레인')) { mid = '양중장비'; minor = minor || '타워크레인'; }
-      else if (text.includes('굴착기')) { mid = '굴착장비'; minor = '굴착기'; }
-      else if (text.includes('지게차')) { mid = '운반장비'; minor = '지게차'; }
-    } else if (text.includes('말비계') || text.includes('사다리') || text.includes('우마')) {
-      major = '작업발판';
-      mid = text.includes('사다리') ? '이동식 사다리' : '말비계';
-      minor = minor || mid;
-    } else if (text.includes('안전대') && (text.includes('미착용') || text.includes('보호구') || text.includes('체결'))) {
+      return { major: '가시설', mid: '특수거푸집', minor: /알폼|al\s*form|alform|알루미늄/i.test(text) ? '알폼' : '갱폼' };
+    }
+    if (/굴착기|불도저/.test(text)) return { major: '건설장비', mid: '굴착장비', minor: text.includes('불도저') ? '불도저' : '굴착기' };
+    if (/어스드릴|오거|항타|항발/.test(text)) return { major: '건설장비', mid: '천공장비', minor: text.includes('어스드릴') ? '어스드릴' : (text.includes('오거') ? '오거' : '항타/항발기') };
+    if (/지게차|페이로더|덤프트럭|화물자동차|트레일러|컨베이어/.test(text)) {
+      const mMin = ['지게차', '페이로더', '덤프트럭', '화물자동차', '트레일러', '컨베이어'].find(k => text.includes(k)) || '지게차';
+      return { major: '건설장비', mid: '하역운반장비', minor: mMin };
+    }
+    if (/타워크레인|타이어식크레인|무한궤도식크레인|천장주행크레인|겐트리크레인|호이스트|카고크레인|크레인/.test(text)) {
+      const mMin = ['타워크레인', '타이어식크레인', '무한궤도식크레인', '천장주행크레인', '겐트리크레인', '호이스트', '카고크레인'].find(k => text.includes(k)) || '타워크레인';
+      return { major: '건설장비', mid: '양중장비', minor: mMin };
+    }
+    if (/건설용\s*리프트|고소작업대|고소작업차|곤돌라/.test(text)) {
+      const mMin = text.includes('고소작업대') ? '고소작업대' : (text.includes('고소작업차') ? '고소작업차' : (text.includes('곤돌라') ? '곤돌라' : '건설용 리프트'));
+      return { major: '건설장비', mid: '탑승장비', minor: mMin };
+    }
+    if (/펌프카|레미콘/.test(text)) return { major: '건설장비', mid: '타설장비', minor: text.includes('펌프카') ? '펌프카' : '레미콘믹스트럭' };
+    if (/와이어로프|체인슬링|벨트슬링|슬링벨트|라운드슬링|샤클|클램프|턴버클|양중함|체인블럭|레버블럭/.test(text)) {
+      const mMin = ['와이어로프 슬링', '체인슬링', '벨트슬링', '라운드슬링', '샤클', '클램프', '턴버클', '양중함', '체인블럭', '레버블럭'].find(k => text.includes(k.replace(' 슬링', ''))) || '벨트슬링';
+      return { major: '작업공도구', mid: '양중기구', minor: mMin };
+    }
+    if (/전기용접기|가스용접기|산소절단기|토치|용접건/.test(text)) {
+      const mMin = ['전기용접기', '가스용접기', '산소절단기', '토치', '용접건'].find(k => text.includes(k)) || '전기용접기';
+      return { major: '작업공도구', mid: '화기', minor: mMin };
+    }
+    if (/고속절단기|각도절단기|원형톱|직소|전동체인톱|철근절단기|전기컷쏘|파이프머신|콘크리트\s*절단기/.test(text)) {
+      const mMin = ['고속절단기', '각도절단기', '원형톱', '직소', '전동체인톱', '철근절단기', '전기컷쏘', '파이프머신'].find(k => text.includes(k)) || '고속절단기';
+      return { major: '작업공도구', mid: '절단기구', minor: mMin };
+    }
+    if (/핸드드릴|핸드그라인더|그라인더|전동드릴|철근절곡기|코어드릴|탁상그라인더/.test(text)) {
+      const mMin = text.includes('그라인더') ? '핸드그라인더' : (text.includes('절곡기') ? '철근절곡기' : (text.includes('코어드릴') ? '코어드릴' : '핸드드릴'));
+      return { major: '작업공도구', mid: '회전기구', minor: mMin };
+    }
+    if (/타카|타정자동총/.test(text)) return { major: '작업공도구', mid: '타정기구', minor: text.includes('타정자동총') ? '타정자동총' : '타카' };
+    if (/전등|투광등|조도|조명|소켓/.test(text)) return { major: '전기시설', mid: '조명시설', minor: minor || '투광등' };
+    if (/분전반|분전함|누전차단기|차단기/.test(text)) return { major: '전기시설', mid: '분전반', minor: /차단기/.test(text) ? '누전차단기(ELCB)' : '가설분전함' };
+    if (/접지선|접지/.test(text)) return { major: '전기시설', mid: '접지시설', minor: minor || '접지선연결' };
+    if (/가설전선|이동전선|릴선|전선/.test(text)) return { major: '전기시설', mid: '전선', minor: minor || '가설배선' };
+    if (/소화기|화재|불티/.test(text)) return { major: '소방시설', mid: /불티/.test(text) ? '불티비산방지' : '임시소방시설', minor: minor || (/불티/.test(text) ? '불티비산방지포(방포)' : '분말소화기(ABC)') };
+    if (/말비계|사다리|우마|이동식틀비계|달비계/.test(text)) {
+      const mMid = text.includes('사다리') ? '사다리' : (text.includes('달비계') ? '달비계' : (text.includes('이동식틀비계') ? '이동식틀비계' : '말비계'));
+      return { major: '작업발판', mid: mMid, minor: minor || mMid };
+    }
+    if (text.includes('안전대') && (text.includes('미착용') || text.includes('보호구') || text.includes('체결'))) {
       if (text.includes('부착설비') || text.includes('생명줄') || text.includes('걸이')) {
-        major = '가시설';
-        mid = '안전시설';
-        minor = '안전대걸이시설';
-      } else {
-        major = 'PPE';
-        mid = '안전대';
-        minor = minor || '안전대';
+        return { major: '가시설', mid: '안전시설', minor: '추락방지시설' };
       }
-    } else if (text.includes('동바리') || text.includes('서포트')) {
-      major = '가시설';
-      mid = '거푸집/동바리';
-      minor = minor || (text.includes('시스템') ? '시스템동바리' : '파이프서포트');
-    } else if (text.includes('거푸집') || text.includes('알폼') || text.includes('유로폼') || text.includes('전도방지') || text.includes('벽체')) {
-      major = '가시설';
-      mid = '거푸집/동바리';
-      minor = minor || (text.includes('알폼') ? '알폼' : '유로폼');
-    } else if (text.includes('난간') || text.includes('개구부') || text.includes('방호선반') || text.includes('방망') || text.includes('낙하물방지')) {
-      major = '가시설';
-      mid = '안전시설';
-      if (text.includes('난간')) minor = minor || '안전난간';
-      else if (text.includes('덮개') || text.includes('개구부')) minor = minor || '덮개';
-      else minor = minor || '낙하방지시설';
+      return { major: '개인보호구', mid: '안전대', minor: minor || '전체식하네스' };
+    }
+    if (text.includes('안전모')) return { major: '개인보호구', mid: '안전모', minor: text.includes('턱끈') ? '턱끈체결' : '안전모모체' };
+    if (text.includes('동바리') || text.includes('서포트')) {
+      return { major: '가시설', mid: '거푸집/동바리', minor: minor || (text.includes('시스템') ? '시스템동바리' : '파이프서포트') };
+    }
+    if (text.includes('거푸집') || text.includes('유로폼') || text.includes('전도방지') || text.includes('벽체')) {
+      return { major: '가시설', mid: '거푸집/동바리', minor: minor || '유로폼' };
+    }
+    if (text.includes('난간') || text.includes('개구부') || text.includes('방호선반') || text.includes('방망') || text.includes('낙하물방지')) {
+      return { major: '가시설', mid: '안전시설', minor: /낙하|방호선반/.test(text) ? '낙하방지시설' : '추락방지시설' };
     }
 
     major = major || r.kind || '가시설';
     mid = mid || r.item || '비계';
     minor = minor || r.agent || '시스템비계';
-
     return { major, mid, minor };
   }
 
-  // ── 2. 개정 대장 열 정의 (총 31개 열) ──
+  // ── 2. 개정 대장 열 정의 (장소 분류 + 공종(중)/(소) + 건설안전 9×9 개선 반영) ──
   // [그룹, 항목명, 너비, 드롭다운 목록키, 값 추출 함수]
   const COLS = [
     ['No', 'No', 5, null, (r, i) => i + 1],
     
-    // [부적합 사항] 사진 1 & 사진 2 및 사진 요약(배너)
+    // [부적합 사항] 사진 1 & 사진 2, 사진 요약(배너), 등급, 내용, 협력사, 장소/위치 + 장소 분류(표준분류/장소.png 20종)
     ['부적합 사항', '사진 1', 18, null, () => ''],
     ['부적합 사항', '사진 2', 18, null, () => ''],
     ['부적합 사항', '사진 요약(배너)', 22, null, r => resolvePhotoBanner(r)],
     ['부적합 사항', '부적합 등급', 12, 'severities', r => r.severity || '중부적합'],
     ['부적합 사항', '내용', 28, null, r => cleanContent(r.content || '')],
     ['부적합 사항', '협력사', 14, null, r => cleanSubcontractor(r.subcontractor)],
-    ['부적합 사항', '장소/위치', 14, 'locations', r => cleanLocation(r.location, r.content)],
+    ['부적합 사항', '장소/위치', 16, null, r => cleanLocation(r.location, r.content)],
+    ['부적합 사항', '장소 분류', 14, 'locationCategories', r => resolveLocationCategory(r)],
 
-    // [공종·작업방법] 하나로 묶고 9×9 반영 ("작업명" -> "작업방법")
-    ['공종·작업방법', '공종', 15, 'workGroups', r => cleanWorkGroup(r.workGroup, r.content)],
+    // [공종·작업방법] 작업분류표.jpg 기반 공종(중)/공종(소) + 건설안전 9×9 개선(1).jpg 작업방법
+    ['공종·작업방법', '공종(중)', 13, 'workGroupsMid', r => resolveWorkGroupHierarchy(r).mid],
+    ['공종·작업방법', '공종(소)', 18, 'workGroups', r => resolveWorkGroupHierarchy(r).minor],
     ['공종·작업방법', '작업방법', 16, 'workMethods', r => resolveWorkMethod(r)],
 
     // [부적합 분류] 유형과 기인물(대, 중, 소)
@@ -1231,11 +1286,11 @@
     '작업공도구': {
       '화기': ['전기용접기', '가스용접기', '산소절단기', '토치', '용접건'],
       '절단기구': ['고속절단기', '각도절단기', '원형톱', '직소', '전동체인톱', '자동목재톱', '밴드톱', '철근절단기', '전기컷쏘', '파이프머신', '콘크리트 절단기', '보도블럭 절단기'],
-      '회전기구': ['핸드드릴', '핸드그라인더', '전동드릴/드라이버', '철근절곡기', '믹서드릴', '원형사포', '탁상그라인더', '탁상드릴', '코어드릴', '마그네틱드릴', '콘크리트 샌딩기', '파이프홀가공기'],
+      '회전기구': ['핸드드릴', '핸드그라인더', '전동드릴/드라이버', '철근절곡기', '믹서드릴', '원형사포', '탁상그라인더', '탁상드릴', '코어드릴', '마그네틱드릴', '콘크리트 샌딩기', '파이프홈가공기'],
       '압력기구': ['압력용기', '해머드릴', '고속살수기', '공기압축기'],
-      '타정기구': ['타카', '인슬레이션 타카', '타징자동총'],
+      '타정기구': ['타카', '인슐레이션 타카', '타정자동총'],
       '양중기구': ['와이어로프 슬링', '체인슬링', '벨트슬링', '라운드슬링', '샤클', '클램프', '턴버클', '마스터링', '리프팅 클러치', '양중함', '양중디바이스', '체인블럭', '레버블럭'],
-      '운반기구': ['손동력카트', '전동샤키', '핸드자키'],
+      '운반기구': ['전동팔레트', '전동쟈키', '핸드쟈키'],
       '다짐기구': ['콘크리트 다짐기', '흙다짐기', '다짐롤러'],
       '기타': ['기타']
     },
@@ -1316,12 +1371,14 @@
         productTypes: ['공동주택', '오피스/지식산업센터', '물류센터/공장', '플랜트/산업설비', '토목/인프라', '기타'],
         stages: ['착공 및 토공사 단계', '지하 골조 공사 단계', '지상 골조 및 외부 가설 단계', '마감 및 기계전기 설비 단계', '준공 및 부대토목 단계'],
         locations: ACCIDENT_LOCATIONS,
+        locationCategories: ACCIDENT_LOCATIONS,
         types: ACCIDENT_TYPES,
         agentsMajor: add('agentMajor', majorList),
         agentsMid: add('agentMid', midList),
         agentsMinor: add('agentMinor', minorList),
         conditions: add('condition', (tax && tax.unsafeConditions && tax.unsafeConditions.list) || []),
         actions: add('action', (tax && tax.unsafeActions && tax.unsafeActions.list) || []),
+        workGroupsMid: WORK_GROUPS_MID,
         workGroups: uniq([...WORK_GROUPS, ...(custom.workGroup || [])]),
         workMethods: uniq([...WORK_METHODS_9X9, ...(custom.workMethod || []), ...(custom.workName || [])]),
         agents: add('agent', allItems.flatMap(i => i.agents || [])),
@@ -1341,7 +1398,9 @@
     productTypes: '상품유형',
     stages: '표준공정단계',
     locations: '사고장소',
-    workGroups: '공종',
+    locationCategories: '장소 분류',
+    workGroupsMid: '공종(중)',
+    workGroups: '공종(소)',
     workMethods: '작업방법',
     types: '유형(발생형태)',
     agentsMajor: '기인물(대)',
@@ -1587,11 +1646,14 @@
     ACCIDENT_LOCATIONS,
     ACCIDENT_TYPES,
     WORK_METHODS_9X9,
+    WORK_GROUPS_MID,
     WORK_GROUPS,
     WORK_GROUPS_9X9: WORK_GROUPS,
     INSPECTOR_OPINION_TYPES,
     resolveAgentHierarchy,
     resolveWorkMethod,
+    resolveLocationCategory,
+    resolveWorkGroupHierarchy,
     mapAccidentType,
     markCause,
     getInspectorOpinionType,

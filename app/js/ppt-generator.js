@@ -1519,6 +1519,7 @@
       photoBannerTitle,
       photoBanner,
       photo2Banner,
+      photoLayoutRatio: r.photoLayoutRatio || 'auto',
       interviewAuthor: r.interviewAuthor || '시공관리자 및 근로자',
       interviewAuthorTitle,
       interviewOpinion,
@@ -2324,8 +2325,9 @@
 
     // 좌측 사진 영역 (PPTX fullPhotoBox와 동일 좌표: x=0.3064in ~ 8.1796in, w=7.8732in, h=4.4589in)
     const fullPhotoBox = { x: 0.3064, y: 2.8434, w: 7.8732, h: 4.4589 };
+    const effectiveRatio = options.photoLayoutRatio || data.photoLayoutRatio || 'auto';
     const twoPhotoBoxes = (hasPhoto1 && hasPhoto2)
-      ? computeTwoPhotos(fullPhotoBox, photo1Dims, photo2Dims, 0.0976)
+      ? computeTwoPhotos(fullPhotoBox, photo1Dims, photo2Dims, 0.0976, effectiveRatio)
       : null;
     const fullPhotoCssRect = `left:${pctX(fullPhotoBox.x)};top:${pctY(fullPhotoBox.y)};width:${pctW(fullPhotoBox.w)};height:${pctH(fullPhotoBox.h)};`;
     const onImg2ErrorRecoverFull = `this.onerror=null;var p2=this.parentElement;if(p2)p2.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p1=root&&root.querySelector('[data-sheet-photo=\\'1\\']');if(p1){p1.style.left='${pctX(fullPhotoBox.x)}';p1.style.top='${pctY(fullPhotoBox.y)}';p1.style.width='${pctW(fullPhotoBox.w)}';p1.style.height='${pctH(fullPhotoBox.h)}';}`;
@@ -2567,8 +2569,9 @@ ${renderInterviewOpinionBoxHTML(data, pt, tplEngine)}
     );
 
     const minorFullBox = { x: 0.8685, y: 3.2207, w: leftBannerW, h: 4.0409 };
+    const effectiveMinorRatio = options.photoLayoutRatio || data.photoLayoutRatio || 'auto';
     const minorTwoBoxes = (hasPhoto1 && hasPhoto2 && !isPhoto2RiskDoc)
-      ? computeTwoPhotos(minorFullBox, photo1Dims, photo2Dims, 0.0884)
+      ? computeTwoPhotos(minorFullBox, photo1Dims, photo2Dims, 0.0884, effectiveMinorRatio)
       : null;
     const onMinorImg2Err = `this.onerror=null;var p2=this.parentElement;if(p2)p2.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p1=root&&root.querySelector('[data-sheet-photo=\\'1\\']');if(p1){p1.style.left='${pctX(minorFullBox.x)}';p1.style.top='${pctY(minorFullBox.y)}';p1.style.width='${pctW(minorFullBox.w)}';p1.style.height='${pctH(minorFullBox.h)}';}`;
     const onMinorImg1Err = `this.onerror=null;var p1=this.parentElement;if(p1)p1.style.display='none';var root=this.closest('#jangpyoSlidePreview');var p2=root&&root.querySelector('[data-sheet-photo=\\'2\\']');if(p2){p2.style.left='${pctX(minorFullBox.x)}';p2.style.top='${pctY(minorFullBox.y)}';p2.style.width='${pctW(minorFullBox.w)}';p2.style.height='${pctH(minorFullBox.h)}';}`;

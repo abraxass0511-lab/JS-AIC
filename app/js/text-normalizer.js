@@ -356,42 +356,174 @@ export function normalizeKoreanSpacing(str = '') {
 }
 
 /**
- * 표준 작업분류표(분류표 인자/작업분류표.jpg) 전체 공식 공종 목록
+ * 표준 작업분류표(표준분류/작업분류표.jpg) 공종(중) → 공종(소) 공식 계층 트리
  */
-export const OFFICIAL_WORK_GROUPS = [
-  // 공통공사
-  '현장관리', '청소',
-  // 건축공사
-  '가설공사(안전시설물)', '가설공사(기타)', '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(건설장비)',
-  '비계공사', '철거공사(구조물)', '철거공사(석면)', 'PC공사', '거푸집동바리공사', '거푸집공사(갱폼)', '거푸집공사(특수폼: ACS, RCS등)',
-  '철근공사', '철골공사', '데크플레이트공사', '조적공사', '미장공사', '견출공사', '방수공사', '타일공사', '석공사',
-  '커튼월공사', '창호공사(STL)', '창호공사(AL)', '창호공사(PL)', '창호공사(목창호)', '창호공사(기타)',
-  '외장판넬공사', '유리공사', '코킹공사', '수장공사', '인테리어공사', '흡음/내화/단열공사', '금속공사', '잡철공사',
-  '지붕/홈통공사', '도장공사', '가구공사', '도배공사', '차별화공사', '기타마감공사', '건축공사(기타)',
-  // 전기공사
-  '가설전기공사', '수변전설비공사', '전선Tray, Duct설치공사', 'Busduct설치공사', 'MCC분전반설치공사',
-  '전선관공사', '전선설치공사', '전등공사', '전열공사', '접지공사', '피뢰침공사', '전기공사(기타)',
-  '장비설치공사(전기)', '유도등공사', '통신공사', '엘리베이터공사', '에스컬레이터공사', '자동제어공사',
-  '전력간선공사', '자동화재탐지설비공사', '소방설비공사(기타)', '방송설비공사', 'CCTV공사',
-  '전력제어공사', '동력공사', '예비전력설비공사',
-  // 설비공사
-  '설비공사(기타)', '배관공사(옥외)', '배관공사(기계실)', '배관공사(냉난방)', '배관공사(소화)', '배관공사(가스)', '배관공사(위생)', '배관공사(기타)',
-  '장비설치공사(설비)', '일반덕트공사', '위생기구설치공사', '보온공사', '가스, PCW공사', '지열공사', '시운전/점검',
-  '정화조공사', '재생에너지설비공사', '수영장/사우나설비공사', '에어컨/환기공사', '모듈공사', '특수설비공사',
-  '시스템실링공사', '어세스플로어공사', '파이프렉공사',
-  // 플랜트공사
-  '배관공사', '터빈공사(가스)', '터빈공사(증기)', '탱크공사', '보일러공사', '탈황설비공사', '집진설비공사',
-  '암모니아설비공사', '석탄이송설비공사', '석탄저장설비공사', '석탄미분설비공사', '연돌공사', '보조보일러공사',
-  // 토목공사
-  '지장물이설공사', '터파기공사', '발파공사', '부지정지공사', '사면안정화공사', '연약지반처리공사',
-  '가시설공사', '흙막이/차수공사', '배수공사', '기설말뚝공사', '현장타설말뚝공사', '기타말뚝공사',
-  '배수및관로공사', '오수공사', '토목부대설비공사', '공동구공사', '옹벽공사',
-  '포장공사(아스팔트)', '포장공사(콘크리트)', '포장공사(기타)',
-  // 조경공사
-  '조경식재공사', '조경시설물공사',
-  // 기타
-  '기타'
+export const WORK_GROUP_TREE = {
+  '공통공사': ['현장관리', '청소'],
+  '건축공사': [
+    '가설공사(안전시설물)', '가설공사(기타)', '가설공사(타워크레인)', '가설공사(건설용리프트)', '가설공사(건설장비)',
+    '비계공사', '철거공사(구조물)', '철거공사(석면)', 'PC공사', '거푸집동바리공사', '거푸집공사(갱폼)', '거푸집공사(특수폼: ACS, RCS등)',
+    '철근공사', '철골공사', '데크플레이트공사', '조적공사', '미장공사', '견출공사', '방수공사', '타일공사', '석공사',
+    '커튼월공사', '창호공사(STL)', '창호공사(AL)', '창호공사(PL)', '창호공사(목창호)', '창호공사(기타)',
+    '외장판넬공사', '유리공사', '코킹공사', '수장공사', '인테리어공사', '흡음/내화/단열공사', '금속공사', '잡철공사',
+    '지붕/홈통공사', '도장공사', '가구공사', '도배공사', '차별화공사', '기타마감공사', '건축공사(기타)'
+  ],
+  '전기공사': [
+    '가설전기공사', '수변전설비공사', '전선Tray, Duct설치공사', 'Busduct설치공사', 'MCC분전반설치공사',
+    '전선관공사', '전선설치공사', '전등공사', '전열공사', '접지공사', '피뢰침공사', '전기공사(기타)',
+    '장비설치공사(전기)', '유도등공사', '통신공사', '엘리베이터공사', '에스컬레이터공사', '자동제어공사',
+    '전력간선공사', '자동화재탐지설비공사', '소방설비공사(기타)', '방송설비공사', 'CCTV공사',
+    '전력제어공사', '동력공사', '예비전력설비공사'
+  ],
+  '설비공사': [
+    '설비공사(기타)', '배관공사(옥외)', '배관공사(기계실)', '배관공사(냉난방)', '배관공사(소화)', '배관공사(가스)', '배관공사(위생)', '배관공사(기타)',
+    '장비설치공사(설비)', '일반덕트공사', '위생기구설치공사', '보온공사', '가스, PCW공사', '지열공사', '시운전/점검',
+    '정화조공사', '재생에너지설비공사', '수영장/사우나설비공사', '에어컨/환기공사', '모듈공사', '특수설비공사',
+    '시스템실링공사', '어세스플로어공사', '파이프렉공사'
+  ],
+  '플랜트공사': [
+    '배관공사', '터빈공사(가스)', '터빈공사(증기)', '탱크공사', '보일러공사', '탈황설비공사', '집진설비공사',
+    '암모니아설비공사', '석탄이송설비공사', '석탄저장설비공사', '석탄미분설비공사', '연돌공사', '보조보일러공사', '시운전/점검'
+  ],
+  '토목공사': [
+    '지장물이설공사', '터파기공사', '발파공사', '부지정지공사', '사면안정화공사', '연약지반처리공사',
+    '가시설공사', '흙막이/차수공사', '배수공사', '기설말뚝공사', '현장타설말뚝공사', '기타말뚝공사',
+    '배수및관로공사', '지열공사', '오수공사', '토목부대설비공사', '공동구공사', '옹벽공사',
+    '포장공사(아스팔트)', '포장공사(콘크리트)', '포장공사(기타)'
+  ],
+  '조경공사': ['조경식재공사', '조경시설물공사'],
+  '기타': ['기타']
+};
+
+export const WORK_GROUP_MID_LIST = Object.keys(WORK_GROUP_TREE);
+
+/**
+ * 표준 작업분류표(분류표 인자/작업분류표.jpg) 전체 공식 공종(소) 목록
+ */
+export const OFFICIAL_WORK_GROUPS = [...new Set(Object.values(WORK_GROUP_TREE).flat())];
+
+const _WORK_MINOR_TO_MID = (() => {
+  const map = new Map();
+  for (const [mid, minors] of Object.entries(WORK_GROUP_TREE)) {
+    for (const m of minors) {
+      if (!map.has(m)) map.set(m, mid);
+    }
+  }
+  return map;
+})();
+
+/**
+ * 공종(소) 또는 입력값으로부터 표준 작업분류표 기준 공종(중) 자동 판별
+ */
+export function resolveWorkGroupMid(workGroupMinor = '', rawMid = '', contextText = '') {
+  const midClean = String(rawMid || '').trim();
+  if (midClean && WORK_GROUP_MID_LIST.includes(midClean)) return midClean;
+  const minorClean = String(workGroupMinor || '').trim();
+  if (minorClean && WORK_GROUP_MID_LIST.includes(minorClean)) return minorClean;
+  if (minorClean) {
+    // 중복 소분류(시운전/점검, 지열공사)는 문맥으로 중분류 구분
+    if (minorClean === '시운전/점검' && /플랜트|터빈|보일러|탈황|집진/.test(contextText)) return '플랜트공사';
+    if (minorClean === '지열공사' && /토목|천공|굴착|지반/.test(contextText)) return '토목공사';
+    const exact = _WORK_MINOR_TO_MID.get(minorClean);
+    if (exact) return exact;
+    const mappedMinor = mapToStandardWorkGroup(minorClean, contextText);
+    if (mappedMinor && _WORK_MINOR_TO_MID.has(mappedMinor)) return _WORK_MINOR_TO_MID.get(mappedMinor);
+  }
+  const comb = `${midClean} ${minorClean} ${contextText}`;
+  if (/가설전기|분전반|분전함|수변전|전선|전등|접지|피뢰|통신|CCTV|엘리베이터|에스컬레이터/.test(comb)) return '전기공사';
+  if (/덕트|배관|보온|위생기구|정화조|에어컨|환기|냉난방/.test(comb)) return '설비공사';
+  if (/터빈|보일러|탈황|집진|암모니아|석탄|연돌|플랜트/.test(comb)) return '플랜트공사';
+  if (/흙막이|터파기|발파|지장물|말뚝|옹벽|포장|공동구|배수및관로|오수|사면|토목/.test(comb)) return '토목공사';
+  if (/조경|식재/.test(comb)) return '조경공사';
+  if (/현장관리|청소/.test(comb)) return '공통공사';
+  if (!comb.trim()) return '';
+  return '건축공사';
+}
+
+/**
+ * 표준 사고장소 분류 (표준분류/장소.png 공식 20개 항목)
+ */
+export const STANDARD_LOCATION_CATEGORIES = [
+  '건축물', '본구조물', '가설물', '기계·기구', '설비·장치',
+  '적재물', '옥상·지붕', '계단·복도', '엘리베이터홀', '천장 내부',
+  '탱크 내부', '실내 작업장', '지하실', '실외 작업장', '외부',
+  '도로', '야적장', '수상', '수중', '공중'
 ];
+
+/**
+ * 장소/위치 및 부적합 내용으로부터 표준분류/장소.png 기준 장소 분류 추론 (Qwen AI 미선택 시 백업)
+ */
+export function inferLocationCategory(rawCategory = '', location = '', content = '') {
+  const cat = String(rawCategory || '').trim();
+  if (cat && STANDARD_LOCATION_CATEGORIES.includes(cat)) return cat;
+  if (cat) {
+    const snapped = snapToStandardTaxonomy(cat, STANDARD_LOCATION_CATEGORIES, 0.72, '');
+    if (snapped) return snapped;
+  }
+  const loc = String(location || '').trim();
+  const txt = `${loc} ${content || ''}`;
+  if (!txt.trim()) return '';
+  if (/엘리베이터|E\/V|EV\s*홀|승강기\s*(?:홀|피트|통로)/i.test(txt)) return '엘리베이터홀';
+  if (/옥상|지붕|PH\b|최상층\s*지붕|지붕\s*단부/i.test(txt)) return '옥상·지붕';
+  if (/계단|복도|통로|경사로/.test(txt)) return '계단·복도';
+  if (/천장\s*내부|천정\s*내부|천장\s*상부/.test(txt)) return '천장 내부';
+  if (/탱크|저수조|정화조|맨홀|밀폐/.test(txt)) return '탱크 내부';
+  if (/지하|B\d+F?|지하실|피트|PIT/i.test(txt)) return '지하실';
+  if (/야적장|자재\s*적치|적치장/.test(txt)) return '야적장';
+  if (/적재물|적재\s*자재/.test(txt)) return '적재물';
+  if (/도로|차도|진입로|가설도로/.test(txt)) return '도로';
+  if (/수중|잠수/.test(txt)) return '수중';
+  if (/수상|바지선|부잔교|해상/.test(txt)) return '수상';
+  if (/공중|타워크레인\s*상부|달비계|고공/.test(txt)) return '공중';
+  if (/비계|동바리|거푸집|갱폼|알폼|작업발판|가설|말비계|워킹타워/.test(txt)) return '가설물';
+  if (/크레인|지게차|굴착기|펌프카|고소작업대|리프트|그라인더|절단기|용접기/.test(txt)) return '기계·기구';
+  if (/분전반|분전함|배전반|수전반|설비|배관|덕트|전기/.test(txt)) return '설비·장치';
+  if (/외부|외벽|후면|전면|측면|동측|서측|남측|북측/.test(loc)) return '외부';
+  if (/실외|옥외|지상\s*작업장/.test(txt)) return '실외 작업장';
+  if (/실내|세대|내부|내벽/.test(txt)) return '실내 작업장';
+  if (/보\s*상부|슬래브|기둥|옹벽|벽체|코어|골조/.test(txt)) return '본구조물';
+  return '건축물';
+}
+
+/**
+ * 건설안전 9×9 개선(1).jpg 공식 3번 열 작업방법 (9종)
+ */
+export const WORK_METHODS_9X9_IMPROVED = [
+  '굴착작업', '하역운반작업', '양중작업', '중량물취급작업',
+  '설치해체작업', '가공조립작업', '운전조정작업', '고소작업', '기타'
+];
+
+/**
+ * 구버전 작업방법('설치조립작업','해체작업','밀폐공간작업' 등) 및 원문을 건설안전 9×9 개선(1).jpg 기준 9종으로 정규화
+ */
+export function normalizeWorkMethod9x9(raw = '', workGroup = '', content = '', location = '') {
+  const s = String(raw || '').trim();
+  const wg = String(workGroup || '').trim();
+  // 2인자 호출 normalizeWorkMethod9x9(raw, ctx) 및 4인자 호출 모두 안전 지원
+  const ctx = `${String(content || '').trim()} ${wg} ${s}`.trim();
+  const textNoLocExc = ctx.replace(/흙막이\s*(?:상부|상단|하부|주변|근생|구간)\s*[:：]?/g, ' ');
+  const isElec = wg === '가설전기공사' || /가설전기|분전반|분전함|차단기|접지선|가설전선|전등|소켓|투광등|충전부|심선/.test(ctx);
+  const isGenuineExc = /굴착\s*작업|터파기|토류판|어스앙카|사면\s*붕괴|굴착면|법면|지반\s*굴착/.test(textNoLocExc);
+
+  if (s && WORK_METHODS_9X9_IMPROVED.includes(s)) {
+    if (s === '굴착작업' && !isGenuineExc && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${location} ${ctx}`)) {
+      return isElec ? '설치해체작업' : '고소작업';
+    }
+    return s;
+  }
+  // 구버전 명칭 → 건설안전 9×9 개선(1).jpg 공식 명칭 매핑
+  if (s === '설치조립작업' || s === '해체작업') return '설치해체작업';
+  if (s === '밀폐공간작업' || s === '협소공간작업') return '기타';
+  if (/하역|운반|상차|하차|지게차/.test(ctx)) return '하역운반작업';
+  if (/양중|크레인|슬링|샤클|인양|호이스트|유도로프/.test(ctx)) return '양중작업';
+  if (isGenuineExc) return '굴착작업';
+  if (/중량물|인력운반/.test(ctx)) return '중량물취급작업';
+  if (/운전|조정|장비\s*주행|후진|유도원|신호/.test(ctx)) return '운전조정작업';
+  if (/가공|절단|용접|철근\s*조립|목공|그라인더/.test(ctx)) return '가공조립작업';
+  if (/비계|발판|고소|난간|개구부|추락|사다리|단부|달비계|안전대|생명줄/.test(ctx)) return '고소작업';
+  if (isElec || /설치|해체|철거|거푸집|동바리|조립/.test(ctx)) return '설치해체작업';
+  return '기타';
+}
 
 const INVALID_WORK_GROUP_ALIASES = new Set([
   '양중 및 운반작업', '양중및운반작업', '양중작업', '양중공사', '운반작업',
@@ -1173,9 +1305,57 @@ export const SafeGuidelineMemory = (() => {
     };
   };
 
+  const findCandidates = ({ rawLaw = '', lawBody = '', content = '', workGroup = '', type = '', limit = 3 } = {}) => {
+    loadOnce();
+    if (!store.size) return [];
+    const code = extractGuidelineCode(rawLaw);
+    const ctxText = [workGroup, type, content, rawLaw].filter(Boolean).join(' ');
+    const ctxDomain = inferSafetyDomain(`${ctxText} ${lawBody}`);
+    const queryTokens = tokenize(`${ctxText} ${lawBody}`);
+    const scored = [];
+
+    for (const entry of store.values()) {
+      if (!entry || !entry.title) continue;
+      if (ctxDomain && entry.domain && areSafetyDomainsConflicting(entry.domain, ctxDomain, entry.title, `${ctxText} ${lawBody}`)) {
+        continue;
+      }
+      let score = 0;
+      if (code && entry.code && code === entry.code) score += 120;
+      if (ctxDomain && entry.domain && entry.domain === ctxDomain) score += 35;
+      const entryTokens = tokenize(`${entry.title} ${entry.body || ''}`);
+      if (queryTokens.size >= 2 && entryTokens.size >= 2) {
+        const sim = jaccard(queryTokens, entryTokens);
+        score += Math.round(sim * 100);
+      }
+      if (score >= 20) {
+        scored.push({
+          key: entry.key,
+          code: entry.code || '',
+          title: entry.title,
+          body: entry.body || '',
+          domain: entry.domain || '',
+          count: entry.count || 1,
+          score
+        });
+      }
+    }
+    return scored
+      .sort((a, b) => b.score - a.score || (b.count || 1) - (a.count || 1))
+      .slice(0, Math.max(1, limit));
+  };
+
   const getAll = () => {
     loadOnce();
-    return Array.from(store.values());
+    return Array.from(store.values())
+      .sort((a, b) => (b.count || 1) - (a.count || 1) || (b.updatedAt || 0) - (a.updatedAt || 0));
+  };
+
+  const remove = (key) => {
+    loadOnce();
+    if (!key || !store.has(key)) return false;
+    store.delete(key);
+    persist();
+    return true;
   };
 
   const clear = () => {
@@ -1186,7 +1366,7 @@ export const SafeGuidelineMemory = (() => {
     } catch (_) { /* ignore */ }
   };
 
-  return { learn, learnFromRecord, seedFromRecords, lookup, getAll, clear };
+  return { learn, learnFromRecord, seedFromRecords, lookup, findCandidates, getAll, remove, clear };
 })();
 
 /**
@@ -1516,7 +1696,14 @@ if (_globalRoot) {
     extractGuidelineCode,
     SafeGuidelineMemory,
     parseInterviewOpinions,
+    WORK_GROUP_TREE,
+    WORK_GROUP_MID_LIST,
     OFFICIAL_WORK_GROUPS,
+    resolveWorkGroupMid,
+    STANDARD_LOCATION_CATEGORIES,
+    inferLocationCategory,
+    WORK_METHODS_9X9_IMPROVED,
+    normalizeWorkMethod9x9,
     mapToStandardWorkGroup,
     isLocationOnlyBanner,
     extractCoreViolationBanner,

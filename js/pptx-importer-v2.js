@@ -30,7 +30,7 @@ import {
   inferSafetyDomain,
   SafeGuidelineMemory,
   parseInterviewOpinions
-} from './text-normalizer.js?v=20261115_v48';
+} from './text-normalizer.js?v=20261121_v57';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -2603,8 +2603,8 @@ export async function parseSheetCanvas(canvas, options = {}) {
     law: '',
     subcontractor: '',
     workGroup: '',
-    workMethod: '설치조립작업',
-    workName: '설치조립작업',
+    workMethod: '설치해체작업',
+    workName: '설치해체작업',
     location: '',
     inspectUser: '',
     inspectRound: "'26년上 2차",
@@ -3447,8 +3447,8 @@ export async function parsePPTX(file) {
     parsedRecords.push({
       slideNumber,
       ...parsed,
-      workMethod: parsed.workGroup.includes('양중') || parsed.content.includes('양중') ? '양중작업' : '설치조립작업',
-      workName: parsed.workGroup.includes('양중') || parsed.content.includes('양중') ? '양중작업' : '설치조립작업',
+      workMethod: parsed.workGroup.includes('양중') || parsed.content.includes('양중') ? '양중작업' : '설치해체작업',
+      workName: parsed.workGroup.includes('양중') || parsed.content.includes('양중') ? '양중작업' : '설치해체작업',
       condition: parsed.mgmtCauses.includes('불안전 상태') ? '물(物) 자체의 결함 (자재·부재 손상)' : '해당없음',
       action: parsed.mgmtCauses.includes('불안전 행동') ? '불안전한 동작·자세' : '해당없음',
       holdPoint: false,

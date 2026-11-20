@@ -2299,10 +2299,10 @@
   }
 
   /**
-   * [Point #7] 2장 사진의 추출 면적(픽셀 크기·종횡비)에 비례한 좌/우 박스 좌표 계산
+   * [Point #2 & #7] 2장 사진의 추출 면적(픽셀 크기·종횡비) 또는 사용자 지정 비율(예: '60:40', '50:50', '70:30')에 따른 좌/우 박스 좌표 계산
    * - PPTX와 웹 프리뷰가 100% 동일한 함수를 공용 사용하여 완벽히 동일하게 표시
    */
-  function computeProportionalTwoPhotoBoxes(fullBox, dims1, dims2, gap) {
+  function computeProportionalTwoPhotoBoxes(fullBox, dims1, dims2, gap, layoutRatio = 'auto') {
     const isEmu = fullBox.w > 100;
     const roundCoord = (v) => (isEmu ? Math.round(v) : Number(v.toFixed(4)));
     const g = gap !== undefined ? gap : roundCoord(fullBox.w * 0.0124);
@@ -2314,7 +2314,15 @@
     let h1 = fullBox.h;
     let h2 = fullBox.h;
 
-    if (d1 && d2) {
+    const ratioStr = String(layoutRatio || 'auto').trim();
+    const manualMatch = ratioStr.match(/^(\d{1,2})\s*[:/]\s*(\d{1,2})$/);
+    if (manualMatch) {
+      const n1 = Number(manualMatch[1]);
+      const n2 = Number(manualMatch[2]);
+      if (n1 > 0 && n2 > 0) {
+        ratio1 = Math.max(0.20, Math.min(0.80, n1 / (n1 + n2)));
+      }
+    } else if (d1 && d2) {
       const area1 = d1.w * d1.h;
       const area2 = d2.w * d2.h;
       const ar1 = d1.w / d1.h;
@@ -2840,7 +2848,7 @@
     if (photo1Parsed && photo2Parsed) {
       const dims1 = getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64);
       const dims2 = getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64);
-      const { leftBox, rightBox } = computeProportionalTwoPhotoBoxes(fullPhotoBox, dims1, dims2, 89226);
+      const { leftBox, rightBox } = computeProportionalTwoPhotoBoxes(fullPhotoBox, dims1, dims2, 89226, data.photoLayoutRatio || 'auto');
       const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, leftBox, '현장사진_1', 'cover');
       sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;
       const r2 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p2`, photo2Parsed, rightBox, '현장사진_2', 'cover');
@@ -2911,7 +2919,7 @@
     if (photo2Parsed && !isPhoto2RiskDoc) {
       const dims1 = photo1Parsed ? getImageDimensionsFromBase64(photo1Parsed.ext, photo1Parsed.base64) : null;
       const dims2 = getImageDimensionsFromBase64(photo2Parsed.ext, photo2Parsed.base64);
-      const { leftBox: halfLeft, rightBox: halfRight } = computeProportionalTwoPhotoBoxes(leftFullBox, dims1, dims2, 80796);
+      const { leftBox: halfLeft, rightBox: halfRight } = computeProportionalTwoPhotoBoxes(leftFullBox, dims1, dims2, 80796, data.photoLayoutRatio || 'auto');
       if (photo1Parsed) {
         const r1 = appendSheetPic(sXml, rXml, zip, cXml, `sheet_${slideIdx}_p1`, photo1Parsed, halfLeft, '부적합사례_1', 'cover');
         sXml = r1.slideXml; rXml = r1.relsXml; cXml = r1.ctXml;

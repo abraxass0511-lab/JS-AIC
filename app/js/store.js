@@ -526,6 +526,10 @@ export const store = {
         if (overrides[rec.id]) {
           rec.severity = overrides[rec.id];
         }
+        const ratioOverrides = JSON.parse(localStorage.getItem('sp_photo_ratio_overrides') || '{}');
+        if (ratioOverrides[rec.id]) {
+          rec.photoLayoutRatio = ratioOverrides[rec.id];
+        }
       } catch (e) {}
       if (rec.severity !== '중부적합' && rec.severity !== '경부적합') {
         if (window.SafePPT && typeof window.SafePPT.inferRecordSeverity === 'function') {
@@ -1020,6 +1024,53 @@ export const store = {
     this._monthCache.set(bucket, cachedList.map(r => r.id === rec.id ? rec : r));
 
     const msg = `[SafePatrol] 중/경부적합 양식 변경 (${sev}) ${rec.id}`;
+    if (this.localBackend) {
+      try {
+        await rmw(this.localBackend, recordPath(rec), () => rec, {}, msg);
+        await rmw(this.localBackend, indexPath(bucket), cur => {
+          cur.records = (cur.records || []).map(r => r.id === rec.id ? rec : r);
+          return cur;
+        }, { records: [] }, msg);
+      } catch (e) {}
+    }
+    if (this.backend && this.backend !== this.localBackend) {
+      rmw(this.backend, recordPath(rec), () => rec, {}, msg).catch(() => {});
+      rmw(this.backend, indexPath(bucket), cur => {
+        cur.records = (cur.records || []).map(r => r.id === rec.id ? rec : r);
+        return cur;
+      }, { records: [] }, msg).catch(() => {});
+    }
+    return rec;
+  },
+
+  async updateRecordPhotoLayoutRatio(rec, newRatio) {
+    if (!rec || !rec.id) return rec;
+    const allowed = ['auto', '50:50', '60:40', '70:30', '40:60', '30:70'];
+    const ratio = allowed.includes(String(newRatio || '')) ? String(newRatio) : 'auto';
+    rec.photoLayoutRatio = ratio;
+    rec.updatedAt = new Date().toISOString();
+    rec.updatedBy = (this.user && this.user.name) || '점검자';
+    const bucket = rec.bucket || (rec.inspectedDate ? rec.inspectedDate.slice(0, 7) : '2026-10');
+    rec.bucket = bucket;
+
+    try {
+      const overrides = JSON.parse(localStorage.getItem('sp_photo_ratio_overrides') || '{}');
+      overrides[rec.id] = ratio;
+      localStorage.setItem('sp_photo_ratio_overrides', JSON.stringify(overrides));
+    } catch (e) {}
+
+    try {
+      const key = `sp_local_records_${bucket}`;
+      const curList = JSON.parse(localStorage.getItem(key) || '[]');
+      const filtered = curList.filter(r => r.id !== rec.id);
+      filtered.push(rec);
+      localStorage.setItem(key, JSON.stringify(filtered));
+    } catch (e) {}
+
+    const cachedList = this._monthCache.get(bucket) || [];
+    this._monthCache.set(bucket, cachedList.map(r => r.id === rec.id ? rec : r));
+
+    const msg = `[SafePatrol] 사진 2장 비율 변경 (${ratio}) ${rec.id}`;
     if (this.localBackend) {
       try {
         await rmw(this.localBackend, recordPath(rec), () => rec, {}, msg);
