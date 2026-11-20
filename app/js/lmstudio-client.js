@@ -134,23 +134,35 @@
   }
 
   /**
-   * 실시간 Qwen AI 정밀 분석 (부적합 내용 + 첨부 사진 통합 분석으로 산업안전보건법 직접 판정)
+   * 실시간 Qwen AI 정밀 분석 (부적합 내용 + 첨부 사진 + 학습된 안전작업지침 적합성 검증 + 표준분류 4종 통합 판정)
    */
   async function streamAnalyzeSafetyText(content, extraContext = {}, onProgress = () => {}) {
     if (!content || !content.trim()) {
       throw new Error('분석할 지적 내용을 먼저 입력해주세요.');
     }
 
+    const useVision = extraContext.useVision !== false;
     const photos = Array.isArray(extraContext.photos) ? extraContext.photos.filter(Boolean) : [];
     let imageBase64 = '';
-    if (photos.length > 0) {
+    if (useVision && photos.length > 0) {
       imageBase64 = await resolvePhotoForVision(photos[0]);
     }
 
-    // ── [1단계-A] 클라우드 모드: Cloudflare 24시간 Qwen Vision + Qwen3-30B 통합 분석 ──
+    // [Point #6] 학습된 안전작업지침(SafeGuidelineMemory) 후보를 Qwen에게 전달하여 부적합내용+사진과의 적합성을 직접 판정받음
+    const mem = getGuidelineMemory();
+    const learnedGuidelines = (mem && typeof mem.findCandidates === 'function')
+      ? mem.findCandidates({
+          content,
+          workGroup: extraContext.workGroup || '',
+          type: extraContext.type || '',
+          limit: 3
+        }).map(c => ({ code: c.code, title: c.title, body: c.body, domain: c.domain }))
+      : [];
+
+    // ── [1단계-A] 클라우드 모드: Cloudflare 24시간 Qwen Vision(선택) + Qwen3-30B 통합 분석 ──
     const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || CLOUDFLARE_AI_URL;
     if (isCloudMode && workerUrl) {
-      onProgress({ phase: 'connecting', message: imageBase64 ? '☁️ Qwen Vision + Qwen3 AI가 사진과 산안법을 분석 중...' : '☁️ Qwen3 AI가 부적합 내용과 산안법을 분석 중...' });
+      onProgress({ phase: 'connecting', message: imageBase64 ? '☁️ Qwen Vision + Qwen3 AI가 사진·산안법·학습지침을 분석 중...' : '☁️ Qwen3 AI가 부적합 내용·산안법·표준분류를 분석 중...' });
       try {
         const pin = storage.getItem('sp_pin') || '111111';
         const cfRes = await fetch(`${workerUrl}/api/ai-analyze`, {
@@ -163,10 +175,12 @@
             mode: 'manual_analyze',
             content,
             imageBase64: imageBase64 || undefined,
+            useVision,
             workGroup: extraContext.workGroup || '',
             location: extraContext.location || '',
             productType: extraContext.productType || '',
-            progressRate: extraContext.progressRate || 35
+            progressRate: extraContext.progressRate || 35,
+            learnedGuidelines: learnedGuidelines.length ? learnedGuidelines : undefined
           })
         });
 
@@ -175,12 +189,34 @@
           const isRealAi = Boolean(data.source && !String(data.source).includes('rule_engine'));
           const lawTitle = isRealAi ? String(data.law || '').trim() : '';
           const lawBody = isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '';
+          const norm = getNormHelper();
+          const resolvedWg = data.workGroup ? cleanWorkGroup(data.workGroup, content) : '';
+          const resolvedWgMid = (norm && norm.resolveWorkGroupMid)
+            ? norm.resolveWorkGroupMid(resolvedWg, data.workGroupMid || '', content)
+            : (data.workGroupMid || '');
+          const resolvedLocCat = (norm && norm.inferLocationCategory)
+            ? norm.inferLocationCategory(data.locationCategory || '', extraContext.location || '', content)
+            : (data.locationCategory || '');
+          const resolvedWm = sanitizeWorkMethod(data.workMethod || '', resolvedWg, content, extraContext.location || '');
           return {
             severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
             law: lawTitle,
             lawBody,
+            guidelineApplied: Boolean(data.guidelineApplied),
+            guidelineReason: String(data.guidelineReason || '').trim(),
             hazardType: data.hazardType || data.type || '',
-            item: data.item || '',
+            locationCategory: resolvedLocCat,
+            workGroupMid: resolvedWgMid,
+            workGroup: resolvedWg,
+            workMethod: resolvedWm,
+            agentMajor: data.agentMajor || '',
+            agentMid: data.agentMid || '',
+            agentMinor: data.agentMinor || '',
+            condition: data.condition || '',
+            action: data.action || '',
+            rootCauseMgmt: data.rootCauseMgmt || '',
+            rootCauseSystem: data.rootCauseSystem || '',
+            item: data.item || data.agentMid || '',
             mgmtCauses: Array.isArray(data.mgmtCauses) && data.mgmtCauses.length ? data.mgmtCauses : [],
             holdPoint: Boolean(data.holdPoint),
             analysis: data.analysis || (lawBody ? lawBody : 'Qwen AI 산업안전보건기준에 관한 규칙 분석 완료'),
@@ -195,25 +231,37 @@
       }
     }
 
-    // ── [1단계-B] 로컬 LM Studio 스트리밍 추론 (사진 Vision + 부적합 내용 통합 분석) ──
-    const systemPrompt = `너는 대한민국 건설현장 최고 안전감사관이자 고용노동부 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 전문 AI이다.
-주어진 현장 부적합 지적사항과 첨부된 사진을 정밀 분석하여, 실제 적용되는 산업안전보건기준에 관한 규칙 조항(law), 핵심 기준 본문(lawBody), 사진 상단 배너(photoBanner)를 직접 도출하라.
-
-[핵심 작성 원칙]
-1. law: 반드시 실제 위반에 해당하는 '산업안전보건기준에 관한 규칙 제OO조(조항명)' 형식으로 직접 판단하라.
-2. lawBody: 해당 조항의 핵심 준수 기준 1~2문장을 간결하게 작성하라 ('~하여야 한다.' 종결, 임의 '-' 불릿 불필요).
-3. photoBanner: 구체적으로 어떤 작업/상황에서 어떤 안전기준을 위반했는지 15~20자 내외 명사구로 작성하라.
-4. 추상 문구('안전수칙 미준수', '불안전 행동' 등) 금지.
-
+    // ── [1단계-B] 로컬 LM Studio 스트리밍 추론 (사진 Vision + 부적합 내용 + 학습지침 적합성 통합 분석) ──
+    const guidelineBlock = learnedGuidelines.length
+      ? `\n[학습된 안전작업지침 후보 목록 (부적합 내용·사진과 100% 적합한 경우에만 채택, 조금이라도 맞지 않으면 반드시 기각하고 산안규칙 조문을 직접 작성)]\n${JSON.stringify(learnedGuidelines)}\n`
+      : '';
+    const systemPrompt = `너는 대한민국 건설현장 최고 안전감사관이자 고용노동부 산업안전보건기준에 관한 규칙(제1조~제670조 전 조항) 및 건설안전 9×9 표준분류 전문 AI이다.
+주어진 현장 부적합 지적사항과 첨부된 사진을 정밀 분석하여 아래를 도출하라:
+1. 관련 근거(law, lawBody): 학습된 안전작업지침 후보가 있으면 부적합 내용·사진과 정확히 부합하는지 검토해 적합 시 해당 지침을 채택(guidelineApplied: true)하고, 적합하지 않거나 후보가 없으면 '산업안전보건기준에 관한 규칙 제OO조(조항명)'과 핵심 기준 1~2문장(guidelineApplied: false)을 직접 도출하라.
+2. 장소 분류(locationCategory): ["건축물","본구조물","가설물","기계·기구","설비·장치","적재물","옥상·지붕","계단·복도","엘리베이터홀","천장 내부","탱크 내부","실내 작업장","지하실","실외 작업장","외부","도로","야적장","수상","수중","공중"] 중 1개 선택.
+3. 공종(중)(workGroupMid): ["공통공사","건축공사","전기공사","설비공사","플랜트공사","토목공사","조경공사","기타"] 중 1개, 공종(소)(workGroup): 작업분류표 공식 세부공종 1개.
+4. 작업방법(workMethod): ["굴착작업","하역운반작업","양중작업","중량물취급작업","설치해체작업","가공조립작업","운전조정작업","고소작업","기타"] 중 1개.
+5. 기인물 대/중/소(agentMajor/agentMid/agentMinor): 건설안전 9×9 개선(1)(2) 기준(가시설, 건설장비, 작업공도구, 작업발판, 작업장소(환경), 전기시설, 소방시설, 개인보호구)으로 선택 (예: 건설장비 > 굴착장비 > 굴착기, 건설장비 > 하역운반장비 > 지게차).
+6. photoBanner: 구체적 위반 사실 12~22자 명사구.
+${guidelineBlock}
 반드시 아래 JSON 형식으로만 답을 출력하라:
 {
   "severity": "중부적합" 또는 "경부적합",
-  "law": "산업안전보건기준에 관한 규칙 제OO조(조항명)",
-  "lawBody": "해당 조항의 핵심 안전기준 1~2문장",
-  "hazardType": "추락" 또는 "낙하" 또는 "붕괴" 또는 "협착" 또는 "전도" 또는 "화재" 또는 "감전" 또는 "질식" 또는 "충돌",
-  "item": "해당 작업 또는 기인물 명칭",
-  "photoBanner": "사진 1 상단 배너용 15자 내외 구체적 위반 문구",
-  "photo2Banner": "사진 2 상단 배너용 15자 내외 구체적 위반 문구 (단일 지적이면 '')",
+  "law": "적합한 학습 지침 제목 또는 산업안전보건기준에 관한 규칙 제OO조(조항명)",
+  "lawBody": "핵심 안전기준 1~2문장 ('~다.' 종결)",
+  "guidelineApplied": true 또는 false,
+  "guidelineReason": "학습 지침 채택/기각 판단 이유 한 줄",
+  "locationCategory": "장소 분류 20종 중 1개",
+  "workGroupMid": "공종(중) 8종 중 1개",
+  "workGroup": "공종(소) 공식 명칭",
+  "workMethod": "작업방법 9종 중 1개",
+  "agentMajor": "기인물 대분류",
+  "agentMid": "기인물 중분류",
+  "agentMinor": "기인물 소분류",
+  "hazardType": "추락/낙하/비래/붕괴/도괴/전복/전도/협착/충돌/화재/폭발/감전/질식 등",
+  "item": "기인물 중분류 또는 명칭",
+  "photoBanner": "사진 1 상단 배너용 12~22자 구체적 위반 문구",
+  "photo2Banner": "사진 2 상단 배너용 문구 (단일 지적이면 '')",
   "mgmtCauses": ["계획 미수립", "계획 미이행", "불안전 행동", "불안전 상태" 중 1~2개],
   "holdPoint": true 또는 false,
   "analysis": "법적 위반 판단 이유 1~2문장"
@@ -225,7 +273,7 @@ ${extraContext.location ? `작업장소: ${extraContext.location}` : ''}
 ${extraContext.productType ? `건물용도: ${extraContext.productType}` : ''}
 ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
-위 지적사항과 첨부 사진을 종합 분석하여 사진 상단 배너와 정확한 산업안전보건기준에 관한 규칙(law, lawBody)을 도출하라.`;
+위 지적사항과 첨부 사진을 종합 분석하여 표준분류(장소분류·공종중/소·작업방법·기인물대/중/소), 학습지침 적합 여부 및 정확한 관련근거(law, lawBody)를 JSON으로 도출하라.`;
 
     let messages = [
       { role: 'system', content: systemPrompt }
@@ -1148,6 +1196,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   const GENUINE_EXCAVATION_RE = /굴착\s*작업|터파기|토류판|어스앙카|집수정\s*굴착|사면\s*붕괴|굴착면|법면/;
 
   function sanitizeWorkMethod(rawMethod, workGroup, content, location) {
+    const norm = getNormHelper();
+    if (norm && typeof norm.normalizeWorkMethod9x9 === 'function') {
+      return norm.normalizeWorkMethod9x9(rawMethod, workGroup, content, location);
+    }
     const wm = String(rawMethod || '').trim();
     const wg = String(workGroup || '').trim();
     const contentText = String(content || '').trim();
@@ -1158,13 +1210,13 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const hasGenuineDemolition = GENUINE_DEMOLITION_RE.test(contentText);
     const hasGenuineExcavation = GENUINE_EXCAVATION_RE.test(strippedContent);
 
+    if (wm === '설치조립작업' || wm === '해체작업') return '설치해체작업';
+    if (wm === '밀폐공간작업' || wm === '협소공간작업') return '기타';
     if (hasElectrical && !hasGenuineDemolition && !hasGenuineExcavation) {
-      if (!wm || wm === '해체작업' || wm === '굴착작업') {
-        return '설치조립작업';
-      }
+      if (!wm || wm === '굴착작업') return '설치해체작업';
     }
     if (wm === '굴착작업' && !hasGenuineExcavation && /흙막이\s*(?:상부|상단|주변|근생)/.test(`${location || ''} ${contentText}`)) {
-      return hasElectrical ? '설치조립작업' : '고소작업';
+      return hasElectrical ? '설치해체작업' : '고소작업';
     }
     return wm;
   }
@@ -1181,8 +1233,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return null;
   }
 
-  function resolveLawWithTieredMemory(rec) {
-    if (!rec || typeof rec !== 'object') return { spec: null, needAi: false, garbled: false, priorityTier: 'needs_ai_law' };
+  function resolveLawWithTieredMemory(rec, options = {}) {
+    if (!rec || typeof rec !== 'object') return { spec: null, needAi: false, garbled: false, priorityTier: 'needs_ai_law', learnedCandidates: [] };
+    const allowUnverifiedLearned = Boolean(options.allowUnverifiedLearned);
     const norm = getNormHelper();
     const mem = getGuidelineMemory();
     const ctxText = `${rec.workGroup || ''} ${rec.content || ''} ${rec.type || ''} ${rec.hazardType || ''}`;
@@ -1211,11 +1264,22 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       rec._hasGarbledLaw = false;
       rec._lawSource = rec._lawSource || 'original_valid';
       mem?.learnFromRecord?.(rec, rec._lawSource);
-      return { spec, needAi: false, garbled: false, priorityTier: rec._lawSource };
+      return { spec, needAi: false, garbled: false, priorityTier: rec._lawSource, learnedCandidates: [] };
     }
 
-    // 2순위: 원본 공란/깨짐/모순 시 학습된 안전작업지침 조회
-    if (mem && typeof mem.lookup === 'function') {
+    // 2순위: 학습된 안전작업지침 후보 수집 — 온라인에서는 반드시 Qwen AI가 부적합내용+사진 적합성을 확인 후 채택 (Point #6)
+    const learnedCandidates = (mem && typeof mem.findCandidates === 'function')
+      ? mem.findCandidates({
+          rawLaw: rawLawForCheck || spec.title || '',
+          lawBody: lawBodyForCheck || spec.body || '',
+          content: rec.content || '',
+          workGroup: rec.workGroup || '',
+          type: rec.type || rec.hazardType || '',
+          limit: 3
+        }).map(c => ({ code: c.code, title: c.title, body: c.body, domain: c.domain }))
+      : [];
+
+    if (allowUnverifiedLearned && mem && typeof mem.lookup === 'function') {
       const learned = mem.lookup({
         rawLaw: rawLawForCheck || spec.title || '',
         lawBody: lawBodyForCheck || spec.body || '',
@@ -1230,17 +1294,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         rec._needsAiLaw = false;
         rec._hasGarbledLaw = false;
         rec._lawSource = 'learned_guideline';
-        return { spec: { ...spec, title: rec.rawLaw, body: rec.lawBody, needsAiLaw: false }, needAi: false, garbled: false, priorityTier: 'learned_guideline' };
+        return { spec: { ...spec, title: rec.rawLaw, body: rec.lawBody, needsAiLaw: false }, needAi: false, garbled: false, priorityTier: 'learned_guideline', learnedCandidates };
       }
     }
 
-    // 3순위: 하드코딩 조문을 지어내지 않고 모순된 값만 제거한 뒤 AI 판단 플래그 활성화
+    // 3순위: 하드코딩 조문을 지어내지 않고 모순된 값만 제거한 뒤 Qwen AI(학습지침 적합성 검증 포함)로 위임
     if (spec.mismatchReason) {
       if (!spec.title) {
         if (rec.law && /(?:직?[계게개]차|지[계개제]차|제172조|유도자|제332조|거푸집동바리)/.test(rec.law)) {
           rec.law = '';
         }
-        // 지침 코드([IZ12B-...])와 깨진 원문 힌트는 AI 복원용으로 보존 가능(단, 비지침 도메인 모순은 비움)
         if (!(spec.code && garbledTitle)) {
           rec.rawLaw = '';
         }
@@ -1258,7 +1321,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     const needAi = Boolean(spec.needsAiLaw || garbled || !rec.law || !rec.rawLaw || !rec.lawBody);
     rec._needsAiLaw = needAi;
     rec._hasGarbledLaw = garbled;
-    return { spec, needAi, garbled, priorityTier: needAi ? 'needs_ai_law' : 'original_valid' };
+    const priorityTier = needAi
+      ? (learnedCandidates.length > 0 ? 'verify_learned_guideline' : 'needs_ai_law')
+      : 'original_valid';
+    return { spec, needAi, garbled, priorityTier, learnedCandidates };
   }
 
   function syncParsedOpinionsOnRecord(rec) {
@@ -1282,9 +1348,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   function applyLocalTaxonomyToRecords(records = [], options = {}) {
     if (!Array.isArray(records)) return records;
     const preserveAiFields = Boolean(options.preserveAiFields);
+    const norm = getNormHelper();
     records.forEach((rec) => {
       if (!rec) return;
-      resolveLawWithTieredMemory(rec);
+      resolveLawWithTieredMemory(rec, { allowUnverifiedLearned: !preserveAiFields });
       syncParsedOpinionsOnRecord(rec);
       const isAiAuthored = preserveAiFields && Boolean(rec._aiCleaned || rec._aiVerified);
       const fullCtx = `${rec.workGroup || ''} ${rec.content || ''} ${rec.rawLaw || ''}`;
@@ -1297,8 +1364,14 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       } else {
         rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
       }
+      if (norm && typeof norm.resolveWorkGroupMid === 'function') {
+        rec.workGroupMid = norm.resolveWorkGroupMid(rec.workGroup, rec.workGroupMid || '', rec.content || '');
+      }
+      if (norm && typeof norm.inferLocationCategory === 'function' && (!rec.locationCategory || !isAiAuthored)) {
+        rec.locationCategory = norm.inferLocationCategory(rec.locationCategory || '', rec.location || '', `${rec.content || ''} ${rec.photoBanner || ''}`);
+      }
       if (!isAiAuthored && (!preserveAiFields || !rec.workMethod)) {
-        if ((!rec.workMethod || (rec.workMethod === '설치조립작업' && /하역운반작업|양중작업|굴착작업|해체작업/.test(r.workMethod || ''))) && r.workMethod) {
+        if ((!rec.workMethod || ((rec.workMethod === '설치해체작업' || rec.workMethod === '설치조립작업') && /하역운반작업|양중작업|굴착작업|중량물취급작업|가공조립작업|운전조정작업|고소작업/.test(r.workMethod || ''))) && r.workMethod) {
           rec.workMethod = r.workMethod;
         }
       }
@@ -1357,7 +1430,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       return applyLocalTaxonomyToRecords(records);
     }
 
-    const tierStates = records.map(rec => resolveLawWithTieredMemory(rec));
+    const tierStates = records.map(rec => resolveLawWithTieredMemory(rec, { allowUnverifiedLearned: false }));
     const items = records.map((rec, idx) => {
       const ts = tierStates[idx] || {};
       return {
@@ -1367,6 +1440,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         hasGarbledLaw: Boolean(ts.garbled),
         guidelineCode: ts.spec?.code || '',
         lawPriorityTier: ts.priorityTier || 'needs_ai_law',
+        learnedGuidelines: (ts.needAi && Array.isArray(ts.learnedCandidates) && ts.learnedCandidates.length > 0)
+          ? ts.learnedCandidates
+          : undefined,
         lockedCheckboxes: {
           planMissing: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미수립'),
           planNotFollowed: Array.isArray(rec.mgmtCauses) && rec.mgmtCauses.includes('계획 미이행'),
@@ -1426,14 +1502,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const aiItem = mapByPage.get(pKey) || data.results[idx];
           if (!aiItem) return;
           const taxFields = [
-            'workMethod', 'agentMajor', 'agentMid', 'agentMinor',
+            'locationCategory', 'workGroupMid', 'workMethod',
+            'agentMajor', 'agentMid', 'agentMinor',
             'hazardType', 'condition', 'action',
             'rootCauseMgmt', 'rootCauseSystem', 'stakeholder'
           ];
           for (const f of taxFields) {
             if (aiItem[f]) rec[f] = aiItem[f];
           }
-          // 장표 원문 공종명을 표준 분류표(작업분류표.jpg: PC공사, 거푸집동바리공사, 창호공사(PL), 가설전기공사 등) 기준으로 정규화
+          // 장표 원문 공종명을 표준 분류표(작업분류표.jpg: 공종(중) + 공종(소)) 기준으로 정규화
           const rawWorkFromSheet = String(rec._rawCellTexts?.work || '').replace(/^.*?공종명?\s*[:：.]?\s*/, '').trim();
           if (rawWorkFromSheet && rawWorkFromSheet.length >= 2) {
             rec.workGroup = cleanWorkGroup(rawWorkFromSheet, rec.content);
@@ -1443,6 +1520,16 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             rec.workGroup = cleanWorkGroup(aiItem.workGroup, rec.content);
           } else {
             rec.workGroup = cleanWorkGroup(rec.workGroup, rec.content);
+          }
+          const normH = getNormHelper();
+          if (normH && typeof normH.resolveWorkGroupMid === 'function') {
+            rec.workGroupMid = normH.resolveWorkGroupMid(rec.workGroup, aiItem.workGroupMid || rec.workGroupMid || '', rec.content || '');
+          }
+          if (normH && typeof normH.inferLocationCategory === 'function') {
+            rec.locationCategory = normH.inferLocationCategory(aiItem.locationCategory || rec.locationCategory || '', rec.location || '', `${rec.content || ''} ${rec.photoBanner || ''}`);
+          }
+          if (aiItem.guidelineApplied) {
+            rec._lawSource = 'learned_guideline_qwen_verified';
           }
           // 1) AI 전수 교정(edits 또는 fixedFields: 띄어쓰기 + 스캔 오탈자 + [관련 기준] 제목/본문 교정) 우선 반영
           // 단, Selective Vision Rescue(_visionCleaned)로 픽셀 직독 완료된 레코드는 텍스트 재추론으로 덮어쓰지 않음
@@ -1530,6 +1617,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             rec.photoBanner = summarizeContentToBanner(rec.content);
           }
           const recTierForLaw = tierStates[idx] || {};
+          if (typeof aiItem.guidelineApplied === 'boolean') {
+            rec.guidelineApplied = aiItem.guidelineApplied;
+          }
           if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law) {
             if (aiItem.law && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(String(aiItem.law).trim())) {
               rec.law = aiItem.law;
@@ -1555,7 +1645,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   /**
    * [v2.0 신규] 현장 직접 등록 모드(Guided Complete): 1줄 핵심 키워드로 부적합 개요·법규·인터뷰·대책 자동 완성
    */
-  async function completeGuidedRecord({ memo = '', workGroup = '거푸집동바리공사', workMethod = '설치조립작업', severity = '중부적합' } = {}) {
+  async function completeGuidedRecord({ memo = '', workGroup = '거푸집동바리공사', workMethod = '설치해체작업', severity = '중부적합' } = {}) {
     try {
       const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
         method: 'POST',
