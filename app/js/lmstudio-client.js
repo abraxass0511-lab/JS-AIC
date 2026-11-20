@@ -1457,11 +1457,18 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     }
 
     const tierStates = records.map(rec => resolveLawWithTieredMemory(rec, { allowUnverifiedLearned: false }));
+    const normHelperForBatch = getNormHelper();
     const items = records.map((rec, idx) => {
       const ts = tierStates[idx] || {};
+      const rawSheetBanner = rec._rawCellTexts?.banner || rec._originalBannerText || '';
+      const hasOriginalBanner = Boolean(
+        rec._hasOriginalBanner ||
+        (rawSheetBanner && normHelperForBatch?.isValidOriginalSheetBanner?.(rawSheetBanner, rec.content, rec.location))
+      );
       return {
         pageIndex: rec.pageNumber || rec.slideNumber || (idx + 1),
         severityHint: rec.severity || '중부적합',
+        hasOriginalBanner,
         needsAiLaw: Boolean(ts.needAi),
         hasGarbledLaw: Boolean(ts.garbled),
         guidelineCode: ts.spec?.code || '',
@@ -1480,7 +1487,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           workTypeRaw: rec.workGroup || '',
           location: rec.location || '',
           content: rec.content || '',
-          banner: rec._rawCellTexts?.banner || rec.photoBanner || '',
+          banner: rawSheetBanner || rec.photoBanner || '',
           lawRaw: rec.rawLaw || rec.law || '',
           lawBody: rec.lawBody || '',
           pmVerdict: rec.pmVerdictType || rec.pmVerdict || '',
@@ -1619,24 +1626,35 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           const normBannerFn = (typeof window !== 'undefined' && window.SafeTextNormalizer?.normalizeFieldText)
             ? (s) => window.SafeTextNormalizer.normalizeFieldText(s, 'banner')
             : (s) => String(s || '').replace(/[\u2460-\u2487\u2776-\u277F]/g, '').trim();
-          const rawBannerOrig = rawBannerOrigBeforePatch;
+          const rawBannerOrig = String(rec._rawCellTexts?.banner || rec._originalBannerText || rawBannerOrigBeforePatch || '').trim();
           const rawBannerFromSheet = normBannerFn(rawBannerOrig);
           const aiBanner = normBannerFn(String(aiItem.photoBanner || aiPatchObj?.photoBanner || aiPatchObj?.banner || '').trim());
           const hasUsefulSpaces = (s) => /\s/.test(s) || s.length < 10;
-          const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s) || /(?:상태로|않는|없는|하는|되는|있는)$/.test(String(s || '').trim());
+          const isTruncatedRawBanner = (s) => /\([^)]*$/.test(s) || /^[^(]*\)/.test(s) || /(?:상태로|않는|없는|하는|되는|있는)$/.test(String(s || '').trim());
           const isLocBanner = (s) => typeof window !== 'undefined' && window.SafeTextNormalizer?.isLocationOnlyBanner?.(s, rec.location);
           const isGenericAiBanner = (s) => /^(?:안전기준\s*미준수|현장\s*부적합\s*작업\s*전경|안전시설\s*불량)$/.test(String(s || '').trim());
+          const hasValidOriginalSheetBanner = Boolean(
+            rawBannerFromSheet &&
+            !isLocBanner(rawBannerFromSheet) &&
+            !isTruncatedRawBanner(rawBannerFromSheet) &&
+            (normH?.isValidOriginalSheetBanner
+              ? normH.isValidOriginalSheetBanner(rawBannerFromSheet, rec.content, rec.location)
+              : (hasUsefulSpaces(rawBannerFromSheet) && rawBannerFromSheet.length >= 4 && rawBannerFromSheet.length <= 45))
+          );
           const canUseAiBanner = Boolean(
             aiBanner && !isLocBanner(aiBanner) && !isGenericAiBanner(aiBanner) && !/\uFFFD/.test(aiBanner) &&
             aiBanner !== (rec.content || '').trim() && !isTruncatedRawBanner(aiBanner) && aiBanner.length >= 4
           );
-          if (rec._visionCleaned && rec.photoBanner && !isLocBanner(rec.photoBanner)) {
+          if (hasValidOriginalSheetBanner) {
+            // [1순위] 원본 PDF/PPTX 장표에 적색 배너가 존재하고 정상 판독된 경우: AI 요약으로 덮어쓰지 않고 원본 배너 그대로 보존!
+            rec.photoBanner = rawBannerFromSheet;
+            rec._hasOriginalBanner = true;
+            rec._originalBannerText = rawBannerFromSheet;
+          } else if (rec._visionCleaned && rec.photoBanner && !isLocBanner(rec.photoBanner)) {
             rec.photoBanner = cleanBannerText(rec.photoBanner, rec.content, rec.location);
           } else if (canUseAiBanner) {
-            // AI가 유효한 요약 배너를 생성한 경우 raw OCR 잔존 오타/절단보다 AI 판단 결과를 최우선 채택
+            // [2순위] 원본 장표에 적색 배너 박스가 없거나 OCR이 깨진 경우에만 AI가 부적합 내용에서 도출한 배너 적용
             rec.photoBanner = cleanBannerText(aiBanner, rec.content, rec.location) || aiBanner;
-          } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet) && hasUsefulSpaces(rawBannerFromSheet) && !isTruncatedRawBanner(rawBannerFromSheet)) {
-            rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
           } else if (rawBannerFromSheet && !isLocBanner(rawBannerFromSheet)) {
             rec.photoBanner = cleanBannerText(rawBannerFromSheet, rec.content, rec.location);
           } else {
@@ -1832,7 +1850,13 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 rec.type = candType.split('·')[0].trim();
               }
               const candBanner = corr.photoBanner || aiRes.photoBanner;
-              if (candBanner && typeof candBanner === 'string' && !/\uFFFD/.test(candBanner) && !isFieldKeyLiteral(candBanner)) {
+              const rawSheetB = String(rec._rawCellTexts?.banner || rec._originalBannerText || '').trim();
+              const hasOrigBanner = Boolean(
+                rec._hasOriginalBanner ||
+                (rawSheetB && norm?.isValidOriginalSheetBanner?.(rawSheetB, rec.content, rec.location)) ||
+                (rec.photoBanner && norm?.isValidOriginalSheetBanner?.(rec.photoBanner, rec.content, rec.location))
+              );
+              if (!hasOrigBanner && candBanner && typeof candBanner === 'string' && !/\uFFFD/.test(candBanner) && !isFieldKeyLiteral(candBanner)) {
                 const normalizedBanner = cleanBannerText(candBanner, rec.content, rec.location) || candBanner;
                 if (normalizedBanner.length >= 4 && (!norm?.isLocationOnlyBanner?.(normalizedBanner, rec.location))) {
                   rec.photoBanner = normalizedBanner;
@@ -1998,6 +2022,72 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return { enrichedCount, records };
   }
 
+  /**
+   * [v59] 학습된 안전작업지침 저장소(SafeGuidelineMemory) AI 자동 품질 검수 및 부적합·오타·불완전 지침 자동 필터링
+   * - 사용자 수동 삭제 불필요: 로컬 품질 게이트(pruneInvalid) + 클라우드 AI(filter_guidelines)가 맞지 않는 지침을 자동 영구 제거
+   */
+  let _guidelineAuditInFlight = null;
+  async function auditAndFilterGuidelinesWithAI(options = {}) {
+    const mem = getGuidelineMemory();
+    if (!mem || typeof mem.getAll !== 'function') return { ok: true, removed: 0, updated: 0 };
+    const localRemoved = typeof mem.pruneInvalid === 'function' ? mem.pruneInvalid() : 0;
+    const allEntries = mem.getAll();
+    const unverified = allEntries.filter(e => e && e.key && (!e.aiVerified || options.forceAll));
+    if (!unverified.length) {
+      return { ok: true, removed: localRemoved, updated: 0 };
+    }
+    const forceLocal = storage.getItem('sp_ai_provider') === 'local';
+    if (forceLocal || Date.now() < _cfQuotaCooldownUntil || Date.now() < _cfTransientBackoffUntil) {
+      return { ok: true, removed: localRemoved, updated: 0 };
+    }
+    if (_guidelineAuditInFlight) return _guidelineAuditInFlight;
+
+    _guidelineAuditInFlight = (async () => {
+      let totalRemoved = localRemoved;
+      let totalUpdated = 0;
+      const CHUNK = 12;
+      for (let i = 0; i < unverified.length; i += CHUNK) {
+        const chunk = unverified.slice(i, i + CHUNK).map(e => ({
+          key: e.key,
+          code: e.code || '',
+          title: e.title || '',
+          body: e.body || '',
+          domain: e.domain || ''
+        }));
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 18000);
+          const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'filter_guidelines', guidelines: chunk }),
+            signal: ctrl.signal
+          });
+          clearTimeout(timer);
+          if (!res.ok) break;
+          const data = await res.json();
+          if (data?.quotaExceeded) {
+            _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+            break;
+          }
+          if (Array.isArray(data?.results) && typeof mem.applyAiAuditResults === 'function') {
+            const applied = mem.applyAiAuditResults(data.results);
+            totalRemoved += (applied.removed || 0);
+            totalUpdated += (applied.updated || 0);
+          }
+        } catch (err) {
+          console.warn('[SafePatrol] auditAndFilterGuidelinesWithAI error:', err);
+          break;
+        }
+      }
+      return { ok: true, removed: totalRemoved, updated: totalUpdated };
+    })().finally(() => {
+      _guidelineAuditInFlight = null;
+    });
+
+    return _guidelineAuditInFlight;
+  }
+
   return {
     checkConnection,
     quickRuleAnalysis,
@@ -2007,6 +2097,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     classifyBatchRecords,
     verifyRecordsBeforeSave,
     enrichMissingRecordsForExcel,
+    auditAndFilterGuidelinesWithAI,
     isQuotaCoolingDown,
     completeGuidedRecord,
     getEndpoint: () => currentEndpoint,

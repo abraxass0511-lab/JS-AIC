@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261121_v58';
-import { store } from './store.js?v=20261121_v58';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261121_v59';
+import { store } from './store.js?v=20261121_v59';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261121_v58';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261121_v59';
 import {
   WORK_GROUP_TREE,
   WORK_GROUP_MID_LIST,
@@ -12,7 +12,7 @@ import {
   WORK_METHODS_9X9_IMPROVED,
   normalizeWorkMethod9x9,
   SafeGuidelineMemory
-} from './text-normalizer.js?v=20261121_v58';
+} from './text-normalizer.js?v=20261121_v59';
 
 const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
@@ -1938,6 +1938,13 @@ function bindEvents() {
     if ($('#txtGuidelineSearch')) $('#txtGuidelineSearch').value = '';
     renderGuidelineMemoryModal('');
     if ($('#guidelineMemoryModal')) $('#guidelineMemoryModal').style.display = 'flex';
+    window.SafeLocalAI?.auditAndFilterGuidelinesWithAI?.()
+      .then((res) => {
+        if (res && (res.removed || res.updated)) {
+          renderGuidelineMemoryModal($('#txtGuidelineSearch')?.value || '');
+        }
+      })
+      .catch(() => {});
   });
   $('#btnCloseGuidelineMemory')?.addEventListener('click', () => {
     if ($('#guidelineMemoryModal')) $('#guidelineMemoryModal').style.display = 'none';
@@ -4733,6 +4740,9 @@ async function renderRecordList(triggerSync = true) {
     if (currentLoadedRecords.length > 0) {
       window.SafeGuidelineMemory?.seedFromRecords?.(currentLoadedRecords);
       updateGuidelineMemoryCount();
+      window.SafeLocalAI?.auditAndFilterGuidelinesWithAI?.()
+        .then(() => updateGuidelineMemoryCount())
+        .catch(() => {});
     }
   } catch (seedErr) {
     console.warn('FieldFrequency seeding error:', seedErr);

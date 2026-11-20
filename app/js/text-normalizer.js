@@ -655,20 +655,20 @@ export function mapToStandardWorkGroup(rawWork = '', contentText = '') {
   return (w && OFFICIAL_WORK_GROUPS.includes(w)) ? w : '건축공사(기타)';
 }
 
-const BANNER_DEFECT_SIGNAL_RE = /(?:불량|미흡|누락|노출|파손|훼손|손상|변형|이탈|탈락|탈착|부족|미달|과다|초과|처짐|이격|유격|풀림|느슨|부식|마모|위험|우려|방치|위반|금지|불가|누출|누전|침하|균열|전도|추락|낙하|충돌|감전|붕괴|협착|화재|폭발|역화|근접|혼재|과부하|적치|생명줄|안전대|안전난간|관리\s*불량|관리\s*미흡|정리\s*정돈|미\s*(?:설치|비치|착용|고정|체결|연결|시공|실시|확보|준수|사용|이행|수립|결속|보강|접지|구획|방호|표시|부착|배치|복구)|고정\s*(?:불량|미흡)|개폐\s*불가|접지\s*(?:불량|미연결|누락)|충전부|심선|단자부|작업\s*중|하역|인양|달기구|해체)/;
+const BANNER_DEFECT_SIGNAL_RE = /(?:불량|미흡|누락|노출|파손|훼손|손상|변형|이탈|탈락|탈착|부족|미달|과다|초과|처짐|이격|유격|풀림|느슨|부식|마모|위험|우려|방치|위반|금지|불가|누출|누전|침하|균열|전도|추락|낙하|충돌|감전|붕괴|협착|화재|폭발|역화|근접|혼재|과부하|적치|불안전|걸침|가연물|소화기|생명줄|안전대|안전난간|관리\s*불량|관리\s*미흡|정리\s*정돈|미\s*(?:설치|비치|착용|고정|체결|연결|시공|실시|확보|준수|사용|이행|수립|결속|보강|접지|구획|방호|표시|부착|배치|복구|제거|폐합|승인|조치|통제|차단|점검|확인)|고정\s*(?:불량|미흡)|개폐\s*불가|접지\s*(?:불량|미연결|누락)|충전부|심선|단자부|작업\s*중|하역|인양|달기구|해체)/;
 const BANNER_LOCATION_HINT_RE = /(?:주변|외부|내부|후면|전면|측면|상부|하부|상단|하단|옥상|코어|계단실?|피트|\d+\s*동|\d+\s*층|지하\s*\d*|구간|구역|호실|근생|상가|컨테이너|현장\s*내|동\s*옆|건물)/;
 
 export function isLocationOnlyBanner(text = '', locationText = '') {
   const clean = normalizeKoreanSpacing(String(text || '')).trim();
   if (!clean) return false;
+  if (BANNER_DEFECT_SIGNAL_RE.test(clean)) return false;
   const compact = clean.replace(/\s+/g, '');
   const locCompact = String(locationText || '').replace(/\s+/g, '');
   if (locCompact && compact.length >= 2 && (locCompact === compact || locCompact.includes(compact))) {
     return true;
   }
-  if (BANNER_DEFECT_SIGNAL_RE.test(clean)) return false;
-  if (BANNER_LOCATION_HINT_RE.test(clean)) return true;
-  return compact.length <= 8;
+  if (BANNER_LOCATION_HINT_RE.test(clean) && compact.length <= 12) return true;
+  return compact.length <= 6;
 }
 
 /**
@@ -795,24 +795,37 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
   const source = String(rawBanner || contentText || '').trim();
   if (!source) return '';
 
-  // 만약 원본 사진 배너가 이미 짧은 실제 위반 문구(예: "벽이음용 상부 버팀대 설치각도(60도↓) 불량", "협력사 가설컨테이너 반입시 점검 불량")이고
-  // '2)', '발생시', '우려', '방전 미흡' 등 서술형 본문이 아니면 그대로 정제하여 반환 (원문자 배지 ①②③ 및 2) 꼬리 제거)
+  // 원본 장표 적색 배너(rawBanner)가 존재하고 깨짐·위치단독·장문본문복사가 아니면 요약/괄호삭제/절단 없이 원문 그대로 보존!
   const normBanner = stripBannerSecondItemTail(
     normalizePhotoBannerText(String(rawBanner || ''), contentText, locationText)
-      .replace(/^[\d)\s]+/, '')
+      .replace(/^[\d)\s]+(?=[가-힣A-Za-z])/, '')
       .trim()
   );
   const normContent = stripCircledNumbers(normalizeKoreanSpacing(String(contentText || '')))
     .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
     .trim();
-  const isRawCopyOfContent = normBanner && normContent && normBanner.replace(/\s+/g, '') === normContent.replace(/\s+/g, '');
-  const hasLongRiskClause = /[2-9]\)|②|발생\s*시|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전|으로\s*인해/.test(normBanner);
-
-  const isUnspacedLongBanner = normBanner.length >= 12 && !/\s/.test(normBanner);
-  const hasUnclosedParen = /\([^)]*$/.test(normBanner);
+  const isRawCopyOfLongContent = Boolean(
+    normBanner && normContent &&
+    normContent.length > 36 &&
+    normBanner.replace(/\s+/g, '') === normContent.replace(/\s+/g, '')
+  );
+  const hasLongRiskClause = /[2-9]\)|②|발생\s*시\s*감전|감전\s*우려|충돌\s*우려|추락\s*우려|붕괴\s*우려|대지로\s*방전|으로\s*인해/.test(normBanner);
+  const isUnspacedLongBanner = normBanner.length >= 16 && !/\s/.test(normBanner);
+  const hasUnclosedParen = /\([^)]*$/.test(normBanner) || /^[^(]*\)/.test(normBanner);
   const hasIncompleteTail = /(?:상태로|않는|없는|하는|되는|있는)$/.test(normBanner);
-  if (normBanner && !isLocationOnlyBanner(normBanner, locationText) && !isRawCopyOfContent && !hasLongRiskClause && !isUnspacedLongBanner && !hasUnclosedParen && !hasIncompleteTail && !isUnusableFragment(normBanner) && normBanner.length >= 5 && normBanner.length <= 28) {
-    return truncateBannerAtWordBoundary(normBanner, 28);
+  if (
+    normBanner &&
+    !isLocationOnlyBanner(normBanner, locationText) &&
+    !isRawCopyOfLongContent &&
+    !hasLongRiskClause &&
+    !isUnspacedLongBanner &&
+    !hasUnclosedParen &&
+    !hasIncompleteTail &&
+    !isUnusableFragment(normBanner) &&
+    normBanner.length >= 4 &&
+    normBanner.length <= 45
+  ) {
+    return normBanner;
   }
 
   const targetText = stripBannerSecondItemTail(
@@ -887,12 +900,15 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
   const rawStr = String(rawBanner || '').trim();
   if (!rawStr || hasGarbledKoreanNoise(rawStr) || isGarbledBannerText(rawStr)) return '';
   let s = stripBannerSecondItemTail(rawStr);
+  // '타설 中 계단참'에서 한자 '中'이 공백 2개로 빠진 OCR 패턴 복원
+  s = s.replace(/타설\s{2,}계단참/g, '타설 中 계단참');
   s = stripCircledNumbers(s)
-    .replace(/^[\d①-⑩\s()\[\].\-_·•:,;|｜]+(?=[가-힣A-Za-z])/, '')
-    .replace(/^[|｜\[\]().,\-·•\s]+|[|｜\[\]\s]+$/g, '')
+    .replace(/^[\d①-⑩\s()\[\].\-_·•:,;|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[|｜\[\]().,\-·•'‘’"“”\s]+|[|｜\[\]'‘’"“”\s]+$/g, '')
     .replace(/벽의음/g, '벽이음')
     .replace(/상부0버팀대8/g, '상부 버팀대 ')
     .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
+    .replace(/\(\s*60도\s*↓\s*\)\s*불량/g, '(60도↓) 불량')
     .replace(/6\/『|6\//g, 'E/V')
     .replace(/\s+[1-5]$/, '')
     .replace(/\(\s*$/, '')
@@ -904,12 +920,13 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
   }
   s = stripBannerSecondItemTail(normalizeKoreanSpacing(s))
     .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
-    .replace(/^[\d\s()\[\].\-_·•:,;|｜]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[\d\s()\[\].\-_·•:,;|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
     .replace(/([가-힣])([1-5])([가-힣]{2,})/g, (m, p1, d, p3) => (
       (p1 === '제' || /^(?:차|층|동|번|단|개|인|선|호|일|월|년|회|종|조|항|급|점|매|본|배|종류|구간|코어|단계|면|열|줄|차수|톤|미터|센티|킬로)/.test(p3))
         ? m
         : `${p1} ${p3}`
     ))
+    .replace(/\(\s*60도\s*↓\s*\)\s*불량/g, '(60도↓) 불량')
     .replace(/상태로$/g, '상태')
     .replace(/수평이\s*맞지\s*않는$/g, '수평이 맞지 않음')
     .replace(/(?:되지|하지|맞지)\s*않는$/g, (m) => m.replace(/않는$/, '않음'))
@@ -925,7 +942,25 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
 }
 
 /**
+ * 원본 장표의 적색 배너 박스에서 추출된 텍스트가 유효한 원본 배너인지 판별
+ * - 유효한 원본 배너이면 AI 요약으로 덮어쓰거나 괄호를 잘라내지 않고 그대로 보존!
+ */
+export function isValidOriginalSheetBanner(rawBanner = '', content = '', location = '') {
+  const norm = normalizePhotoBannerText(rawBanner, content, location);
+  if (!norm || norm.length < 4 || norm.length > 45) return false;
+  if (hasGarbledKoreanNoise(norm) || isGarbledBannerText(norm)) return false;
+  if (isLocationOnlyBanner(norm, location)) return false;
+  if (/\([^)]*$/.test(norm) || /^[^(]*\)/.test(norm)) return false;
+  const hangulCount = (norm.match(/[가-힣]/g) || []).length;
+  const isTech = /Gang\s*Form|AL\s*Form|G\/F|E\/V|L\/C/i.test(norm);
+  if (!isTech && hangulCount < 3) return false;
+  return true;
+}
+
+/**
  * 레코드 객체에서 엑셀/PPT 완전 동일 사진 요약 배너 도출 (단일 관문)
+ * - 원본 PDF/장표에 적색 배너가 존재하면 요약/변형 없이 원문 그대로 반환
+ * - 원본에 적색 배너가 아예 없을 때만 부적합 내용(content)에서 도출
  */
 export function resolveUnifiedPhotoBanner(record = {}) {
   if (!record || typeof record !== 'object') return '';
@@ -938,26 +973,22 @@ export function resolveUnifiedPhotoBanner(record = {}) {
   );
   const isGenericBanner = (cand) => !cand || /^(?:가시설|건설장비|작업방법|작업공도구|작업발판|보호구|전기시설|소방시설|작업장|추락|낙하|비래|붕괴|도괴|전복|전도|협착|충돌|감전|화재|폭발|질식|기타|해당없음|미확인|현장 부적합 작업 전경|안전기준 미준수)$/.test(cand);
 
-  const candidates = [record.photoBanner, record.photo1Title]
+  // 1순위: 원본 장표에서 추출된 유효 적색 배너(_originalBannerText 또는 photoBanner)는 요약/절단 없이 원문 그대로 반환!
+  const origCands = [record._originalBannerText, record.photoBanner, record.photo1Title]
     .map(v => normalizePhotoBannerText(v || '', content, location))
     .filter(v => v && !isStaleLightDistributionBanner(v) && !isGenericBanner(v));
 
-  for (const cand of candidates) {
+  for (const cand of origCands) {
+    if (isValidOriginalSheetBanner(cand, content, location)) {
+      return cand;
+    }
     const refined = normalizePhotoBannerText(extractCoreViolationBanner(cand, content, location), content, location);
     if (refined && !isGenericBanner(refined)) {
       return refined;
     }
   }
+  // 2순위: 원본에 적색 배너가 전혀 없을 때만 부적합 내용(content)으로부터 도출
   if (content) {
-    const c = normalizeKoreanSpacing(content);
-    if (/Gang\s*Form|갱폼|선해체/i.test(c)) return '절곡부위 Gang Form 선해체 방지커버 설치 불량';
-    if (/동바리|AL\s*Form|알폼/i.test(c) && /해체|미복구/.test(c)) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-    if (/밑둥잡이|워킹타워/i.test(c)) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
-    if (/버팀대|설치각도/.test(c)) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
-    if (c.includes('접지선') && /고정\s*불량|용량\s*부족/.test(c)) return '접지선 볼트 고정 불량 및 용량 부족';
-    if ((c.includes('전등') || c.includes('소켓')) && c.includes('충전부')) return '전등 소켓 충전부 노출 및 절연 불량';
-    if (/분전반|분전함/.test(c) && c.includes('충전부') && c.includes('노출')) return '분전함 차단기 충전부 노출';
-    if (/분전반|분전함/.test(c) && /관리\s*불량|주변\s*정리/.test(c)) return '가설분전반 관리 및 주변정리 불량';
     const derived = normalizePhotoBannerText(extractCoreViolationBanner('', content, location), content, location);
     if (derived && !isGenericBanner(derived)) return derived;
   }
@@ -1211,6 +1242,32 @@ export const SafeGuidelineMemory = (() => {
     return compactTitle ? `TITLE::${compactTitle}` : '';
   };
 
+  const isValidGuidelineQuality = (cleanTitle = '', cleanBody = '') => {
+    const t = String(cleanTitle || '').trim();
+    const b = String(cleanBody || '').trim();
+    if (!t || t.length < 4 || hasGarbledKoreanNoise(t) || isGarbledBannerText(t)) return false;
+    if (/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙|관계법규\s*적용\s*항목)$/.test(t)) return false;
+    // 본문이 없거나 단순 절 제목('7.2.3 분전반' 등 18자 미만 파편)만 있는 불완전 지침은 무조건 배제
+    if (!b || b.length < 18 || hasGarbledKoreanNoise(b) || isGarbledBannerText(b)) return false;
+    if (!/(?:해야|하여야|한다|금지|준수|설치|착용|확보|실시|배치|고정|유지|방지|통제|점검|관리|사용|연결|체결|부착|비치)/.test(b)) return false;
+    const tDom = inferSafetyDomain(t);
+    const bDom = inferSafetyDomain(b);
+    if (tDom && bDom && areSafetyDomainsConflicting(tDom, bDom, t, b)) return false;
+    const code = extractGuidelineCode(t);
+    if (code && t.replace(/\[[^\]]+\]/g, '').replace(/안전작업지침|전사/g, '').trim().length < 2) return false;
+    return true;
+  };
+
+  const persist = () => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const arr = Array.from(store.values())
+        .sort((a, b) => (b.count || 1) - (a.count || 1) || (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, 400);
+      localStorage.setItem(GUIDELINE_MEMORY_STORAGE_KEY, JSON.stringify(arr));
+    } catch (_) { /* ignore quota errors */ }
+  };
+
   const loadOnce = () => {
     if (loadedFromStorage) return;
     loadedFromStorage = true;
@@ -1222,23 +1279,19 @@ export const SafeGuidelineMemory = (() => {
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return;
+      let purgedCount = 0;
       for (const item of parsed) {
-        if (!item || !item.key || !item.title || hasGarbledKoreanNoise(item.title)) continue;
-        if (item.body && hasGarbledKoreanNoise(item.body)) continue;
-        const cleanSavedBody = item.body ? stripGuidelinePrefixes(item.body) : '';
-        store.set(item.key, { ...item, body: cleanSavedBody });
+        if (!item || !item.key || !item.title) { purgedCount++; continue; }
+        const cleanTitle = normalizeKoreanSpacing(String(item.title || '')).trim();
+        const cleanSavedBody = item.body ? stripGuidelinePrefixes(normalizeSafetyLawBody(item.body)) : '';
+        if (!isValidGuidelineQuality(cleanTitle, cleanSavedBody)) {
+          purgedCount++;
+          continue;
+        }
+        store.set(item.key, { ...item, title: cleanTitle, body: cleanSavedBody });
       }
+      if (purgedCount > 0) persist();
     } catch (_) { /* ignore storage read errors */ }
-  };
-
-  const persist = () => {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      const arr = Array.from(store.values())
-        .sort((a, b) => (b.count || 1) - (a.count || 1) || (b.updatedAt || 0) - (a.updatedAt || 0))
-        .slice(0, 400);
-      localStorage.setItem(GUIDELINE_MEMORY_STORAGE_KEY, JSON.stringify(arr));
-    } catch (_) { /* ignore quota errors */ }
   };
 
   const tokenize = (text = '') => {
@@ -1260,14 +1313,10 @@ export const SafeGuidelineMemory = (() => {
   const learn = ({ title = '', body = '', contextText = '', source = 'verified' } = {}) => {
     loadOnce();
     const cleanTitle = normalizeKoreanSpacing(String(title || '')).trim();
-    if (!cleanTitle || cleanTitle.length < 4 || hasGarbledKoreanNoise(cleanTitle)) return false;
-    if (/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙|관계법규\s*적용\s*항목)$/.test(cleanTitle)) return false;
-
     const rawBodyStr = String(body || '').trim();
-    // 본문에 OCR 오타·자모 깨짐·이상 문구('피장', '안전인증증품', '구조경로' 등)가 있으면 절대 학습 저장 금지
     if (rawBodyStr && (hasGarbledKoreanNoise(rawBodyStr) || isGarbledBannerText(rawBodyStr))) return false;
     const cleanBody = rawBodyStr ? stripGuidelinePrefixes(normalizeSafetyLawBody(rawBodyStr)) : '';
-    if (cleanBody && hasGarbledKoreanNoise(cleanBody)) return false;
+    if (!isValidGuidelineQuality(cleanTitle, cleanBody)) return false;
 
     const code = extractGuidelineCode(cleanTitle);
     const titleDomain = inferSafetyDomain(cleanTitle);
@@ -1275,17 +1324,13 @@ export const SafeGuidelineMemory = (() => {
     const ctxDomain = inferSafetyDomain(contextText);
     const domain = titleDomain || bodyDomain || ctxDomain || '';
 
-    if (cleanBody && areSafetyDomainsConflicting(titleDomain, bodyDomain, cleanTitle, cleanBody)) return false;
     if (contextText && areSafetyDomainsConflicting(domain, ctxDomain, cleanTitle, contextText)) return false;
-    // 법령 조문 단독(지침 코드 없음)은 본문이 함께 있을 때만 학습하여 껍데기 제목만 남는 것 방지
-    if (!code && (!cleanBody || cleanBody.length < 12)) return false;
-    // [IZ...] 코드만 있고 한글 명칭이 없으면 학습 보류
-    if (code && cleanTitle.replace(/\[[^\]]+\]/g, '').replace(/안전작업지침|전사/g, '').trim().length < 2) return false;
 
     const key = normalizeEntryKey(code, domain, cleanTitle);
     if (!key) return false;
 
     const existing = store.get(key);
+    if (existing && existing._aiRejected) return false;
     const nextBody = (cleanBody && (!existing?.body || cleanBody.length >= existing.body.length))
       ? cleanBody
       : (existing?.body || cleanBody || '');
@@ -1296,6 +1341,7 @@ export const SafeGuidelineMemory = (() => {
       body: nextBody,
       domain,
       source,
+      aiVerified: Boolean(existing?.aiVerified),
       count: (existing?.count || 0) + 1,
       updatedAt: Date.now()
     };
@@ -1404,8 +1450,60 @@ export const SafeGuidelineMemory = (() => {
       .slice(0, Math.max(1, limit));
   };
 
+  const pruneInvalid = () => {
+    loadOnce();
+    let removed = 0;
+    for (const [k, entry] of Array.from(store.entries())) {
+      const cleanT = normalizeKoreanSpacing(String(entry?.title || '')).trim();
+      const cleanB = entry?.body ? stripGuidelinePrefixes(normalizeSafetyLawBody(entry.body)) : '';
+      if (!isValidGuidelineQuality(cleanT, cleanB) || entry?._aiRejected) {
+        store.delete(k);
+        removed++;
+      } else if (cleanT !== entry.title || cleanB !== entry.body) {
+        store.set(k, { ...entry, title: cleanT, body: cleanB });
+      }
+    }
+    if (removed > 0) persist();
+    return removed;
+  };
+
+  const applyAiAuditResults = (auditItems = []) => {
+    loadOnce();
+    if (!Array.isArray(auditItems) || !auditItems.length) return { removed: 0, updated: 0 };
+    let removed = 0, updated = 0;
+    for (const it of auditItems) {
+      if (!it || !it.key) continue;
+      const existing = store.get(it.key);
+      if (!existing) continue;
+      if (it.keep === false) {
+        store.delete(it.key);
+        removed++;
+      } else {
+        const nextTitle = it.cleanTitle ? normalizeKoreanSpacing(String(it.cleanTitle)).trim() : existing.title;
+        const nextBody = it.cleanBody ? stripGuidelinePrefixes(normalizeSafetyLawBody(String(it.cleanBody))) : existing.body;
+        if (!isValidGuidelineQuality(nextTitle, nextBody)) {
+          store.delete(it.key);
+          removed++;
+        } else {
+          store.set(it.key, {
+            ...existing,
+            title: nextTitle,
+            body: nextBody,
+            domain: it.domain || existing.domain || inferSafetyDomain(`${nextTitle} ${nextBody}`),
+            aiVerified: true,
+            updatedAt: Date.now()
+          });
+          updated++;
+        }
+      }
+    }
+    if (removed > 0 || updated > 0) persist();
+    return { removed, updated };
+  };
+
   const getAll = () => {
     loadOnce();
+    pruneInvalid();
     return Array.from(store.values())
       .sort((a, b) => (b.count || 1) - (a.count || 1) || (b.updatedAt || 0) - (a.updatedAt || 0));
   };
@@ -1426,7 +1524,7 @@ export const SafeGuidelineMemory = (() => {
     } catch (_) { /* ignore */ }
   };
 
-  return { learn, learnFromRecord, seedFromRecords, lookup, findCandidates, getAll, remove, clear };
+  return { learn, learnFromRecord, seedFromRecords, lookup, findCandidates, getAll, remove, clear, pruneInvalid, applyAiAuditResults };
 })();
 
 /**
@@ -1749,6 +1847,7 @@ if (_globalRoot) {
     stripCircledNumbers,
     stripBannerSecondItemTail,
     normalizePhotoBannerText,
+    isValidOriginalSheetBanner,
     resolveUnifiedPhotoBanner,
     normalizeSafetyLawBody,
     normalizeSafetyLawSpec,
