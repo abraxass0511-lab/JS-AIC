@@ -986,8 +986,8 @@ ${TAXONOMY_STANDARD_PROMPT}
       "rootCauseMgmt": "표준 법적 관리감독",
       "rootCauseSystem": "표준 안전시스템",
       "stakeholder": "표준 관리/책임주체",
-      "law": "산업안전보건기준에 관한 규칙 제OO조(조항명) 또는 검증된 학습지침 제목 (절대 공란 금지!)",
-      "lawBody": "핵심 준수 기준 1~2문장 (원본 PDF 1순위 유지 시 원본 서식 보존, AI 신규/학습지침 적용 시 '-', '1)' 없이 순수 평서문 '~다.')",
+      "law": "산업안전보건기준에 관한 규칙 제OO조(조항명) 또는 검증된 학습지침 제목 (절대 공란 금지! 순수 한국어만)",
+      "lawBody": "핵심 준수 기준 1~2문장 (순수 한국어만 작성, 한자·중국어 혼입 금지! AI 신규/학습지침 적용 시 '-', '1)' 없이 순수 평서문 '~다.')",
       "guidelineApplied": false,
       "lawMatched": true,
       "edits": {
@@ -1011,6 +1011,8 @@ ${TAXONOMY_STANDARD_PROMPT}
             if (parsedBatch && Array.isArray(parsedBatch?.results)) {
               const normalizeWorkerLawBody = (b, keepOriginalPrefix = false) => {
                 let s = healSafetyKoreanLexicon(String(b || ''))
+                  .replace(/작업구역을\s*[\u4E00-\u9FFF]+로\s*하고/g, '작업구역을 설정하고')
+                  .replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : ''))
                   .replace(/크레인맞음/g, '크레인 맞음')
                   .replace(/(\([^)]+\))\s*지침\s*(?=[가-힣A-Za-z0-9])/g, '$1 지침\n')
                   .replace(/\)지침/g, ') 지침')
@@ -1151,6 +1153,8 @@ ${TAXONOMY_STANDARD_PROMPT}
           const cleanVerifyBanner = (s) => stripWorkerBannerTail(s);
           const cleanVerifyLawBody = (b) => {
             let s = healSafetyKoreanLexicon(String(b || ''))
+              .replace(/작업구역을\s*[\u4E00-\u9FFF]+로\s*하고/g, '작업구역을 설정하고')
+              .replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : ''))
               .replace(/크레인맞음/g, '크레인 맞음')
               .replace(/(\([^)]+\))\s*지침\s*(?=[가-힣A-Za-z0-9])/g, '$1 지침\n- ')
               .replace(/\)지침/g, ') 지침')
