@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v60';
-import { store } from './store.js?v=20261122_v60';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v62';
+import { store } from './store.js?v=20261122_v62';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v60';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v62';
 import {
   WORK_GROUP_TREE,
   WORK_GROUP_MID_LIST,
@@ -12,7 +12,7 @@ import {
   WORK_METHODS_9X9_IMPROVED,
   normalizeWorkMethod9x9,
   SafeGuidelineMemory
-} from './text-normalizer.js?v=20261122_v60';
+} from './text-normalizer.js?v=20261122_v62';
 
 const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
@@ -2071,7 +2071,14 @@ function bindEvents() {
       return;
     }
     if (!currentPhotos.length) {
-      toast('부적합 사진을 1장 이상 등록해주세요.', 'danger');
+      toast('📸 부적합 사진을 1장 이상 첨부해야 등록을 진행할 수 있습니다.', 'danger', 4000);
+      const photoArea = $('#photoDropArea') || $('#photoPreviewContainer') || $('#filePhoto');
+      if (photoArea) {
+        photoArea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const prevBorder = photoArea.style.border;
+        photoArea.style.border = '2px solid #ef4444';
+        setTimeout(() => { photoArea.style.border = prevBorder; }, 2500);
+      }
       return;
     }
     if (!content) {
@@ -2163,7 +2170,10 @@ function bindEvents() {
       photoBanner: $('#txtPhotoBanner')?.value.trim() || '',
       photo2Banner: $('#txtPhoto2Banner')?.value.trim() || '',
       interviewOpinion: $('#txtInterviewOpinion')?.value.trim() || '',
+      interviewAuthor: $('#txtInterviewOpinion')?.value.trim() ? '시공관리자 및 근로자' : '',
+      interviewAuthorTitle: $('#txtInterviewOpinion')?.value.trim() ? '[의견 : 시공관리자 및 근로자]' : '',
       inspectorOpinionType: $('#selInspectorOpinionType')?.value || '',
+      _hasExplicitPropType: Boolean($('#selInspectorOpinionType')?.value),
       auditProposal: $('#txtAuditProposal')?.value.trim() || '',
       pmVerdict: $('#txtPmVerdict')?.value.trim() || '',
       pmVerdictType: $('#txtPmVerdict')?.value.trim() || '',
@@ -4042,6 +4052,14 @@ async function downloadSingleJangpyoPPT(btn) {
   }
 
   try {
+    // [v62 Item #9] 관련기준 본문이 11pt 3줄 칸을 초과하거나 제목이 누락된 경우 AI로 자동 축약·보완 후 PPT 생성
+    if (window.SafeLocalAI?.condenseOverflowLawBodiesWithAI) {
+      try {
+        if (btn) btn.textContent = '🤖 관련기준 칸 맞춤 확인 중...';
+        await window.SafeLocalAI.condenseOverflowLawBodiesWithAI([rec]);
+        if (btn) btn.textContent = '점검장표 PPT 제작 중...';
+      } catch (_) {}
+    }
     const safeLoc = (rec.location || '위치')
       .replace(/[\/\\:*?"<>|]/g, '_')
       .replace(/[\r\n\t]+/g, ' ')
@@ -4087,6 +4105,14 @@ async function downloadBatchJangpyoPPT(recordsToExport, btn, label = '') {
   }
 
   try {
+    // [v62 Item #9] 관련기준 본문이 11pt 3줄 칸을 초과하는 항목을 AI로 자동 축약 후 일괄 PPT 생성
+    if (window.SafeLocalAI?.condenseOverflowLawBodiesWithAI) {
+      try {
+        if (btn) btn.textContent = `🤖 관련기준 칸 맞춤 확인 중 (${list.length}건)...`;
+        await window.SafeLocalAI.condenseOverflowLawBodiesWithAI(list);
+        if (btn) btn.textContent = `점검장표 ${list.length}장 제작 중...`;
+      } catch (_) {}
+    }
     const safeLabel = (label || '')
       .replace(/[\/\\:*?"<>|]/g, '_')
       .replace(/[\r\n\t]+/g, ' ')
@@ -5264,6 +5290,13 @@ function renderImportedCards() {
 
     const p1 = (rec.photos && rec.photos[0]) || rec.photo1;
     const p2 = (rec.photos && rec.photos[1]) || rec.photo2;
+    const hasNoPhoto = !p1 && !p2;
+    if (hasNoPhoto) {
+      card.dataset.missingPhoto = '1';
+      card.style.border = '2px solid #ef4444';
+      card.style.borderLeft = '5px solid #dc2626';
+      card.style.background = '#fef2f2';
+    }
     const thumbHtml = `
       <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
         ${p1 ? `
@@ -5278,7 +5311,15 @@ function renderImportedCards() {
             <span style="position: absolute; bottom: 2px; left: 2px; background: rgba(6,78,59,0.88); color: white; font-size: 0.60rem; font-weight: 700; padding: 1px 4px; border-radius: 3px;">사진2</span>
           </div>
         ` : ''}
-        ${!p1 && !p2 ? `<div style="width: 76px; height: 76px; background: #f1f5f9; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.72rem;">사진없음</div>` : ''}
+        ${hasNoPhoto ? `
+          <div style="width: 82px; min-height: 76px; background: #fee2e2; border: 2px dashed #ef4444; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px; text-align: center;">
+            <span style="color: #b91c1c; font-size: 0.68rem; font-weight: 800;">⚠️ 사진없음</span>
+            <label style="cursor: pointer; background: #dc2626; color: white; font-size: 0.64rem; font-weight: 700; padding: 2px 5px; border-radius: 4px;">
+              📸 첨부
+              <input type="file" accept="image/*" multiple class="input-card-attach-photo" data-idx="${idx}" style="display: none;">
+            </label>
+          </div>
+        ` : ''}
       </div>
     `;
 
@@ -5311,12 +5352,18 @@ function renderImportedCards() {
             ${displayMajor} &gt; ${displayMid}${displayMinor ? ` &gt; ${displayMinor}` : ''}
           </span>
           ${verifiedBadgeHtml}
+          ${hasNoPhoto ? `<span style="background:#fee2e2;color:#b91c1c;border:1px solid #f87171;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:800;">🚫 사진 미첨부 — 저장 불가</span>` : ''}
           <span style="font-size: 0.72rem; color: var(--gray-500);">(${rec._sourceFile || '슬라이드 ' + (rec.slideNumber || idx + 1)})</span>
           ${hasLowConf ? `<span style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;padding:1px 6px;border-radius:4px;font-size:0.68rem;font-weight:700;">🔍 원본 대조 권장 (${rec.lowConfidenceFields.join(', ')})</span>` : ''}
         </div>
-        <button type="button" class="btn btn-outline btn-load-to-form" data-idx="${idx}" style="padding: 2px 8px; font-size: 0.72rem; border-color: var(--primary); color: var(--primary);">
-          ✏️ 직접입력 폼에 채우기
-        </button>
+        <div style="display: flex; gap: 4px; align-items: center;">
+          <button type="button" class="btn btn-outline btn-load-to-form" data-idx="${idx}" style="padding: 2px 8px; font-size: 0.72rem; border-color: var(--primary); color: var(--primary);">
+            ✏️ 직접입력 폼에 채우기
+          </button>
+          <button type="button" class="btn btn-outline btn-remove-import-card" data-idx="${idx}" style="padding: 2px 7px; font-size: 0.72rem; border-color: #fca5a5; color: #dc2626;" title="목록에서 제외">
+            🗑️ 제외
+          </button>
+        </div>
       </div>
 
       <div class="crop-loupe-preview" style="display:none;background:#0f172a;padding:6px 8px;border-radius:6px;border:1px solid #334155;">
@@ -5418,6 +5465,35 @@ function renderImportedCards() {
     card.querySelector('.btn-load-to-form').addEventListener('click', () => {
       loadImportedRecordToManualForm(rec);
     });
+    const removeCardBtn = card.querySelector('.btn-remove-import-card');
+    if (removeCardBtn) {
+      removeCardBtn.addEventListener('click', () => {
+        importedRecords.splice(idx, 1);
+        renderImportedCards();
+        toast('선택한 항목을 목록에서 제외했습니다.', 'info');
+      });
+    }
+    const attachInput = card.querySelector('.input-card-attach-photo');
+    if (attachInput) {
+      attachInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []).slice(0, 2);
+        if (!files.length) return;
+        const urls = await Promise.all(files.map(f => new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(f);
+        })));
+        const validUrls = urls.filter(Boolean);
+        if (validUrls.length) {
+          rec.photos = validUrls;
+          rec.photo1 = validUrls[0];
+          if (validUrls[1]) rec.photo2 = validUrls[1];
+          renderImportedCards();
+          toast(`📸 사진 ${validUrls.length}장이 첨부되었습니다.`, 'success');
+        }
+      });
+    }
 
     container.appendChild(card);
   });
@@ -5541,7 +5617,7 @@ function loadImportedRecordToManualForm(rec) {
   if ($('#txtCondition')) $('#txtCondition').value = determinedCondition;
   if ($('#txtAction')) $('#txtAction').value = determinedAction;
   if ($('#txtInterviewOpinion')) $('#txtInterviewOpinion').value = rec.interviewOpinion || '';
-  if ($('#selInspectorOpinionType')) $('#selInspectorOpinionType').value = rec.inspectorOpinionType || '시스템 개선';
+  if ($('#selInspectorOpinionType')) $('#selInspectorOpinionType').value = rec.inspectorOpinionType || '';
   if ($('#txtAuditProposal')) $('#txtAuditProposal').value = rec.auditProposal || '';
   if ($('#txtPmVerdict')) $('#txtPmVerdict').value = rec.pmVerdict || '';
   if ($('#chkHoldPoint')) $('#chkHoldPoint').checked = !!rec.holdPoint;
@@ -5644,6 +5720,27 @@ async function handleSaveImportedRecords() {
     return;
   }
 
+  // [v62 Item #4] 사진이 없는 항목이 1건이라도 있으면 등록/저장 원천 차단 (직접 사진 첨부 또는 제외 유도)
+  const missingPhotoEntries = importedRecords
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => !((Array.isArray(r.photos) && r.photos.length > 0) || r.photo1));
+  if (missingPhotoEntries.length > 0) {
+    const labels = missingPhotoEntries
+      .slice(0, 4)
+      .map(({ r, i }) => r._sourceFile || `항목 ${r.slideNumber || r.pageNumber || (i + 1)}`)
+      .join(', ');
+    toast(
+      `📸 사진이 없는 항목 ${missingPhotoEntries.length}건(${labels}${missingPhotoEntries.length > 4 ? ' 외' : ''})이 있어 등록을 진행할 수 없습니다. 카드에서 사진을 첨부하거나 제외해주세요.`,
+      'danger',
+      5500
+    );
+    const firstMissingCard = document.querySelector('[data-missing-photo="1"]');
+    if (firstMissingCard) {
+      firstMissingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return;
+  }
+
   const productType = $('#selImportProductType')?.value || '공동주택';
   const progressRate = parseFloat($('#txtImportProgressRate')?.value || 35);
   const inspectedDate = $('#txtImportInspectDate')?.value || todayStr();
@@ -5704,9 +5801,6 @@ async function handleSaveImportedRecords() {
       const resolvedType = window.SafeExcel?.mapAccidentType
         ? window.SafeExcel.mapAccidentType(rec.type, rec.content)
         : (rec.type || '추락');
-      const resolvedAuthor = window.SafeExcel?.resolveInterviewAuthor
-        ? window.SafeExcel.resolveInterviewAuthor(rec)
-        : (rec.interviewAuthor || '시공관리자 및 근로자');
 
       const loggedInUser = (store.user && store.user.name) ? String(store.user.name).trim() : '관리자';
       const sheetInspectUser = sanitizeInspectorValue(rec.inspectUser);
@@ -5770,6 +5864,16 @@ async function handleSaveImportedRecords() {
       const parsedFinalOpinions = window.SafeTextNormalizer?.parseInterviewOpinions
         ? window.SafeTextNormalizer.parseInterviewOpinions(cleanedFinalOpinion)
         : null;
+      const hasFinalOpinion = Boolean(cleanedFinalOpinion && cleanedFinalOpinion.trim());
+      const resolvedAuthor = hasFinalOpinion
+        ? (window.SafeExcel?.resolveInterviewAuthor
+            ? window.SafeExcel.resolveInterviewAuthor(rec)
+            : (rec.interviewAuthor || '시공관리자 및 근로자'))
+        : '';
+      const hasExplicitProp = Boolean(
+        (Array.isArray(rec.proposalItems) && rec.proposalItems.length > 0) ||
+        String(rec.inspectorOpinionType || '').trim()
+      );
 
       const explicitPmVal = (rec.pmVerdictType || rec.pmVerdict || '').trim();
       const hasExplicitPm = Boolean(
@@ -5827,13 +5931,18 @@ async function handleSaveImportedRecords() {
         stakeholder,
         mgmtCauses,
         holdPoint: !!rec.holdPoint,
-        interviewAuthor: (parsedFinalOpinions?.hasMulti && parsedFinalOpinions.authorsText) ? parsedFinalOpinions.authorsText : resolvedAuthor,
-        interviewAuthorTitle: (parsedFinalOpinions?.hasMulti && parsedFinalOpinions.primaryTitle) ? parsedFinalOpinions.primaryTitle : (rec.interviewAuthorTitle || `[의견 : ${resolvedAuthor}]`),
+        interviewAuthor: hasFinalOpinion
+          ? ((parsedFinalOpinions?.hasMulti && parsedFinalOpinions.authorsText) ? parsedFinalOpinions.authorsText : resolvedAuthor)
+          : '',
+        interviewAuthorTitle: hasFinalOpinion
+          ? ((parsedFinalOpinions?.hasMulti && parsedFinalOpinions.primaryTitle) ? parsedFinalOpinions.primaryTitle : (rec.interviewAuthorTitle || (resolvedAuthor ? `[의견 : ${resolvedAuthor}]` : '')))
+          : '',
         interviewOpinion: cleanedFinalOpinion,
         interviewOpinions: (parsedFinalOpinions?.sections && parsedFinalOpinions.sections.length >= 2) ? parsedFinalOpinions.sections : (rec.interviewOpinions || []),
-        proposalItems: rec.proposalItems || [],
-        inspectorOpinionType: rec.inspectorOpinionType || '',
-        inspectorOpinionSub: rec.inspectorOpinionSub || '',
+        proposalItems: hasExplicitProp ? (rec.proposalItems || []) : [],
+        inspectorOpinionType: hasExplicitProp ? (rec.inspectorOpinionType || '') : '',
+        inspectorOpinionSub: hasExplicitProp ? (rec.inspectorOpinionSub || '') : '',
+        _hasExplicitPropType: hasExplicitProp,
         auditProposal: (window.SafeExcel?.cleanProposalText ? window.SafeExcel.cleanProposalText(rec.auditProposal || rec.inspectorOpinion || '') : (rec.auditProposal || '')),
         actionPlan: (window.SafeExcel?.resolveActionPlanText ? window.SafeExcel.resolveActionPlanText(rec) : (rec.actionPlan || '')),
         countermeasure: (window.SafeExcel?.resolveActionPlanText ? window.SafeExcel.resolveActionPlanText(rec) : (rec.countermeasure || rec.actionPlan || '')),

@@ -35,8 +35,8 @@ function trimRedBannerFromBox(data, W, box, banners = null) {
   // banners 배열이 전달된 경우: 실제 검출된 상/하단 배너와 인접한 경계 잔영(Fringe, 최대 6px)만 정밀 제거하고,
   // 배너가 없는 영역의 붉은색 갱폼(pg05)·붉은 벽돌(pg17) 등 실제 현장 사진 피사체는 절대 잘라내지 않음!
   if (Array.isArray(banners)) {
-    const horizOverlap = (b) => Math.max(0, Math.min(x + w, b.x + b.w) - Math.max(x, b.x)) >= Math.min(w, b.w) * 0.20;
-    const nearTopBanners = banners.filter(b => horizOverlap(b) && (b.y + b.h) >= y0 - 16 && b.y <= y0 + Math.max(28, Math.round(h * 0.10)));
+    const horizOverlap = (b) => Math.max(0, Math.min(x + w, b.x + b.w) - Math.max(x, b.x)) >= Math.min(w, b.w) * 0.03;
+    const nearTopBanners = banners.filter(b => horizOverlap(b) && (b.y + b.h) >= y0 - 16 && b.y <= y0 + Math.max(28, Math.round(h * 0.14)));
     if (nearTopBanners.length > 0) {
       const cutTop = Math.max(...nearTopBanners.map(b => b.y + b.h)) + 2;
       if (cutTop > y0) y0 = cutTop;
@@ -595,24 +595,26 @@ export function findPhotoBoxes(img, area, banners = []) {
     const segW = x1 - x0 + 1;
     if (segW > mw * 0.58) {
       const yProbeStart = area.y + Math.round(area.h * 0.20);
-      const yProbeEnd = area.y + Math.round(area.h * 0.85);
-      const xScanStart = x0 + Math.round(segW * 0.28);
+      const yProbeEnd = area.y + Math.round(area.h * 0.82);
+      const xScanStart = x0 + Math.round(segW * 0.24);
       const xScanEnd = x0 + Math.round(segW * 0.78);
+      const gutterMinPx = Math.max(1, Math.round(1.5 * sf));
       let runStart = -1;
       let bestGutter = null;
       for (let rx = xScanStart; rx <= xScanEnd; rx++) {
         const ix = area.x + rx;
         let whiteCnt = 0, totalCnt = 0;
         for (let iy = yProbeStart; iy < yProbeEnd; iy++) {
+          if (inBanner(ix, iy)) continue;
           const k = (iy * W + ix) * 4;
           totalCnt++;
-          if (data[k] > 230 && data[k + 1] > 230 && data[k + 2] > 230) whiteCnt++;
+          if (data[k] > 218 && data[k + 1] > 218 && data[k + 2] > 218) whiteCnt++;
         }
         const ratio = whiteCnt / Math.max(1, totalCnt);
-        if (ratio >= 0.88) {
+        if (totalCnt > 0 && ratio >= 0.84) {
           if (runStart < 0) runStart = rx;
         } else {
-          if (runStart >= 0 && rx - runStart >= minGapPx) {
+          if (runStart >= 0 && rx - runStart >= gutterMinPx) {
             const center = Math.floor((runStart + rx - 1) / 2);
             if (!bestGutter || (rx - runStart) > bestGutter.width) {
               bestGutter = { leftEnd: runStart - 1, rightStart: rx, width: rx - runStart, center };
@@ -621,7 +623,7 @@ export function findPhotoBoxes(img, area, banners = []) {
           runStart = -1;
         }
       }
-      if (runStart >= 0 && xScanEnd + 1 - runStart >= minGapPx) {
+      if (runStart >= 0 && xScanEnd + 1 - runStart >= gutterMinPx) {
         const center = Math.floor((runStart + xScanEnd) / 2);
         if (!bestGutter || (xScanEnd + 1 - runStart) > bestGutter.width) {
           bestGutter = { leftEnd: runStart - 1, rightStart: xScanEnd + 1, width: xScanEnd + 1 - runStart, center };
@@ -630,6 +632,57 @@ export function findPhotoBoxes(img, area, banners = []) {
       if (bestGutter && bestGutter.leftEnd - x0 >= mw * 0.22 && x1 - bestGutter.rightStart >= mw * 0.20) {
         refinedSegs.push([x0, bestGutter.leftEnd], [bestGutter.rightStart, x1]);
         continue;
+      }
+      // [v62] 0px 밀착 2장 사진 + 우측 상단 Hold Point 단차(Step-Edge) 정밀 분할:
+      // 상단 적색 배너가 없는(하단 배너) 장표에서 좌측 사진이 상단(y=0..10%)까지 꽉 차 있고 우측 사진 위에 흰색 Hold Point 박스가 놓여 0px로 붙은 경우
+      const hasTopRedBanner = banners.some(b => (b.y - area.y) <= area.h * 0.16);
+      const hpTop0 = area.y + Math.round(area.h * 0.015);
+      const hpTop1 = area.y + Math.round(area.h * 0.095);
+      const colIsTopPhoto = (rx) => {
+        const ix = area.x + rx;
+        let nonWhite = 0, tot = 0;
+        for (let iy = hpTop0; iy < hpTop1; iy += 2) {
+          if (inBanner(ix, iy)) continue;
+          tot++;
+          const k = (iy * W + ix) * 4;
+          const rv = data[k], gv = data[k + 1], bv = data[k + 2];
+          if (!(rv > 224 && gv > 224 && bv > 224)) nonWhite++;
+        }
+        return tot > 0 && (nonWhite / tot) >= 0.45;
+      };
+      // 좌측(15~35%)에 상단 사진이 존재하고 우측(56~72%) 상단 띠에 순백 여백이 넓은 경우에만 단차 탐색
+      let leftPhotoCols = 0, leftSample = 0;
+      if (!hasTopRedBanner) {
+        for (let rx = x0 + Math.round(segW * 0.15); rx <= x0 + Math.round(segW * 0.35); rx += 4) {
+          leftSample++;
+          if (colIsTopPhoto(rx)) leftPhotoCols++;
+        }
+      }
+      let rightWhiteCols = 0, rightSample = 0;
+      for (let rx = x0 + Math.round(segW * 0.56); rx <= x0 + Math.round(segW * 0.72); rx += 4) {
+        rightSample++;
+        if (!colIsTopPhoto(rx)) rightWhiteCols++;
+      }
+      if (leftSample > 0 && (leftPhotoCols / leftSample) >= 0.75 && rightSample > 0 && (rightWhiteCols / rightSample) >= 0.75) {
+        let stepX = -1;
+        let whiteRun = 0;
+        const stepScanStart = x0 + Math.round(segW * 0.32);
+        const stepScanEnd = x0 + Math.round(segW * 0.68);
+        for (let rx = stepScanStart; rx <= stepScanEnd; rx++) {
+          if (!colIsTopPhoto(rx)) {
+            whiteRun++;
+            if (whiteRun >= Math.max(8, Math.round(12 * sf))) {
+              stepX = rx - whiteRun + 1;
+              break;
+            }
+          } else {
+            whiteRun = 0;
+          }
+        }
+        if (stepX > 0 && stepX - x0 >= mw * 0.25 && x1 - stepX >= mw * 0.25) {
+          refinedSegs.push([x0, stepX - 1], [stepX, x1]);
+          continue;
+        }
       }
     }
     refinedSegs.push([x0, x1]);
@@ -712,48 +765,102 @@ export function findPhotoBoxes(img, area, banners = []) {
     while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
     while (ty1 > ty0 && isRowBlank(ty1)) ty1--;
 
-    // 우측 상단 '[ ] Hold Point 위반 (N/A)' 분리형 소형 박스 완전 제거:
-    // 1) 상단 적색 배너(banners)와 같은 수평 행에 위치한 우측 Hold Point 박스는 배너 하단선(topBannerBottomY)을 기준으로 상단 컷
+    // 우측 상단 '[ ] Hold Point 위반 (N/A)' 분리형 소형 박스 및 상단 배너 잔영 완전 제거:
+    // [v62] 기존 첫 3px 공백에서 즉시 break하던 버그(Hold Point 박스 내부 상단 여백에서 멈춰 텍스트·하단 테두리가 사진에 포함됨) 해결!
+    //       holdPointLimitY까지 끝까지 스캔하여, 그 위쪽이 흰 배경+무채색 문자/테두리(또는 적색 배너)로만 이루어진 '마지막 공백 띠' 아래로 정확히 절단
     const topBanners = banners.filter(b => (b.y - area.y) <= area.h * 0.18);
     const topBannerBottomY = topBanners.length
       ? Math.max(...topBanners.map(b => b.y + b.h)) + Math.max(4, Math.round(4 * sf))
       : 0;
     const holdPointLimitY = area.y + Math.round(area.h * 0.24);
-    const startsInTopStrip = (ty0 - area.y) <= area.h * 0.11;
+    const startsInTopStrip = (ty0 - area.y) <= area.h * 0.14;
+
+    const analyzeStripRow = (gy) => {
+      let wh = 0, red = 0, achromDark = 0, sat = 0, tot = 0;
+      const sx0 = r.x + Math.min(4, Math.floor(r.w * 0.02));
+      const sx1 = r.x + r.w - Math.min(4, Math.floor(r.w * 0.02));
+      for (let gx = sx0; gx < sx1; gx += 2) {
+        tot++;
+        const k = (gy * W + gx) * 4;
+        const rv = data[k], gv = data[k + 1], bv = data[k + 2];
+        const mx = Math.max(rv, gv, bv), mn = Math.min(rv, gv, bv);
+        const lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
+        if (rv > 228 && gv > 228 && bv > 228) wh++;
+        if (isRedBanner(data, k)) red++;
+        if ((mx - mn) < 26 && lum < 185) achromDark++;
+        if ((mx - mn) > 36) sat++;
+      }
+      const n = Math.max(1, tot);
+      const whiteRatio = wh / n;
+      const redRatio = red / n;
+      const achromDarkRatio = achromDark / n;
+      const colorSatRatio = sat / n;
+      const isGapRow = isRowBlank(gy) || (whiteRatio >= 0.86 && colorSatRatio < 0.03);
+      const isHeaderRow =
+        whiteRatio >= 0.45 ||
+        redRatio >= 0.06 ||
+        ((whiteRatio + achromDarkRatio) >= 0.82 && colorSatRatio < 0.06);
+      return { whiteRatio, redRatio, achromDarkRatio, colorSatRatio, isGapRow, isHeaderRow };
+    };
+
     if (startsInTopStrip && ty1 > holdPointLimitY) {
-      let blankRun = 0;
-      let firstBlankY = -1;
-      let gapEndY = -1;
-      const scanStartY = Math.max(ty0 + Math.round(area.h * 0.02), topBannerBottomY ? topBannerBottomY - Math.round(area.h * 0.03) : 0);
-      for (let gy = scanStartY; gy <= Math.min(ty1 - minSide, holdPointLimitY); gy++) {
-        if (isRowBlank(gy)) {
-          if (blankRun === 0) firstBlankY = gy;
-          blankRun++;
-          if (blankRun >= Math.max(3, Math.round(3 * sf))) {
-            gapEndY = gy;
+      const scanEnd = Math.min(ty1 - minSide, holdPointLimitY);
+      const rowStats = [];
+      for (let gy = ty0; gy <= scanEnd; gy++) {
+        rowStats.push({ gy, ...analyzeStripRow(gy) });
+      }
+      const minGapRows = Math.max(2, Math.round(2 * sf));
+      let bestCutY = -1;
+      let runStartIdx = -1;
+      for (let i = 0; i < rowStats.length; i++) {
+        if (rowStats[i].isGapRow) {
+          if (runStartIdx === -1) runStartIdx = i;
+        }
+        const isLast = i === rowStats.length - 1;
+        if ((!rowStats[i].isGapRow || isLast) && runStartIdx !== -1) {
+          const runEndIdx = rowStats[i].isGapRow ? i : (i - 1);
+          const runLen = runEndIdx - runStartIdx + 1;
+          if (runLen >= minGapRows && runStartIdx >= 2) {
+            let hdrCnt = 0;
+            for (let j = 0; j < runStartIdx; j++) {
+              if (rowStats[j].isHeaderRow) hdrCnt++;
+            }
+            const hdrFrac = hdrCnt / runStartIdx;
+            if (hdrFrac >= 0.78) {
+              bestCutY = rowStats[runEndIdx].gy + 1;
+            }
           }
-        } else if (gapEndY > 0) {
-          break;
-        } else {
-          blankRun = 0;
+          runStartIdx = -1;
         }
       }
-      if (gapEndY > 0 && firstBlankY > 0 && (firstBlankY - ty0) <= area.h * 0.16) {
-        ty0 = gapEndY + 1;
+      if (bestCutY > ty0 && bestCutY < ty1 - minSide) {
+        ty0 = bestCutY;
         while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
-      } else if (topBannerBottomY > ty0 && topBannerBottomY < ty1 - minSide && r.x >= area.x + area.w * 0.45) {
-        // 우측 사진 영역 상단이 배너 행과 겹치면서 상단 띠의 흰 배경 비율이 높으면(Hold Point 텍스트 박스) 배너 하단선 아래로 안전 트림
-        let stripWhite = 0, stripTot = 0;
+      }
+      // 상단 적색 배너와 같은 수평 행에 놓인 우측 Hold Point 박스는 bestCutY 결과와 무관하게 배너 하단선 아래까지 확실히 절단
+      if (topBannerBottomY > ty0 && topBannerBottomY < ty1 - minSide && r.x >= area.x + area.w * 0.36) {
+        let stripWhite = 0, stripRed = 0, stripTot = 0;
         for (let gy = ty0; gy < topBannerBottomY; gy += 2) {
           for (let gx = r.x; gx < r.x + r.w; gx += 2) {
             stripTot++;
             const k = (gy * W + gx) * 4;
             if (data[k] > 215 && data[k + 1] > 215 && data[k + 2] > 215) stripWhite++;
+            if (isRedBanner(data, k)) stripRed++;
           }
         }
-        if (stripTot > 0 && (stripWhite / stripTot) >= 0.62) {
+        if (stripTot > 0 && ((stripWhite / stripTot) >= 0.38 || (stripRed / stripTot) >= 0.05)) {
           ty0 = topBannerBottomY;
           while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
+        }
+      }
+      // 절단 직후 상단에 남은 1~10px의 얇은 Hold Point 하단 검은 테두리 또는 순백 여백 추가 정리
+      const extraTrimLimit = Math.min(ty1 - minSide, ty0 + Math.max(10, Math.round(12 * sf)));
+      while (ty0 < extraTrimLimit) {
+        const st = analyzeStripRow(ty0);
+        if (st.isGapRow || (st.redRatio >= 0.08 && (ty0 - area.y) <= area.h * 0.22)) {
+          ty0++;
+        } else {
+          break;
         }
       }
     }
@@ -803,6 +910,14 @@ export function findPhotoBoxes(img, area, banners = []) {
     const whiteRowFrac = whiteRows / Math.max(1, r.h);
     const isReference = !hasOwnBanner && (whiteRatio > 0.54 || (whiteRowFrac >= 0.11 && whiteRatio > 0.29));
     results.push({ ...r, whiteRatio, whiteRowFrac, hasOwnBanner, isReference });
+  }
+
+  // [v62] 모든 후보가 참고문서(isReference)로 오판되어 사진이 0장이 되는 사고 방지 (순백 문서 72% 초과는 제외)
+  if (results.length > 0 && results.every(x => x.isReference)) {
+    const best = results
+      .filter(x => x.whiteRatio <= 0.72)
+      .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
+    if (best) best.isReference = false;
   }
 
   return results.sort((p, q) => p.x - q.x);

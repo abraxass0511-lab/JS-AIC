@@ -308,6 +308,11 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/등모든/g, '등 모든')
     .replace(/모든인원/g, '모든 인원')
     .replace(/통제해야할/g, '통제해야 할')
+    // 7. [v62] 적재물/결속/수량/미실시 복합어 붙여쓰기 교정 ('적재물결속2개소미실시' -> '적재물 결속 2개소 미실시')
+    .replace(/(적재물|자재|부재|장비|화물|비계|난간|발판|동바리|거푸집|철근|배관|전선)(결속|고정|고박|적재|설치|해체|운반|양중|인양|통제|점검|확인|복구|정리)/g, '$1 $2')
+    .replace(/([가-힣])(\d+\s*(?:개소|개|본|단|회|명|대|곳))/g, (m, p1, p2) => (p1 === '제' ? m : `${p1} ${p2}`))
+    .replace(/(\d+\s*(?:개소|개|본|단|회|명|대|곳))([가-힣])/g, '$1 $2')
+    .replace(/([가-힣]{2,})(미실시|미설치|미착용|미사용|미체결|미복구|미고정|미결속|미확보|미준수|미비치|미배치|미조치|미수립|미이행|미실행|미확인|미점검|미통제|미차단)(?=\s|$|[.,;:)/·\-])/g, '$1 $2')
     .replace(/할권한/g, '할 권한')
     .replace(/책임이있다/g, '책임이 있다')
     .replace(/되지않아/g, '되지 않아')
@@ -937,7 +942,7 @@ export function stripCircledNumbers(text = '') {
  * 사진 요약 배너 단일 표준 정규화 (엑셀 '사진 요약(배너)' · PPT 상단 적색 배너 100% 공용)
  */
 export function normalizePhotoBannerText(rawBanner = '', content = '', location = '') {
-  const rawStr = String(rawBanner || '').trim();
+  const rawStr = String(rawBanner || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!rawStr || hasGarbledKoreanNoise(rawStr) || isGarbledBannerText(rawStr)) return '';
   let s = stripBannerSecondItemTail(rawStr);
   // '타설 中 계단참'에서 한자 '中'이 공백 2개로 빠진 OCR 패턴 복원
@@ -1217,14 +1222,17 @@ export function inferSafetyDomain(text = '') {
   if (!s.trim()) return '';
   if (/(?:가설전기|전기\s*작업|전기설비|분전반|분전함|접지선?|누전차단기|차단기|충전부|전등|소켓|투광등|심선|감전|6\.3\.2\s*작업\s*중\s*점검|7\.2\.3\s*가설\s*분전반)/.test(s)) return '전기';
   if (/(?:화재\s*예방|화재\s*감시|충전구역|소화기|소화튜브|화기\s*작업|방화포|불티\s*비산|인화성|연소|용접.*화재)/.test(s)) return '화재';
+  if (/(?:고소작업대|시저형|굴절형|고소작업차|제186조)/.test(s)) return '고소작업대';
+  // [v62] 갱폼·알폼·거푸집 및 동바리 지침(IZ12-103 등) 내부에 '크레인 후크 체결' 문구가 포함되어도 거푸집동바리 도메인으로 우선 판별!
+  if (/(?:갱폼|Gang\s*Form|AL\s*Form|알폼|선해체|거푸집\s*및\s*동바리|거푸집\s*작업|IZ12B?-?103)/i.test(s) && !/(?:유도로프\s*미사용|슬래브\s*거푸집\s*양중|보\s*거푸집\s*양중|이형자재\s*양중|양중\s*시\s*화물)/.test(s)) return '거푸집동바리';
   if (/(?:지게차|하역|유도자|운행경로|3\.?6\s*유도자)/.test(s) && !/(?:타워크레인|크레인|고리걸이|이형자재\s*양중)/.test(s)) return '지게차';
-  if (/(?:타워크레인|크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|자재\s*양중|형틀자재\s*양중|고리걸이)/.test(s) && !/(?:동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도))/.test(s)) return '양중';
+  if (/(?:타워크레인|크레인|양중물|달기구|줄걸이|이형자재\s*양중|유도로프|자재\s*양중|형틀자재\s*양중|거푸집\s*양중|고리걸이)/.test(s) && !/(?:동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도))/.test(s)) return '양중';
   if (/(?:동바리|서포트|멍에|장선|거푸집|갱폼|AL\s*Form|알폼|형틀|제332조)/i.test(s)) return '거푸집동바리';
-  if (/(?:비계|작업발판|밑둥잡이|워킹타워|벽이음|말비계|우마|제56조|제67조)/.test(s)) return '비계';
+  if (/(?:비계|작업발판|밑둥잡이|워킹타워|벽이음|말비계|우마|제56조|제58조|제59조|제60조|제67조)/.test(s)) return '비계';
   if (/(?:이동식\s*사다리|A형\s*사다리|고소작업용\s*사다리|사다리\s*(?:상부|작업|아웃트리거|전도))/.test(s)) return '사다리';
   if (/(?:생명줄|안전대\s*부착|안전블럭|안전고리|제44조|추락|안전난간|단부)/.test(s)) return '추락안전대';
-  if (/(?:개구부|덮개|맨홀|수직구|제43조|제59조)/.test(s)) return '개구부';
-  if (/(?:굴착|흙막이|토사|붕괴|사면|지보공|제338조)/.test(s)) return '굴착';
+  if (/(?:개구부|덮개|맨홀|수직구|제43조)/.test(s)) return '개구부';
+  if (/(?:굴착|흙막이|토사|붕괴|사면|지보공|제338조|제345조)/.test(s)) return '굴착';
   return '';
 }
 
@@ -1236,15 +1244,21 @@ function areSafetyDomainsConflicting(titleDomain = '', ctxDomain = '', rawTitle 
   if (/지게차|3\.?6\s*유도자|운행경로|제172조/.test(t) && ctxDomain && ctxDomain !== '지게차') return true;
   // 전기 규정(제301~304조) vs 추락/비계/지게차/양중 문맥 충돌
   if (/제30[1-9]조|충전부|접지|누전차단기|전기\s*작업/.test(t) && ctxDomain && ctxDomain !== '전기') return true;
+  // 고소작업대 문맥에 작업발판(제56조) 오적용 차단
+  if (/제56조|작업발판/.test(t) && (ctxDomain === '고소작업대' || /고소작업대/.test(c))) return true;
+  // [v62] 비계 벽이음·벽버팀·가새·밑둥잡이 위반에 제56조(작업발판의 구조) 오적용 차단 (제60조/제59조가 정확!)
+  if (/제56조|작업발판의\s*구조/.test(t) && /(?:벽이음|벽버팀|가새|밑둥잡이)/.test(c) && !/작업발판|발판\s*(?:폭|틈새|고정|이탈|미설치|불량|해체|미복구)/.test(c)) return true;
   // 제332조(거푸집동바리) vs 순수 양중작업 충돌
   if (/제332조|거푸집동바리/.test(t) && ctxDomain === '양중') return true;
   // 제44조(안전대 부착설비) vs 이동식 사다리 본문/문맥 충돌
   if (/제44조|안전대\s*부착/.test(t) && (ctxDomain === '사다리' || /이동식\s*사다리|A형\s*사다리/.test(c))) return true;
   if (titleDomain && ctxDomain && titleDomain !== ctxDomain) {
+    // 갱폼/거푸집 지침 본문에 '크레인 후크 체결/인양'이 언급되는 것은 정상 문맥이므로 허용!
+    if ((titleDomain === '거푸집동바리' || ctxDomain === '거푸집동바리') && /갱폼|Gang\s*Form|거푸집|동바리|인양|크레인\s*후크/i.test(`${t} ${c}`) && !/제332조/.test(t)) return false;
     // 거푸집동바리/철골/PC 공종에서 자재 양중·줄걸이 지침을 쓰는 것은 정상 문맥이므로 허용
     if (titleDomain === '양중' && /양중|인양|크레인|줄걸이|보\s*설치/.test(c)) return false;
-    // 인접 추락/비계/개구부/거푸집 간 세부 규칙 혼용은 문맥상 허용하되, 이종 대분류(전기·지게차·화재·사다리·양중) 간 충돌은 차단
-    const strictGroup = new Set(['전기', '지게차', '화재', '사다리', '양중']);
+    // 인접 추락/비계/개구부/거푸집 간 세부 규칙 혼용은 문맥상 허용하되, 이종 대분류(전기·지게차·화재·사다리·양중·고소작업대) 간 충돌은 차단
+    const strictGroup = new Set(['전기', '지게차', '화재', '사다리', '양중', '고소작업대']);
     if (strictGroup.has(titleDomain) || strictGroup.has(ctxDomain)) return true;
   }
   return false;
@@ -1289,6 +1303,9 @@ export const SafeGuidelineMemory = (() => {
     if (/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙|관계법규\s*적용\s*항목)$/.test(t)) return false;
     // 본문이 없거나 단순 절 제목('7.2.3 분전반' 등 18자 미만 파편)만 있는 불완전 지침은 무조건 배제
     if (!b || b.length < 18 || hasGarbledKoreanNoise(b) || isGarbledBannerText(b)) return false;
+    // [v62] 법적 의무 기준('~하여야 한다')이 아닌 과거형 위반 서술('~이루어지지 않았다', '~확보되지 않았다') 또는 제56조+벽이음 혼용 지침 배제
+    if (/(?:이루어지지\s*않았다|확보되지\s*않았다|설치되지\s*않았다|준수되지\s*않았다)/.test(b)) return false;
+    if (/제56조|작업발판의\s*구조/.test(t) && /벽이음|벽버팀/.test(b)) return false;
     if (!/(?:해야|하여야|한다|금지|준수|설치|착용|확보|실시|배치|고정|유지|방지|통제|점검|관리|사용|연결|체결|부착|비치)/.test(b)) return false;
     const tDom = inferSafetyDomain(t);
     const bDom = inferSafetyDomain(b);
@@ -1751,10 +1768,16 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
   const ctxDomain = inferSafetyDomain(ctxFull) || bodyDomain;
 
   let mismatchReason = '';
+  const hasViolationPastTenseBody = Boolean(body && /(?:이루어지지\s*않았다|확보되지\s*않았다|설치되지\s*않았다|준수되지\s*않았다)/.test(body));
+  const hasScaffArt56WallTieMix = Boolean(
+    /제56조|작업발판의\s*구조/.test(title) &&
+    /(?:벽이음|벽버팀|가새|밑둥잡이)/.test(`${ctxFull} ${body}`) &&
+    !/작업발판|발판\s*(?:폭|틈새|고정|이탈|미설치|불량|해체|미복구)/.test(ctxFull)
+  );
   const bodyConflictsWithCtx = Boolean(body && ctxRaw && areSafetyDomainsConflicting(bodyDomain, inferSafetyDomain(ctxRaw), body, ctxRaw));
-  if (bodyConflictsWithCtx) {
+  if (bodyConflictsWithCtx || hasViolationPastTenseBody || hasScaffArt56WallTieMix) {
     body = '';
-    mismatchReason = 'body_domain_mismatch';
+    mismatchReason = hasScaffArt56WallTieMix ? 'scaff_art56_walltie_mismatch' : (hasViolationPastTenseBody ? 'violation_tense_body' : 'body_domain_mismatch');
   }
 
   const titleConflictsWithCtx = Boolean(title && areSafetyDomainsConflicting(titleDomain, ctxDomain, title, `${ctxFull} ${body}`));
@@ -1763,7 +1786,7 @@ export function normalizeSafetyLawSpec({ rawLaw = '', lawBody = '', law = '', co
 
   // 모순되거나 심각하게 손상된 원본 제목은 1순위로 신뢰할 수 없으므로 비우고(코드만 유지) 2순위/3순위로 넘김
   const preservedCode = extractGuidelineCode(title);
-  if (titleConflictsWithCtx || titleConflictsWithBody) {
+  if (titleConflictsWithCtx || titleConflictsWithBody || hasScaffArt56WallTieMix) {
     mismatchReason = mismatchReason || (titleConflictsWithBody ? 'title_body_mismatch' : 'title_ctx_mismatch');
     title = '';
   }
@@ -1874,6 +1897,47 @@ export function applyTypoPatches(record, typoPatches) {
   return record;
 }
 
+/**
+ * [v62] 관련기준 본문(11pt, 폭 5.42in, 높이 0.64in, 최대 3줄) 박스 초과 여부 정밀 판별
+ * - PowerPoint 맑은 고딕 11pt + 한국어 어절 줄바꿈(keep-all) 실측 폭 반영
+ */
+export function isLawBodyOverflowing(lawBody = '') {
+  const s = String(lawBody || '').trim();
+  if (!s) return false;
+  const maxUnitsPerLine = 27.5; // 11pt 맑은 고딕 + 어절 줄바꿈 실측 안전 폭
+  const measureUnits = (str) => {
+    let units = 0;
+    for (const ch of str) {
+      if (/[가-힣ㄱ-ㅎㅏ-ㅣ\u3000-\u9FFF]/.test(ch)) units += 1.06;
+      else if (ch === ' ') units += 0.34;
+      else units += 0.58;
+    }
+    return units;
+  };
+  const lines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let totalWrapped = 0;
+  for (const ln of lines) {
+    const words = ln.split(/\s+/).filter(Boolean);
+    let curW = 0;
+    let wrapped = 1;
+    for (const w of words) {
+      const wu = measureUnits(w);
+      if (curW > 0 && curW + 0.34 + wu > maxUnitsPerLine) {
+        wrapped++;
+        curW = wu;
+      } else {
+        curW = curW > 0 ? (curW + 0.34 + wu) : wu;
+      }
+      while (curW > maxUnitsPerLine) {
+        wrapped++;
+        curW -= maxUnitsPerLine;
+      }
+    }
+    totalWrapped += wrapped;
+  }
+  return totalWrapped > 3;
+}
+
 // 전역 브라우저/Node 객체에도 노출 (비모듈 스크립트 호환)
 const _globalRoot = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
 if (_globalRoot) {
@@ -1892,6 +1956,7 @@ if (_globalRoot) {
     resolveUnifiedPhotoBanner,
     normalizeSafetyLawBody,
     normalizeSafetyLawSpec,
+    isLawBodyOverflowing,
     stripGuidelinePrefixes,
     isGarbledBannerText,
     hasGarbledKoreanNoise,

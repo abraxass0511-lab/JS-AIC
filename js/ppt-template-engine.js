@@ -2182,9 +2182,9 @@
   function estimateVisualWidthUnits(text) {
     let units = 0;
     for (const ch of String(text || '')) {
-      if (/[가-힣ㄱ-ㅎㅏ-ㅣ\u3000-\u9FFF]/.test(ch)) units += 0.94;
-      else if (ch === ' ') units += 0.30;
-      else units += 0.52;
+      if (/[가-힣ㄱ-ㅎㅏ-ㅣ\u3000-\u9FFF]/.test(ch)) units += 1.05;
+      else if (ch === ' ') units += 0.32;
+      else units += 0.55;
     }
     return units;
   }
@@ -2245,57 +2245,144 @@
   }
 
   /**
-   * [원본 글자크기 100% 고정] 다중 줄 박스가 높이를 초과할 때만 문장/어절 단위로 축약 (말줄임표 '...' 금지, 글자크기 축소 금지)
+   * [v62] 어절/문장 경계 기반 안전 축약 (단어 중간 절단 '안전고리를체', 1~2글자 잔여 '- 그' 원천 금지)
    */
-  function fitMultilineByAbbr(lines, widthIn, heightIn, fontPt, lnSpcRatio = 1.0, spcAftPt = 0) {
-    const cleanLines = (Array.isArray(lines) ? lines : [lines])
+  function trimTextAtCleanBoundary(body, budgetPt, fontPt) {
+    const clean = String(body || '').replace(/\s+/g, ' ').trim();
+    if (!clean) return '';
+    if (estimateVisualWidthUnits(clean) * fontPt <= budgetPt) return clean;
+    // 1순위: 완결 문장 경계(., !, ?) 중 예산 내에 들어오는 가장 긴 접두문
+    const sentEnds = [...clean.matchAll(/[.!?](?=\s|$)/g)].map(m => m.index + 1);
+    for (let i = sentEnds.length - 1; i >= 0; i--) {
+      const cand = clean.slice(0, sentEnds[i]).trim();
+      if (cand.length >= 6 && estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
+        return cand;
+      }
+    }
+    // 2순위: 어절(공백) 단위로 뒤에서부터 축소 (절대 어절 중간 글자 자르기 금지!)
+    const words = clean.split(' ').filter(Boolean);
+    while (words.length > 1) {
+      words.pop();
+      const cand = words.join(' ').replace(/[,/;·\-:(\s]+$/g, '').trim();
+      if (cand && estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
+        return cand;
+      }
+    }
+    // 단어가 단 1개뿐인 예외적인 장문일 때만 예산 내 문자 절단
+    let s = clean;
+    while (s.length > 4 && estimateVisualWidthUnits(s) * fontPt > budgetPt) {
+      s = s.slice(0, -1).replace(/[,/;·\-:(\s]+$/g, '').trim();
+    }
+    return s;
+  }
+
+  /**
+   * [v62] 원본 글자크기 100% 고정 + 원문 최대 보존 다중줄 피팅 엔진
+   * - 글자크기(fontPt)는 절대 줄이지 않음!
+   * - 원문이 넘칠 때는 먼저 단락 간격(spcAft)과 줄 간격(lnSpc 1.0->0.94)만 미세 조정하여 원문 100%를 무절단 수용
+   * - 물리적 박스 한계를 진짜로 초과할 때만 비례 줄 배분 + 문장/어절 경계 안전 축약 수행 (단어 중간 절단 금지)
+   */
+  function fitMultilineSmart(lines, widthIn, heightIn, fontPt, lnSpcRatio = 1.0, spcAftPt = 0, options = {}) {
+    let cleanLines = (Array.isArray(lines) ? lines : [lines])
       .map((l) => String(l || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim())
       .filter(Boolean);
-    if (!cleanLines.length) return [];
+    if (!cleanLines.length) return { lines: [], lnSpcRatio, spcAftPt };
 
-    const lineWidthPt = Math.max(36, widthIn * 72 - 8);
-    const availH = Math.max(fontPt * 1.3, heightIn * 72 - 4);
-    const singleLineH = fontPt * lnSpcRatio * 1.24;
+    const lineWidthPt = Math.max(36, widthIn * 72 - (options.isLawBody ? 46 : 8));
+    const availH = Math.max(fontPt * 1.3, heightIn * 72 - 3);
+    const countWrapped = (str) => {
+      const words = String(str || '').trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return 1;
+      const spPt = 0.34 * fontPt;
+      let curPt = 0;
+      let wrapped = 1;
+      for (const w of words) {
+        const wPt = estimateVisualWidthUnits(w) * fontPt;
+        if (curPt > 0 && curPt + spPt + wPt > lineWidthPt) {
+          wrapped++;
+          curPt = wPt;
+        } else {
+          curPt = curPt > 0 ? (curPt + spPt + wPt) : wPt;
+        }
+        while (curPt > lineWidthPt) {
+          wrapped++;
+          curPt -= lineWidthPt;
+        }
+      }
+      return wrapped;
+    };
+    const calcHeight = (arr, lnR, spcA) => {
+      const lineH = fontPt * lnR * 1.22;
+      return arr.reduce((sum, l, i) => sum + countWrapped(l) * lineH + (i < arr.length - 1 ? spcA : 0), 0);
+    };
 
-    const countWrapped = (str) => Math.max(1, Math.ceil((estimateVisualWidthUnits(str) * fontPt) / lineWidthPt));
-    const totalHeight = (arr) => arr.reduce((sum, l, i) => (
-      sum + countWrapped(l) * singleLineH + (i < arr.length - 1 ? spcAftPt : 0)
-    ), 0);
+    // 1단계: 원본 간격 -> 단락 간격 미세 축소 -> 줄간격 미세 조정으로 원문 100% 보존 시도
+    const tiers = [
+      { lnR: lnSpcRatio, spcA: spcAftPt },
+      { lnR: lnSpcRatio, spcA: Math.min(spcAftPt, Math.max(0, Math.round(spcAftPt / 2))) },
+      { lnR: Math.min(lnSpcRatio, 0.96), spcA: Math.min(spcAftPt, 1) },
+      { lnR: Math.min(lnSpcRatio, 0.92), spcA: 0 },
+    ];
+    for (const t of tiers) {
+      if (calcHeight(cleanLines, t.lnR, t.spcA) <= availH) {
+        return { lines: cleanLines, lnSpcRatio: t.lnR, spcAftPt: t.spcA };
+      }
+    }
 
-    if (totalHeight(cleanLines) <= availH) return cleanLines;
+    // 관련기준 본문(isLawBody)에서 첫 줄이 순수 절 제목('7.7.1 A/F 설치')이고 뒤에 실제 수칙 문장이 있으면 절 제목 생략 후 재시도
+    if (options.isLawBody && cleanLines.length >= 2) {
+      const firstIsSubHeading = /^\d+\.\d+(?:\.\d+)?\s+/.test(cleanLines[0]) && !/[.다함됨요]$/.test(cleanLines[0]);
+      if (firstIsSubHeading) {
+        const withoutHead = cleanLines.slice(1);
+        for (const t of tiers) {
+          if (calcHeight(withoutHead, t.lnR, t.spcA) <= availH) {
+            return { lines: withoutHead, lnSpcRatio: t.lnR, spcAftPt: t.spcA };
+          }
+        }
+        cleanLines = withoutHead;
+      }
+    }
 
-    // 박스 높이에 들어갈 최대 단락 수 및 단락당 허용 줄 수 계산
-    const maxItems = Math.max(1, Math.min(cleanLines.length, Math.floor((availH + spcAftPt) / (singleLineH + spcAftPt))));
+    // 2단계: 물리적 박스 한계 초과 시 최소 간격(spcA=0, lnR=0.92) 기준으로 항목별 비례 줄 배분 + 문장/어절 경계 축약
+    const bestLnR = Math.min(lnSpcRatio, 0.92);
+    const bestSpcA = 0;
+    const singleLineH = fontPt * bestLnR * 1.22;
+    const totalAvailLines = Math.max(1, Math.floor(availH / singleLineH));
+    const maxItems = Math.min(cleanLines.length, totalAvailLines);
     const kept = cleanLines.slice(0, maxItems);
-    if (totalHeight(kept) <= availH) return kept;
+    const needed = kept.map(countWrapped);
+    const alloc = kept.map(() => 1);
+    let remaining = Math.max(0, totalAvailLines - kept.length);
+    // 실제 줄 수가 부족한 항목부터 순서대로 여유 줄 배분 (1줄짜리에 불필요하게 낭비하지 않음)
+    while (remaining > 0) {
+      let progressed = false;
+      for (let i = 0; i < kept.length && remaining > 0; i++) {
+        if (alloc[i] < needed[i]) {
+          alloc[i]++;
+          remaining--;
+          progressed = true;
+        }
+      }
+      if (!progressed) break;
+    }
 
-    const totalAvailLines = Math.max(kept.length, Math.floor((availH - Math.max(0, kept.length - 1) * spcAftPt) / singleLineH));
-    const maxLinesPerItem = Math.max(1, Math.floor(totalAvailLines / kept.length));
-
-    return kept.map((ln) => {
-      if (countWrapped(ln) <= maxLinesPerItem) return ln;
+    const fitted = kept.map((ln, idx) => {
+      if (needed[idx] <= alloc[idx]) return ln;
       const prefixMatch = ln.match(/^((?:[-•▪]\s+|\d+[\.)]\s+))/);
       const prefix = prefixMatch ? prefixMatch[1] : '';
       const body = prefix ? ln.slice(prefix.length).trim() : ln;
-      const budgetPt = lineWidthPt * maxLinesPerItem - estimateVisualWidthUnits(prefix) * fontPt - fontPt * 0.4;
-      let lo = 4;
-      let hi = body.length;
-      let best = body.slice(0, Math.max(4, Math.floor(budgetPt / fontPt)));
-      while (lo <= hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        const cand = toCompletePhrase(body, mid);
-        if (estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
-          best = cand;
-          lo = mid + 1;
-        } else {
-          hi = mid - 1;
-        }
-      }
-      while (best.length > 4 && estimateVisualWidthUnits(best) * fontPt > budgetPt) {
-        best = best.slice(0, -1).replace(/[,/;·\-:(\s]+$/g, '').trim();
-      }
-      return `${prefix}${best}`.trim();
+      const budgetPt = lineWidthPt * alloc[idx] - estimateVisualWidthUnits(prefix) * fontPt - fontPt * 0.35;
+      const trimmed = trimTextAtCleanBoundary(body, budgetPt, fontPt);
+      return `${prefix}${trimmed}`.trim();
     });
+    return { lines: fitted, lnSpcRatio: bestLnR, spcAftPt: bestSpcA };
+  }
+
+  /**
+   * [원본 글자크기 100% 고정] 다중 줄 박스가 높이를 초과할 때만 문장/어절 단위로 축약 (말줄임표 '...' 금지, 글자크기 축소 금지)
+   */
+  function fitMultilineByAbbr(lines, widthIn, heightIn, fontPt, lnSpcRatio = 1.0, spcAftPt = 0, options = {}) {
+    return fitMultilineSmart(lines, widthIn, heightIn, fontPt, lnSpcRatio, spcAftPt, options).lines;
   }
 
   /**
@@ -2598,9 +2685,11 @@
       },
     });
 
-    // 2. 관련기준 본문 박스 (TextBox 1, id=2): 원본 11pt 일반체 100% 고정 (초과 시 축약) + lstStyle glow 제거
+    // 2. 관련기준 본문 박스 (TextBox 1, id=2): 원본 11pt 일반체 100% 고정 (초과 시 3줄 이내 안전 축약) + lstStyle glow 제거
     const rawLawBodyLines = splitBulletLines(data.lawBody || '');
-    const lawBodyLines = fitMultilineByAbbr(rawLawBodyLines, 5.42, 0.64, 11, 1.0, 0);
+    const lawFit = fitMultilineSmart(rawLawBodyLines, 5.42, 0.64, 11, 1.0, 0, { isLawBody: true });
+    const lawBodyLines = lawFit.lines;
+    const lawLnSpcXml = Math.round(lawFit.lnSpcRatio * 100000);
     // malgun.ttf 실측: 11pt '- ' = 106,680 EMU (원문에 '-'가 있을 때만 내어쓰기 적용)
     const lawHangEmu = 106680;
     const lawBodyParas = lawBodyLines.length
@@ -2614,7 +2703,7 @@
             algn: 'l',
             spcBef: 0,
             spcAft: 0,
-            lnSpc: 100000,
+            lnSpc: lawLnSpcXml,
             marL: isDash ? lawHangEmu : 0,
             indent: isDash ? -lawHangEmu : 0,
             buNone: true,
@@ -2660,59 +2749,115 @@
     ], { algn: 'ctr', lIns: 35000, rIns: 35000, tIns: 0, bIns: 0, anchor: 'ctr', noAutofit: true });
 
     // 5. 발생원인 인터뷰 결과 (TextBox 45, id=46)
-    //    - 원본 R1 정확 수치: 제목 14pt Bold / 본문 12pt Regular, 단락 앞 0pt, 단락 뒤 9pt(900), 줄 간격 1줄(100000)
-    //    - 원본 양식에 '-'가 없으므로 임의 '-' 추가 금지! (원문/PDF 스캔에 '-'가 있을 때만 유지 + 실측 내어쓰기)
+    //    - 원본 R1 정확 수치: 제목 14pt Bold / 본문 12pt Regular, 단락 앞 0pt, 기본 단락 뒤 9pt(900), 줄 간격 1줄(100000)
+    //    - [v62] 의견이 공란이면 '[의견 : 시공관리자 및 안전관리자]' 하드코딩 금지 — 완전 공란 유지!
+    //    - [v62] 복수 의견/장문 시 글자크기(14pt/12pt) 고정, 단락간격(9pt->4pt->2pt->0pt)을 먼저 조절해 원문 100% 무절단 보존!
     let sections = [];
     if (Array.isArray(data.interviewSections) && data.interviewSections.length) {
-      sections = data.interviewSections.map((sec) => ({
-        title: sec.title || '',
-        lines: (Array.isArray(sec.items) && sec.items.length)
-          ? sec.items
-          : ((Array.isArray(sec.lines) && sec.lines.length) ? sec.lines : splitBulletLines(sec.text || sec.body || '')),
-      }));
+      sections = data.interviewSections
+        .map((sec) => ({
+          title: sec.title || '',
+          lines: (Array.isArray(sec.items) && sec.items.length)
+            ? sec.items
+            : ((Array.isArray(sec.lines) && sec.lines.length) ? sec.lines : splitBulletLines(sec.text || sec.body || '')),
+        }))
+        .filter((sec) => sec.lines.length > 0);
     } else {
       const rawIv = String(data.interviewOpinion || '').replace(/\r\n/g, '\n').trim();
-      const headerRe = /\[[^\]]*의견[^\]]*\]/g;
-      const matches = [...rawIv.matchAll(headerRe)];
-      if (matches.length >= 1) {
-        matches.forEach((m, idx) => {
-          const start = m.index + m[0].length;
-          const end = idx + 1 < matches.length ? matches[idx + 1].index : rawIv.length;
-          sections.push({
-            title: m[0].trim(),
-            lines: splitBulletLines(rawIv.slice(start, end)),
+      if (rawIv) {
+        const headerRe = /\[[^\]]*의견[^\]]*\]/g;
+        const matches = [...rawIv.matchAll(headerRe)];
+        if (matches.length >= 1) {
+          matches.forEach((m, idx) => {
+            const start = m.index + m[0].length;
+            const end = idx + 1 < matches.length ? matches[idx + 1].index : rawIv.length;
+            const bodyLs = splitBulletLines(rawIv.slice(start, end));
+            if (bodyLs.length) {
+              sections.push({ title: m[0].trim(), lines: bodyLs });
+            }
           });
-        });
-      } else {
-        sections = [{
-          title: data.interviewAuthorTitle || '[의견 : 시공관리자 및 안전관리자]',
-          lines: splitBulletLines(rawIv),
-        }];
+        } else {
+          const bodyLs = splitBulletLines(rawIv);
+          if (bodyLs.length) {
+            sections = [{
+              title: data.interviewAuthorTitle || '[의견 : 시공관리자 및 근로자]',
+              lines: bodyLs,
+            }];
+          }
+        }
       }
     }
     const ivHangEmu = 115570; // 12pt '- ' 실측 폭
-    // 박스 높이 1.48in 내에서 14pt 제목 + 12pt 본문(단락 뒤 9pt)이 넘치지 않도록 본문만 자연 축약
     const ivHeaderCount = sections.filter((s) => s.title).length;
-    const ivAvailBodyH = Math.max(0.45, 1.48 - ivHeaderCount * 0.34);
-    const ivPerSecH = ivAvailBodyH / Math.max(1, sections.length);
+    const allIvBodyLines = sections.flatMap((s) => s.lines || []);
+    const ivBoxW = 4.82;
+    const ivBoxH = 1.52;
+    const ivLineWidthPt = ivBoxW * 72 - 6;
+    const ivAvailHPt = ivBoxH * 72 - 3;
+    const countIvWrap = (str, pt) => Math.max(1, Math.ceil((estimateVisualWidthUnits(str) * pt) / ivLineWidthPt));
+    const calcIvTotalH = (lnR, spcA) => {
+      let h = 0;
+      const totalParas = ivHeaderCount + allIvBodyLines.length;
+      let pIdx = 0;
+      sections.forEach((sec) => {
+        if (sec.title) {
+          h += countIvWrap(sec.title, 14) * (14 * lnR * 1.22);
+          if (++pIdx < totalParas) h += spcA;
+        }
+        (sec.lines || []).forEach((ln) => {
+          h += countIvWrap(ln, 12) * (12 * lnR * 1.22);
+          if (++pIdx < totalParas) h += spcA;
+        });
+      });
+      return h;
+    };
+    const ivTiers = [
+      { lnR: 1.0, spcA: 9 },
+      { lnR: 1.0, spcA: 4 },
+      { lnR: 0.96, spcA: 2 },
+      { lnR: 0.92, spcA: 0 },
+    ];
+    let chosenIvTier = ivTiers[ivTiers.length - 1];
+    let ivFitsAll = false;
+    for (const t of ivTiers) {
+      if (calcIvTotalH(t.lnR, t.spcA) <= ivAvailHPt) {
+        chosenIvTier = t;
+        ivFitsAll = true;
+        break;
+      }
+    }
+    const ivSpcAftXml = Math.round(chosenIvTier.spcA * 100);
+    const ivLnSpcXml = Math.round(chosenIvTier.lnR * 100000);
     const ivParas = [];
+    // 전체 본문이 최소 간격으로도 진짜 박스를 초과할 때만 전체 가용 본문 높이 기준 비례 피팅
+    let fittedBodyQueue = null;
+    if (!ivFitsAll && allIvBodyLines.length) {
+      const headersHIn = (ivHeaderCount * (14 * chosenIvTier.lnR * 1.22 + chosenIvTier.spcA)) / 72;
+      const remainBodyHIn = Math.max(0.45, ivBoxH - headersHIn);
+      fittedBodyQueue = fitMultilineSmart(allIvBodyLines, ivBoxW, remainBodyHIn, 12, chosenIvTier.lnR, chosenIvTier.spcA).lines;
+    }
+    let bodyCursor = 0;
     sections.forEach((sec) => {
+      const secOrigLines = sec.lines || [];
+      const secLines = fittedBodyQueue
+        ? fittedBodyQueue.slice(bodyCursor, bodyCursor + secOrigLines.length)
+        : secOrigLines;
+      bodyCursor += secOrigLines.length;
       if (sec.title) {
         ivParas.push({
-          text: fitSingleLineByAbbr(sec.title, 4.75, 14),
+          text: fitSingleLineByAbbr(sec.title, ivBoxW, 14),
           sz: 1400,
           bold: true,
           color: BLACK,
           algn: 'l',
           spcBef: 0,
-          spcAft: 900,
-          lnSpc: 100000,
+          spcAft: ivSpcAftXml,
+          lnSpc: ivLnSpcXml,
           marL: 0,
           indent: 0,
           buNone: true,
         });
       }
-      const secLines = fitMultilineByAbbr(sec.lines || [], 4.75, ivPerSecH, 12, 1.0, 9);
       secLines.forEach((ln) => {
         const hasDash = /^[-•▪]\s+/.test(ln);
         ivParas.push({
@@ -2722,8 +2867,8 @@
           color: BLACK,
           algn: 'l',
           spcBef: 0,
-          spcAft: 900,
-          lnSpc: 100000,
+          spcAft: ivSpcAftXml,
+          lnSpc: ivLnSpcXml,
           marL: hasDash ? ivHangEmu : 0,
           indent: hasDash ? -ivHangEmu : 0,
           buNone: true,
@@ -2731,14 +2876,14 @@
       });
     });
     if (!ivParas.length) {
-      ivParas.push({ text: '[의견 : 시공관리자 및 안전관리자]', sz: 1400, bold: true, color: BLACK, algn: 'l', spcBef: 0, spcAft: 900, lnSpc: 100000, marL: 0, indent: 0, buNone: true });
+      ivParas.push({ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcBef: 0, spcAft: 0, lnSpc: 100000, marL: 0, indent: 0, buNone: true });
     }
     sXml = setShapeParagraphs(sXml, 46, ivParas, {
       algn: 'l', lIns: 55000, rIns: 45000, tIns: 45000, bIns: 35000, anchor: 't', noAutofit: true,
     });
 
     // 6. 점검단 제안 분류 (id=55) 및 내용 (id=53)
-    //    - 원본 R1 정확 수치: 분류 14pt Bold(파랑)/11pt(검정), 본문 12pt Regular, 단락 뒤 3pt(300), 줄 간격 1줄(100000), 임의 '-' 추가 금지
+    //    - 원본 R1 정확 수치: 분류 14pt Bold(파랑)/11pt(검정), 본문 12pt Regular, 기본 단락 뒤 3pt(300), 줄 간격 1줄(100000), 임의 '-' 추가 금지
     const propItems = resolveVerdictItems(data.proposalItems, data.proposalType, data.proposalSub, []);
     const propTypeParas = [];
     propItems.forEach((it) => {
@@ -2761,7 +2906,10 @@
     });
 
     const rawPropLines = splitBulletLines(data.proposalContent || '');
-    const propLines = fitMultilineByAbbr(rawPropLines, 3.24, 0.94, 12, 1.0, 3);
+    const propFit = fitMultilineSmart(rawPropLines, 3.30, 0.98, 12, 1.0, 3);
+    const propLines = propFit.lines;
+    const propSpcAftXml = Math.round(propFit.spcAftPt * 100);
+    const propLnSpcXml = Math.round(propFit.lnSpcRatio * 100000);
     const propHangEmu = 115570;
     const propParas = propLines.length
       ? propLines.map((ln) => {
@@ -2769,7 +2917,7 @@
           return {
             text: ln,
             sz: 1200, bold: false, color: BLACK, algn: 'l',
-            spcBef: 0, spcAft: 300, lnSpc: 100000,
+            spcBef: 0, spcAft: propSpcAftXml, lnSpc: propLnSpcXml,
             marL: hasDash ? propHangEmu : 0, indent: hasDash ? -propHangEmu : 0, buNone: true,
           };
         })
@@ -2779,24 +2927,27 @@
     });
 
     // 7. 개선대책 본문 (TextBox 38, id=39) 및 PM 판정 분류 (TextBox 28, id=29)
-    //    - 개선대책 본문 원본 R1: 11pt Regular, 단락 뒤 6pt(600), 줄 간격 1줄(100000), lIns=36000, 임의 '-' 추가 금지
+    //    - [v62 Item #8] 개선대책 본문 글자크기 12pt Regular (발생원인과 동일!) 고정, 기본 단락 뒤 6pt(600), 원문 최대 무절단 보존
     //    - PM 판정결과: PDF/사용자 입력에 명시된 경우만 표시, 없으면 완전 공란 (시스템 개선 강제 주입 금지!)
     const rawCmLines = splitBulletLines(data.countermeasureContent || '');
-    const cmLines = fitMultilineByAbbr(rawCmLines, 3.24, 1.28, 11, 1.0, 6);
-    const cmHangEmu = 106680; // 11pt '- ' 실측 폭
+    const cmFit = fitMultilineSmart(rawCmLines, 3.30, 1.34, 12, 1.0, 6);
+    const cmLines = cmFit.lines;
+    const cmSpcAftXml = Math.round(cmFit.spcAftPt * 100);
+    const cmLnSpcXml = Math.round(cmFit.lnSpcRatio * 100000);
+    const cmHangEmu = 115570; // 12pt '- ' 실측 폭
     const cmParas = cmLines.length
       ? cmLines.map((ln) => {
           const hasDash = /^[-•▪]\s+/.test(ln);
           return {
             text: ln,
-            sz: 1100, bold: false, color: BLACK, algn: 'l',
-            spcBef: 0, spcAft: 600, lnSpc: 100000,
+            sz: 1200, bold: false, color: BLACK, algn: 'l',
+            spcBef: 0, spcAft: cmSpcAftXml, lnSpc: cmLnSpcXml,
             marL: hasDash ? cmHangEmu : 0, indent: hasDash ? -cmHangEmu : 0, buNone: true,
           };
         })
-      : [{ text: '', sz: 1100, bold: false, color: BLACK, algn: 'l', spcBef: 0, spcAft: 600, lnSpc: 100000, marL: 0, indent: 0, buNone: true }];
+      : [{ text: '', sz: 1200, bold: false, color: BLACK, algn: 'l', spcBef: 0, spcAft: 600, lnSpc: 100000, marL: 0, indent: 0, buNone: true }];
     sXml = setShapeParagraphs(sXml, 39, cmParas, {
-      algn: 'l', lIns: 36000, rIns: 45000, tIns: 45000, bIns: 35000, anchor: 't', noAutofit: true,
+      algn: 'l', lIns: 36000, rIns: 45000, tIns: 45000, bIns: 35000, anchor: 't', noAutofit: true, clearLstStyle: true,
     });
 
     const pmItems = resolveVerdictItems(data.pmVerdictItems, data.pmVerdictType, data.pmVerdictSub, []);
@@ -2926,8 +3077,9 @@
       throw new Error('점검장표를 생성할 부적합 데이터가 선택되지 않았습니다.');
     }
 
+    const globalObj = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
     const normalizeFn = options.normalizeRecord
-      || (root && root.SafePPT && root.SafePPT.normalizeJangpyoData)
+      || (globalObj && globalObj.SafePPT && globalObj.SafePPT.normalizeJangpyoData)
       || ((r) => r);
     const isMinorFn = options.isRiskAssessmentSheet || ((r) => Boolean(r && (r.severity === '경부적합' || r.sheetType === '위험성평가' || r.isRiskAssessment === true)));
 
@@ -3082,6 +3234,8 @@
     triggerDownloadIfRequested,
     fitSingleLineByAbbr,
     fitMultilineByAbbr,
+    fitMultilineSmart,
+    estimateVisualWidthUnits,
     computeProportionalTwoPhotoBoxes,
     _internal: {
       normalizeHazardType,

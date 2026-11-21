@@ -417,51 +417,110 @@
 
   function renderInterviewOpinionBoxHTML(data, ptFn, tplEngine) {
     const fitSingle = (tplEngine && tplEngine.fitSingleLineByAbbr) || ((s) => String(s || '').trim());
-    const fitMulti = (tplEngine && tplEngine.fitMultilineByAbbr) || ((lines) => (Array.isArray(lines) ? lines : _splitBulletLinesShared(lines)));
+    const fitSmart = (tplEngine && tplEngine.fitMultilineSmart) || ((lines, _w, _h, _pt, lnR, spcA) => ({
+      lines: Array.isArray(lines) ? lines : _splitBulletLinesShared(lines),
+      lnSpcRatio: lnR || 1.0,
+      spcAftPt: spcA || 0
+    }));
+    const estW = (tplEngine && tplEngine.estimateVisualWidthUnits) || ((s) => String(s || '').length);
 
     let sections = [];
     if (Array.isArray(data && data.interviewSections) && data.interviewSections.length) {
-      sections = data.interviewSections.map((sec) => ({
-        title: sec.title || '',
-        lines: (Array.isArray(sec.items) && sec.items.length)
-          ? sec.items
-          : ((Array.isArray(sec.lines) && sec.lines.length) ? sec.lines : _splitBulletLinesShared(sec.text || sec.body || ''))
-      }));
+      sections = data.interviewSections
+        .map((sec) => ({
+          title: sec.title || '',
+          lines: (Array.isArray(sec.items) && sec.items.length)
+            ? sec.items
+            : ((Array.isArray(sec.lines) && sec.lines.length) ? sec.lines : _splitBulletLinesShared(sec.text || sec.body || ''))
+        }))
+        .filter((sec) => sec.lines.length > 0);
     } else {
       const rawIv = String((data && data.interviewOpinion) || '').replace(/\r\n/g, '\n').trim();
-      const headerRe = /\[[^\]]*의견[^\]]*\]/g;
-      const matches = [...rawIv.matchAll(headerRe)];
-      if (matches.length >= 1) {
-        matches.forEach((m, idx) => {
-          const start = m.index + m[0].length;
-          const end = idx + 1 < matches.length ? matches[idx + 1].index : rawIv.length;
-          sections.push({
-            title: m[0].trim(),
-            lines: _splitBulletLinesShared(rawIv.slice(start, end))
+      if (rawIv) {
+        const headerRe = /\[[^\]]*의견[^\]]*\]/g;
+        const matches = [...rawIv.matchAll(headerRe)];
+        if (matches.length >= 1) {
+          matches.forEach((m, idx) => {
+            const start = m.index + m[0].length;
+            const end = idx + 1 < matches.length ? matches[idx + 1].index : rawIv.length;
+            const bodyLs = _splitBulletLinesShared(rawIv.slice(start, end));
+            if (bodyLs.length) {
+              sections.push({ title: m[0].trim(), lines: bodyLs });
+            }
           });
-        });
-      } else {
-        sections = [{
-          title: (data && data.interviewAuthorTitle) || '[의견 : 시공관리자 및 안전관리자]',
-          lines: _splitBulletLinesShared(rawIv)
-        }];
+        } else {
+          const bodyLs = _splitBulletLinesShared(rawIv);
+          if (bodyLs.length) {
+            sections = [{
+              title: (data && data.interviewAuthorTitle) || '[의견 : 시공관리자 및 근로자]',
+              lines: bodyLs
+            }];
+          }
+        }
       }
     }
 
-    const ivHeaderCount = sections.filter((s) => s.title).length;
-    const ivAvailBodyH = Math.max(0.45, 1.48 - ivHeaderCount * 0.34);
-    const ivPerSecH = ivAvailBodyH / Math.max(1, sections.length);
-    const gap9pt = ptFn(9);
+    if (!sections.length) return '';
 
+    const ivBoxW = 4.82;
+    const ivBoxH = 1.52;
+    const ivLineWidthPt = ivBoxW * 72 - 6;
+    const ivAvailHPt = ivBoxH * 72 - 3;
+    const ivHeaderCount = sections.filter((s) => s.title).length;
+    const allBodyLines = sections.flatMap((s) => s.lines || []);
+    const countWrap = (str, pt) => Math.max(1, Math.ceil((estW(str) * pt) / ivLineWidthPt));
+    const calcTotalH = (lnR, spcA) => {
+      let h = 0;
+      const totalParas = ivHeaderCount + allBodyLines.length;
+      let pIdx = 0;
+      sections.forEach((sec) => {
+        if (sec.title) {
+          h += countWrap(sec.title, 14) * (14 * lnR * 1.22);
+          if (++pIdx < totalParas) h += spcA;
+        }
+        (sec.lines || []).forEach((ln) => {
+          h += countWrap(ln, 12) * (12 * lnR * 1.22);
+          if (++pIdx < totalParas) h += spcA;
+        });
+      });
+      return h;
+    };
+    const ivTiers = [
+      { lnR: 1.0, spcA: 9 },
+      { lnR: 1.0, spcA: 4 },
+      { lnR: 0.96, spcA: 2 },
+      { lnR: 0.92, spcA: 0 }
+    ];
+    let chosenTier = ivTiers[ivTiers.length - 1];
+    let fitsAll = false;
+    for (const t of ivTiers) {
+      if (calcTotalH(t.lnR, t.spcA) <= ivAvailHPt) {
+        chosenTier = t;
+        fitsAll = true;
+        break;
+      }
+    }
+    let fittedQueue = null;
+    if (!fitsAll && allBodyLines.length) {
+      const headersHIn = (ivHeaderCount * (14 * chosenTier.lnR * 1.22 + chosenTier.spcA)) / 72;
+      const remainHIn = Math.max(0.45, ivBoxH - headersHIn);
+      fittedQueue = fitSmart(allBodyLines, ivBoxW, remainHIn, 12, chosenTier.lnR, chosenTier.spcA).lines;
+    }
+    const gapCss = chosenTier.spcA > 0 ? ptFn(chosenTier.spcA) : '0';
+    const lineHeightCss = (1.08 * chosenTier.lnR).toFixed(2);
+
+    let cursor = 0;
     return sections.map((sec, idx) => {
       const isLastSec = idx === sections.length - 1;
-      const titleStr = sec.title ? fitSingle(sec.title, 4.75, 14) : '';
-      const bodyLines = fitMulti(sec.lines || [], 4.75, ivPerSecH, 12, 1.0, 9);
+      const titleStr = sec.title ? fitSingle(sec.title, ivBoxW, 14) : '';
+      const origLs = sec.lines || [];
+      const bodyLines = fittedQueue ? fittedQueue.slice(cursor, cursor + origLs.length) : origLs;
+      cursor += origLs.length;
       const titleHtml = titleStr
-        ? `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #000000; line-height: 1.08; margin: 0 0 ${gap9pt} 0;">${_escHtmlText(titleStr)}</div>\n`
+        ? `          <div style="font-size: ${ptFn(14)}; font-weight: 800; color: #000000; line-height: ${lineHeightCss}; margin: 0 0 ${gapCss} 0;">${_escHtmlText(titleStr)}</div>\n`
         : '';
       const bodyHtml = bodyLines.length
-        ? `          <div style="font-size: ${ptFn(12)}; font-weight: 400; line-height: 1.08; color: #000000; word-break: keep-all; margin: 0 0 ${isLastSec ? '0' : gap9pt} 0;">${renderHangingLinesHTML(bodyLines.join('\n'), gap9pt)}</div>`
+        ? `          <div style="font-size: ${ptFn(12)}; font-weight: 400; line-height: ${lineHeightCss}; color: #000000; word-break: keep-all; margin: 0 0 ${isLastSec ? '0' : gapCss} 0;">${renderHangingLinesHTML(bodyLines.join('\n'), gapCss)}</div>`
         : '';
       return titleHtml + bodyHtml;
     }).join('\n');
@@ -1394,9 +1453,25 @@
       }
     }
 
-    // 점검단 제안 분류 (복수 선택 지원 - 입력/추출된 분류가 있을 때만 표시, 임의 '시스템 개선' 주입 금지)
-    let proposalItems = Array.isArray(r.proposalItems) && r.proposalItems.length > 0 ? r.proposalItems : [];
-    if (proposalItems.length === 0) {
+    // 점검단 제안 본문: 등록된 auditProposal 원문 그대로 사용 (미입력 시 공란, 더미 텍스트 주입 절대 금지)
+    let proposalContent = (r.auditProposal || r.inspectorOpinion || '').trim();
+    if (proposalContent && !isManualEntry) {
+      proposalContent = cleanProposalText(proposalContent);
+    }
+
+    // 점검단 제안 분류 (복수 선택 지원 - 입력/추출된 분류가 있을 때만 표시, 구버전 공란 자동 오염 '시스템 개선'도 원천 차단!)
+    const isLegacyAutoPollutedProp = Boolean(
+      r._hasExplicitPropType === false ||
+      (
+        !r._hasExplicitPropType &&
+        !(Array.isArray(r.proposalItems) && r.proposalItems.length) &&
+        !proposalContent &&
+        !String(r.inspectorOpinionSub || '').trim() &&
+        String(r.inspectorOpinionType || r.auditType || '').trim() === '시스템 개선'
+      )
+    );
+    let proposalItems = (!isLegacyAutoPollutedProp && Array.isArray(r.proposalItems) && r.proposalItems.length > 0) ? r.proposalItems : [];
+    if (!isLegacyAutoPollutedProp && proposalItems.length === 0) {
       const rawProp = (r.inspectorOpinionType || r.auditType || '').trim();
       if (/시스템\s*개선|시스템개선/i.test(rawProp)) {
         proposalItems.push({ type: '시스템 개선', sub: r.inspectorOpinionSub || '(현장모니터링 강화)' });
@@ -1413,12 +1488,6 @@
     }
     const proposalType = proposalItems.length > 0 ? proposalItems[0].type : '';
     const proposalSub = proposalItems.length > 0 ? (proposalItems[0].sub || '') : '';
-
-    // 점검단 제안 본문: 등록된 auditProposal 원문 그대로 사용 (미입력 시 공란, 더미 텍스트 주입 절대 금지)
-    let proposalContent = (r.auditProposal || r.inspectorOpinion || '').trim();
-    if (proposalContent && !isManualEntry) {
-      proposalContent = cleanProposalText(proposalContent);
-    }
 
     // 개선대책 본문 & PM 판정결과
     let countermeasureContent = '';
@@ -1491,14 +1560,14 @@
     let inspectRound = (_roundNorm && typeof _roundNorm.normalizeRoundText === 'function')
       ? _roundNorm.normalizeRoundText(rawInspectRound)
       : rawInspectRound;
-    // 점검자명 정제: OCR 라벨 오인식('적검자', '점검자', 1글자 잔여 노이즈 '로') 배제 및 등록된 로그인/시트 점검자 사용
+    // 점검자명 정제: OCR 라벨 오인식('적검자', '섬검사', '점검자', 1글자 잔여 노이즈 '로') 배제 및 등록된 로그인/시트 점검자 사용
     const sanitizeInspectorName = (val) => {
       const s = String(val || '')
-        .replace(/^.*?(?:점\s*검\s*자|적\s*검\s*자|점\s*겸\s*자|정\s*검\s*자|서\s*검\s*자|섬\s*검\s*자)\s*[:：.;]?\s*/g, '')
+        .replace(/^.*?(?:[점적정서섬성선]\s*[검겸견]\s*[자사시차])\s*[:：.;]?\s*/g, '')
         .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
-      if (!s || /^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(s) || s.length <= 1) return '';
+      if (!s || /^(?:[점적정서섬성선][검겸견][자사시차])$/i.test(s) || s.length <= 1) return '';
       return s;
     };
     let inspectorName = sanitizeInspectorName(r.inspectUser) || sanitizeInspectorName(r.inspector) || sanitizeInspectorName(r.user) || '';
@@ -1507,9 +1576,12 @@
     const photoBanner = extractDirectAction(r);
     const photo2Banner = extractDirectAction2(r, photoBanner);
     const greenBanner = r.greenBanner || '';
-    const interviewAuthorTitle = (interviewSections.length > 0 && interviewSections[0].title)
-      ? interviewSections[0].title
-      : (r.interviewAuthorTitle || (r.interviewAuthor ? `[관리자 의견 : ${r.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]'));
+    const hasAnyInterview = Boolean(String(interviewOpinion || '').trim() || interviewSections.length > 0);
+    const interviewAuthorTitle = hasAnyInterview
+      ? ((interviewSections.length > 0 && interviewSections[0].title)
+          ? interviewSections[0].title
+          : (r.interviewAuthorTitle || (r.interviewAuthor ? `[의견 : ${r.interviewAuthor}]` : '[의견 : 시공관리자 및 근로자]')))
+      : '';
     const cleanedWorkGroup = cleanWorkGroup(r.workGroup || '', rawContent);
 
     return {
@@ -1538,7 +1610,7 @@
       photoBanner,
       photo2Banner,
       photoLayoutRatio: r.photoLayoutRatio || 'auto',
-      interviewAuthor: r.interviewAuthor || '시공관리자 및 근로자',
+      interviewAuthor: hasAnyInterview ? (r.interviewAuthor || '시공관리자 및 근로자') : '',
       interviewAuthorTitle,
       interviewOpinion,
       interviewSections,
@@ -2312,7 +2384,10 @@
     // 원본 R1 100% 고정 글자크기 (초과 시 글자크기 축소 금지, 내용 자연 축약)
     const typeMainText = fitSingle(String(data.typeMain || data.type || '안전').trim(), 1.48, 20);
     const lawTitleText = fitSingle(String(data.lawTitle || ''), 5.50, 16);
-    const lawBodyLines = fitMulti(_splitBulletLinesShared(data.lawBody || ''), 5.42, 0.64, 11, 1.0, 0);
+    const lawFitRes = (tplEngine && tplEngine.fitMultilineSmart)
+      ? tplEngine.fitMultilineSmart(_splitBulletLinesShared(data.lawBody || ''), 5.42, 0.64, 11, 1.0, 0, { isLawBody: true })
+      : { lines: fitMulti(_splitBulletLinesShared(data.lawBody || ''), 5.42, 0.64, 11, 1.0, 0), lnSpcRatio: 1.0, spcAftPt: 0 };
+    const lawBodyLines = lawFitRes.lines;
 
     const metaCols = [
       { label: '협력사 : ', prefix: '협력사 : ', val: fitSingle(String(data.subcontractor || ''), 2.30, 14, '협력사 : '), x: 0.9375, w: 2.3333 },
@@ -2333,8 +2408,19 @@
     const mainLines = fitMulti(numberedMainLines, 10.65, 0.62, 14, 1.10, 0);
     const packedMainContent = mainLines.join('\n');
 
-    const propLines = fitMulti(_splitBulletLinesShared(data.proposalContent || ''), 3.24, 0.94, 12, 1.0, 3);
-    const cmLines = fitMulti(_splitBulletLinesShared(data.countermeasureContent || ''), 3.24, 1.28, 11, 1.0, 6);
+    const propFitRes = (tplEngine && tplEngine.fitMultilineSmart)
+      ? tplEngine.fitMultilineSmart(_splitBulletLinesShared(data.proposalContent || ''), 3.30, 0.98, 12, 1.0, 3)
+      : { lines: fitMulti(_splitBulletLinesShared(data.proposalContent || ''), 3.30, 0.98, 12, 1.0, 3), lnSpcRatio: 1.0, spcAftPt: 3 };
+    const propLines = propFitRes.lines;
+    const propGapCss = propFitRes.spcAftPt > 0 ? pt(propFitRes.spcAftPt) : '0';
+    const propLhCss = (1.08 * propFitRes.lnSpcRatio).toFixed(2);
+    // [v62 Item #8] 개선대책 본문 글자크기 12pt 고정 (발생원인과 동일) + 단락간격 스마트 조정으로 원문 최대 보존
+    const cmFitRes = (tplEngine && tplEngine.fitMultilineSmart)
+      ? tplEngine.fitMultilineSmart(_splitBulletLinesShared(data.countermeasureContent || ''), 3.30, 1.34, 12, 1.0, 6)
+      : { lines: fitMulti(_splitBulletLinesShared(data.countermeasureContent || ''), 3.30, 1.34, 12, 1.0, 6), lnSpcRatio: 1.0, spcAftPt: 6 };
+    const cmLines = cmFitRes.lines;
+    const cmGapCss = cmFitRes.spcAftPt > 0 ? pt(cmFitRes.spcAftPt) : '0';
+    const cmLhCss = (1.08 * cmFitRes.lnSpcRatio).toFixed(2);
 
     const hasPhoto1 = Boolean(photo1Url);
     const hasPhoto2 = Boolean(photo2Url);
@@ -2517,9 +2603,9 @@ ${renderInterviewOpinionBoxHTML(data, pt, tplEngine)}
           `).join('')}
         </div>
 
-        <!-- [점검단 제안] 본문 셀 (원본 R1 TextBox 52: 12pt Regular 고정, 단락 뒤 3pt, 임의 '-' 금지) -->
+        <!-- [점검단 제안] 본문 셀 (원본 R1 TextBox 52: 12pt Regular 고정, 기본 단락 뒤 3pt, 임의 '-' 금지) -->
         <div style="position: absolute; left: ${pctX(9.7790)}; top: ${pctY(4.3979)}; width: ${pctW(3.3871)}; height: ${pctH(1.0333)}; background: #ffffff; border: 1px solid #000000; padding: 0.40cqw 0.55cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(12)}; font-weight: 400; line-height: 1.08; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(propLines.join('\n'), pt(3))}</div>
+          <div style="font-size: ${pt(12)}; font-weight: 400; line-height: ${propLhCss}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(propLines.join('\n'), propGapCss)}</div>
         </div>
 
         <!-- 개선대책 (현장 협의 결과) 헤더 (R1 TextBox 26: x = 8.245, y = 5.495, w = 4.921, h = 0.404, 18pt bold) -->
@@ -2527,9 +2613,9 @@ ${renderInterviewOpinionBoxHTML(data, pt, tplEngine)}
           개선대책 (현장 협의 결과)
         </div>
 
-        <!-- 개선대책 본문 셀 (원본 R1 TextBox 38: 11pt Regular 고정, 단락 뒤 6pt, 임의 '-' 금지) -->
+        <!-- 개선대책 본문 셀 ([v62 Item #8] 12pt Regular 고정 — 발생원인과 동일, 기본 단락 뒤 6pt, 임의 '-' 금지) -->
         <div style="position: absolute; left: ${pctX(8.2448)}; top: ${pctY(5.9064)}; width: ${pctW(3.3858)}; height: ${pctH(1.3959)}; background: #ffffff; border: 1px solid #000000; padding: 0.45cqw 0.42cqw; box-sizing: border-box; overflow: hidden;">
-          <div style="font-size: ${pt(11)}; font-weight: 400; line-height: 1.08; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(cmLines.join('\n'), pt(6))}</div>
+          <div style="font-size: ${pt(12)}; font-weight: 400; line-height: ${cmLhCss}; color: #000000; word-break: keep-all;">${renderHangingLinesHTML(cmLines.join('\n'), cmGapCss)}</div>
         </div>
 
         <!-- [PM 판정결과] 헤더 셀 (R1 TextBox 27: x = 11.631, y = 5.906, w = 1.535, h = 0.333) -->
