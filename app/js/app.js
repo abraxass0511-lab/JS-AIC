@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261121_v59';
-import { store } from './store.js?v=20261121_v59';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v60';
+import { store } from './store.js?v=20261122_v60';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261121_v59';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v60';
 import {
   WORK_GROUP_TREE,
   WORK_GROUP_MID_LIST,
@@ -12,7 +12,7 @@ import {
   WORK_METHODS_9X9_IMPROVED,
   normalizeWorkMethod9x9,
   SafeGuidelineMemory
-} from './text-normalizer.js?v=20261121_v59';
+} from './text-normalizer.js?v=20261122_v60';
 
 const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
@@ -2333,19 +2333,7 @@ function bindEvents() {
         return;
       }
 
-      // [v58] 엑셀 내보내기 전 누락·구버전·오분류 표준분류/관련근거/사진요약 항목을 AI(하드코딩 배제)로 자동 보완
-      if (window.SafeLocalAI && typeof window.SafeLocalAI.enrichMissingRecordsForExcel === 'function') {
-        try {
-          const enrichRes = await window.SafeLocalAI.enrichMissingRecordsForExcel(records, (msg) => {
-            btn.textContent = msg;
-          });
-          if (enrichRes && enrichRes.enrichedCount > 0) {
-            toast(`🤖 AI가 누락·구버전 항목 ${enrichRes.enrichedCount}건을 표준분류표와 산안법에 맞게 자동 보완했습니다.`, 'info', 3000);
-          }
-        } catch (eEnrich) {
-          console.warn('Excel AI enrich fallback:', eEnrich);
-        }
-      }
+      // [v60] 표준분류·관련기준·오타/띄어쓰기 보완은 PDF/장표 등록 시점에 완료하므로 엑셀 다운로드는 즉시 생성
       btn.textContent = '엑셀 파일 생성 중...';
 
       const wb = await window.SafeExcel.build(window.ExcelJS, {
@@ -3619,14 +3607,7 @@ function initEmailExportHandlers() {
         return;
       }
 
-      if (window.SafeLocalAI && typeof window.SafeLocalAI.enrichMissingRecordsForExcel === 'function') {
-        try {
-          await window.SafeLocalAI.enrichMissingRecordsForExcel(records);
-        } catch (eEnrich) {
-          console.warn('Email Excel AI enrich fallback:', eEnrich);
-        }
-      }
-
+      // [v60] 표준분류·관련기준 보완은 PDF 등록 시점에 완료되므로 메일용 엑셀은 즉시 생성
       // 핸드폰에 다운로드하지 않고 메모리에서 워크북 생성
       const wb = await window.SafeExcel.build(window.ExcelJS, {
         records,
@@ -5196,11 +5177,24 @@ async function handlePptxImportChange(e) {
   }
 
   if (importedRecords.length > 0) {
+    // [v60] PDF·PPTX·이미지 등록 시점에 누락 분류·관련기준(산안법)·띄어쓰기·오타를 AI로 전수 완결!
+    if (window.SafeLocalAI?.repairMissingFieldsOnImport) {
+      try {
+        if (progPct) progPct.textContent = '88%';
+        if (progBar) progBar.style.width = '88%';
+        if (progStatus) progStatus.textContent = `🤖 PDF 등록 시 AI 누락 분류·관련기준 보완 중 (${importedRecords.length}건)...`;
+        await window.SafeLocalAI.repairMissingFieldsOnImport(importedRecords, (msg) => {
+          if (progStatus && msg) progStatus.textContent = msg;
+        });
+      } catch (repairErr) {
+        console.warn('Auto import AI repair fallback:', repairErr);
+      }
+    }
     if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
       try {
         if (progPct) progPct.textContent = '95%';
         if (progBar) progBar.style.width = '95%';
-        if (progStatus) progStatus.textContent = `🤖 AI 자동 최종 검증 중 (${importedRecords.length}건)...`;
+        if (progStatus) progStatus.textContent = `🤖 AI 최종 검증·띄어쓰기/오타 교정 중 (${importedRecords.length}건)...`;
         await window.SafeLocalAI.verifyRecordsBeforeSave(importedRecords, (msg) => {
           if (progStatus && msg) progStatus.textContent = msg;
         });
@@ -5721,7 +5715,11 @@ async function handleSaveImportedRecords() {
       const recCtxForLaw = `${resolvedWorkGroup} ${rec.content || ''} ${resolvedType}`;
       let sanitizedRawLaw = rec.rawLaw || '';
       let sanitizedLawBody = rec.lawBody || '';
+      const aiPreservedLaw = String(rec.law || '').trim();
       let resolvedStdLaw = filterOnlyOccupationalSafetyLaw(rec.law || rec.rawLaw, `${rec.content || ''} ${resolvedWorkGroup}`);
+      if (!resolvedStdLaw && aiPreservedLaw && /(?:제\d+조|안전작업지침|위험성평가|작업\s*절차)/.test(aiPreservedLaw) && !window.SafeTextNormalizer?.hasGarbledKoreanNoise?.(aiPreservedLaw)) {
+        resolvedStdLaw = aiPreservedLaw;
+      }
       if (window.SafeTextNormalizer?.normalizeSafetyLawSpec) {
         let specNorm = window.SafeTextNormalizer.normalizeSafetyLawSpec({
           rawLaw: sanitizedRawLaw,

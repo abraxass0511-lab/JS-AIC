@@ -344,8 +344,35 @@ export function normalizeKoreanSpacing(str = '') {
     .replace(/(미고박\s*상태|수평\s*상태|개방\s*상태|무단\s*상태|불안정\s*상태)(?=[가-힣])(?!로(?:\s|$)|에서|에(?:\s|$)|의(?:\s|$)|가(?:\s|$)|를(?:\s|$)|은(?:\s|$)|는(?:\s|$))/g, '$1 ')
     .replace(/상태양중/g, '상태 양중')
     .replace(/쓴아짐/g, '쏟아짐')
-    .replace(/(^|[\s(/·\-])미\s+(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호)(?=\s|$|[.,;:)/·\-])/g, '$1미$2')
-    .replace(/(양중작업|하역작업|고소작업|굴착작업|해체작업|용접작업|비계작업)시(?=[가-힣\s]|$)/g, '$1 시')
+    // '비계워킹타워하부밑둥잡이일부', '해체후미복구', '내측난간대미설치', '관리자점검관리강화', '미 설치' 등 건설안전 붙여쓰기/오띄어쓰기 정밀 교정
+    .replace(/(^|[\s(/·\-])미\s+(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호|구획|제거|폐합|승인)(?=\s|$|[.,;:)/·\-])/g, '$1미$2')
+    .replace(/([가-힣])미\s*(사용|설치|착용|체결|고박|준수|실시|비치|확보|연결|복구|작성|기재|조치|수립|이행|작동|구축|부착|시행|정비|수행|지정|배치|확인|점검|통제|결속|고정|유지|반영|이수|보수|차단|방호|구획|제거|폐합|승인)(?=\s|$|[.,;:)/·\-])/g, '$1 미$2')
+    .replace(/비계\s*워킹타워/g, '비계 워킹타워')
+    .replace(/워킹타워\s*(하부|상부)/g, '워킹타워 $1')
+    .replace(/(하부|상부)(밑둥잡이|작업발판|안전난간|난간대|단부|개구부|동바리|비계)/g, '$1 $2')
+    .replace(/(밑둥잡이|안전난간|난간대|작업발판|벽이음|가새|동바리|볼트|커버|덮개)(일부|전체|다수|과다|누락|불량|미흡)/g, '$1 $2')
+    .replace(/(해체|설치|조립|타설|작업|조치|완료|승인|이동|진입|양중|하역|인양|운반)(후|전|중|시)(?=[가-힣])/g, '$1 $2 ')
+    .replace(/(해체|설치|조립|타설|작업|조치|완료|승인)(후|전)(?=\s|$|[.,)])/g, '$1 $2')
+    .replace(/(해체|설치|조립|타설|작업|조치|완료|승인)\s*(후|전)(?=[가-힣])/g, '$1 $2 ')
+    .replace(/(내측|외측|상측|하측|계단|슬래브)(난간대|안전난간|발판|작업발판|단부|개구부|구간)/g, '$1 $2')
+    .replace(/(최상부|최하단|최상단)(발판|작업발판|난간대|낙하물방지망)/g, '$1 $2')
+    .replace(/(관리자|시공관리자|작업자|근로자)(점검|관리|교육|안전|확인)/g, '$1 $2')
+    .replace(/점검\s*관리\s*강화/g, '점검·관리 강화')
+    .replace(/(점검|관리|통제|교육|모니터링|확인|감시)(강화|철저|미흡|불량|누락|필요)/g, '$1 $2')
+    .replace(/(해당|타)(구간)/g, '$1 $2')
+    .replace(/(구간)(담당자|작업자|근로자|비계|동바리|난간대)/g, '$1 $2')
+    .replace(/(담당자)(연차|부재|확인|점검|변경)/g, '$1 $2')
+    .replace(/연차로\s*인한/g, '연차로 인한')
+    .replace(/(인한)(?=[가-힣]{2,})/g, '$1 ')
+    .replace(/(설치)(확인|점검|누락|불량|미흡)/g, '$1 $2')
+    .replace(/(담당자가|관리자가|작업자가|근로자가)(확인|점검|작업|설치|해체|이동)/g, '$1 $2')
+    .replace(/누락\s*설치/g, '누락 설치')
+    .replace(/승인점검\s*후/g, '승인점검 후')
+    .replace(/조치완료\s*후/g, '조치 완료 후')
+    .replace(/최종승인/g, '최종 승인')
+    .replace(/SNS내\s*등록/gi, 'SNS내 등록')
+    .replace(/시스템\s*구축/g, '시스템 구축')
+    .replace(/(양중작업|하역작업|고소작업|굴착작업|해체작업|용접작업|비계작업|설치작업)시(?=[가-힣\s]|$)/g, '$1 시')
     .replace(/(재교육)\s*(실시)/g, '$1 $2')
     .replace(/(동일\s*사항)\s*(재발)/g, '동일사항 $2')
     .replace(/(유도원)\s*(자격)/g, '$1 $2')
@@ -680,12 +707,12 @@ export function stripBannerSecondItemTail(text = '') {
   s = s.replace(/(?:^|\r?\n|\s+|(?<=[가-힣A-Za-z.)\]]))\s*(?<![0-9(])[2-9]\)\s*[\s\S]*$/g, '');
   s = s.replace(/(?:\r?\n|\s+)\s*[2-9]\.\s+(?=[가-힣A-Za-z\[])[\s\S]*$/g, '');
   s = s.replace(/(?<=.{4})\s*[②③④⑤⑥⑦⑧⑨⑩][\s\S]*$/g, '');
-  s = s.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s+/, '').replace(/^1\)\s*/, '');
+  s = s.replace(/^(?:[①②③④⑤⑥⑦⑧⑨⑩]|\(?1\)?[.)]|[-•*·ㆍ.,:;])+\s*/g, '');
   return s.trim();
 }
 
 /**
- * 사진 요약 배너(photoBanner) 전용: 원인/결과/우려 서술어를 제거하고 '실제 위반한 핵심 내용'만 12~20자로 추출
+ * 사진 요약 배너(photoBanner) 전용: 원인/결과/우려 서술어를 제거하고 '실제 위반한 핵심 내용'을 말미 위반 서술어 보존 상태로 추출
  */
 export function extractCoreViolationBanner(rawBanner = '', contentText = '', locationText = '') {
   const isUnusableFragment = (text) => {
@@ -697,7 +724,9 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
     return stripped.length < 2;
   };
 
-  const truncateBannerAtWordBoundary = (text, maxLen = 25) => {
+  // 한국어 위반 문장의 끝(서술어: '통제 미흡', '출입통제 미실시', '미설치', '불량', '누락' 등)을 절대 잘라내지 않도록 40자까지 보존하고,
+  // 초과 시에도 앞의 배경어구('~ 작업 시', '~ 설치 시')만 압축해 끝의 위반 서술어를 반드시 유지!
+  const truncateBannerAtWordBoundary = (text, maxLen = 40) => {
     let t = String(text || '').replace(/\s+/g, ' ').trim();
     if (!t) return '';
     // 닫히지 않은 괄호가 남아 있으면 '(' 앞까지만 잘라서 "(점" 같은 mid-word 절단 방지
@@ -709,12 +738,23 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
     if (t.length <= maxLen) {
       return t.replace(/[,·/(\s]+$/, '').trim();
     }
-    let cut = t.slice(0, maxLen);
+    // 40자 초과 시 뒤의 위반 서술어를 자르지 말고 앞쪽 배경 절('~작업 시', '~설치 시', '및')을 우선 압축
+    let compact = t
+      .replace(/^[가-힣A-Za-z0-9\s/·]{2,14}?(?:작업|설치|해체|이동|운반|타설)\s*시\s*/g, '')
+      .replace(/\s+및\s+/g, '·')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (compact.length >= 6 && compact.length <= maxLen) {
+      return compact.replace(/[,·/(\s]+$/, '').trim();
+    }
+    const base = (compact.length >= 6 && compact.length < t.length) ? compact : t;
+    if (base.length <= maxLen) return base.replace(/[,·/(\s]+$/, '').trim();
+    let cut = base.slice(0, maxLen);
     const cutOpen = cut.lastIndexOf('(');
     const cutClose = cut.lastIndexOf(')');
     if (cutOpen !== -1 && cutOpen > cutClose) {
       cut = cut.slice(0, cutOpen).trim();
-    } else if (t[maxLen] && !/[\s,.)]/.test(t[maxLen])) {
+    } else if (base[maxLen] && !/[\s,.)]/.test(base[maxLen])) {
       const lastSpace = cut.lastIndexOf(' ');
       if (lastSpace >= Math.floor(maxLen * 0.45)) {
         cut = cut.slice(0, lastSpace);
@@ -848,18 +888,18 @@ export function extractCoreViolationBanner(rawBanner = '', contentText = '', loc
     if (firstWord1 && firstWord1.length >= 2 && p2.startsWith(firstWord1)) {
       const p2Rest = p2.slice(firstWord1.length).trim();
       const combined = `${p1} 및 ${p2Rest}`.replace(/\s+/g, ' ').trim();
-      if (combined.length <= 24) return combined;
+      if (combined.length <= 36) return combined;
     }
     const combinedFull = `${p1}, ${p2}`;
-    if (combinedFull.length <= 24) return truncateBannerAtWordBoundary(combinedFull, 24);
-    return truncateBannerAtWordBoundary(p1, 25);
+    if (combinedFull.length <= 36) return truncateBannerAtWordBoundary(combinedFull, 36);
+    return truncateBannerAtWordBoundary(p1, 40);
   }
 
   const single = parts[0] || cleanSingleClause(targetText);
   if (single.includes('지게차') && single.includes('근접')) {
     return '유도원·근로자 지게차 근접 작업';
   }
-  return truncateBannerAtWordBoundary(single, 25);
+  return truncateBannerAtWordBoundary(single, 40);
 }
 
 /**
@@ -903,8 +943,8 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
   // '타설 中 계단참'에서 한자 '中'이 공백 2개로 빠진 OCR 패턴 복원
   s = s.replace(/타설\s{2,}계단참/g, '타설 中 계단참');
   s = stripCircledNumbers(s)
-    .replace(/^[\d①-⑩\s()\[\].\-_·•:,;|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
-    .replace(/^[|｜\[\]().,\-·•'‘’"“”\s]+|[|｜\[\]'‘’"“”\s]+$/g, '')
+    .replace(/^[\d①-⑩\s()\[\].\-_·ㆍ•:,;|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[|｜\[\]().,\-·ㆍ•'‘’"“”\s]+|[|｜\[\]'‘’"“”\s]+$/g, '')
     .replace(/벽의음/g, '벽이음')
     .replace(/상부0버팀대8/g, '상부 버팀대 ')
     .replace(/\(6055\)\s*\(?불량\)?/g, '(60도↓) 불량')
@@ -920,7 +960,7 @@ export function normalizePhotoBannerText(rawBanner = '', content = '', location 
   }
   s = stripBannerSecondItemTail(normalizeKoreanSpacing(s))
     .replace(/[\u2460-\u2487\u2776-\u277F]/g, ' ')
-    .replace(/^[\d\s()\[\].\-_·•:,;|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
+    .replace(/^[\d\s()\[\].\-_·ㆍ•:,;|｜'‘’"“”]+(?=[가-힣A-Za-z])/, '')
     .replace(/([가-힣])([1-5])([가-힣]{2,})/g, (m, p1, d, p3) => (
       (p1 === '제' || /^(?:차|층|동|번|단|개|인|선|호|일|월|년|회|종|조|항|급|점|매|본|배|종류|구간|코어|단계|면|열|줄|차수|톤|미터|센티|킬로)/.test(p3))
         ? m
@@ -1141,8 +1181,8 @@ export function isGarbledBannerText(text = '') {
   const s = String(text || '').trim();
   if (!s) return false;
   if (/\uFFFD|[ㄱ-ㅎㅏ-ㅣ]/.test(s)) return true;
-  // 정상 약어(E/V, AL, PL, PC, T/C, H빔, A형, Gang Form 등) 제거 후 한글 사이에 낀 뜬금없는 영문 1글자 (예: '에T백')
-  const masked = s.replace(/\b(?:E\/V|EV|AL|PL|PC|STL|T\/C|TC|PTW|LOTO|PPE|ACS|RCS|SLIP|Gang\s*Form|AL\s*Form|Hold\s*Point|Gray\s*Area|Door|RC|SRC|HDPE|PVC|ELCB|D\d{1,2})\b/gi, ' ')
+  // 정상 약어(E/V, L/C, T/C, G/F, AL, PL, PC, H빔, A형, Gang Form 등) 제거 후 한글 사이에 낀 뜬금없는 영문 1글자 (예: '에T백')
+  const masked = s.replace(/\b(?:E\/V|EV|L\/C|LC|G\/F|GF|AL|PL|PC|STL|T\/C|TC|PTW|LOTO|PPE|ACS|RCS|SLIP|PHC|CIP|SCW|PE|Gang\s*Form|AL\s*Form|Hold\s*Point|Gray\s*Area|Door|RC|SRC|HDPE|PVC|ELCB|D\d{1,2})\b/gi, ' ')
     .replace(/[A-Z](?=형|빔|종|급|구간|동|층|라인)/g, ' ');
   if (/[가-힣][A-Za-z][가-힣]/.test(masked)) return true;
   if (/[가-힣]-[가-힣](?!\s*\d)/.test(masked) && /으-르|보서으|구으|능세/.test(s)) return true;
@@ -1540,7 +1580,7 @@ export function parseInterviewOpinions(raw = '') {
     const m = inner.match(/^([가-힣a-zA-Z\s]{1,14}?)\s*(?:의견|면담|인터뷰)\s*[:;：]?\s*(.*)$/i);
     if (m) {
       const role = normalizeKoreanSpacing(m[1]).trim() || '관계자';
-      const author = normalizeKoreanSpacing(m[2] || '').replace(/^[:;：\s]+|[:;：\s]+$/g, '').trim();
+      const author = normalizeKoreanSpacing(m[2] || '').replace(/^[:;：\s]+|[:;：\s]+$/g, '').replace(/\s*의견\s*$/, '').trim();
       const title = author ? `[${role} 의견 : ${author}]` : `[${role} 의견]`;
       return { title, role, author };
     }
@@ -1561,9 +1601,9 @@ export function parseInterviewOpinions(raw = '') {
     for (let l of rawLines) {
       if (/^(?:발생원인|인터뷰\s*결과|점검단\s*제안|개선대책|PM\s*판정결과)\s*[:：]?$/i.test(l)) continue;
       l = normalizeKoreanSpacing(l);
-      const isBullet = /^[-•*·▪]\s*/.test(l);
+      const isBullet = /^[-—•*·▪]+\s*/.test(l);
       if (isBullet) {
-        const body = l.replace(/^[-•*·▪]\s*/, '').trim();
+        const body = l.replace(/^[-—•*·▪]+\s*/, '').trim();
         if (body) merged.push(`- ${body}`);
       } else if (merged.length > 0 && !/^(?:\d+[.)]|[①-⑩])/.test(merged[merged.length - 1]) && !/(?:다|함|됨|음|요|임|습니다)[.!?]?$/.test(merged[merged.length - 1])) {
         merged[merged.length - 1] = joinWrappedKoreanLines(merged[merged.length - 1], l);
@@ -1811,7 +1851,8 @@ export function normalizeFieldText(text = '', fieldKey = '') {
 export function applyTypoPatches(record, typoPatches) {
   if (!record || !typoPatches || typeof typoPatches !== 'object') return record;
   const entries = Object.entries(typoPatches).filter(
-    ([bad, good]) => bad && good && bad !== good && bad.length >= 2 && Math.abs(bad.length - good.length) <= 8
+    ([bad, good]) => bad && good && bad !== good && bad.length >= 2 &&
+      Math.abs(bad.replace(/\s+/g, '').length - good.replace(/\s+/g, '').length) <= 8
   );
   if (!entries.length) return record;
 
