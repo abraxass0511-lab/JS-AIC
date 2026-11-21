@@ -323,13 +323,19 @@
     return '';
   }
 
-  // 점검자 의견 분류 자동 판정 (점검장표 실물 표준: '시스템 개선', '교육/코칭', '페널티', '제재/징계' - 복수 선택 시 모두 포함)
+  // 점검자 의견 분류 판정 (원본/입력에 명시된 경우만 반환 — 공란 시 '시스템 개선' 하드코딩 주입 전면 금지!)
   function getInspectorOpinionType(r) {
+    if (!r) return '';
+    const auditText = String(r.auditProposal || r.inspectorOpinion || '').trim();
+    const hasExplicit = Boolean(r._hasExplicitPropType || (Array.isArray(r.proposalItems) && r.proposalItems.length > 0));
     if (Array.isArray(r.proposalItems) && r.proposalItems.length > 0) {
       return r.proposalItems.map(p => p.type).join(', ');
     }
-    // 1) 레코드에 이미 지정된 타입이 있는 경우 (복수 구분 포함 정규화)
     const rawType = String(r.inspectorOpinionType || r.auditType || '').trim();
+    // 구버전 레코드에서 제안 본문이 완전히 비어있는데 '시스템 개선'만 자동 오염된 경우는 공란으로 처리
+    if (rawType === '시스템 개선' && !hasExplicit && !auditText && !String(r.inspectorOpinionSub || '').trim()) {
+      return '';
+    }
     if (rawType) {
       const parts = [];
       if (rawType.includes('시스템')) parts.push('시스템 개선');
@@ -339,12 +345,9 @@
       if (parts.length > 0) return parts.join(', ');
       return rawType;
     }
+    if (!auditText) return '';
 
-    // 2) 점검자의견 본문(auditProposal / inspectorOpinion) 기반 판정
-    // 주의: pmVerdict(PM 판정결과)는 점검자 의견 구분을 오염시키지 않도록 제외
-    const auditText = String(r.auditProposal || r.inspectorOpinion || '').trim();
     const parts = [];
-
     if (/시스템|개선|기준|절차|규정|수립|검토|설치|체결|여장|간격|적재|보강|방안/.test(auditText)) {
       parts.push('시스템 개선');
     }
@@ -358,8 +361,7 @@
       parts.push('제재/징계');
     }
 
-    if (parts.length > 0) return parts.join(', ');
-    return '시스템 개선';
+    return parts.length > 0 ? parts.join(', ') : '';
   }
 
   // 공종명 노이즈('_ |', 'HA 공사', 'HEY: 비계' 등) 정제 및 표준 분류표(작업분류표.jpg) 매핑 함수
@@ -617,11 +619,15 @@
       .join('\n');
   }
 
-  // 관계자 구분(작성자) 정밀 추출 함수 (단일·복수 '[역할 의견 : 작성자]' 모두 추출)
+  // 관계자 구분(작성자) 정밀 추출 함수 (의견이 완전히 비어있으면 공란 반환 — '시공관리자 및 근로자' 하드코딩 금지!)
   function resolveInterviewAuthor(r) {
-    if (!r) return '시공관리자 및 근로자';
+    if (!r) return '';
     const norm = _getNorm();
-    const rawOp = String(r.interviewOpinion || r.workerOpinion || '');
+    const rawOp = String(r.interviewOpinion || r.workerOpinion || '').trim();
+    const cleanedBody = cleanOpinionText(rawOp);
+    if (!rawOp && !cleanedBody && !(Array.isArray(r.interviewOpinions) && r.interviewOpinions.length > 0)) {
+      return '';
+    }
     if (norm && typeof norm.parseInterviewOpinions === 'function') {
       const parsed = norm.parseInterviewOpinions(rawOp);
       if (parsed && parsed.authorsText) return parsed.authorsText;
@@ -645,7 +651,7 @@
     if (auth && auth !== '시공관리자 및 근로자' && auth !== '협력사 시공관리자') {
       return auth;
     }
-    return auth || '시공관리자 및 근로자';
+    return cleanedBody ? (auth || '시공관리자 및 근로자') : '';
   }
 
   // 관계자 의견 앞뒤 노이즈('| -', '블', '_', 'HAT 제안' 등) 정제 및 복수 의견/원본 불릿 유무 보존 함수
@@ -1160,11 +1166,11 @@
     ['관리정보(자동)', '점검자', 8, null, r => {
       const clean = (v) => {
         const s = String(v || '')
-          .replace(/^.*?(?:점\s*검\s*자|적\s*검\s*자|점\s*겸\s*자|정\s*검\s*자|서\s*검\s*자|섬\s*검\s*자)\s*[:：.;]?\s*/g, '')
+          .replace(/^.*?(?:[점적정서섬성선]\s*[검겸견]\s*[자사시차])\s*[:：.;]?\s*/g, '')
           .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
           .replace(/\s+/g, ' ')
           .trim();
-        return (!s || /^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(s) || s.length <= 1) ? '' : s;
+        return (!s || /^(?:[점적정서섬성선][검겸견][자사시차])$/i.test(s) || s.length <= 1) ? '' : s;
       };
       return clean(r.inspector) || clean(r.inspectUser) || clean(r.user) || '';
     }],

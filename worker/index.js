@@ -187,8 +187,11 @@ const KOREAN_OSH_LAW_GUIDE = `[대한민국 산업안전보건기준에 관한 �
 - 바닥·엘리베이터·계단참 개구부 덮개 미고정·방호조치 → '산업안전보건기준에 관한 규칙 제43조(개구부 등의 방호 조치)'
 - 생명줄·안전대 부착설비 불량·안전고리 미체결 → '산업안전보건기준에 관한 규칙 제44조(안전대의 부착설비 등)'
 - 이동식 사다리·A형 사다리·승강 사다리 전도/작업 → '산업안전보건기준에 관한 규칙 제24조(사다리식 통로 등의 구조)'
-- 강관/시스템 비계·작업발판·발끝막이판·벽이음·밑둥잡이 불량 → '산업안전보건기준에 관한 규칙 제56조(작업발판의 구조)', '제59조(강관비계 조립 시의 준수사항)', '제60조(강관비계의 구조)'
-- 거푸집·동바리(시스템동바리·파이프서포트·유로폼·갱폼·알폼) 조립·해체·구조 불량 → '산업안전보건기준에 관한 규칙 제332조(거푸집동바리등의 안전조치)', '제334조(조립도)'
+- 작업발판(폭 40cm 이상, 틈새 3cm 이하, 뒤집힘·떨어짐 방지 고정, 발끝막이판) → '산업안전보건기준에 관한 규칙 제56조(작업발판의 구조)' (오직 작업발판 결함에만 적용! 비계 벽이음·벽버팀·가새·고소작업대에 절대 사용 금지!)
+- 강관/시스템 비계의 벽이음·벽버팀·가새·밑둥잡이·끝단부 고정 불량 → '산업안전보건기준에 관한 규칙 제60조(강관비계의 구조)' 또는 '제59조(강관비계 조립 시의 준수사항)' (벽이음·벽버팀 위반에 절대 제56조(작업발판의 구조)와 혼합 금지!)
+- 거푸집·동바리(시스템동바리·파이프서포트·유로폼·갱폼·알폼) 조립·해체·구조 불량 → '산업안전보건기준에 관한 규칙 제332조(거푸집동바리등의 안전조치)', '제334조(조립도)' (단, 거푸집·자재 '양중 시 유도로프 미사용·줄걸이·신호수'는 양중작업이므로 제146조/제132조 적용!)
+- [필수 문체 규칙]: 모든 lawBody는 반드시 법적 의무 평서문('~하여야 한다.', '~을 설치하여야 한다.')으로만 작성하며, 과거형 위반 사실 서술('~이루어지지 않았다', '~확보되지 않았다')은 절대 금지!
+- [필수 분량 규칙]: lawBody는 PPT 11pt 3줄 칸(최대 약 90자)을 절대 넘지 않도록 2~3줄(90자 이내)의 간결한 완결 문장으로 작성할 것!
 - 가설전기·분전반·전등 소켓·전선 충전부 노출·절연불량·접지·누전차단기 → '산업안전보건기준에 관한 규칙 제301조(전기기계·기구 등의 충전부 방호)', '제302조(전기 기계·기구 등의 접지)', '제304조(누전차단기에 의한 감전방지)'
 - 용접·용단·화기작업 불티비산방지·소화기·가연물 격리·임시충전설비 화재 → '산업안전보건기준에 관한 규칙 제241조(화재위험작업 시의 준수사항)'
 - 핸드그라인더·원형톱·절단기 덮개 미부착 등 위험기계 방호장치 → '산업안전보건기준에 관한 규칙 제87조(원동기·회전축 등의 위험 방지)', '제122조(연삭기 덮개 등)'
@@ -949,16 +952,16 @@ export default {
    - **원본 배너가 있는 경우(hasOriginalBanner === true 또는 cells.banner에 정상 한국어 배너 문구가 있는 경우)**: 절대 새로 요약·축약하거나 괄호((60도↓), (볼트 노출), (L/C 설치구간) 등)를 지우지 말고 **원본 cells.banner 문구 그대로** photoBanner에 출력하라(단순 띄어쓰기/OCR 오타만 교정)!
    - **원본 장표에 적색 배너 박스가 아예 없거나(cells.banner 공란) 자모가 깨진 경우에만**: cells.content의 첫 번째 핵심 위반 항목을 **반드시 끝에 위반 상태/행동 서술어('통제 미흡', '출입통제 미실시', '미설치', '미복구', '불량', '누락', '위반' 등)가 포함된 완결 한국어 명사구(10~32자)**로 작성하라!
    - **절대 금지**: 위반 서술어가 빠진 채 명사만 남은 불완전 문구(예: '이동식크레인 설치시 아우트리거 주변', '믹서트럭 이동 지게차 자재운반'), 선두 마침표 '. ', '1. ', '2) ...', 미완성 어미('~상태로', '~않는')!
-3. **[관련 기준] 3단계 우선순위 + 대한민국 산업안전보건법 100% 필수 기입(공란 절대 금지!)**:
-   - **[1순위 — 원본 유효 기준 보존]**: 입력 lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 도메인 모순·깨짐 없이 존재하면, 원본 지침과 원본의 기호('-', '1)' 등)를 그대로 보존하고 오타·띄어쓰기만 교정하라(단 28자 초과 시에만 제목 축약).
-   - **[2순위 — 학습된 안전작업지침 AI 적합성 검증 후 적용]**: 입력에 learnedGuidelines 후보 배열이 제공된 경우, 반드시 **부적합 내용(cells.content)·작업상황과 100% 적합한지, 또한 학습 지침 본문에 OCR 오타/이상 문구가 없는지 직접 검토**하라. 완벽히 적합하고 정상 문장일 때만 채택("guidelineApplied": true)하며 본문 앞의 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 문장으로 정리하라. 조금이라도 맞지 않거나 이상하면 기각("guidelineApplied": false)하고 3순위로 직접 판단하라.
-   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law 공란 절대 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw 공란, 또는 도메인 모순 시 아래 대한민국 산업안전보건기준에 관한 규칙 기준에 따라 실제 위반 내용과 100% 일치하는 조문(law, edits.rawLaw)과 핵심 법적 준수 기준 1~2문장(edits.lawBody)을 **반드시** 작성하라!
-     * **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침으로 채우는 edits.lawBody에는 앞에 '-', '•', '1)', '2)' 같은 불필요한 기호나 번호를 절대 붙이지 말고 순수 완결 평서문('~해야 한다.')으로 한 줄씩만 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호 그대로 유지!)
+3. **[관련 기준] 3단계 우선순위 + 제목(law)·본문(lawBody) 둘 다 100% 필수 기입(공란·칸초과·오조문 혼합 절대 금지!)**:
+   - **[1순위 — 원본 유효 기준 보존 + 칸 초과 시 AI 요약]**: 입력 lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 도메인 모순·깨짐 없이 존재하면 원본 지침을 보존하라. 단, 원본 lawBody가 11pt 3줄 박스(약 90자)를 초과(needsCondenseLawBody === true)하면 핵심 수치·의무는 그대로 유지하면서 2~3줄(90자 이내)의 완결 문장으로 자연 축약하여 칸을 넘지 않게 하라!
+   - **[2순위 — 학습된 안전작업지침 AI 적합성 검증 후 적용]**: 입력에 learnedGuidelines 후보 배열이 제공된 경우, 반드시 **부적합 내용(cells.content)·작업상황과 100% 적합한지, 또한 학습 지침 본문에 OCR 오타/이상 문구가 없는지 직접 검토**하라. 완벽히 적합하고 정상 문장일 때만 채택("guidelineApplied": true)하며 본문 앞의 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 문장(90자 이내)으로 정리하라. 조금이라도 맞지 않거나 이상하면 기각("guidelineApplied": false)하고 3순위로 직접 판단하라.
+   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law(제목)와 lawBody(본문) 둘 다 절대 공란 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/lawBody 중 하나라도 공란, 또는 도메인 모순(예: 벽이음에 제56조 작업발판 오적용, 고소작업대에 제56조 오적용, 거푸집 양중 유도로프에 제332조 오적용) 시 아래 대한민국 산업안전보건기준에 관한 규칙 기준에 따라 실제 위반 내용과 100% 일치하는 **조문 제목(law, rawLaw)**과 **핵심 법적 의무 기준 1~2문장(lawBody, 90자 이내, '~하여야 한다.' 문체, 과거형 위반서술 '~않았다' 금지!)**을 **반드시 둘 다** 작성하라!
+     * **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침으로 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 같은 불필요한 기호나 번호를 절대 붙이지 말고 순수 완결 평서문('~하여야 한다.')으로 한 줄씩(총 90자 이내)만 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호 유지하되 3줄 초과 시에만 90자 이내로 간결 요약!)
 ${KOREAN_OSH_LAW_GUIDE}
 4. **[한국어 OCR 띄어쓰기·오탈자 전수 교정 — edits 필수 작성!]**:
    - 입력 cells의 **content, location, interview, proposalText, countermeasure**를 한 글자씩 검수하여 **띄어쓰기 누락·붙여쓰기 오류·OCR 오타**가 하나라도 있으면 반드시 교정된 전체 문장을 \`edits\` 객체에 담아 반환하라! (원문의 의미·내용을 임의 축약/삭제하지 말고 띄어쓰기와 명백한 OCR 오타만 교정!)
    - 주요 교정 예시:
-     * content: "비계워킹타워하부밑둥잡이일부 누락" → "비계 워킹타워 하부 밑둥잡이 일부 누락", "해체후미복구" → "해체 후 미복구", "미 설치" → "미설치", "내측난간대미설치" → "내측 난간대 미설치", "중계단참" → "중 계단참"
+     * content/banner: "적재물결속2개소미실시" → "적재물 결속 2개소 미실시", "비계워킹타워하부밑둥잡이일부 누락" → "비계 워킹타워 하부 밑둥잡이 일부 누락", "해체후미복구" → "해체 후 미복구", "미 설치" → "미설치", "내측난간대미설치" → "내측 난간대 미설치", "중계단참" → "중 계단참"
      * location: "101동 외무" → "101동 외부", "102동 수면" → "102동 후면", "104동 /C1,2호기" → "104동 L/C 1,2호기", "104동 15cm 호" → "104동 1501호"
      * proposalText: "- 관리자점검관리강화" → "- 관리자 점검 및 관리 강화", "- 형식적인 점검이되지않도록점검결과 SNS내등록 시스템구축" → "- 형식적인 점검이 되지 않도록 점검결과 SNS내 등록 시스템 구축"
      * interview: 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 100% 보존하되 붙여써진 띄어쓰기("해당구간담당자연차로인한" → "해당 구간 담당자 연차로 인한")만 교정!
@@ -1037,9 +1040,10 @@ ${TAXONOMY_STANDARD_PROMPT}
                 const isOriginalValid = srcItem.lawPriorityTier === 'original_valid' && !srcItem.hasGarbledLaw;
                 const srcCtx = `${srcCells.workTypeRaw || ''} ${srcCells.content || ''} ${out.workGroup || ''}`;
                 const isSrcElec = /전기|전선|분전반|분전함|누전|차단기|접지|전등|소켓|심선|충전부|감전/.test(srcCtx) && !/지게차|유도원|하역|운행경로/.test(srcCtx);
-                const isSrcCraneLift = /크레인|타워크레인|양중물|형틀자재\s*양중|줄걸이|유도로프|이형자재\s*양중/.test(`${srcCtx} ${srcCells.lawBody || ''}`);
-                const hasSrcFormworkDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(srcCtx);
-                const needAiLawGen = Boolean(srcItem.needsAiLaw || srcItem.hasGarbledLaw);
+                const isSrcCraneLift = /크레인|타워크레인|양중물|형틀자재\s*양중|거푸집\s*양중|줄걸이|유도로프|이형자재\s*양중/.test(`${srcCtx} ${srcCells.lawBody || ''}`) && !/갱폼|Gang\s*Form|IZ12B?-?103/i.test(`${srcCells.lawRaw || ''} ${srcCells.lawBody || ''}`);
+                const hasSrcFormworkDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)|갱폼/i.test(srcCtx);
+                const isSrcWallTieOnly = /(?:벽이음|벽버팀|가새|밑둥잡이)/.test(srcCtx) && !/작업발판|발판\s*(?:폭|틈새|고정|이탈|미설치|불량|해체|미복구)/.test(srcCtx);
+                const needAiLawGen = Boolean(srcItem.needsAiLaw || srcItem.hasGarbledLaw || !srcCells.lawRaw || !srcCells.lawBody);
                 if (out.workGroup === '양중 및 운반작업' || out.workGroup === '양중작업' || out.workGroup === '안전시설공사' || out.workGroup === '콘크리트공사') {
                   out.workGroup = '';
                 }
@@ -1056,11 +1060,14 @@ ${TAXONOMY_STANDARD_PROMPT}
                 if (isSrcCraneLift && !hasSrcFormworkDefect && /제332조|거푸집동바리/.test(String(out.law || ''))) {
                   out.law = '';
                 }
+                if (isSrcWallTieOnly && /제56조|작업발판의\s*구조/.test(String(out.law || ''))) {
+                  out.law = '';
+                }
                 if (isSrcElec && /지게차|172조|유도자/.test(String(out.law || ''))) {
                   out.law = '';
                 }
                 if (typeof out.lawBody === 'string' && out.lawBody.trim()) {
-                  out.lawBody = normalizeWorkerLawBody(out.lawBody, isOriginalValid);
+                  out.lawBody = normalizeWorkerLawBody(out.lawBody, isOriginalValid && !srcItem.needsCondenseLawBody);
                 }
                 const rawEdits = (out.edits && typeof out.edits === 'object')
                   ? out.edits
@@ -1106,10 +1113,10 @@ ${TAXONOMY_STANDARD_PROMPT}
                     ? stripWorkerBannerTail(v)
                     : v;
                 }
-                if (!ff.rawLaw && needAiLawGen && out.law) {
+                if (!ff.rawLaw && out.law && (needAiLawGen || !origLawNorm)) {
                   ff.rawLaw = normalizeWorkerLawTitle(out.law);
                 }
-                if (!ff.lawBody && needAiLawGen && out.lawBody) {
+                if (!ff.lawBody && out.lawBody && (needAiLawGen || srcItem.needsCondenseLawBody || !srcCells.lawBody)) {
                   ff.lawBody = out.lawBody;
                 }
                 if (!ff.rawLaw && origLawNorm && !srcItem.hasGarbledLaw && origLawNorm !== String(srcCells.lawRaw || '').trim()) {
@@ -1238,14 +1245,14 @@ ${TAXONOMY_STANDARD_PROMPT}
 1. [사진 요약(photoBanner) 검증 — 원본 배너 보존 + 위반 서술어 필수]:
    - 입력 hasOriginalBanner === true 이면 원본 photoBanner 문구를 절대 축약·요약하지 말고 그대로 유지하라(오직 단순 띄어쓰기/오타만 교정)!
    - 원본 배너가 없거나(hasOriginalBanner === false) 자모 깨짐/선두 마침표('. ')/공란/위반 서술어 누락(예: '이동식크레인 설치시 아우트리거 주변', '믹서트럭 이동 지게차 자재운반'처럼 끝의 '통제 미흡'/'미설치'가 잘린 문구)이면 반드시 content의 핵심 위반 내용에 위반 서술어('통제 미흡', '출입통제 미실시', '미설치', '불량', '누락' 등)가 포함된 완결 한국어 명사구(10~32자)로 교정하라!
-2. [관련 기준(law, rawLaw, lawBody) — 3단계 우선순위 + 대한민국 산업안전보건법 100% 필수(공란 절대 금지!)]:
-   - **[1순위 — 원본 유효 기준 보존]**: lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 깨짐·도메인 모순 없이 존재하면 원본 지침과 원본의 기호('-', '1)' 등)를 그대로 보존하고 오타·띄어쓰기만 교정하라(28자 초과 시에만 제목 축약).
-   - **[2순위 — 학습된 안전작업지침 적합성 검증]**: 입력에 learnedGuideline이 제공된 경우 부적합 내용과 100% 적합하고 오타/이상 문구가 없을 때만 채택하며, 본문 앞 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 평서문으로 정리하라. 조금이라도 맞지 않으면 기각하고 3순위로 직접 판단하라.
-   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law 공란 절대 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/law 공란, 또는 도메인 모순이면 반드시 아래 대한민국 산업안전보건기준에 관한 규칙 기준으로 정확한 조문과 핵심 준수 기준 1~2문장(lawBody)을 작성하라!
-   - **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침을 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 등 기호/번호를 절대 붙이지 말고 순수 완결 평서문('~해야 한다.')으로 한 줄씩 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호 그대로 유지!)
+2. [관련 기준(law, rawLaw, lawBody) — 3단계 우선순위 + 제목·본문 둘 다 100% 필수 + 칸 초과 시 90자 이내 축약!]:
+   - **[1순위 — 원본 유효 기준 보존 + 칸 초과 시 AI 요약]**: lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 깨짐·도메인 모순 없이 존재하면 원본 지침을 보존하라. 단, 원본 lawBody가 11pt 3줄 칸(약 90자)을 초과(needsCondenseLawBody === true)하면 핵심 수치·의무 기준을 유지한 채 2~3줄(90자 이내)의 완결 평서문으로 자연 축약하라!
+   - **[2순위 — 학습된 안전작업지침 적합성 검증]**: 입력에 learnedGuideline이 제공된 경우 부적합 내용과 100% 적합하고 오타/이상 문구가 없을 때만 채택하며, 본문 앞 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 평서문(90자 이내)으로 정리하라. 조금이라도 맞지 않으면 기각하고 3순위로 직접 판단하라.
+   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law(제목)·lawBody(본문) 둘 다 절대 공란 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/law/lawBody 중 하나라도 공란, 또는 도메인 모순(벽이음에 제56조 작업발판 오적용, 고소작업대에 제56조 오적용, 과거형 위반 서술 '~않았다')이면 반드시 아래 대한민국 산업안전보건기준에 관한 규칙 기준으로 정확한 조문 제목(law, rawLaw)과 핵심 법적 의무 기준 1~2문장(lawBody, 90자 이내, '~하여야 한다.' 문체)을 작성하라!
+   - **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침을 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 등 기호/번호를 절대 붙이지 말고 순수 완결 평서문('~하여야 한다.')으로 한 줄씩(총 90자 이내) 작성하라!
 ${KOREAN_OSH_LAW_GUIDE}
 3. [한국어 띄어쓰기·OCR 오탈자 전수 교정 — corrections 필수 기입]:
-   - content, location, interviewOpinion, auditProposal, actionPlan을 검수하여 띄어쓰기 누락('비계워킹타워하부밑둥잡이일부 누락', '해체후미복구', '미 설치', '내측난간대미설치', '- 관리자점검관리강화')이나 OCR 오타('101동 외무'→'101동 외부', '102동 수면'→'102동 후면', '104동 /C1,2호기'→'104동 L/C 1,2호기')가 있으면 반드시 교정된 전문을 corrections 객체에 담아 반환하라!
+   - content, location, interviewOpinion, auditProposal, actionPlan, photoBanner를 검수하여 띄어쓰기 누락('적재물결속2개소미실시'→'적재물 결속 2개소 미실시', '비계워킹타워하부밑둥잡이일부 누락', '해체후미복구', '미 설치', '내측난간대미설치', '- 관리자점검관리강화')이나 OCR 오타('101동 외무'→'101동 외부', '102동 수면'→'102동 후면', '104동 /C1,2호기'→'104동 L/C 1,2호기')가 있으면 반드시 교정된 전문을 corrections 객체에 담아 반환하라!
 4. [복수 인터뷰 의견 100% 보존 및 점검차수 한자('上'/'下') 유지]:
    - interviewOpinion에 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 유지하고, 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
 5. [표준 분류 검증]: ${TAXONOMY_STANDARD_PROMPT} 기준에 어긋나는 locationCategory/workGroupMid/workGroup/workMethod/agentMajor/agentMid/agentMinor는 정확히 교정.
@@ -1302,8 +1309,9 @@ ${KOREAN_OSH_LAW_GUIDE}
                   const srcItem = items.find((b) => Number(b?.pageIndex) === Number(item.pageIndex)) || items[idx] || {};
                   const srcPromptItem = promptItems.find((b) => Number(b?.pageIndex) === Number(item.pageIndex)) || promptItems[idx] || srcItem;
                   const ctx = `${srcItem.workGroup || ''} ${srcItem.content || ''} ${srcItem.lawBody || ''}`;
-                  const isCraneLift = /크레인|타워크레인|양중물|형틀자재\s*양중|줄걸이|유도로프|이형자재\s*양중/.test(ctx);
-                  const isFormDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)/.test(ctx);
+                  const isCraneLift = /크레인|타워크레인|양중물|형틀자재\s*양중|거푸집\s*양중|줄걸이|유도로프|이형자재\s*양중/.test(ctx) && !/갱폼|Gang\s*Form|IZ12B?-?103/i.test(`${srcItem.rawLaw || ''} ${srcItem.lawBody || ''}`);
+                  const isFormDefect = /동바리\s*(?:조립|침하|변형|2본|이중|구조검토|설치|미복구|해체)|거푸집\s*(?:조립|해체|탈형|측압|전도)|갱폼/i.test(ctx);
+                  const isWallTieOnly = /(?:벽이음|벽버팀|가새|밑둥잡이)/.test(ctx) && !/작업발판|발판\s*(?:폭|틈새|고정|이탈|미설치|불량|해체|미복구)/.test(ctx);
                   const isElec = /가설전기|전기\s*작업|전기설비|분전반|분전함|접지|전등|소켓|심선|충전부|감전/.test(ctx) && !/지게차|유도원|운행경로/.test(ctx);
                   const out = { ...item, verified: true };
                   if (out.workGroup === '양중 및 운반작업' || out.workGroup === '양중작업' || out.workGroup === '안전시설공사' || out.workGroup === '콘크리트공사') {
@@ -1336,6 +1344,10 @@ ${KOREAN_OSH_LAW_GUIDE}
                   if (isCraneLift && !isFormDefect) {
                     if (/제332조|거푸집동바리/.test(String(out.law || ''))) out.law = '';
                     if (/제332조|거푸집동바리/.test(String(out.rawLaw || ''))) out.rawLaw = out.law || '';
+                  }
+                  if (isWallTieOnly && /제56조|작업발판의\s*구조/.test(`${out.law || ''} ${out.rawLaw || ''}`)) {
+                    if (/제56조|작업발판의\s*구조/.test(String(out.law || ''))) out.law = '';
+                    if (/제56조|작업발판의\s*구조/.test(String(out.rawLaw || ''))) out.rawLaw = out.law || '';
                   }
                   if (isElec && /지게차|172조|유도자/.test(`${out.law || ''} ${out.rawLaw || ''}`)) {
                     if (/지게차|172조|유도자/.test(String(out.law || ''))) out.law = '';
@@ -1424,6 +1436,53 @@ ${KOREAN_OSH_LAW_GUIDE}
               headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
             });
           }
+        }
+
+        // [v62 신규] 관련기준 본문 칸 초과(11pt 3줄 초과) AI 자연 축약 모드 (PPT 생성/미리보기 직전 호출)
+        if (body.mode === 'condense_law' && Array.isArray(body.items) && body.items.length > 0) {
+          const items = body.items.slice(0, 6);
+          if (!env.AI) {
+            return new Response(JSON.stringify({ ok: false, results: [] }), {
+              status: 200,
+              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+            });
+          }
+          const condensePrompt = `너는 대한민국 건설안전 법령·안전작업지침 문장 축약 전문가 AI이다.
+입력된 각 항목의 관련기준 본문(lawBody)이 점검장표 PPT의 11pt 3줄 칸(가로 5.42in × 세로 0.64in, 최대 약 88자)을 넘어가고 있다.
+아래 규칙에 따라 각 항목의 lawBody를 핵심 수치·안전 의무 기준은 100% 살리면서 칸을 넘지 않는 간결한 문장으로 축약하라:
+1. 전체 길이는 공백 포함 **88자 이내**(최대 2~3줄)로 작성할 것.
+2. 반드시 자연스럽고 완결된 한국어 평서문('~하여야 한다.', '~한다.')으로 끝낼 것 (단어 중간 절단, 말줄임표 '...' 금지).
+3. 순수 한국어만 사용 (한자·중국어 혼입 절대 금지).
+4. 입력에 절 번호('7.7.1 ...')가 첫 줄에 있더라도 공간이 부족하면 절 번호를 생략하고 핵심 수칙 본문만 간결하게 담아라.
+5. 만약 입력 lawTitle이 비어 있거나 모순이면 lawTitle도 함께 보완하라.
+
+반드시 아래 JSON 형식으로만 응답하라 (설명 금지):
+{
+  "results": [
+    { "id": "원본 id", "lawTitle": "제목(변경 필요시만)", "lawBody": "88자 이내로 간결 요약된 완결 한국어 본문" }
+  ]
+}`;
+          try {
+            const llmRes = await runCloudTextLLM(env, [
+              { role: 'system', content: condensePrompt },
+              { role: 'user', content: JSON.stringify(items) }
+            ], { maxTokens: 1600, temperature: 0.05, requireJson: true });
+            if (llmRes.ok && Array.isArray(llmRes.parsed?.results)) {
+              const cleaned = llmRes.parsed.results.map(r => ({
+                id: r.id,
+                lawTitle: typeof r.lawTitle === 'string' ? r.lawTitle.replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : '')).trim() : '',
+                lawBody: typeof r.lawBody === 'string' ? r.lawBody.replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : '')).trim() : ''
+              }));
+              return new Response(JSON.stringify({ ok: true, model: llmRes.modelLabel, results: cleaned }), {
+                status: 200,
+                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+              });
+            }
+          } catch (cErr) {}
+          return new Response(JSON.stringify({ ok: false, results: [] }), {
+            status: 200,
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+          });
         }
 
         // [v2.0 신규] 현장 직접 등록 모드(Guided Complete): 1줄 키워드 + 선택 분류값으로 보고서 문장 자동 생성

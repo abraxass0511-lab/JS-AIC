@@ -1070,10 +1070,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 if (cf.subcontractor !== undefined) fallbackRecord.subcontractor = cf.subcontractor;
                 if (cf.inspector !== undefined && cf.inspector) {
                   const insCleaned = String(cf.inspector)
-                    .replace(/^.*?(?:점검자|적검자|점겸자|정검자|서검자|섬검자)\s*[:：.;]?\s*/g, '')
+                    .replace(/^.*?(?:[점적정서섬성선]\s*[검겸견]\s*[자사시차])\s*[:：.;]?\s*/g, '')
                     .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
                     .trim();
-                  if (insCleaned.length >= 2 && !/^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(insCleaned)) {
+                  if (insCleaned.length >= 2 && !/^(?:[점적정서섬성선][검겸견][자사시차])$/i.test(insCleaned)) {
                     fallbackRecord.inspector = insCleaned;
                     fallbackRecord.inspectUser = insCleaned;
                   }
@@ -1206,16 +1206,20 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       location: cleanLocation(fallbackRecord.location, cleanedContent),
       content: cleanedContent,
       photoBanner: cleanBannerText(fallbackRecord.photoBanner, cleanedContent),
-      interviewAuthor: (parsedMulti?.hasMulti && parsedMulti.authorsText) ? parsedMulti.authorsText : (fallbackRecord.interviewAuthor || '시공관리자 및 근로자'),
-      interviewAuthorTitle: (parsedMulti?.hasMulti && parsedMulti.primaryTitle) ? parsedMulti.primaryTitle : (fallbackRecord.interviewAuthorTitle || `[관리자 의견 : ${fallbackRecord.interviewAuthor || '시공관리자 및 근로자'}]`),
+      interviewAuthor: cleanedOpinion
+        ? ((parsedMulti?.hasMulti && parsedMulti.authorsText) ? parsedMulti.authorsText : (fallbackRecord.interviewAuthor || '시공관리자 및 근로자'))
+        : '',
+      interviewAuthorTitle: cleanedOpinion
+        ? ((parsedMulti?.hasMulti && parsedMulti.primaryTitle) ? parsedMulti.primaryTitle : (fallbackRecord.interviewAuthorTitle || `[의견 : ${fallbackRecord.interviewAuthor || '시공관리자 및 근로자'}]`))
+        : '',
       interviewOpinion: cleanedOpinion,
       interviewOpinions: (parsedMulti?.sections && parsedMulti.sections.length >= 2) ? parsedMulti.sections : (fallbackRecord.interviewOpinions || []),
       auditProposal: cleanProposalText(fallbackRecord.auditProposal),
       actionPlan: cleanActionPlan(fallbackRecord.actionPlan),
       countermeasure: cleanActionPlan(fallbackRecord.actionPlan || fallbackRecord.countermeasure),
-      inspectorOpinionType: fallbackRecord.inspectorOpinionType || ((fallbackRecord._aiCleaned || cleanedContent) ? '시스템 개선' : ''),
-      pmVerdict: fallbackRecord.pmVerdict || ((fallbackRecord._aiCleaned || cleanedContent) ? '시스템 개선' : ''),
-      pmVerdictType: fallbackRecord.pmVerdictType || fallbackRecord.pmVerdict || ((fallbackRecord._aiCleaned || cleanedContent) ? '시스템 개선' : ''),
+      inspectorOpinionType: fallbackRecord.inspectorOpinionType || '',
+      pmVerdict: fallbackRecord.pmVerdict || '',
+      pmVerdictType: fallbackRecord.pmVerdictType || fallbackRecord.pmVerdict || '',
       severity: fallbackRecord.severity || ((fallbackRecord._aiCleaned || cleanedContent) ? '중부적합' : ''),
       type: fallbackRecord.type || ((fallbackRecord._aiCleaned || cleanedContent) ? '붕괴' : '')
     };
@@ -1484,7 +1488,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           pageIndex: rec.pageNumber || rec.slideNumber || (idx + 1),
           severityHint: rec.severity || '중부적합',
           hasOriginalBanner,
-          needsAiLaw: Boolean(ts.needAi || !String(rec.law || rec.rawLaw || '').trim()),
+          needsAiLaw: Boolean(ts.needAi || !String(rec.law || rec.rawLaw || '').trim() || !String(rec.lawBody || '').trim()),
+          needsCondenseLawBody: Boolean(normHelperForBatch?.isLawBodyOverflowing?.(rec.lawBody || '')),
           hasGarbledLaw: Boolean(ts.garbled),
           guidelineCode: ts.spec?.code || '',
           lawPriorityTier: ts.priorityTier || 'needs_ai_law',
@@ -1615,9 +1620,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
             applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
             const recTierState = tierStates[idx] || {};
+            const shouldCondenseBody = Boolean(normH?.isLawBodyOverflowing?.(rec.lawBody || ''));
             if (recTierState.priorityTier !== 'original_valid') {
               applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw || aiItem.rawLaw, null, null, 2.8);
-              applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
+              applyFixedField('lawBody', ff.lawBody || aiItem.lawBody, null, null, 3.0);
+            } else if (shouldCondenseBody && (ff.lawBody || aiItem.lawBody)) {
+              applyFixedField('lawBody', ff.lawBody || aiItem.lawBody, null, null, 3.0);
             } else if (ff.lawBody && String(ff.lawBody).length >= String(rec.lawBody || '').length * 0.7) {
               applyFixedField('lawBody', ff.lawBody, null, null, 3.0);
             }
@@ -1676,16 +1684,20 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           if (typeof aiItem.guidelineApplied === 'boolean') {
             rec.guidelineApplied = aiItem.guidelineApplied;
           }
-          if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law) {
+          if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law || !rec.rawLaw || !rec.lawBody || normH?.isLawBodyOverflowing?.(rec.lawBody || '')) {
             if (aiItem.law && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(String(aiItem.law).trim())) {
-              rec.law = aiItem.law;
-              if (!rec.rawLaw) rec.rawLaw = aiItem.law;
-              if (rec.basis) rec.basis.law = aiItem.law;
+              if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law) {
+                rec.law = aiItem.law;
+                if (!rec.rawLaw || recTierForLaw.priorityTier !== 'original_valid') rec.rawLaw = aiItem.law;
+                if (rec.basis) rec.basis.law = aiItem.law;
+              }
             }
-            if (aiItem.lawBody && !rec.lawBody) {
-              rec.lawBody = (normH && typeof normH.stripGuidelinePrefixes === 'function')
-                ? normH.stripGuidelinePrefixes(aiItem.lawBody)
-                : String(aiItem.lawBody).trim();
+            if (aiItem.lawBody && (!rec.lawBody || recTierForLaw.priorityTier !== 'original_valid' || normH?.isLawBodyOverflowing?.(rec.lawBody || ''))) {
+              rec.lawBody = (recTierForLaw.priorityTier === 'original_valid')
+                ? String(aiItem.lawBody).trim()
+                : ((normH && typeof normH.stripGuidelinePrefixes === 'function')
+                    ? normH.stripGuidelinePrefixes(aiItem.lawBody)
+                    : String(aiItem.lawBody).trim());
             }
           }
           // 깨진 OCR 배너가 잔존해 있으면 최종 제거 후 content 기반 요약으로 대체
@@ -1718,11 +1730,11 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (ok) anySuccess = true;
     }
 
-    // [v61] 자동 재시도: 1차 배치 실패 또는 관련기준(law)이 여전히 공란인 건은 1~2건 단위로 1회 재요청
+    // [v62] 자동 재시도: 1차 배치 실패 또는 관련기준 제목(law)/본문(lawBody) 중 하나라도 공란인 건은 1~2건 단위로 1회 재요청
     if (Date.now() >= _cfQuotaCooldownUntil) {
       const retryTargets = records.filter(r =>
         r && String(r.content || '').trim() &&
-        (!r._aiBatchSuccess || !String(r.law || r.rawLaw || '').trim())
+        (!r._aiBatchSuccess || !String(r.law || r.rawLaw || '').trim() || !String(r.lawBody || '').trim())
       );
       if (retryTargets.length > 0) {
         _cfTransientBackoffUntil = 0;
@@ -1837,7 +1849,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             law: rec.law || '',
             rawLaw: rec.rawLaw || '',
             lawBody: rec.lawBody || '',
-            needsAiLaw: Boolean(st.needAi || !String(rec.law || rec.rawLaw || '').trim()),
+            needsAiLaw: Boolean(st.needAi || !String(rec.law || rec.rawLaw || '').trim() || !String(rec.lawBody || '').trim()),
+            needsCondenseLawBody: Boolean(norm?.isLawBodyOverflowing?.(rec.lawBody || '')),
             hasGarbledLaw: Boolean(st.garbled),
             guidelineCode: st.spec?.code || '',
             lawPriorityTier: st.priorityTier || 'needs_ai_law',
@@ -1942,7 +1955,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               const candLawBody = corr.lawBody || aiRes.lawBody;
               if (candLawBody && typeof candLawBody === 'string' && !/\uFFFD/.test(candLawBody) && !isFieldKeyLiteral(candLawBody)) {
                 const healedBody = norm?.normalizeSafetyLawBody ? norm.normalizeSafetyLawBody(candLawBody) : healSafetyKoreanLexicon(candLawBody.trim());
-                if (!preserveOrigTitle || healedBody.length >= String(rec.lawBody || '').length * 0.7) {
+                const wasOverflowing = Boolean(norm?.isLawBodyOverflowing?.(rec.lawBody || ''));
+                if (!preserveOrigTitle || wasOverflowing || healedBody.length >= String(rec.lawBody || '').length * 0.7) {
                   rec.lawBody = healedBody;
                 }
               }
@@ -2021,13 +2035,20 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       const wg = String(r.workGroup || '').trim();
       const wm = String(r.workMethod || r.workName || '').trim();
       const law = String(r.law || r.rawLaw || (r.basis && r.basis.law) || '').trim();
+      const lawBody = String(r.lawBody || '').trim();
       const banner = String(r.photoBanner || '').trim();
       const agMaj = String(r.agentMajor || r.kind || '').trim();
       const agMid = String(r.agentMid || r.item || '').trim();
-      const isBadLaw = !law || /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(law) ||
+      const isWallTieArt56Mix = /제56조|작업발판의\s*구조/.test(law) && /(?:벽이음|벽버팀|가새|밑둥잡이)/.test(`${r.content || ''} ${lawBody}`) && !/작업발판/.test(r.content || '');
+      const hasPastTenseBody = /(?:이루어지지\s*않았다|확보되지\s*않았다|설치되지\s*않았다)/.test(lawBody);
+      const isOverflowBody = Boolean(norm?.isLawBodyOverflowing?.(lawBody));
+      const isBadLaw = !law || !lawBody || /^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(law) ||
         Boolean(norm?.hasGarbledKoreanNoise?.(law)) ||
-        (/고소작업대/.test(r.content || '') && /제56조|작업발판/.test(law));
-      const isBadBanner = !banner || /^\./.test(banner) ||
+        (/고소작업대/.test(r.content || '') && /제56조|작업발판/.test(law)) ||
+        isWallTieArt56Mix ||
+        hasPastTenseBody ||
+        isOverflowBody;
+      const isBadBanner = !banner || /^\./.test(banner) || /\r|\n/.test(banner) ||
         Boolean(norm?.hasGarbledKoreanNoise?.(banner)) ||
         Boolean(norm?.isGarbledBannerText?.(banner));
       const isBadAgent = !agMaj || !agMid || agMaj === '작업장·통로' || agMaj === 'PPE' || agMaj === '작업장' ||
@@ -2053,9 +2074,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       const chunk = targets.slice(i, i + CHUNK);
       onProgress(`🤖 PDF 등록 시 AI 누락 분류·관련기준·띄어쓰기 보완 중... (${Math.min(i + chunk.length, targets.length)}/${targets.length}건)`);
       chunk.forEach((rec) => {
-        if (/고소작업대/.test(rec.content || '') && /제56조|작업발판/.test(`${rec.law || ''} ${rec.rawLaw || ''}`)) {
+        const isWallTieMix = /제56조|작업발판의\s*구조/.test(`${rec.law || ''} ${rec.rawLaw || ''}`) &&
+          /(?:벽이음|벽버팀|가새|밑둥잡이)/.test(`${rec.content || ''} ${rec.lawBody || ''}`) &&
+          !/작업발판/.test(rec.content || '');
+        if ((/고소작업대/.test(rec.content || '') && /제56조|작업발판/.test(`${rec.law || ''} ${rec.rawLaw || ''}`)) || isWallTieMix) {
           rec.law = '';
           rec.rawLaw = '';
+          rec.lawBody = '';
+        }
+        if (/(?:이루어지지\s*않았다|확보되지\s*않았다|설치되지\s*않았다)/.test(rec.lawBody || '')) {
           rec.lawBody = '';
         }
         if (rec.photoBanner && (/^\./.test(rec.photoBanner) || norm?.hasGarbledKoreanNoise?.(rec.photoBanner) || norm?.isGarbledBannerText?.(rec.photoBanner))) {
@@ -2149,6 +2176,64 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     return _guidelineAuditInFlight;
   }
 
+  /**
+   * [v62] 관련기준 본문이 11pt 3줄 박스를 초과하거나 제목/본문이 누락된 레코드를 PPT 생성 직전 AI로 자연 축약·보완
+   */
+  async function condenseOverflowLawBodiesWithAI(records = []) {
+    if (!Array.isArray(records) || !records.length) return records;
+    const forceLocal = storage.getItem('sp_ai_provider') === 'local';
+    if (forceLocal || isQuotaCoolingDown()) return records;
+    const norm = getNormHelper();
+    const targets = records.filter(r => {
+      if (!r || typeof r !== 'object') return false;
+      const body = String(r.lawBody || '').trim();
+      const title = String(r.rawLaw || r.law || '').trim();
+      const overflowing = Boolean(body && norm?.isLawBodyOverflowing?.(body));
+      const missingTitleWithBody = Boolean(!title && body);
+      return overflowing || missingTitleWithBody;
+    });
+    if (!targets.length) return records;
+
+    const CHUNK = 4;
+    for (let i = 0; i < targets.length; i += CHUNK) {
+      const chunk = targets.slice(i, i + CHUNK);
+      const items = chunk.map((r, idx) => ({
+        id: String(r.id || `rec_${i + idx}`),
+        lawTitle: String(r.rawLaw || r.law || '').trim(),
+        lawBody: String(r.lawBody || '').trim(),
+        content: String(r.content || '').trim()
+      }));
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 30000);
+        const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: 'condense_law', items }),
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data?.ok && Array.isArray(data.results)) {
+          chunk.forEach((rec, idx) => {
+            const key = String(rec.id || `rec_${i + idx}`);
+            const hit = data.results.find(x => String(x?.id) === key) || data.results[idx];
+            if (!hit) return;
+            if (hit.lawBody && hit.lawBody.length >= 12) {
+              rec.lawBody = norm?.normalizeSafetyLawBody ? norm.normalizeSafetyLawBody(hit.lawBody) : hit.lawBody;
+            }
+            if (hit.lawTitle && !String(rec.rawLaw || rec.law || '').trim()) {
+              rec.rawLaw = hit.lawTitle;
+              rec.law = hit.lawTitle;
+            }
+          });
+        }
+      } catch (_) {}
+    }
+    return records;
+  }
+
   return {
     checkConnection,
     quickRuleAnalysis,
@@ -2159,6 +2244,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     verifyRecordsBeforeSave,
     repairMissingFieldsOnImport,
     enrichMissingRecordsForExcel,
+    condenseOverflowLawBodiesWithAI,
     auditAndFilterGuidelinesWithAI,
     isQuotaCoolingDown,
     completeGuidedRecord,

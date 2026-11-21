@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261122_v60';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261115_v48';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261122_v62';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261122_v62';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -32,7 +32,7 @@ import {
   inferSafetyDomain,
   SafeGuidelineMemory,
   parseInterviewOpinions
-} from './text-normalizer.js?v=20261122_v60';
+} from './text-normalizer.js?v=20261122_v62';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -1679,11 +1679,11 @@ function preprocessBannerCanvas(sourceCanvas, rect) {
 
 export function sanitizeInspectorValue(raw) {
   let s = String(raw || '')
-    .replace(/^.*?(?:점\s*검\s*자|적\s*검\s*자|점\s*겸\s*자|정\s*검\s*자|서\s*검\s*자|섬\s*검\s*자)\s*[:：.;]?\s*/g, '')
+    .replace(/^.*?(?:[점적정서섬성선]\s*[검겸견]\s*[자사시차])\s*[:：.;]?\s*/g, '')
     .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!s || /^(?:점검자|적검자|점겸자|정검자|서검자|섬검자)$/i.test(s) || s.length <= 1) {
+  if (!s || /^(?:[점적정서섬성선][검겸견][자사시차])$/i.test(s) || s.length <= 1) {
     return '';
   }
   return s;
@@ -2218,34 +2218,37 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     else if (tMeta.trim()) inspectRound = "'26년上 2차";
   }
 
-  let interviewAuthor = '시공관리자 및 근로자';
-  let interviewAuthorTitle = '[의견 : 시공관리자 및 근로자]';
+  // [v62] 발생원인 의견·점검단 제안 분류 하드코딩 완전 제거: 원본 PDF/입력에 내용이 없으면 공란 유지!
+  let interviewAuthor = '';
+  let interviewAuthorTitle = '';
   let interviewOpinion = '';
   let interviewOpinions = [];
   const preCleanedInterview = cleanOpinionText(tInterview, { preserveHeaders: true });
   const parsedOp = parseInterviewOpinions(preCleanedInterview || tInterview);
   if (parsedOp.sections.length >= 2) {
     interviewOpinions = parsedOp.sections;
-    interviewAuthor = parsedOp.authorsText || interviewAuthor;
-    interviewAuthorTitle = parsedOp.primaryTitle || interviewAuthorTitle;
+    interviewAuthor = parsedOp.authorsText || '';
+    interviewAuthorTitle = parsedOp.primaryTitle || '';
     interviewOpinion = parsedOp.formatted;
   } else if (parsedOp.sections.length === 1) {
     const sec0 = parsedOp.sections[0];
     interviewOpinions = parsedOp.sections;
-    interviewAuthor = sec0.author || sec0.role || interviewAuthor;
-    interviewAuthorTitle = sec0.title || interviewAuthorTitle;
+    interviewAuthor = sec0.author || sec0.role || '';
+    interviewAuthorTitle = sec0.title || (interviewAuthor ? `[의견 : ${interviewAuthor}]` : '');
     interviewOpinion = sec0.text || normalizeFieldText(cleanOpinionText(tInterview), 'interview');
   } else {
     interviewOpinion = normalizeFieldText(cleanOpinionText(tInterview), 'interview');
+    if (interviewOpinion) {
+      interviewAuthor = '시공관리자 및 근로자';
+      interviewAuthorTitle = '[의견 : 시공관리자 및 근로자]';
+    }
   }
 
-  // 주의: 점검단 제안 본문(tPropText)의 '재교육하여' 등에 교육/코칭이 오인되지 않도록 오직 판정 셀(tPropType)만 파싱
+  // 주의: 점검단 제안 본문(tPropText)의 '재교육하여' 등에 교육/코칭이 오인되지 않도록 오직 판정 셀(tPropType)만 파싱 (원본 공란 시 '시스템 개선' 강제 주입 금지!)
   const rawPropItems = tPropType.trim() ? parseVerdictItemsFromText(tPropType, '(현장모니터링 강화)') : [];
   const hasExplicitPropType = rawPropItems.length > 0;
-  const proposalItems = hasExplicitPropType
-    ? rawPropItems
-    : (allowDefaults ? [{ type: '시스템 개선', sub: '(현장모니터링 강화)' }] : []);
-  const inspectorOpinionType = proposalItems.map(p => p.type).join(', ') || (allowDefaults ? '시스템 개선' : '');
+  const proposalItems = hasExplicitPropType ? rawPropItems : [];
+  const inspectorOpinionType = proposalItems.map(p => p.type).join(', ');
   const inspectorOpinionSub = proposalItems[0]?.sub || '';
   const auditProposal = normalizeFieldText(cleanProposalText(tPropText), 'propText');
   const actionPlan = normalizeFieldText(cleanActionPlan(tCm), 'cm');
