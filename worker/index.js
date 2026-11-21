@@ -62,13 +62,13 @@ function stripWorkerBannerTail(raw = '') {
   return hasWorkerGarbledText(cleaned) ? '' : cleaned;
 }
 
-// ── 2026-11 최신 Cloudflare Workers AI 활성 텍스트 LLM 자동 다중 폴백 체인 (단일 모델 퇴역 5028 영구 방지) ──
+// ── 2026-11 최신 Cloudflare Workers AI 활성 텍스트 LLM 자동 다중 폴백 체인 (비사고 초고속 70B 1순위 + 5단계 자동 폴백으로 5028 퇴역·타임아웃 영구 방지) ──
 const CLOUD_TEXT_LLM_CHAIN = [
-  { id: '@cf/google/gemma-4-26b-a4b-it', label: 'Gemma-4-26B (Cloudflare 24h Cloud)', noThinkSuffix: false },
-  { id: '@cf/zai-org/glm-4.7-flash', label: 'GLM-4.7-Flash (Cloudflare 24h Cloud)', noThinkSuffix: false },
-  { id: '@cf/openai/gpt-oss-20b', label: 'GPT-OSS-20B (Cloudflare 24h Cloud)', noThinkSuffix: false },
-  { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Llama-3.3-70B (Cloudflare 24h Cloud)', noThinkSuffix: false },
-  { id: '@cf/qwen/qwen3.8-27b', label: 'Qwen-3.8-27B (Cloudflare 24h Cloud)', noThinkSuffix: true }
+  { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Llama-3.3-70B-FP8-Fast (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: true },
+  { id: '@cf/google/gemma-4-26b-a4b-it', label: 'Gemma-4-26B (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false },
+  { id: '@cf/zai-org/glm-4.7-flash', label: 'GLM-4.7-Flash (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false },
+  { id: '@cf/qwen/qwen3.8-27b', label: 'Qwen-3.8-27B (Cloudflare 24h Cloud)', noThinkSuffix: true, supportsJsonFormat: false },
+  { id: '@cf/openai/gpt-oss-20b', label: 'GPT-OSS-20B (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false }
 ];
 
 function extractRawTextFromCfAi(res) {
@@ -112,11 +112,15 @@ async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 
       const payloadMsgs = m.noThinkSuffix
         ? messages.map((msg, idx) => (idx === messages.length - 1 && msg.role === 'user' ? { ...msg, content: `${msg.content}\n/no_think` } : msg))
         : messages;
-      const res = await env.AI.run(m.id, {
+      const runOpts = {
         messages: payloadMsgs,
         max_tokens: maxTokens,
         temperature
-      });
+      };
+      if (requireJson && m.supportsJsonFormat) {
+        runOpts.response_format = { type: 'json_object' };
+      }
+      const res = await env.AI.run(m.id, runOpts);
       const raw = extractRawTextFromCfAi(res);
       if (requireJson) {
         const parsed = parseJsonObjectFromAiText(raw);
@@ -444,11 +448,12 @@ function healSafetyKoreanLexicon(str) {
     // 12. Tesseract OCR ㅠ 불릿 기호 및 줄바꿈 복원
     .replace(/(?:^|\r?\n)\s*ㅠ\s*/g, '\n- ')
     .replace(/(?<=\S)\s+ㅠ\s+(?=[가-힣a-zA-Z0-9])/g, '\n- ')
-    // 13. 치수 및 단위 정밀 정규화 (6007이하 -> 60cm 이하, 600ㅁ로 -> 60cm로)
+    // 13. 치수 및 단위 정밀 정규화 (6007이하 -> 60cm 이하, 600ㅁ로 -> 60cm로 — 세대 호수 '1501호' 등 오변환 절대 방지!)
     .replace(/6007\s*이하|600ㅁ\s*이하/g, '60cm 이하')
     .replace(/600[ㅁm7]\s*로/g, '60cm로')
     .replace(/600[ㅁm7]\b/g, '60cm')
-    .replace(/(\d{2})0[0-97ㅁ口]{1,2}\s*(?=이하|이상|이내|간격|로|에|\b)/g, '$1cm ')
+    .replace(/(\d{2})0[ㅁ口]\s*(?=이하|이상|이내|간격|로|에|\s|$|[),])/g, '$1cm ')
+    .replace(/(\d{2})0[0-97]\s*(?=이하|이상|이내|간격)/g, '$1cm ')
     // 14. 갱폼/안전시설 부속 및 용어 정밀 복원
     .replace(/고정시아(?:는)?/g, '고정샤클은')
     .replace(/고정시아/g, '고정샤클')
@@ -638,18 +643,33 @@ function cleanLocationWorker(loc, content = '') {
   }
   if (!s) return '';
 
+  // 0. 장비/코어 약어(E/V, L/C, T/C, G/F) 및 OCR 오타(외무->외부, 수면->후면, /C->L/C) 선보호·복원
   s = s
+    .replace(/E\/V|6\/『|6\//gi, '@@EV@@')
+    .replace(/L\/C/gi, '@@LC@@')
+    .replace(/T\/C/gi, '@@TC@@')
+    .replace(/G\/F/gi, '@@GF@@')
+    .replace(/(^|\s)\/C(?=\s*\d|호기|$)/gi, '$1@@LC@@')
     .replace(/^(?:작업\s*장소|작[업엄]장소|장\s*소)\s*[:;：.]?\s*/i, '')
     .replace(/\[\s*ERE\b[^\n]*$/i, '')
     .replace(/\b(?:EERE|ERE|EEE|ee|ere|MAK|261k|SEAT|CERNE|EEL|드로|리로)\b(?:\s*[:;=]?\s*[a-zA-Z0-9]+)*/gi, ' ')
     // 점검자, 점검차수, 섬검자, 점겸자, 정검자, 집십사수 등 표 인접 열 헤더 침범 텍스트 및 그 이후 내용 완전 절단
     .replace(/(?:[점섬정겸]검\s*[자차]?|[점섬정겸]검차수|[집점]십[사차]수|\b차수\b|\b\d+\s*차\b)[\s\S]*$/i, '')
     .replace(/\s+\d{2,}(?:\s+\d+)*\s*$/g, '')
-    .replace(/\b[a-zA-Z]\b/g, ' ')
+    .replace(/(?<![/A-Za-z0-9])\b[a-z]\b(?![/A-Za-z0-9])/g, ' ')
     .replace(/[\[\]{}()_ㅣ¦!~—:;]+/g, ' ')
     .replace(/\s+(?:리|로|드|트|르|점|검)\s*$/g, '')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .replace(/@@EV@@/g, 'E/V')
+    .replace(/@@LC@@/g, 'L/C')
+    .replace(/@@TC@@/g, 'T/C')
+    .replace(/@@GF@@/g, 'G/F')
+    .replace(/(\d+\s*동)\s*외무(?=\s|$)/g, '$1 외부')
+    .replace(/(\d+\s*동)\s*수면(?=\s|$)/g, '$1 후면')
+    .replace(/(^|\s)외무(?=\s|$)/g, '$1외부')
+    .replace(/(\d{2})cm\s*호(?=\s|$|[^가-힣])/gi, '$101호')
+    .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
   // 1075 35 1코어 복원 (동=5, 층=5 오인식 정밀 복원)
   s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
@@ -665,6 +685,11 @@ function cleanLocationWorker(loc, content = '') {
   }
 
   s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
+
+  // L/C 1,2호기 · T/C · 세대 호수(1501호) 등이 포함된 정상 위치는 그대로 보존
+  if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣]))/i.test(s)) {
+    return s.replace(/\s+/g, ' ').trim();
+  }
 
   // 107동 3층 1코어, 101동 외부 등 온전한 건물/동/층/코어/구간 명칭 보존 (끝부분의 무작위 단어 탐욕 매칭 배제)
   const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
@@ -915,22 +940,30 @@ export default {
             });
           }
 
-          const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy)·한국어 OCR 교정 전문가 AI이다.
-입력된 다중 페이지(items)의 추출 텍스트를 분석하여 다음 5가지를 동시에 수행하라:
+          const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy)·한국어 OCR 띄어쓰기/오탈자 정밀 교정 전문가 AI이다.
+입력된 다중 페이지(items)의 추출 텍스트를 분석하여 다음 6가지를 동시에 수행하라:
 1. 건설안전 9x9 및 작업분류표(작업분류표.jpg) 표준 분류코드 매핑:
    - "양중 및 운반작업", "양중작업"은 workGroup으로 절대 금지! 입력 cells.workTypeRaw에 PC공사/거푸집동바리공사 등 유효한 공종이 있으면 부적합 내용에 "양중"이 있어도 반드시 원문 공종(workGroup)을 그대로 유지하고 workMethod만 "양중작업"으로 선택하라.
    - 가설전기 분전반/접지/전등 불량은 절대 "굴착작업"으로 분류하지 말고 건설안전 9×9 개선(1) 기준 "설치해체작업"으로 선택하라.
-2. 사진 배너(photoBanner) — **[원본 적색 배너 100% 그대로 보존 원칙]**:
-   - **원본 배너가 있는 경우(hasOriginalBanner === true 또는 cells.banner에 정상 한국어 배너 문구가 있는 경우)**: 절대 새로 요약·축약하거나 괄호((60도↓), (볼트 노출), (L/C 설치구간) 등)를 지우지 말고 **원본 cells.banner 문구 그대로** photoBanner에 출력하라!
-   - **원본 장표에 적색 배너 박스가 아예 없거나(cells.banner 공란) 자모가 깨진 경우에만**: cells.content의 첫 번째 핵심 위반 항목을 10~24자 완성된 한국어 명사구로 작성하라. (선두 마침표 '. ', '1. ', '2) ...', 미완성 어미 '~상태로', '~않는' 절대 금지!)
-3. **[관련 기준] 3단계 우선순위 + 학습 지침 적합성 검증 + 대한민국 산업안전보건법 일관 판단**:
+2. 사진 배너(photoBanner) — **[원본 적색 배너 100% 그대로 보존 원칙 + 말미 위반서술어 필수]**:
+   - **원본 배너가 있는 경우(hasOriginalBanner === true 또는 cells.banner에 정상 한국어 배너 문구가 있는 경우)**: 절대 새로 요약·축약하거나 괄호((60도↓), (볼트 노출), (L/C 설치구간) 등)를 지우지 말고 **원본 cells.banner 문구 그대로** photoBanner에 출력하라(단순 띄어쓰기/OCR 오타만 교정)!
+   - **원본 장표에 적색 배너 박스가 아예 없거나(cells.banner 공란) 자모가 깨진 경우에만**: cells.content의 첫 번째 핵심 위반 항목을 **반드시 끝에 위반 상태/행동 서술어('통제 미흡', '출입통제 미실시', '미설치', '미복구', '불량', '누락', '위반' 등)가 포함된 완결 한국어 명사구(10~32자)**로 작성하라!
+   - **절대 금지**: 위반 서술어가 빠진 채 명사만 남은 불완전 문구(예: '이동식크레인 설치시 아우트리거 주변', '믹서트럭 이동 지게차 자재운반'), 선두 마침표 '. ', '1. ', '2) ...', 미완성 어미('~상태로', '~않는')!
+3. **[관련 기준] 3단계 우선순위 + 대한민국 산업안전보건법 100% 필수 기입(공란 절대 금지!)**:
    - **[1순위 — 원본 유효 기준 보존]**: 입력 lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 도메인 모순·깨짐 없이 존재하면, 원본 지침과 원본의 기호('-', '1)' 등)를 그대로 보존하고 오타·띄어쓰기만 교정하라(단 28자 초과 시에만 제목 축약).
    - **[2순위 — 학습된 안전작업지침 AI 적합성 검증 후 적용]**: 입력에 learnedGuidelines 후보 배열이 제공된 경우, 반드시 **부적합 내용(cells.content)·작업상황과 100% 적합한지, 또한 학습 지침 본문에 OCR 오타/이상 문구가 없는지 직접 검토**하라. 완벽히 적합하고 정상 문장일 때만 채택("guidelineApplied": true)하며 본문 앞의 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 문장으로 정리하라. 조금이라도 맞지 않거나 이상하면 기각("guidelineApplied": false)하고 3순위로 직접 판단하라.
-   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw 공란, 또는 도메인 모순 시 아래 대한민국 산업안전보건기준에 관한 규칙 기준에 따라 실제 위반 내용과 100% 일치하는 조문(law, edits.rawLaw)과 핵심 법적 준수 기준 1~2문장(edits.lawBody)을 작성하라!
+   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law 공란 절대 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw 공란, 또는 도메인 모순 시 아래 대한민국 산업안전보건기준에 관한 규칙 기준에 따라 실제 위반 내용과 100% 일치하는 조문(law, edits.rawLaw)과 핵심 법적 준수 기준 1~2문장(edits.lawBody)을 **반드시** 작성하라!
      * **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침으로 채우는 edits.lawBody에는 앞에 '-', '•', '1)', '2)' 같은 불필요한 기호나 번호를 절대 붙이지 말고 순수 완결 평서문('~해야 한다.')으로 한 줄씩만 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호 그대로 유지!)
 ${KOREAN_OSH_LAW_GUIDE}
-4. **[복수 인터뷰 의견 100% 보존 및 원문 정제]**: cells.interview에 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 보존하라. 변경이 필요한 필드만 edits에 담아 반환하고 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
-5. cells.pmVerdict가 빈칸이면 절대 임의로 채우지 말 것.
+4. **[한국어 OCR 띄어쓰기·오탈자 전수 교정 — edits 필수 작성!]**:
+   - 입력 cells의 **content, location, interview, proposalText, countermeasure**를 한 글자씩 검수하여 **띄어쓰기 누락·붙여쓰기 오류·OCR 오타**가 하나라도 있으면 반드시 교정된 전체 문장을 \`edits\` 객체에 담아 반환하라! (원문의 의미·내용을 임의 축약/삭제하지 말고 띄어쓰기와 명백한 OCR 오타만 교정!)
+   - 주요 교정 예시:
+     * content: "비계워킹타워하부밑둥잡이일부 누락" → "비계 워킹타워 하부 밑둥잡이 일부 누락", "해체후미복구" → "해체 후 미복구", "미 설치" → "미설치", "내측난간대미설치" → "내측 난간대 미설치", "중계단참" → "중 계단참"
+     * location: "101동 외무" → "101동 외부", "102동 수면" → "102동 후면", "104동 /C1,2호기" → "104동 L/C 1,2호기", "104동 15cm 호" → "104동 1501호"
+     * proposalText: "- 관리자점검관리강화" → "- 관리자 점검 및 관리 강화", "- 형식적인 점검이되지않도록점검결과 SNS내등록 시스템구축" → "- 형식적인 점검이 되지 않도록 점검결과 SNS내 등록 시스템 구축"
+     * interview: 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 100% 보존하되 붙여써진 띄어쓰기("해당구간담당자연차로인한" → "해당 구간 담당자 연차로 인한")만 교정!
+5. 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
+6. cells.pmVerdict가 빈칸이면 절대 임의로 채우지 말 것.
 
 ${TAXONOMY_STANDARD_PROMPT}
 
@@ -947,17 +980,23 @@ ${TAXONOMY_STANDARD_PROMPT}
       "agentMid": "표준 기인물 중분류",
       "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
-      "photoBanner": "10~24자 완성된 띄어쓰기 핵심 위반 명사구(선두 마침표/번호/자모깨짐 금지)",
+      "photoBanner": "원본 적색 배너 원문 그대로 (원본 배너가 없을 때만 위반 서술어가 포함된 완결 명사구)",
       "condition": "표준 불안전 상태",
       "action": "표준 불안전 행동",
       "rootCauseMgmt": "표준 법적 관리감독",
       "rootCauseSystem": "표준 안전시스템",
       "stakeholder": "표준 관리/책임주체",
-      "law": "산업안전보건기준에 관한 규칙 제OO조(조항명) 또는 검증된 학습지침 제목",
+      "law": "산업안전보건기준에 관한 규칙 제OO조(조항명) 또는 검증된 학습지침 제목 (절대 공란 금지!)",
       "lawBody": "핵심 준수 기준 1~2문장 (원본 PDF 1순위 유지 시 원본 서식 보존, AI 신규/학습지침 적용 시 '-', '1)' 없이 순수 평서문 '~다.')",
       "guidelineApplied": false,
       "lawMatched": true,
-      "edits": {},
+      "edits": {
+        "location": "띄어쓰기/오타 교정된 작업장소 (변경 시에만)",
+        "content": "띄어쓰기/오타 교정된 부적합 내용 (변경 시에만)",
+        "interview": "띄어쓰기/오타 교정된 관계자 의견 (변경 시에만)",
+        "proposalText": "띄어쓰기/오타 교정된 점검단 제안 (변경 시에만)",
+        "countermeasure": "띄어쓰기/오타 교정된 개선대책 (변경 시에만)"
+      },
       "typoPatches": {}
     }
   ]
@@ -966,7 +1005,7 @@ ${TAXONOMY_STANDARD_PROMPT}
             const llmRes = await runCloudTextLLM(env, [
               { role: 'system', content: batchSystemPrompt },
               { role: 'user', content: JSON.stringify(items) }
-            ], { maxTokens: 2800, temperature: 0.05, requireJson: true });
+            ], { maxTokens: 3800, temperature: 0.05, requireJson: true });
             const parsedBatch = llmRes.ok ? llmRes.parsed : null;
             if (parsedBatch && Array.isArray(parsedBatch?.results)) {
               const normalizeWorkerLawBody = (b, keepOriginalPrefix = false) => {
@@ -1189,21 +1228,23 @@ ${TAXONOMY_STANDARD_PROMPT}
             });
           }
 
-          const verifySystemPrompt = `너는 대한민국 산업안전보건법(산업안전보건기준에 관한 규칙) 및 건설안전 표준분류·한국어 교정 최종 검증(Pre-Save QA) AI이다.
-입력된 점검 데이터(items)를 DB에 최종 등록하기 직전에 전수 검증하여 아래 5가지 기준에 따라 오탈자·띄어쓰기·법규·분류·서식 오류를 100% 교정하라:
-1. [사진 요약(photoBanner) 검증]:
-   - 입력 photoBanner에 한글 자모 깨짐('국ㅂ에T백능세...', 'ㅂ으구으'), 선두 마침표('. 보 설치...'), 오타가 있거나 공란이면 완전히 폐기하고 반드시 content의 첫 번째 핵심 위반 항목만 10~24자 완성된 한국어 명사구로 새로 작성하라!
-   - '1. ', '. ', '2) ...', '(2) ...', '② ...', 원문자, 내부 사진번호, 미완성 어미('~상태로', '~않는'), 꼬리절('우려', '위험') 절대 금지!
-2. [관련 기준(law, rawLaw, lawBody) — 3단계 우선순위 + 대한민국 산업안전보건법 정확한 판단]:
+          const verifySystemPrompt = `너는 대한민국 산업안전보건법(산업안전보건기준에 관한 규칙) 및 건설안전 표준분류·한국어 OCR 띄어쓰기/오탈자 최종 검증(Pre-Save QA) AI이다.
+입력된 점검 데이터(items)를 DB에 최종 등록하기 직전에 전수 검증하여 아래 6가지 기준에 따라 오탈자·띄어쓰기·법규·분류·서식 오류를 100% 교정하라:
+1. [사진 요약(photoBanner) 검증 — 원본 배너 보존 + 위반 서술어 필수]:
+   - 입력 hasOriginalBanner === true 이면 원본 photoBanner 문구를 절대 축약·요약하지 말고 그대로 유지하라(오직 단순 띄어쓰기/오타만 교정)!
+   - 원본 배너가 없거나(hasOriginalBanner === false) 자모 깨짐/선두 마침표('. ')/공란/위반 서술어 누락(예: '이동식크레인 설치시 아우트리거 주변', '믹서트럭 이동 지게차 자재운반'처럼 끝의 '통제 미흡'/'미설치'가 잘린 문구)이면 반드시 content의 핵심 위반 내용에 위반 서술어('통제 미흡', '출입통제 미실시', '미설치', '불량', '누락' 등)가 포함된 완결 한국어 명사구(10~32자)로 교정하라!
+2. [관련 기준(law, rawLaw, lawBody) — 3단계 우선순위 + 대한민국 산업안전보건법 100% 필수(공란 절대 금지!)]:
    - **[1순위 — 원본 유효 기준 보존]**: lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 깨짐·도메인 모순 없이 존재하면 원본 지침과 원본의 기호('-', '1)' 등)를 그대로 보존하고 오타·띄어쓰기만 교정하라(28자 초과 시에만 제목 축약).
    - **[2순위 — 학습된 안전작업지침 적합성 검증]**: 입력에 learnedGuideline이 제공된 경우 부적합 내용과 100% 적합하고 오타/이상 문구가 없을 때만 채택하며, 본문 앞 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 평서문으로 정리하라. 조금이라도 맞지 않으면 기각하고 3순위로 직접 판단하라.
-   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw 공란, 또는 도메인 모순(예: 고소작업대인데 제56조 작업발판, 사다리인데 제44조, 전기에 지게차, 크레인 양중에 제332조)이면 반드시 아래 대한민국 산업안전보건기준에 관한 규칙 기준으로 정확한 조문과 핵심 준수 기준 1~2문장(lawBody)을 작성하라!
+   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law 공란 절대 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/law 공란, 또는 도메인 모순이면 반드시 아래 대한민국 산업안전보건기준에 관한 규칙 기준으로 정확한 조문과 핵심 준수 기준 1~2문장(lawBody)을 작성하라!
    - **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침을 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 등 기호/번호를 절대 붙이지 말고 순수 완결 평서문('~해야 한다.')으로 한 줄씩 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호 그대로 유지!)
 ${KOREAN_OSH_LAW_GUIDE}
-3. [복수 인터뷰 의견 100% 보존 및 점검차수 한자('上'/'下') 유지]:
-   - interviewOpinion에 복수 의견(hasMultiInterview: true)이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 유지하고, 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
-4. [표준 분류 검증]: ${TAXONOMY_STANDARD_PROMPT} 기준에 어긋나는 locationCategory/workGroupMid/workGroup/workMethod/agentMajor/agentMid/agentMinor는 정확히 교정.
-5. 수정이 일어난 필드만 corrections 객체에 담고, issues 배열에 짧은 교정 사유를 기입하라. 변경 불필요 시 corrections는 {}로 두라.
+3. [한국어 띄어쓰기·OCR 오탈자 전수 교정 — corrections 필수 기입]:
+   - content, location, interviewOpinion, auditProposal, actionPlan을 검수하여 띄어쓰기 누락('비계워킹타워하부밑둥잡이일부 누락', '해체후미복구', '미 설치', '내측난간대미설치', '- 관리자점검관리강화')이나 OCR 오타('101동 외무'→'101동 외부', '102동 수면'→'102동 후면', '104동 /C1,2호기'→'104동 L/C 1,2호기')가 있으면 반드시 교정된 전문을 corrections 객체에 담아 반환하라!
+4. [복수 인터뷰 의견 100% 보존 및 점검차수 한자('上'/'下') 유지]:
+   - interviewOpinion에 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 유지하고, 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
+5. [표준 분류 검증]: ${TAXONOMY_STANDARD_PROMPT} 기준에 어긋나는 locationCategory/workGroupMid/workGroup/workMethod/agentMajor/agentMid/agentMinor는 정확히 교정.
+6. 수정이 일어난 필드만 corrections 객체에 담고, issues 배열에 짧은 교정 사유를 기입하라. 변경 불필요 시 corrections는 {}로 두라.
 
 반드시 아래 JSON 형식으로만 응답하라 (설명 금지):
 {
@@ -1215,12 +1256,21 @@ ${KOREAN_OSH_LAW_GUIDE}
       "workGroupMid": "작업분류표 공종(중) 8종 중 1개",
       "workGroup": "작업분류표 공식 공종(소)",
       "workMethod": "건설안전 9×9 개선(1) 작업방법 9종 중 1개",
+      "agentMajor": "건설안전 9×9 개선(1)(2) 표준 기인물 대분류",
+      "agentMid": "표준 기인물 중분류",
+      "agentMinor": "표준 기인물 소분류",
       "hazardType": "표준 재해형태",
-      "photoBanner": "교정 완료된 사진 요약 (선두 마침표/자모깨짐 금지)",
-      "law": "산업안전보건기준에 관한 규칙 제OO조(조항명)",
+      "photoBanner": "교정 완료된 사진 요약 (원본 배너는 그대로, 선두 마침표/자모깨짐/말미절단 금지)",
+      "law": "산업안전보건기준에 관한 규칙 제OO조(조항명) (절대 공란 금지!)",
       "rawLaw": "교정 완료된 관련기준 제목",
       "lawBody": "관련기준 본문 (1순위 원본은 원본 기호 보존, AI 신규/학습지침은 '-', '1)' 없이 순수 평서문)",
-      "corrections": {},
+      "corrections": {
+        "content": "띄어쓰기/오타 교정된 부적합 내용 (변경 시에만)",
+        "location": "띄어쓰기/오타 교정된 작업장소 (변경 시에만)",
+        "interviewOpinion": "띄어쓰기/오타 교정된 관계자 의견 (변경 시에만)",
+        "auditProposal": "띄어쓰기/오타 교정된 점검단 제안 (변경 시에만)",
+        "actionPlan": "띄어쓰기/오타 교정된 개선대책 (변경 시에만)"
+      },
       "issues": []
     }
   ]
@@ -1239,7 +1289,7 @@ ${KOREAN_OSH_LAW_GUIDE}
             const llmVerify = await runCloudTextLLM(env, [
               { role: 'system', content: verifySystemPrompt },
               { role: 'user', content: JSON.stringify(promptItems) }
-            ], { maxTokens: 2800, temperature: 0.05, requireJson: true });
+            ], { maxTokens: 3800, temperature: 0.05, requireJson: true });
             const parsedVerify = llmVerify.ok ? llmVerify.parsed : null;
             if (parsedVerify && Array.isArray(parsedVerify?.results)) {
                 const verifiedResults = parsedVerify.results.map((item, idx) => {
