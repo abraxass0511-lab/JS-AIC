@@ -1515,7 +1515,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       });
 
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 45000);
+      const timer = setTimeout(() => ctrl.abort(), 60000);
       try {
         const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
           method: 'POST',
@@ -1710,7 +1710,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       }
     };
 
-    const MAX_PER_REQ = 4;
+    const MAX_PER_REQ = 2;
     let anySuccess = false;
     for (let i = 0; i < records.length; i += MAX_PER_REQ) {
       if (Date.now() < _cfQuotaCooldownUntil) break;
@@ -1718,7 +1718,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       if (ok) anySuccess = true;
     }
 
-    // [v60] 자동 재시도: 1차 배치 실패 또는 관련기준(law)이 여전히 공란인 건은 2건 단위로 1회 재요청
+    // [v61] 자동 재시도: 1차 배치 실패 또는 관련기준(law)이 여전히 공란인 건은 1~2건 단위로 1회 재요청
     if (Date.now() >= _cfQuotaCooldownUntil) {
       const retryTargets = records.filter(r =>
         r && String(r.content || '').trim() &&
@@ -1809,7 +1809,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     let modifiedCount = 0;
 
     if (!forceLocal && Date.now() >= _cfQuotaCooldownUntil && Date.now() >= _cfTransientBackoffUntil) {
-      const CHUNK_SIZE = 4;
+      const CHUNK_SIZE = 2;
       for (let start = 0; start < records.length; start += CHUNK_SIZE) {
         const chunk = records.slice(start, start + CHUNK_SIZE);
         if (typeof onProgress === 'function') {
@@ -1850,7 +1850,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
 
         try {
           const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 45000);
+          const timer = setTimeout(() => ctrl.abort(), 60000);
           const res = await fetch(`${CLOUDFLARE_AI_URL}/api/ai-analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2048,7 +2048,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!targets.length) return { enrichedCount: 0, records };
 
     let enrichedCount = 0;
-    const CHUNK = 4;
+    const CHUNK = 2;
     for (let i = 0; i < targets.length; i += CHUNK) {
       const chunk = targets.slice(i, i + CHUNK);
       onProgress(`🤖 PDF 등록 시 AI 누락 분류·관련기준·띄어쓰기 보완 중... (${Math.min(i + chunk.length, targets.length)}/${targets.length}건)`);
