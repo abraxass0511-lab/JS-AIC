@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v64';
-import { store } from './store.js?v=20261122_v64';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v65';
+import { store } from './store.js?v=20261122_v65';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v64';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v65';
 import {
   WORK_GROUP_TREE,
   WORK_GROUP_MID_LIST,
@@ -12,7 +12,7 @@ import {
   WORK_METHODS_9X9_IMPROVED,
   normalizeWorkMethod9x9,
   SafeGuidelineMemory
-} from './text-normalizer.js?v=20261122_v64';
+} from './text-normalizer.js?v=20261122_v65';
 
 const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
@@ -2053,6 +2053,59 @@ function bindEvents() {
     });
   });
 
+// ── [v65] AI 응답 실패 시 사유 안내 모달 팝업 (무응답·한도초과·5단계 폴백 실패 시 침묵 처리 전면 금지!) ──
+function showAiFailurePopup({ stage = 'AI 자동 분석', failedCount = 0, totalCount = 0, reasons = [], quotaExceeded = false } = {}) {
+  const uniqueReasons = [...new Set((Array.isArray(reasons) ? reasons : [reasons]).map(r => String(r || '').trim()).filter(Boolean))];
+  const reasonText = uniqueReasons.length
+    ? uniqueReasons.map(r => `• ${r}`).join('\n')
+    : '• 클라우드 AI 5단계 폴백 모델(Llama-3.3 / Gemma-4 / GLM-4.7 / Qwen-3.8 / GPT-OSS) 모두로부터 유효한 응답을 받지 못했습니다.';
+  const countLine = totalCount > 0
+    ? `영향 항목: ${failedCount > 0 ? `${Math.min(failedCount, totalCount)}건` : '일부 항목'} / 전체 ${totalCount}건`
+    : (failedCount > 0 ? `실패 건수: ${failedCount}건` : '');
+  const guidance = quotaExceeded
+    ? 'Cloudflare 무료 일일 AI 할당량(10,000 Neurons)이 소진되었습니다. UTC 자정 초기화 후 다시 시도하거나 Worker 환경변수(GEMINI_API_KEY) 또는 로컬 LM Studio를 연결해 주세요.'
+    : '일시적 AI 서버 지연 또는 네트워크 오류로 관련기준·띄어쓰기·분류 일부가 AI 검증되지 못했습니다. 공란/오류를 확인하시거나 잠시 후 [🤖 등록 전 AI 최종 검증]을 다시 실행해 주세요.';
+
+  if (typeof document === 'undefined' || !document.body) {
+    if (typeof alert === 'function') alert(`⚠️ AI 응답 실패 (${stage})\n${countLine}\n\n[실패 사유]\n${reasonText}\n\n${guidance}`);
+    return;
+  }
+
+  let modal = document.getElementById('spAiFailureModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'spAiFailureModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,0.62);display:flex;align-items:center;justify-content:center;padding:16px;';
+    document.body.appendChild(modal);
+  }
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  modal.innerHTML = `
+    <div style="background:#ffffff;max-width:460px;width:100%;border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,0.3);overflow:hidden;border:2px solid #ef4444;">
+      <div style="background:#fef2f2;padding:14px 18px;border-bottom:1px solid #fecaca;display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;color:#b91c1c;font-weight:800;font-size:1.02rem;">
+          <span>⚠️ AI 응답 실패</span>
+          <span style="font-size:0.75rem;background:#fee2e2;padding:2px 7px;border-radius:999px;border:1px solid #fca5a5;">${esc(stage)}</span>
+        </div>
+        <button type="button" id="btnCloseAiFailX" style="border:none;background:transparent;font-size:1.2rem;cursor:pointer;color:#991b1b;font-weight:700;">✕</button>
+      </div>
+      <div style="padding:16px 18px;font-size:0.86rem;color:#1e293b;line-height:1.55;">
+        ${countLine ? `<div style="font-weight:700;color:#991b1b;margin-bottom:8px;">${esc(countLine)}</div>` : ''}
+        <div style="font-weight:700;margin-bottom:4px;color:#334155;">실패 사유</div>
+        <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;white-space:pre-line;font-size:0.81rem;color:#0f172a;margin-bottom:12px;">${esc(reasonText)}</div>
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 11px;font-size:0.79rem;color:#92400e;">💡 ${esc(guidance)}</div>
+      </div>
+      <div style="padding:12px 18px;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;">
+        <button type="button" id="btnCloseAiFailOk" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-weight:700;font-size:0.86rem;cursor:pointer;">확인</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'flex';
+  const closeFn = () => { modal.style.display = 'none'; };
+  modal.querySelector('#btnCloseAiFailX')?.addEventListener('click', closeFn);
+  modal.querySelector('#btnCloseAiFailOk')?.addEventListener('click', closeFn);
+  modal.addEventListener('click', (ev) => { if (ev.target === modal) closeFn(); });
+}
+
   // Submit Patrol Record
   $('#btnSubmitRecord').addEventListener('click', async () => {
     if (!store.user) {
@@ -2212,18 +2265,38 @@ function bindEvents() {
     try {
       if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
         try {
-          await window.SafeLocalAI.verifyRecordsBeforeSave([record]);
+          window.SafeLocalAI.clearAiFailures?.();
+          const vRes = await window.SafeLocalAI.verifyRecordsBeforeSave([record]);
           if (window.SafeTextNormalizer?.isLawBodyOverflowing?.(record.lawBody || '') && window.SafeLocalAI?.condenseOverflowLawBodiesWithAI) {
             await window.SafeLocalAI.condenseOverflowLawBodiesWithAI([record]);
           }
           if (record.law && record.basis) record.basis.law = record.law;
           if (record.workMethod) record.workName = record.workMethod;
+          const failInfo = window.SafeLocalAI.getAiFailureSummary?.();
+          if ((vRes && vRes.aiFailed) || (failInfo && failInfo.hasFailure)) {
+            showAiFailurePopup({
+              stage: '수기 등록 AI 검증',
+              failedCount: 1,
+              totalCount: 1,
+              reasons: failInfo?.reasons || ['AI 응답 실패'],
+              quotaExceeded: Boolean(failInfo?.quotaExceeded || vRes?.quotaExceeded)
+            });
+          }
         } catch (vErr) {
           console.warn('Manual pre-save AI verify fallback:', vErr);
+          showAiFailurePopup({
+            stage: '수기 등록 AI 검증',
+            failedCount: 1,
+            totalCount: 1,
+            reasons: [vErr?.message || 'AI 검증 호출 오류']
+          });
         }
       }
       btn.textContent = '저장 중...';
       await store.saveRecord(record, media, msg => { btn.textContent = msg; });
+      if (record._photoUploadWarning) {
+        toast(`⚠️ ${record._photoUploadWarning}`, 'warning', 5500);
+      }
       saveSiteMetaCache(site, progressVal, productTypeVal);
       
       // 사용자 직접입력 단어들을 customValues에 누적 학습
@@ -2366,17 +2439,19 @@ function bindEvents() {
         customValues: store.custom.customValues,
         sites: store.sites,
         onPhotoProgress: (cur, tot) => {
-          btn.textContent = `엑셀 사진 병렬 압축 중 (${cur}/${tot})...`;
+          btn.textContent = `엑셀 사진 불러오는 중 (${cur}/${tot})...`;
         },
         loadImage: async (path) => {
           if (excelThumbCache.has(path)) return excelThumbCache.get(path);
           const blob = await store.photoBlob(path);
           if (!blob) return null;
           let resObj = null;
-          if (typeof createImageBitmap === 'function' && typeof document !== 'undefined') {
+          // [v65] 이미 경량 JPEG(<=450KB)인 추출 사진은 불필요한 Canvas 재압축을 완전 생략해 즉시 Base64 변환! (초대용량 원본 폰카 사진 >450KB만 리사이즈)
+          const isSmallJpeg = blob.size > 0 && blob.size <= 450 * 1024 && (!blob.type || /jpe?g/i.test(blob.type));
+          if (!isSmallJpeg && typeof createImageBitmap === 'function' && typeof document !== 'undefined') {
             try {
               const bmp = await createImageBitmap(blob);
-              const maxW = 260, maxH = 195;
+              const maxW = 360, maxH = 270;
               const scale = Math.min(1, maxW / Math.max(1, bmp.width), maxH / Math.max(1, bmp.height));
               const tw = Math.max(1, Math.round(bmp.width * scale));
               const th = Math.max(1, Math.round(bmp.height * scale));
@@ -2385,7 +2460,7 @@ function bindEvents() {
               cvs.height = th;
               cvs.getContext('2d').drawImage(bmp, 0, 0, tw, th);
               if (typeof bmp.close === 'function') bmp.close();
-              const dataUrl = cvs.toDataURL('image/jpeg', 0.76);
+              const dataUrl = cvs.toDataURL('image/jpeg', 0.80);
               const comma = dataUrl.indexOf(',');
               if (comma > 0) {
                 resObj = { base64: dataUrl.slice(comma + 1), extension: 'jpeg' };
@@ -2394,7 +2469,8 @@ function bindEvents() {
           }
           if (!resObj) {
             const buf = await blob.arrayBuffer();
-            resObj = { base64: fastArrayBufferToBase64(buf), extension: 'jpeg' };
+            const ext = /png/i.test(blob.type || '') ? 'png' : 'jpeg';
+            resObj = { base64: fastArrayBufferToBase64(buf), extension: ext };
           }
           excelThumbCache.set(path, resObj);
           return resObj;
@@ -4002,7 +4078,15 @@ function initLmStudio() {
       toast(`🎉 Qwen AI 분석 완료: [${res.severity}] · 표준분류(장소/공종/작업방법/기인물) · 관련근거가 반영되었습니다!`, 'success');
     } catch (err) {
       console.warn('Qwen AI 분석 오류:', err);
-      toast(`Qwen AI 분석 실패: ${err.message} (네트워크 또는 LM Studio 연결을 확인하세요)`, 'warning', 4500);
+      const failSummary = window.SafeLocalAI?.getAiFailureSummary?.();
+      showAiFailurePopup({
+        stage: 'AI 자동 분석',
+        failedCount: 1,
+        totalCount: 1,
+        reasons: failSummary?.hasFailure ? failSummary.reasons : [err.message || 'AI 서버 무응답'],
+        quotaExceeded: Boolean(failSummary?.quotaExceeded || /4006|한도/.test(String(err?.message || '')))
+      });
+      toast(`AI 응답 실패: ${err.message}`, 'danger', 4500);
     } finally {
       btnAnalyze.disabled = false;
       if (btnText) btnText.textContent = '로컬 Qwen AI 자동 분석 (법령·등급·원인)';
@@ -5256,6 +5340,7 @@ async function handlePptxImportChange(e) {
 
   if (importedRecords.length > 0) {
     // [v63 A2/A3/A4] PDF 등록 시 사진 비율은 자동 면적비례('auto') 고정, 관련기준 칸맞춤·분류·띄어쓰기는 1차 병렬 배치에서 완료하며 미완료 항목만 타겟 보완!
+    window.SafeLocalAI?.clearAiFailures?.();
     importedRecords.forEach(r => { if (r) r.photoLayoutRatio = 'auto'; });
     if (window.SafeLocalAI?.repairMissingFieldsOnImport) {
       try {
@@ -5290,14 +5375,27 @@ async function handlePptxImportChange(e) {
         } catch (_) {}
       }
     }
+    const importAiFail = window.SafeLocalAI?.getAiFailureSummary?.();
     if (progPct) progPct.textContent = '100%';
     if (progBar) progBar.style.width = '100%';
     if (progStatus) {
-      progStatus.textContent = `✅ 분석 및 AI 자동 검증 완료: 점검장표 ${importedRecords.length}건` +
-        (totalSkippedPages > 0 ? ` (일반 글씨/간지 ${totalSkippedPages}페이지 자동 생략)` : '');
+      progStatus.textContent = importAiFail?.hasFailure
+        ? `⚠️ 분석 완료(${importedRecords.length}건) — 단, 일부 항목 AI 응답 실패 (${importAiFail.reasons[0] || '응답 없음'})`
+        : `✅ 분석 및 AI 자동 검증 완료: 점검장표 ${importedRecords.length}건` +
+          (totalSkippedPages > 0 ? ` (일반 글씨/간지 ${totalSkippedPages}페이지 자동 생략)` : '');
     }
     const skipMsg = totalSkippedPages > 0 ? ` (일반 글씨 ${totalSkippedPages}장 생략)` : '';
-    toast(`총 ${importedRecords.length}건의 점검장표를 추출·AI 자동 검증했습니다!${skipMsg}`, 'success', 3500);
+    if (importAiFail?.hasFailure) {
+      showAiFailurePopup({
+        stage: 'PDF/장표 등록 AI 분석',
+        failedCount: importAiFail.failedCount,
+        totalCount: importedRecords.length,
+        reasons: importAiFail.reasons,
+        quotaExceeded: importAiFail.quotaExceeded
+      });
+    } else {
+      toast(`총 ${importedRecords.length}건의 점검장표를 추출·AI 자동 검증했습니다!${skipMsg}`, 'success', 3500);
+    }
     if ($('#importPreviewArea')) $('#importPreviewArea').style.display = 'block';
     if ($('#importCount')) $('#importCount').textContent = importedRecords.length;
     renderImportedCards();
@@ -5741,13 +5839,23 @@ async function handleVerifyImportedRecords({ silent = false } = {}) {
   }
   try {
     let result = { ok: true, modifiedCount: 0, source: 'local' };
+    window.SafeLocalAI?.clearAiFailures?.();
     if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
       result = await window.SafeLocalAI.verifyRecordsBeforeSave(importedRecords, (msg) => {
         if (verifyBtn) verifyBtn.textContent = msg;
       });
     }
     renderImportedCards();
-    if (!silent) {
+    const failInfo = window.SafeLocalAI?.getAiFailureSummary?.();
+    if (!silent && ((result && result.aiFailed) || (failInfo && failInfo.hasFailure))) {
+      showAiFailurePopup({
+        stage: '등록 전 AI 최종 검증',
+        failedCount: failInfo?.failedCount || 0,
+        totalCount: importedRecords.length,
+        reasons: failInfo?.reasons || ['AI 응답 실패'],
+        quotaExceeded: Boolean(failInfo?.quotaExceeded || result?.quotaExceeded)
+      });
+    } else if (!silent) {
       toast(
         result.modifiedCount > 0
           ? `🤖 AI 최종 검증 완료! 총 ${importedRecords.length}건 중 ${result.modifiedCount}건의 오타·띄어쓰기·사진요약·산안법 관련기준을 자동 교정했습니다.`
@@ -5759,7 +5867,14 @@ async function handleVerifyImportedRecords({ silent = false } = {}) {
     return result;
   } catch (err) {
     console.warn('Pre-save verify error:', err);
-    if (!silent) toast('AI 검증 중 일시적 오류가 발생하여 로컬 정제만 반영되었습니다.', 'warning');
+    if (!silent) {
+      showAiFailurePopup({
+        stage: '등록 전 AI 최종 검증',
+        failedCount: importedRecords.length,
+        totalCount: importedRecords.length,
+        reasons: [err?.message || 'AI 검증 중 오류 발생']
+      });
+    }
     return { ok: false, modifiedCount: 0 };
   } finally {
     if (verifyBtn) {

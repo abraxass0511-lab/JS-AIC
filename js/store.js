@@ -47,6 +47,13 @@ class WorkerBackend {
     this.url = url.replace(/\/+$/, '');
     this.pin = '';
     this.masterPin = '000000';
+    // [v65] GitHub Contents API는 단일 브랜치 커밋 충돌(409 Conflict) 방지를 위해 모든 쓰기(PUT/DELETE)를 직렬 큐로 안전 실행!
+    this._writeQueue = Promise.resolve();
+  }
+  _enqueueWrite(fn) {
+    const run = this._writeQueue.then(fn, fn);
+    this._writeQueue = run.catch(() => {});
+    return run;
   }
   _u(path, extra = '') { return `${this.url}/file?path=${encodeURIComponent(path)}${extra}`; }
   async _fetch(url, opt = {}) {
@@ -123,18 +130,42 @@ class WorkerBackend {
     return null;
   }
   async _put(path, content, sha, message) {
-    const r = await this._fetch(this._u(path), {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, content, ...(sha ? { sha } : {}) }),
+    return this._enqueueWrite(async () => {
+      const r = await this._fetch(this._u(path), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, content, ...(sha ? { sha } : {}) }),
+      });
+      if (r.status === 409 || r.status === 422) throw new ConflictError();
+      if (r.status === 403) throw new Error('권한이 없습니다');
+      if (!r.ok) throw new Error(`서버 동기화 상태 (${r.status})`);
+      const j = await r.json();
+      return j.content && j.content.sha;
     });
-    if (r.status === 409 || r.status === 422) throw new ConflictError();
-    if (r.status === 403) throw new Error('권한이 없습니다');
-    if (!r.ok) throw new Error(`서버 동기화 상태 (${r.status})`);
-    const j = await r.json();
-    return j.content && j.content.sha;
   }
   writeJSON(path, data, sha, message) { return this._put(path, utf8ToB64(JSON.stringify(data, null, 1)), sha, message || `update ${path}`); }
-  async writeBlob(path, blob, message) { return this._put(path, await blobToB64(blob), null, message || `upload ${path}`); }
+  async writeBlob(path, blob, message) {
+    const b64 = await blobToB64(blob);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await this._put(path, b64, null, message || `upload ${path}`);
+      } catch (e) {
+        if (e instanceof ConflictError) {
+          // 파일이 이미 존재하는지 확인해 sha 갱신 또는 덮어쓰기 재시도
+          try {
+            const meta = await this._fetch(this._u(path));
+            if (meta && meta.ok) {
+              const j = await meta.json();
+              if (j && j.sha) {
+                return await this._put(path, b64, j.sha, message || `upload ${path}`);
+              }
+            }
+          } catch (_) {}
+        }
+        if (attempt === 4) throw e;
+        await sleep(350 * (attempt + 1) + Math.random() * 250);
+      }
+    }
+  }
   async readBlob(path) {
     // [v63 A1] 'data/...' 원격 업로드 사진은 정적 호스팅(GitHub Pages)에 존재하지 않으므로 불필요한 404 fetch 왕복을 생략하고 즉시 Worker에서 조회!
     if (path && !path.startsWith('data/')) {
@@ -144,18 +175,25 @@ class WorkerBackend {
       } catch (err) {}
     }
 
-    // Worker 릴레이를 통한 원격 저장소 조회 (최대 8초 대기)
-    let r = null;
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      r = await this._fetch(this._u(path, '&raw=1'), { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (r && r.ok) return await r.blob();
-    } catch (e) {
-      console.warn('Worker readBlob error:', path, e);
+    // [v65] Worker 릴레이 원격 사진 조회 (15초 타임아웃 + 일시적 오류 1회 자동 재시도)
+    let lastStatus = '네트워크 오류';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let r = null;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        r = await this._fetch(this._u(path, '&raw=1'), { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (r && r.ok) return await r.blob();
+        lastStatus = r ? r.status : '네트워크 오류';
+        if (r && r.status === 404) break; // 실제 404는 재시도 불필요
+      } catch (e) {
+        lastStatus = '네트워크 오류';
+        console.warn('Worker readBlob error:', path, e);
+      }
+      if (attempt === 0) await sleep(350);
     }
-    throw new Error(`사진 읽기 실패 (${r ? r.status : '네트워크 오류'})`);
+    throw new Error(`사진 읽기 실패 (${lastStatus})`);
   }
   async remove(path, message) {
     const meta = await this._fetch(this._u(path));
@@ -705,6 +743,40 @@ export const store = {
         } catch (e) {}
 
         const unsynced = Array.from(localMap.values()).filter(r => !serverIds.has(r.id) && !deletedIds.has(r.id));
+
+        // [v65 사진 자동 복구] 이미 서버 인덱스에 등록됐으나 과거 병렬 업로드 충돌(409)로 원격 저장소에 누락된 사진이 로컬 IndexedDB에 있으면 자동 복구 업로드!
+        if (serverRecords.length > 0 && this.localBackend) {
+          try {
+            const photoDirPath = `data/${yearOf(bucket)}/photos/${mmOf(bucket)}`;
+            const dirRes = await this.backend.readJSON(photoDirPath).catch(() => null);
+            if (dirRes && Array.isArray(dirRes.data)) {
+              const remotePhotoSet = new Set(dirRes.data.map(f => f && f.path).filter(Boolean));
+              const missingLocalPhotos = [];
+              for (const sRec of serverRecords) {
+                for (const pPath of [...(sRec.photos || []), sRec.fix && sRec.fix.photo].filter(Boolean)) {
+                  if (String(pPath).startsWith(photoDirPath + '/') && !remotePhotoSet.has(pPath)) {
+                    missingLocalPhotos.push({ path: pPath, recId: sRec.id });
+                  }
+                }
+              }
+              for (const mp of missingLocalPhotos) {
+                try {
+                  const localBlob = await this.localBackend.readBlob(mp.path).catch(() => null);
+                  if (localBlob) {
+                    console.log(`[SafePatrol Photo Rescue] 누락 원격 사진 로컬 복구 업로드: ${mp.path}`);
+                    await this.backend.writeBlob(mp.path, localBlob, `[SafePatrol 사진복구] ${mp.recId}`);
+                    totalSynced++;
+                  }
+                } catch (rescueErr) {
+                  console.warn('누락 사진 복구 업로드 오류:', mp.path, rescueErr);
+                }
+              }
+            }
+          } catch (dirChkErr) {
+            console.warn('누락 사진 점검 오류 (스킵 가능):', dirChkErr);
+          }
+        }
+
         if (unsynced.length === 0) continue;
 
         console.log(`[SafePatrol Sync] 동기화 대상 ${unsynced.length}건 발견 (버킷: ${bucket})`);
@@ -855,26 +927,36 @@ export const store = {
       }, { records: [] }, msg).catch(() => {});
     }
 
-    // 3) 클라우드 서버 비동기 병렬 전송 (인덱스 우선 1회 갱신 + 사진 병렬 업로드)
+    // 3) [v65] 클라우드 서버 직렬 안전 전송 (GitHub 409 충돌 원천 차단: 사진 직렬 업로드 → 인덱스 갱신 → 단건 JSON)
     if (this.backend && this.backend !== this.localBackend) {
-      (async () => {
+      let failedPhotos = 0;
+      for (let i = 0; i < remotePhotoUploads.length; i++) {
+        const u = remotePhotoUploads[i];
+        onStep(`사진 서버 업로드 중 (${i + 1}/${remotePhotoUploads.length})...`);
         try {
-          await Promise.all([
-            ...remotePhotoUploads.map(u => this.backend.writeBlob(u.path, u.blob, msg).catch(e => console.warn('Photo upload warning:', e))),
-            rmw(this.backend, indexPath(rec.bucket), cur => {
-              cur.records = (cur.records || []).filter(r => r.id !== rec.id);
-              cur.records.push(rec);
-              if (Array.isArray(cur.deletedIds)) {
-                cur.deletedIds = cur.deletedIds.filter(id => id !== rec.id);
-              }
-              return cur;
-            }, { records: [] }, msg)
-          ]);
-          rmw(this.backend, recordPath(rec), () => rec, {}, msg).catch(() => {});
-        } catch (be) {
-          console.warn('Background server save warning (preserved in local storage):', be);
+          await this.backend.writeBlob(u.path, u.blob, msg);
+        } catch (e) {
+          failedPhotos++;
+          console.warn('Photo upload failed after retries:', u.path, e);
         }
-      })();
+      }
+      onStep('서버 대장 동기화 중...');
+      try {
+        await rmw(this.backend, indexPath(rec.bucket), cur => {
+          cur.records = (cur.records || []).filter(r => r.id !== rec.id);
+          cur.records.push(rec);
+          if (Array.isArray(cur.deletedIds)) {
+            cur.deletedIds = cur.deletedIds.filter(id => id !== rec.id);
+          }
+          return cur;
+        }, { records: [] }, msg);
+        rmw(this.backend, recordPath(rec), () => rec, {}, msg).catch(() => {});
+      } catch (be) {
+        console.warn('Server index save warning (preserved in local storage):', be);
+      }
+      if (failedPhotos > 0) {
+        rec._photoUploadWarning = `${failedPhotos}장의 사진이 네트워크 오류로 아직 서버에 업로드되지 않았습니다. (로컬 기기에 보관 중이며 다음 접속 시 자동 동기화됩니다)`;
+      }
     }
 
     return rec;
@@ -983,13 +1065,14 @@ export const store = {
             }, { records: [] }, msg);
           }
 
-          // 3-2) 사진 Blob 병렬 업로드 (동시성 4개로 고속 전송)
-          const CONCURRENCY = 4;
-          for (let i = 0; i < remotePhotoUploads.length; i += CONCURRENCY) {
-            const chunk = remotePhotoUploads.slice(i, i + CONCURRENCY);
-            await Promise.all(chunk.map(u =>
-              this.backend.writeBlob(u.path, u.blob, `[SafePatrol] 사진 업로드 ${u.recId} (${author})`).catch(() => {})
-            ));
+          // 3-2) [v65] 사진 Blob 직렬 안전 업로드 (GitHub Contents API 409 충돌 0건 보장 + 자동 재시도)
+          for (let i = 0; i < remotePhotoUploads.length; i++) {
+            const u = remotePhotoUploads[i];
+            try {
+              await this.backend.writeBlob(u.path, u.blob, `[SafePatrol] 사진 업로드 ${u.recId} (${author})`);
+            } catch (pErr) {
+              console.warn('[SafePatrol] Batch photo upload warning (will auto-rescue from IndexedDB):', u.path, pErr);
+            }
           }
         } catch (err) {
           console.warn('Batch cloud sync background warning:', err);
@@ -1171,7 +1254,7 @@ export const store = {
     if (this._blobCache.has(path)) return this._blobCache.get(path);
     const cacheSet = (b) => {
       if (!b) return b;
-      if (this._blobCache.size > 350) {
+      if (this._blobCache.size > 500) {
         const firstKey = this._blobCache.keys().next().value;
         if (firstKey) this._blobCache.delete(firstKey);
       }
