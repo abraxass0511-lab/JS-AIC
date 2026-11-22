@@ -890,6 +890,19 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     }).join('\n');
   }
 
+  // [v67 Item #6] 원본(PDF/사용자 입력)에 선두 '-' 불릿이 없었으면 AI 교정 시 임의로 추가된 선두 '- ' 자동 제거
+  function preserveOriginalDashPresence(origRaw, cleanedNew) {
+    const o = String(origRaw || '').trim();
+    const n = String(cleanedNew || '').trim();
+    if (!o || !n) return n;
+    const origBody = o.replace(/^\[[^\]]*(?:제안|의견)[^\]]*\]\s*/i, '').trim();
+    const origHasDash = /^[-—•*·▪]/.test(origBody);
+    if (!origHasDash && /^[-•▪]\s+/.test(n) && !/\n\s*[-•▪]\s+/.test(n)) {
+      return n.replace(/^[-•▪]\s+/, '').trim();
+    }
+    return n;
+  }
+
   function cleanProposalText(txt) {
     if (!txt) return '';
     let s = healSafetyKoreanLexicon(String(txt))
@@ -1725,10 +1738,13 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             };
             applyFixedField('location', ff.location, (v) => cleanLocation(v, rec.content));
             applyFixedField('content', ff.content, cleanContent);
-            applyFixedField('interviewOpinion', ff.interview || ff.interviewOpinion, cleanOpinionText);
+            const origIvRaw = rec._rawCellTexts?.interview || rec.interviewOpinion || '';
+            applyFixedField('interviewOpinion', ff.interview || ff.interviewOpinion, (v) => preserveOriginalDashPresence(origIvRaw, cleanOpinionText(v)));
             syncParsedOpinionsOnRecord(rec);
-            applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, cleanProposalText);
-            applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, cleanActionPlan, 'countermeasure');
+            const origPropRaw = rec._rawCellTexts?.propText || rec.auditProposal || '';
+            applyFixedField('auditProposal', ff.proposalText || ff.auditProposal, (v) => preserveOriginalDashPresence(origPropRaw, cleanProposalText(v)));
+            const origCmRaw = rec._rawCellTexts?.cmText || rec.actionPlan || '';
+            applyFixedField('actionPlan', ff.countermeasure || ff.actionPlan, (v) => preserveOriginalDashPresence(origCmRaw, cleanActionPlan(v)), 'countermeasure');
             const recTierState = tierStates[idx] || {};
             const shouldCondenseBody = Boolean(normH?.isLawBodyOverflowing?.(rec.lawBody || ''));
             const origLawBodyLen = String(rec.lawBody || '').trim().length;
@@ -2160,12 +2176,17 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                 if (typeof corr.location === 'string' && corr.location.trim() && !/\uFFFD/.test(corr.location)) rec.location = cleanLocation(corr.location, rec.content);
                 if (!rec._manualEntry) {
                   if (typeof corr.interviewOpinion === 'string' && corr.interviewOpinion.trim()) {
-                    rec.interviewOpinion = cleanOpinionText(corr.interviewOpinion);
+                    const origIvRaw2 = rec._rawCellTexts?.interview || rec.interviewOpinion || '';
+                    rec.interviewOpinion = preserveOriginalDashPresence(origIvRaw2, cleanOpinionText(corr.interviewOpinion));
                     syncParsedOpinionsOnRecord(rec);
                   }
-                  if (typeof corr.auditProposal === 'string' && corr.auditProposal.trim()) rec.auditProposal = cleanProposalText(corr.auditProposal);
+                  if (typeof corr.auditProposal === 'string' && corr.auditProposal.trim()) {
+                    const origPropRaw2 = rec._rawCellTexts?.propText || rec.auditProposal || '';
+                    rec.auditProposal = preserveOriginalDashPresence(origPropRaw2, cleanProposalText(corr.auditProposal));
+                  }
                   if (typeof corr.actionPlan === 'string' && corr.actionPlan.trim()) {
-                    rec.actionPlan = cleanActionPlan(corr.actionPlan);
+                    const origCmRaw2 = rec._rawCellTexts?.cmText || rec.actionPlan || '';
+                    rec.actionPlan = preserveOriginalDashPresence(origCmRaw2, cleanActionPlan(corr.actionPlan));
                     rec.countermeasure = rec.actionPlan;
                   }
                 }

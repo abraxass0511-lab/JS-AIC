@@ -927,18 +927,26 @@ export const store = {
       }, { records: [] }, msg).catch(() => {});
     }
 
-    // 3) [v65] 클라우드 서버 직렬 안전 전송 (GitHub 409 충돌 원천 차단: 사진 직렬 업로드 → 인덱스 갱신 → 단건 JSON)
+    // 3) [v67] 클라우드 서버 직렬 안전 전송 (GitHub 409 충돌 원천 차단 + 사진 업로드 실패 시 404 유령 경로 DB 커밋 방지!)
     if (this.backend && this.backend !== this.localBackend) {
-      let failedPhotos = 0;
+      const failedPaths = new Set();
       for (let i = 0; i < remotePhotoUploads.length; i++) {
         const u = remotePhotoUploads[i];
         onStep(`사진 서버 업로드 중 (${i + 1}/${remotePhotoUploads.length})...`);
         try {
           await this.backend.writeBlob(u.path, u.blob, msg);
         } catch (e) {
-          failedPhotos++;
-          console.warn('Photo upload failed after retries:', u.path, e);
+          failedPaths.add(u.path);
+          console.warn('Photo upload failed after 5 retries:', u.path, e);
         }
+      }
+      if (failedPaths.size > 0 && remotePhotoUploads.length > 0 && failedPaths.size >= remotePhotoUploads.length) {
+        throw new Error(`사진 서버 업로드에 실패하여 저장을 중단했습니다. 네트워크 상태를 확인한 뒤 다시 저장해 주세요. (${failedPaths.size}장 실패)`);
+      }
+      if (failedPaths.size > 0) {
+        // 일부만 실패한 경우 404 유령 경로가 대장에 남지 않도록 업로드 성공한 사진만 서버 대장에 반영하고 명확히 경고
+        rec.photos = (rec.photos || []).filter(p => !failedPaths.has(p));
+        if (rec.fix && failedPaths.has(rec.fix.photo)) rec.fix.photo = null;
       }
       onStep('서버 대장 동기화 중...');
       try {
@@ -954,8 +962,8 @@ export const store = {
       } catch (be) {
         console.warn('Server index save warning (preserved in local storage):', be);
       }
-      if (failedPhotos > 0) {
-        rec._photoUploadWarning = `${failedPhotos}장의 사진이 네트워크 오류로 아직 서버에 업로드되지 않았습니다. (로컬 기기에 보관 중이며 다음 접속 시 자동 동기화됩니다)`;
+      if (failedPaths.size > 0) {
+        rec._photoUploadWarning = `${failedPaths.size}장의 사진이 서버 업로드에 실패해 제외되었습니다. 수정 화면에서 누락된 사진을 다시 첨부해 주세요.`;
       }
     }
 

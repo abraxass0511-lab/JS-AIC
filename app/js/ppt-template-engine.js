@@ -2295,7 +2295,7 @@
       }
     }
     // 2순위: 어절(공백) 단위로 뒤에서부터 축소 (절대 어절 중간 글자 자르기 금지 + 부사·조사·연결어미 끝단 제거)
-    const DANGLING_END_RE = /(?:하게|히|으로|로|에서|에게|에는|과|와|을|를|은|는|이|가|의|에|및|또는|등|위한|위하여|따른|대한|있는|없는|하는|되는|경우|경우에는|때에는|않도록|하도록|하며|하고)$/;
+    const DANGLING_END_RE = /(?:하게|히|으로|로|에서|에게|에는|과|와|을|를|은|는|이|가|의|에|및|또는|등|위한|위하여|따른|대한|있는|없는|하는|되는|경우|경우에는|때에는|않도록|하도록|하며|하고|하여야|해야|되어야|있어야|없어야|않아야)$/;
     const words = clean.split(' ').filter(Boolean);
     while (words.length > 1) {
       words.pop();
@@ -2375,10 +2375,11 @@
       }
     }
 
-    // 관련기준 본문(isLawBody) 처리: 절 제목 생략 -> 법률 괄호정의 정리 -> 10.5~8.5pt 자동 폰트 맞춤으로 문장 중간 절단 0건 보장!
+    // [v67 Item #5] 관련기준 본문(isLawBody) 처리: 글자크기 11pt 최대한 유지!
+    // 1) 절 제목/괄호 법률정의 제거 → 2) 비파괴적 간결화(단위·중복어 정리) → 3) 11pt 그대로 문장/절 경계 자연 축약 (9.5pt 이하 축소 금지!)
     if (options.isLawBody) {
       if (cleanLines.length >= 2) {
-        const firstIsSubHeading = /^\d+\.\d+(?:\.\d+)?\s+/.test(cleanLines[0]) && !/[.다함됨요]$/.test(cleanLines[0]);
+        const firstIsSubHeading = /^\d+\.\d+(?:\.\d+)?\s+/.test(cleanLines[0]) && !/[.다함됨요것]$/.test(cleanLines[0]);
         if (firstIsSubHeading) {
           const withoutHead = cleanLines.slice(1);
           for (const t of tiers) {
@@ -2389,33 +2390,85 @@
           cleanLines = withoutHead;
         }
       }
-      const strippedBoilerplate = cleanLines.map(l => l.replace(/\(\s*이하\s*(?:이\s*조에서\s*)?["'“”‘’]?[가-힣A-Za-z0-9\s]+["'“”‘’]?(?:이)?라\s*한다\s*\)/g, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      const compactLawLine = (l) => String(l || '')
+        .replace(/\(\s*이하\s*(?:이\s*조에서\s*)?["'“”‘’]?[가-힣A-Za-z0-9\s]+["'“”‘’]?(?:이)?라\s*한다\s*\)/g, '')
+        .replace(/센티미터/g, 'cm')
+        .replace(/밀리미터/g, 'mm')
+        .replace(/킬로그램/g, 'kg')
+        .replace(/안전\s+난간/g, '안전난간')
+        .replace(/경\s+우에는/g, '경우에는')
+        .replace(/이상\s+의(?=\s|$)/g, '이상의')
+        .replace(/에\s+대하여(?=\s)/g, '에')
+        .replace(/부족할\s+경우,\s*/g, '부족 시 ')
+        .replace(/설치하는\s+경우에는\s*/g, '설치 시 ')
+        .replace(/설치하여야\s*한다/g, '설치해야 한다')
+        .replace(/조치하여야\s*한다/g, '조치해야 한다')
+        .replace(/유지하여야\s*한다/g, '유지해야 한다')
+        .replace(/확보하여야\s*한다/g, '확보해야 한다')
+        .replace(/준수하여야\s*한다/g, '준수해야 한다')
+        .replace(/실시하여야\s*한다/g, '실시해야 한다')
+        .replace(/확인하여야\s*한다/g, '확인해야 한다')
+        .replace(/착용하여야\s*한다/g, '착용해야 한다')
+        .replace(/방지하여야\s*한다/g, '방지해야 한다')
+        .replace(/고정하여야\s*한다/g, '고정해야 한다')
+        .replace(/보강하여야\s*한다/g, '보강해야 한다')
+        .replace(/통제하여야\s*한다/g, '통제해야 한다')
+        .replace(/배치하여야\s*한다/g, '배치해야 한다')
+        .replace(/하여야\s*하며/g, '해야 하며')
+        .replace(/하여야\s*한다/g, '해야 한다')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const isCompleteLawEnding = (s) => /(?:다|것|함|됨|음|요|임|실시|이격|금지|필요|준수|확보|설치|유지|착용|확인)[.!?]?$/.test(String(s || '').trim());
+      const strippedBoilerplate = cleanLines.map(compactLawLine).filter(Boolean);
       if (strippedBoilerplate.length) {
         for (const t of tiers) {
           if (calcHeight(strippedBoilerplate, t.lnR, t.spcA) <= availH) {
             return { lines: strippedBoilerplate, lnSpcRatio: t.lnR, spcAftPt: t.spcA, fontPt };
           }
         }
-      }
-      // [v65] 완결 문장 보존을 위해 10.5pt -> 10pt -> 9.5pt -> 9pt -> 8.5pt -> 8pt 단계적 자동 맞춤 (문장 중간 절단 원천 방지!)
-      for (const tryPt of [10.5, 10, 9.5, 9, 8.5, 8]) {
-        if (tryPt >= fontPt) continue;
-        const mTry = makeMeasurer(tryPt);
-        for (const tryLines of [cleanLines, strippedBoilerplate]) {
-          if (!tryLines.length) continue;
-          if (mTry.calcHeightAt(tryLines, 0.96, 0) <= availH) {
-            return { lines: tryLines, lnSpcRatio: 0.96, spcAftPt: 0, fontPt: tryPt };
+        // 문장 단위 자연 축약으로 11pt 3줄 칸에 깔끔히 맞추기 (뒤 문장/절부터 정리하되 반드시 완결 종결 유지!)
+        const trimLawTo11pt = (arr) => {
+          const out = arr.slice();
+          // 다중 줄이면 3줄 이내로 핵심 줄 우선 유지
+          const maxLineBudget = Math.max(1, Math.floor(availH / (fontPt * 0.92 * 1.22)));
+          if (out.length > maxLineBudget) {
+            const trimmedArr = out.slice(0, maxLineBudget);
+            if (calcHeight(trimmedArr, 0.92, 0) <= availH && trimmedArr.every(isCompleteLawEnding)) return trimmedArr;
           }
-          if (mTry.calcHeightAt(tryLines, 0.92, 0) <= availH) {
-            return { lines: tryLines, lnSpcRatio: 0.92, spcAftPt: 0, fontPt: tryPt };
+          // 문장 경계('다.', '것.') 단위로 뒤 문장을 덜어 11pt 안에 완결 수용
+          const joined = out.join('\n');
+          const sents = joined.split(/(?<=(?:다|것)[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+          if (sents.length >= 2) {
+            for (let k = sents.length - 1; k >= 1; k--) {
+              const candArr = sents.slice(0, k).join(' ').split(/\n+/).map(s => s.trim()).filter(Boolean);
+              if (calcHeight(candArr, 0.94, 0) <= availH && candArr.every(isCompleteLawEnding)) return candArr;
+            }
           }
+          // 단일 장문이면 절 경계('~하며,', '~하고,')에서 완결 평서문으로 정리 (단, 비완결 어미 절단은 거부!)
+          if (out.length === 1) {
+            const singleBudget = lineWidthPt * 3 - fontPt * 0.35;
+            const trimmedSingle = trimTextAtCleanBoundary(out[0], singleBudget, fontPt, { isLawBody: true });
+            if (trimmedSingle && isCompleteLawEnding(trimmedSingle) && calcHeight([trimmedSingle], 0.94, 0) <= availH) {
+              return [trimmedSingle];
+            }
+          }
+          return null;
+        };
+        const condensedAt11 = trimLawTo11pt(strippedBoilerplate);
+        if (condensedAt11 && condensedAt11.length) {
+          return { lines: condensedAt11, lnSpcRatio: 0.94, spcAftPt: 0, fontPt };
         }
+        // 단일 완결 문장이 11pt 3줄을 아주 살짝 넘을 때만 10.5pt 미세 허용 (절대 9.5pt 이하로 축소 금지!)
+        const m105 = makeMeasurer(10.5);
+        if (m105.calcHeightAt(strippedBoilerplate, 0.94, 0) <= availH) {
+          return { lines: strippedBoilerplate, lnSpcRatio: 0.94, spcAftPt: 0, fontPt: 10.5 };
+        }
+        cleanLines = strippedBoilerplate;
       }
-      if (strippedBoilerplate.length) cleanLines = strippedBoilerplate;
     }
 
-    // 2단계: 최소 폰트에서도 물리적 박스 한계를 초과하는 초대형 장문만 문장/절 경계('~다.')로 안전 축약
-    const activePt = options.isLawBody ? Math.min(fontPt, 8.5) : fontPt;
+    // 2단계: 물리적 박스 한계를 초과하는 경우 11pt(관련기준도 11pt 유지!) 기준 문장/절 경계('~다.') 안전 축약
+    const activePt = fontPt;
     const activeM = makeMeasurer(activePt);
     const bestLnR = Math.min(lnSpcRatio, 0.92);
     const bestSpcA = 0;
@@ -2507,7 +2560,12 @@
   }
 
   function splitBulletLines(rawText) {
-    const src = String(rawText || '').replace(/\r\n/g, '\n').trim();
+    const src = String(rawText || '')
+      .replace(/\r\n/g, '\n')
+      // [v67 Item #8] 본문 중간에 '제69조(시스템 비계의 구조)' 등 새 조항이 이어지면 자동 줄바꿈 분리
+      .replace(/(?<=[^\n])\s*(?=(?:(?:산업)?안전보건(?:기준에\s*관한\s*)?규칙\s*)?제\d+조(?:의\d+)?\s*\()/g, '\n')
+      .replace(/((?:할\s*것|하여야\s*한다|해야\s*한다|한다|된다|않는다)[.]?)\s*(?=제\d+조(?:의\d+)?(?:\s*\(|\s+\d))/g, '$1\n')
+      .trim();
     if (!src) return [];
     const out = [];
     src.split('\n').forEach((line) => {
