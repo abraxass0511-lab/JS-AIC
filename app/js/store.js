@@ -136,13 +136,15 @@ class WorkerBackend {
   writeJSON(path, data, sha, message) { return this._put(path, utf8ToB64(JSON.stringify(data, null, 1)), sha, message || `update ${path}`); }
   async writeBlob(path, blob, message) { return this._put(path, await blobToB64(blob), null, message || `upload ${path}`); }
   async readBlob(path) {
-    // 1. 앱 정적 파일(GitHub Pages / 로컬) 직접 로드 시도 (초고속 ~20ms)
-    try {
-      const staticRes = await fetch(path);
-      if (staticRes.ok) return await staticRes.blob();
-    } catch (err) {}
+    // [v63 A1] 'data/...' 원격 업로드 사진은 정적 호스팅(GitHub Pages)에 존재하지 않으므로 불필요한 404 fetch 왕복을 생략하고 즉시 Worker에서 조회!
+    if (path && !path.startsWith('data/')) {
+      try {
+        const staticRes = await fetch(path);
+        if (staticRes.ok) return await staticRes.blob();
+      } catch (err) {}
+    }
 
-    // 2. Worker 릴레이를 통한 원격 저장소 조회 (최대 8초 대기)
+    // Worker 릴레이를 통한 원격 저장소 조회 (최대 8초 대기)
     let r = null;
     try {
       const ctrl = new AbortController();
@@ -219,6 +221,7 @@ export const store = {
   users: {},
   _monthCache: new Map(),
   _photoCache: new Map(),
+  _blobCache: new Map(),
   _failedPhotos: new Set(),
 
   async init() {
@@ -1165,17 +1168,31 @@ export const store = {
   // ── 사진 ──
   async photoBlob(path) {
     if (!path) return null;
+    if (this._blobCache.has(path)) return this._blobCache.get(path);
+    const cacheSet = (b) => {
+      if (!b) return b;
+      if (this._blobCache.size > 350) {
+        const firstKey = this._blobCache.keys().next().value;
+        if (firstKey) this._blobCache.delete(firstKey);
+      }
+      this._blobCache.set(path, b);
+      return b;
+    };
     if (path.startsWith('samples/') || path.startsWith('http') || path.startsWith('data:image')) {
       const res = await fetch(path);
-      return res.blob();
+      return cacheSet(await res.blob());
     }
     if (this.localBackend) {
       try {
         const b = await this.localBackend.readBlob(path);
-        if (b) return b;
+        if (b) return cacheSet(b);
       } catch (e) {}
     }
-    return this.backend.readBlob(path);
+    const remoteBlob = await this.backend.readBlob(path);
+    if (remoteBlob && this.localBackend && this.localBackend !== this.backend) {
+      this.localBackend.writeBlob(path, remoteBlob).catch(() => {});
+    }
+    return cacheSet(remoteBlob);
   },
   async photoURL(path) {
     if (!path) return '';
@@ -1183,11 +1200,17 @@ export const store = {
     if (this._photoCache.has(path)) return this._photoCache.get(path);
 
     try {
-      // 1. IndexedDB에 있는 경우 (오프라인 / 신규 촬영 사진)
+      // 1. 메모리/IndexedDB에 있는 경우 (오프라인 / 신규 촬영 / 기로드 사진)
+      if (this._blobCache.has(path)) {
+        const url = URL.createObjectURL(this._blobCache.get(path));
+        this._photoCache.set(path, url);
+        return url;
+      }
       if (this.localBackend) {
         try {
           const blob = await this.localBackend.readBlob(path);
           if (blob) {
+            this._blobCache.set(path, blob);
             const url = URL.createObjectURL(blob);
             this._photoCache.set(path, url);
             return url;
@@ -1195,7 +1218,14 @@ export const store = {
         } catch (e) {}
       }
 
-      // 2. 앱 정적 파일(GitHub Pages / 로컬) 존재 여부 확인 (~20ms)
+      // 2. Worker 릴레이 원격 URL 직접 반환 ('data/...' 경로는 정적 404 fetch 생략!)
+      if (this.backend && this.backend.url) {
+        const workerUrl = `${this.backend.url}/file?path=${encodeURIComponent(path)}&raw=1`;
+        this._photoCache.set(path, workerUrl);
+        return workerUrl;
+      }
+
+      // 3. 로컬 데모 정적 파일 확인
       try {
         const staticRes = await fetch(path);
         if (staticRes.ok) {
@@ -1203,13 +1233,6 @@ export const store = {
           return path;
         }
       } catch (err) {}
-
-      // 3. Worker 릴레이 원격 URL 직접 반환 (브라우저가 네이티브로 스트리밍 렌더링)
-      if (this.backend && this.backend.url) {
-        const workerUrl = `${this.backend.url}/file?path=${encodeURIComponent(path)}&raw=1`;
-        this._photoCache.set(path, workerUrl);
-        return workerUrl;
-      }
 
       return '';
     } catch (e) {

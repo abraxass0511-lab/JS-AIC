@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261122_v62';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261122_v62';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261122_v63';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261122_v63';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -32,7 +32,7 @@ import {
   inferSafetyDomain,
   SafeGuidelineMemory,
   parseInterviewOpinions
-} from './text-normalizer.js?v=20261122_v62';
+} from './text-normalizer.js?v=20261122_v63';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -610,10 +610,13 @@ export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
       .replace(/(\d{2})cm\s*호(?=\s|$|[^가-힣])/gi, '$101호')
       .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
-    // 3. 1075 35 1코어 등 숫자 오인식 치유
+    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
     s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
     s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
+    // '106동1,23코어' -> '106동 1,2코어' (3이 코어/층 앞 오인식 시 106동 절대 누락 방지!)
+    s = s.replace(/(\d{1,4}동)\s*(\d+,\d+)3(코어)/g, '$1 $2$3');
+    s = normalizeKoreanSpacing(s);
 
     if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
       const mMatch = s.match(/1?(10[1-9]|1[1-9]\d)[385]?/);
@@ -621,17 +624,17 @@ export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
     }
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
 
-    // L/C 1,2호기 · T/C · 세대 호수(1501호) 등이 포함된 정상 위치는 잘리지 않고 그대로 보존
-    if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣]))/i.test(s)) {
-      return s.replace(/\s+/g, ' ').trim();
+    // L/C 1,2호기 · T/C · 세대 호수(1501호) · 코어/기초사면 등이 포함된 정상 위치는 잘리지 않고 그대로 보존
+    if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣])|\d+,\d+\s*코어|기초\s*사면|기초)/i.test(s)) {
+      return normalizeKoreanSpacing(s).replace(/\s+/g, ' ').trim();
     }
 
-    const mSecond = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
+    const mSecond = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|[BPbp]?\d+\s*층|\d+(?:,\d+)*\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|주변|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|기초|사면|세대|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
     if (mSecond && mSecond[0] && mSecond[0].trim().length >= 2) {
-      return mSecond[0].replace(/\s+/g, ' ').trim();
+      return normalizeKoreanSpacing(mSecond[0]).replace(/\s+/g, ' ').trim();
     }
 
-    return s || '';
+    return normalizeKoreanSpacing(s) || '';
 }
 
 export function cleanBannerText(rawBanner, content = '', location = '') {
@@ -896,7 +899,7 @@ export function cleanContent(raw) {
   rawStr = rawStr.replace(/\s+[a-z0-9]\s+[0-9]+[a-z0-9{}.…\s]*$/gi, '');
   rawStr = rawStr.replace(/a\s*0\s*2\s*\{[\s\S]*$/gi, '');
   const cleanedLines = healSafetyKoreanLexicon(rawStr)
-    .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
+    .replace(/^(?:부적합\s*)?(?:내용|사항)\s*[:;：]\s*/, '')
     .replace(/^[|ㅣ¦_!~\-\s]+/, '')
     .replace(/(?:EE\s*tee|ee\s*A\s*eA|바가\s*---|\btee\s*ee\b|ATER\s*TH|isdios|eevee|[—_]{6,}(?!\s*[가-힣]))[\s\S]*$/gi, '')
     .replace(/6\/\\\s*코어/gi, 'E/V 코어')
@@ -2184,8 +2187,11 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
   const mLoc = tMeta.match(/작업장소\s*[:;：]?\s*([^\n|]*?)(?=\s*(?:점검자|점검차수|부적합|$))/i);
   const location = cleanLocation(tLocCell || (mLoc ? mLoc[1] : ''), tLocCell, content);
 
-  const safeRawBanner1 = (tBanner.trim() && !hasGarbledKoreanNoise(tBanner) && !isGarbledBannerText(tBanner)) ? tBanner : '';
-  const safeRawBanner2 = (tBanner2.trim() && !hasGarbledKoreanNoise(tBanner2) && !isGarbledBannerText(tBanner2)) ? tBanner2 : '';
+  const stripRawBannerBorder = (b) => String(b || '').replace(/[\r\n\t]+/g, ' ').replace(/^[|ㅣ¦｜!~—_=\s]+/, '').replace(/[|ㅣ¦｜]+$/, '').trim();
+  const tBannerClean = stripRawBannerBorder(tBanner);
+  const tBanner2Clean = stripRawBannerBorder(tBanner2);
+  const safeRawBanner1 = (tBannerClean && !hasGarbledKoreanNoise(tBannerClean) && !isGarbledBannerText(tBannerClean)) ? tBannerClean : '';
+  const safeRawBanner2 = (tBanner2Clean && !hasGarbledKoreanNoise(tBanner2Clean) && !isGarbledBannerText(tBanner2Clean)) ? tBanner2Clean : '';
   const _hasOriginalBanner = Boolean(safeRawBanner1 && isValidOriginalSheetBanner(safeRawBanner1, content, location));
   const _originalBannerText = _hasOriginalBanner ? normalizePhotoBannerText(safeRawBanner1, content, location) : '';
   const photoBanner = _hasOriginalBanner
@@ -2847,7 +2853,7 @@ export async function parsePDF(file, onProgress = () => {}) {
 
   if (hasFullBinaryJpegs) {
     totalPages = binaryResult.jpegPages.length;
-    const BATCH_SIZE = 4;
+    const BATCH_SIZE = 3;
     let processedCount = 0;
     const aiPromises = [];
 
@@ -2933,9 +2939,9 @@ export async function parsePDF(file, onProgress = () => {}) {
           console.warn('[SafePatrol] Batch AI classify warning:', e);
         });
         aiPromises.push(aiTask);
-        // 동시 네트워크 요청은 최대 2개까지 유지해 AI 처리와 다음 페이지 OCR 오버랩 극대화
-        if (aiPromises.length >= 2) {
-          await aiPromises[aiPromises.length - 2];
+        // 동시 네트워크 요청은 최대 3개까지 유지해 AI 처리와 다음 페이지 OCR 오버랩 극대화
+        if (aiPromises.length >= 3) {
+          await aiPromises[aiPromises.length - 3];
         }
       }
     }
@@ -3156,9 +3162,9 @@ export async function parsePDF(file, onProgress = () => {}) {
         console.warn('[SafePatrol] Batch AI classify warning:', e);
       });
       aiPromises.push(aiTask);
-      // 동시 네트워크 요청은 최대 2개까지 유지해 AI 처리와 다음 배치 렌더링/OCR 오버랩 극대화
-      if (aiPromises.length >= 2) {
-        await aiPromises[aiPromises.length - 2];
+      // 동시 네트워크 요청은 최대 3개까지 유지해 AI 처리와 다음 배치 렌더링/OCR 오버랩 극대화
+      if (aiPromises.length >= 3) {
+        await aiPromises[aiPromises.length - 3];
       }
     }
 

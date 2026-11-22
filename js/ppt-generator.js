@@ -1310,12 +1310,36 @@
         law: r.law || '',
         contextText: `${text} ${r.workGroup || ''} ${r.type || ''}`,
         workGroup: r.workGroup || '',
-        type: r.type || ''
+        type: r.type || '',
+        allowLocalGuidelineFallback: true
       });
       lawTitle = resolvedSpec.title || '';
       lawBody = resolvedSpec.body !== undefined ? resolvedSpec.body : lawBody;
     } else if (!lawTitle && r.law) {
       lawTitle = simplifyLawTitle(r.law, `${text} ${lawBody}`);
+    }
+    // [v63 B4/B8/B11] 구버전 저장 레코드나 원본 제목 모순(예: p63 지게차 제목+생명줄 본문, 고소작업대+제56조 삭제본, 보 설치+제목 누락본)에서도
+    // 관련기준 큰글씨(lawTitle)와 본문(lawBody)이 절대 공란이 되지 않도록 문맥 기반 산안법 조문 자동 복원
+    if (!lawTitle || !lawBody) {
+      const fullLawCtx = `${rawContent} ${r.workGroup || ''} ${lawBody || ''}`;
+      const localAi = (typeof globalThis !== 'undefined' && globalThis.SafeLocalAI) || (typeof window !== 'undefined' && window.SafeLocalAI) || null;
+      const ruleHit = (localAi && typeof localAi.quickRuleAnalysis === 'function') ? localAi.quickRuleAnalysis(fullLawCtx) : null;
+      if (!lawTitle) {
+        if (/생명줄|안전대\s*부착/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제44조(안전대의 부착설비 등)';
+        else if (/고소작업대|시저형|고소작업차/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제186조(고소작업대)';
+        else if (/보\s*설치|양중.*하부.*진입|인양.*하부/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제146조(크레인 작업 시의 조치)';
+        else if (/벽이음|벽버팀/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제60조(강관비계의 구조)';
+        else if (ruleHit && ruleHit.law) lawTitle = ruleHit.law;
+      }
+      if (!lawBody) {
+        if (/고소작업대|시저형|고소작업차/.test(fullLawCtx)) {
+          lawBody = '고소작업대 작업 시 작업반경 내 구획을 설정하여 관계자 외 출입을 통제하고 유도자를 배치하여 안전하게 유도하여야 한다.';
+        } else if (/벽이음|벽버팀/.test(fullLawCtx)) {
+          lawBody = '비계의 최상단과 가장자리 끝 및 수직·수평 조립간격 기준에 따라 벽이음 및 버팀을 견고하게 설치하여야 한다.';
+        } else if (ruleHit && ruleHit.analysis) {
+          lawBody = String(ruleHit.analysis).replace(/^관련\s*법규\s*[:：]\s*/, '').trim();
+        }
+      }
     }
     lawTitle = _normSpacing(lawTitle);
 

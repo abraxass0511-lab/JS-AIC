@@ -20,12 +20,12 @@
   <script src="js/config.js?v=20261004_2"></script>
   <!-- App logic & Modules -->
   <script src="js/classifier.js?v=20261115_v48"></script>
-  <script src="js/excel-builder.js?v=20261122_v62"></script>
+  <script src="js/excel-builder.js?v=20261122_v63"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-template-engine.js?v=20261122_v62"></script>
-  <script src="js/html-report-builder.js?v=20261122_v62"></script>
-  <script src="js/ppt-generator.js?v=20261122_v62"></script>
-  <script src="js/lmstudio-client.js?v=20261122_v62"></script>
+  <script src="js/ppt-template-engine.js?v=20261122_v63"></script>
+  <script src="js/html-report-builder.js?v=20261122_v63"></script>
+  <script src="js/ppt-generator.js?v=20261122_v63"></script>
+  <script src="js/lmstudio-client.js?v=20261122_v63"></script>
 </head>
 
 <body>
@@ -224,13 +224,16 @@
               <input type="file" id="filePhotos" accept="image/*" multiple style="display: none;">
             </label>
             <div id="photoPreviews" class="photo-preview-grid"></div>
-            <!-- 사진 2장 배치 비율 선택기 (사진 2장 이상 첨부 시 자동 표시) -->
+            <!-- 사진 1·2 배치 비율 선택기 (사진 등록 단계에서 상시 선택 가능 · PDF 일괄 등록 시에는 자동 면적비례 적용) -->
             <div id="boxPhotoRatioSelector"
-              style="display: none; margin-top: 8px; padding: 8px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
+              style="display: block; margin-top: 8px; padding: 8px 10px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;">
               <div
-                style="font-size: 0.78rem; font-weight: 700; color: #1e293b; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-                <span>📐 사진 1 · 사진 2 배치 비율 선택 (점검장표 PPT · 미리보기 연동)</span>
+                style="font-size: 0.78rem; font-weight: 700; color: #1e293b; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
+                <span>📐 사진 1 · 사진 2 배치 비율 선택 (사진 등록 시 사전 지정)</span>
                 <span id="lblSelectedPhotoRatio" style="color: #1d4ed8;">자동 (사진 면적·비율 비례)</span>
+              </div>
+              <div style="font-size: 0.71rem; color: #64748b; margin-bottom: 6px;">
+                ※ 사진 2장 등록 시 선택한 비율로 점검장표가 생성됩니다. (PDF 일괄 등록 시에는 원본 사진 면적 비율대로 자동 배치)
               </div>
               <div id="photoRatioChips" style="display: flex; flex-wrap: wrap; gap: 5px;">
                 <button type="button" class="chip selected" data-ratio="auto"
@@ -246,6 +249,7 @@
                 <button type="button" class="chip" data-ratio="30:70" style="padding: 4px 9px; font-size: 0.74rem;">30 :
                   70</button>
               </div>
+              <div id="photoRatioLiveBar" style="display: none; gap: 6px; margin-top: 7px;"></div>
             </div>
           </div>
 
@@ -1539,7 +1543,7 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261122_v62"></script>
+  <script type="module" src="js/app.js?v=20261122_v63"></script>
 </body>
 
 </html>
