@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v65';
-import { store } from './store.js?v=20261122_v65';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v66';
+import { store } from './store.js?v=20261122_v66';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v65';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v66';
 import {
   WORK_GROUP_TREE,
   WORK_GROUP_MID_LIST,
@@ -12,7 +12,7 @@ import {
   WORK_METHODS_9X9_IMPROVED,
   normalizeWorkMethod9x9,
   SafeGuidelineMemory
-} from './text-normalizer.js?v=20261122_v65';
+} from './text-normalizer.js?v=20261122_v66';
 
 const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
@@ -44,6 +44,11 @@ let smartResult = null;
 let smartRecommendationApplied = false;
 let appliedSmartResult = null;
 let aiAnalyzedLawBody = '';
+let lastManualAiVerifiedSig = '';
+
+function buildManualAiSig({ content = '', location = '', workGroup = '', law = '', lawBody = '', photoBanner = '' } = {}) {
+  return [content, location, workGroup, law, lawBody, photoBanner].map(v => String(v || '').trim()).join('||');
+}
 let pinInput = '';
 let targetFixRecord = null;
 let fixPhotoData = null;
@@ -1722,8 +1727,11 @@ function bindEvents() {
       $$('.view-section').forEach(v => v.classList.remove('active'));
       btn.classList.add('active');
       $('#' + viewId).classList.add('active');
-      if (viewId === 'viewRegister' && !$('#txtSite')?.value) {
-        openSiteSelectModal();
+      if (viewId === 'viewRegister') {
+        window.SafeLocalAI?.fetchAiQuota?.({ forceRefresh: false });
+        if (!$('#txtSite')?.value) {
+          openSiteSelectModal();
+        }
       }
       if (viewId === 'viewList') renderRecordList();
       if (viewId === 'viewEdu') populateEduOptions(window._lastImportedRecordId || null);
@@ -2263,7 +2271,22 @@ function showAiFailurePopup({ stage = 'AI 자동 분석', failedCount = 0, total
     btn.textContent = '🤖 등록 전 AI 최종 검증 중...';
 
     try {
-      if (window.SafeLocalAI?.verifyRecordsBeforeSave) {
+      const currentManualSig = buildManualAiSig({
+        content: record.content,
+        location: record.location,
+        workGroup: record.workGroup,
+        law: record.law,
+        lawBody: record.lawBody,
+        photoBanner: record.photoBanner
+      });
+      const alreadyManualAiClean = Boolean(
+        lastManualAiVerifiedSig &&
+        lastManualAiVerifiedSig === currentManualSig &&
+        record.law && record.lawBody && record.workGroup && record.workMethod && record.agentMajor && record.photoBanner &&
+        !window.SafeTextNormalizer?.isLawBodyOverflowing?.(record.lawBody || '') &&
+        !/[가-힣]{9,}/.test([record.content, record.interviewOpinion, record.auditProposal, record.actionPlan].join(' '))
+      );
+      if (window.SafeLocalAI?.verifyRecordsBeforeSave && !alreadyManualAiClean) {
         try {
           window.SafeLocalAI.clearAiFailures?.();
           const vRes = await window.SafeLocalAI.verifyRecordsBeforeSave([record]);
@@ -3867,6 +3890,9 @@ function initLmStudio() {
             $('#lmStudioInlineStatus').style.color = '#16a34a';
           }
         }
+        if (res.isCloud && _lastRenderedQuota) {
+          renderAiQuotaWidget(_lastRenderedQuota);
+        }
       } else {
         if (dot) dot.style.background = '#ef4444';
         if (statusText) statusText.textContent = '🔴 LM Studio 오프라인';
@@ -3886,8 +3912,163 @@ function initLmStudio() {
     }
   }
 
+  // ── [v66] 오늘의 AI 무료 한도(Neurons) & 추가 등록 가능 예상 건수 실시간 위젯 렌더링 ──
+  let _lastRenderedQuota = null;
+
+  function formatResetCountdownText(q) {
+    if (!q) return '🕒 초기화: 매일 오전 09:00 (UTC 00:00)';
+    let mins = Number(q.resetInMinutes);
+    if (q.resetAtIso) {
+      const diffMs = new Date(q.resetAtIso).getTime() - Date.now();
+      if (Number.isFinite(diffMs)) {
+        mins = Math.max(0, Math.ceil(diffMs / 60000));
+      }
+    }
+    if (!Number.isFinite(mins)) return `🕒 초기화: ${q.resetAtKstLabel || '매일 오전 09:00 (UTC 00:00)'}`;
+    const hrs = Math.floor(mins / 60);
+    const remM = mins % 60;
+    const rel = hrs > 0 ? `${hrs}시간 ${remM}분 후` : `${remM}분 후`;
+    return `🕒 초기화: 매일 오전 09:00 (${rel})`;
+  }
+
+  function renderAiQuotaWidget(q) {
+    if (!q || typeof q !== 'object') return;
+    _lastRenderedQuota = q;
+    const widget = $('#aiQuotaWidget');
+    const qBadge = $('#aiQuotaBadge');
+    const qNumbers = $('#aiQuotaNumbers');
+    const qBar = $('#aiQuotaBarFill');
+    const qPdf = $('#aiQuotaEstPdf');
+    const qPdfSub = $('#aiQuotaPdfSub');
+    const qManual = $('#aiQuotaEstManual');
+    const qManualSub = $('#aiQuotaManualSub');
+    const qNotice = $('#aiQuotaExhaustedNotice');
+    const qReset = $('#aiQuotaResetInfo');
+
+    const limit = Number(q.limitNeurons || 10000);
+    const remaining = Math.max(0, Number(q.remainingNeurons ?? (limit - Number(q.usedNeurons || 0))));
+    const remPct = Math.max(0, Math.min(100, Math.round((remaining / Math.max(1, limit)) * 100)));
+    const isExhausted = Boolean(q.quotaExceeded || remaining <= 0);
+    const isLow = !isExhausted && remPct <= 30;
+    const estPdf = Math.max(0, Number(q.estRemainingPdfRecords ?? 0));
+    const estManual = Math.max(0, Number(q.estRemainingManualRecords ?? 0));
+    const maxPdf = Number(q.dailyMaxPdfRecords || 44);
+    const maxManual = Number(q.dailyMaxManualRecords || 27);
+    const nPerPdf = Number(q.neuronsPerPdfRecord || 226);
+    const nPerManual = Number(q.neuronsPerManualRecord || 363);
+
+    if (widget) {
+      widget.style.background = isExhausted ? '#fef2f2' : (isLow ? '#fffbeb' : '#f0fdf4');
+      widget.style.borderColor = isExhausted ? '#fca5a5' : (isLow ? '#fcd34d' : '#86efac');
+    }
+    if (qBadge) {
+      if (isExhausted) {
+        qBadge.textContent = q.hasGeminiFallback ? 'CF 소진 · Gemini 자동우회' : '한도 소진 (4006)';
+        qBadge.style.background = q.hasGeminiFallback ? '#dbeafe' : '#fee2e2';
+        qBadge.style.color = q.hasGeminiFallback ? '#1d4ed8' : '#b91c1c';
+      } else if (isLow) {
+        qBadge.textContent = `잔여 부족 (${remPct}%)`;
+        qBadge.style.background = '#fef3c7';
+        qBadge.style.color = '#b45309';
+      } else {
+        qBadge.textContent = `여유 (${remPct}%)`;
+        qBadge.style.background = '#dcfce7';
+        qBadge.style.color = '#15803d';
+      }
+    }
+    if (qNumbers) {
+      qNumbers.textContent = `남은 ${remaining.toLocaleString()} / ${limit.toLocaleString()} N`;
+      qNumbers.style.color = isExhausted ? '#b91c1c' : (isLow ? '#b45309' : '#166534');
+    }
+    if (qBar) {
+      qBar.style.width = `${remPct}%`;
+      qBar.style.background = isExhausted
+        ? '#ef4444'
+        : (isLow ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #16a34a, #22c55e)');
+    }
+    if (qPdf) {
+      qPdf.textContent = isExhausted ? (q.hasGeminiFallback ? 'Gemini 우회' : '0건 (소진)') : `약 ${estPdf}건`;
+      qPdf.style.color = isExhausted ? '#dc2626' : '#1d4ed8';
+    }
+    if (qPdfSub) {
+      qPdfSub.textContent = `(일 최대 약 ${maxPdf}건 · ~${nPerPdf}N/건)`;
+    }
+    if (qManual) {
+      qManual.textContent = isExhausted ? (q.hasGeminiFallback ? 'Gemini 우회' : '0건 (소진)') : `약 ${estManual}건`;
+      qManual.style.color = isExhausted ? '#dc2626' : '#0f766e';
+    }
+    if (qManualSub) {
+      qManualSub.textContent = `(일 최대 약 ${maxManual}건 · ~${nPerManual}N/건)`;
+    }
+    if (qNotice) {
+      qNotice.style.display = (isExhausted && !q.hasGeminiFallback) ? 'block' : 'none';
+    }
+    if (qReset) {
+      qReset.textContent = formatResetCountdownText(q);
+    }
+
+    // 상단 헤더 배지에도 무료 한도 잔여율/소진 상태 실시간 반영
+    if (badge && statusText && dot) {
+      if (isExhausted && !q.hasGeminiFallback) {
+        dot.style.background = '#ef4444';
+        statusText.textContent = '🔴 AI 한도소진 (09시 초기화)';
+        badge.style.background = '#fef2f2';
+        badge.style.borderColor = '#fca5a5';
+        badge.style.color = '#b91c1c';
+        badge.title = 'Cloudflare Workers AI 일일 무료 한도(10,000 Neurons) 소진 — 매일 오전 09:00 자동 초기화';
+      } else if (isLow) {
+        dot.style.background = '#f59e0b';
+        statusText.textContent = `🟠 AI 남음 ${remPct}% (PDF ~${estPdf}건)`;
+        badge.style.background = '#fffbeb';
+        badge.style.borderColor = '#fcd34d';
+        badge.style.color = '#b45309';
+        badge.title = `오늘 무료 AI 잔여 ${remaining.toLocaleString()} / ${limit.toLocaleString()} Neurons (PDF 약 ${estPdf}건 / 수기 약 ${estManual}건)`;
+      } else {
+        dot.style.background = '#22c55e';
+        statusText.textContent = `🟢 AI 남음 ${remPct}% (PDF ~${estPdf}건)`;
+        badge.style.background = '#f0fdf4';
+        badge.style.borderColor = '#86efac';
+        badge.style.color = '#15803d';
+        badge.title = `오늘 무료 AI 잔여 ${remaining.toLocaleString()} / ${limit.toLocaleString()} Neurons (PDF 약 ${estPdf}건 / 수기 약 ${estManual}건)`;
+      }
+    }
+  }
+
+  async function refreshAiQuotaWidget(forceRefresh = false) {
+    if (!window.SafeLocalAI?.fetchAiQuota) return;
+    const btn = $('#btnRefreshAiQuota');
+    if (btn && forceRefresh) {
+      btn.disabled = true;
+      btn.textContent = '조회 중...';
+    }
+    try {
+      const q = await window.SafeLocalAI.fetchAiQuota({ forceRefresh });
+      if (q) renderAiQuotaWidget(q);
+    } finally {
+      if (btn && forceRefresh) {
+        btn.disabled = false;
+        btn.textContent = '🔄 새로고침';
+      }
+    }
+  }
+
+  $('#btnRefreshAiQuota')?.addEventListener('click', () => refreshAiQuotaWidget(true));
+  $('#btnModeManual')?.addEventListener('click', () => refreshAiQuotaWidget(false));
+  $('#btnModeImport')?.addEventListener('click', () => refreshAiQuotaWidget(false));
+  window.addEventListener('safepatrol:ai-quota-updated', (e) => {
+    if (e?.detail) renderAiQuotaWidget(e.detail);
+  });
+  setInterval(() => {
+    if (_lastRenderedQuota && $('#aiQuotaResetInfo')) {
+      $('#aiQuotaResetInfo').textContent = formatResetCountdownText(_lastRenderedQuota);
+    }
+  }, 60000);
+
   // 초기 상태 확인 (1초 후 비동기 호출)
-  setTimeout(refreshStatus, 800);
+  setTimeout(() => {
+    refreshStatus();
+    refreshAiQuotaWidget(false);
+  }, 800);
 
   // 헤더 뱃지 클릭 시 설정 모달 열기
   badge?.addEventListener('click', () => {
@@ -4075,6 +4256,14 @@ function initLmStudio() {
         resultCard.style.display = 'block';
       }
 
+      lastManualAiVerifiedSig = buildManualAiSig({
+        content: $('#txtContent')?.value || content,
+        location: $('#txtLocation')?.value || '',
+        workGroup: $('#txtWorkGroup')?.value || '',
+        law: $('#txtLaw')?.value || '',
+        lawBody: aiAnalyzedLawBody || '',
+        photoBanner: $('#txtPhotoBanner')?.value || ''
+      });
       toast(`🎉 Qwen AI 분석 완료: [${res.severity}] · 표준분류(장소/공종/작업방법/기인물) · 관련근거가 반영되었습니다!`, 'success');
     } catch (err) {
       console.warn('Qwen AI 분석 오류:', err);
@@ -4646,6 +4835,7 @@ function clearForm() {
   smartRecommendationApplied = false;
   appliedSmartResult = null;
   aiAnalyzedLawBody = '';
+  lastManualAiVerifiedSig = '';
   renderPhotoPreviews();
   updateCauseChips();
   $('#txtContent').value = '';
@@ -4882,10 +5072,8 @@ async function renderRecordList(triggerSync = true) {
     }
     if (currentLoadedRecords.length > 0) {
       window.SafeGuidelineMemory?.seedFromRecords?.(currentLoadedRecords);
+      window.SafeGuidelineMemory?.pruneInvalid?.();
       updateGuidelineMemoryCount();
-      window.SafeLocalAI?.auditAndFilterGuidelinesWithAI?.()
-        .then(() => updateGuidelineMemoryCount())
-        .catch(() => {});
     }
   } catch (seedErr) {
     console.warn('FieldFrequency seeding error:', seedErr);

@@ -26,6 +26,59 @@
   let isConnected = true;
   let isCloudMode = true; // 기본 24시간 Cloudflare 클라우드 Qwen AI 모드
   let _aiFailures = [];
+  let _lastQuotaSnapshot = null;
+
+  function notifyQuotaUpdated(quota) {
+    if (!quota || typeof quota !== 'object') return;
+    _lastQuotaSnapshot = quota;
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent('safepatrol:ai-quota-updated', { detail: quota }));
+      } catch (_) {}
+    }
+  }
+
+  function notifyQuotaFromResponse(data) {
+    if (!data || typeof data !== 'object') return;
+    if (data.quota && typeof data.quota === 'object') {
+      notifyQuotaUpdated(data.quota);
+      return;
+    }
+    if (data.quotaExceeded && _lastQuotaSnapshot) {
+      notifyQuotaUpdated({
+        ..._lastQuotaSnapshot,
+        usedNeurons: _lastQuotaSnapshot.limitNeurons || 10000,
+        remainingNeurons: 0,
+        usedPercent: 100,
+        remainingPercent: 0,
+        estRemainingPdfRecords: 0,
+        estRemainingManualRecords: 0,
+        quotaExceeded: true,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  async function fetchAiQuota({ forceRefresh = false } = {}) {
+    const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || CLOUDFLARE_AI_URL;
+    const url = `${workerUrl.replace(/\/$/, '')}/api/ai-quota${forceRefresh ? '?refresh=1' : ''}`;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(url, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const q = await res.json();
+        if (q && typeof q === 'object') {
+          notifyQuotaUpdated(q);
+          return q;
+        }
+      }
+    } catch (e) {
+      console.warn('[SafePatrol] fetchAiQuota warning:', e?.message || e);
+    }
+    return _lastQuotaSnapshot;
+  }
 
   function clearAiFailures() {
     _aiFailures = [];
@@ -235,6 +288,7 @@
 
         if (cfRes.ok) {
           const data = await cfRes.json();
+          notifyQuotaFromResponse(data);
           const isRealAi = Boolean(!data.aiFailed && data.source && !String(data.source).includes('rule_engine') && !data.quotaExceeded);
           if (!isRealAi) {
             lastCloudFailReason = data.aiFailureReason || (data.quotaExceeded ? 'Cloudflare AI 일일 무료 한도 초과(4006)' : '5단계 클라우드 AI 폴백 모델 모두 응답 실패');
@@ -497,6 +551,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           });
           if (cfRes.ok) {
             const data = await cfRes.json();
+            notifyQuotaFromResponse(data);
             const isRealAi = Boolean(!data.aiFailed && data.source && !String(data.source).includes('rule_engine') && !data.quotaExceeded);
             if (isRealAi) {
               return {
@@ -1019,6 +1074,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         clearTimeout(timeout);
         if (cfRes.ok) {
           const cfData = await cfRes.json();
+          notifyQuotaFromResponse(cfData);
           if (cfData) {
             if (cfData.quotaExceeded) {
               _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
@@ -1590,6 +1646,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           return false;
         }
         const data = await res.json();
+        notifyQuotaFromResponse(data);
         if (data?.quotaExceeded) {
           _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
           recordAiFailure('일괄 AI 분류·법규 보완', data.aiFailureReason || 'Cloudflare Workers AI 일일 무료 한도(10,000 Neurons) 초과 (4006)', chunkRecords.length, true);
@@ -1860,7 +1917,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         body: JSON.stringify({ mode: 'guided_complete', memo, workGroup, workMethod, severity })
       });
       if (res.ok) {
-        return await res.json();
+        const gData = await res.json();
+        notifyQuotaFromResponse(gData);
+        return gData;
       }
     } catch (e) {}
     return quickRuleAnalysis(`${workGroup} ${workMethod} ${memo}`);
@@ -2007,6 +2066,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               continue;
             }
             const data = await res.json();
+            notifyQuotaFromResponse(data);
             if (data?.quotaExceeded) {
               quotaExceeded = true;
               _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
@@ -2299,6 +2359,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           clearTimeout(timer);
           if (!res.ok) break;
           const data = await res.json();
+          notifyQuotaFromResponse(data);
           if (data?.quotaExceeded) {
             _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
             break;
@@ -2360,6 +2421,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         clearTimeout(timer);
         if (!res.ok) continue;
         const data = await res.json();
+        notifyQuotaFromResponse(data);
         if (data?.aiFailed) {
           recordAiFailure('관련기준 칸 맞춤 정리', data.aiFailureReason || '5단계 클라우드 AI 폴백 모델 모두 응답 실패', chunk.length, Boolean(data.quotaExceeded));
         }
@@ -2395,6 +2457,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     enrichMissingRecordsForExcel,
     condenseOverflowLawBodiesWithAI,
     auditAndFilterGuidelinesWithAI,
+    fetchAiQuota,
+    getLastAiQuota: () => _lastQuotaSnapshot,
     isQuotaCoolingDown,
     clearAiFailures,
     getAiFailureSummary,
