@@ -972,7 +972,10 @@ function cleanWorkerLawBody(bodyStr = '') {
     .replace(/([가-힣]+하기)\.\s*(?:\r?\n\s*)?(?=(?:위한|위하여|위해|위함|전에|전\b|때문))/g, '$1 ')
     .replace(/([①②③④⑤⑥⑦⑧⑨⑩])\s*\r?\n\s*(?=[가-힣A-Za-z0-9(])/g, '$1 ')
     .replace(/([.!?])\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1\n$2 ')
-    .replace(/(한다|않는다|된다|금지한다)\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1.\n$2 ');
+    .replace(/(한다|않는다|된다|금지한다)\s*([②③④⑤⑥⑦⑧⑨⑩])\s*/g, '$1.\n$2 ')
+    .replace(/(?<=[^\n])\s*(?=(?:(?:산업)?안전보건(?:기준에\s*관한\s*)?규칙\s*)?제\d+조(?:의\d+)?\s*\()/g, '\n')
+    .replace(/((?:할\s*것|하여야\s*한다|해야\s*한다|한다|된다|않는다)[.]?)\s*(?=제\d+조(?:의\d+)?(?:\s*\(|\s+\d))/g, '$1\n')
+    .replace(/(^|\n|\s)(\d{1,2}\.)\s*~?\s*(?=[가-힣])/g, '$1$2 ');
   const rawLines = s.split(/\r?\n/).map(l => l.replace(/^[|ㅣ¦!~—_=]+\s*/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
   const merged = [];
   for (const cl of rawLines) {
@@ -981,8 +984,9 @@ function cleanWorkerLawBody(bodyStr = '') {
       (/^\d+\.\d+/.test(prev) && !/[①-⑩]/.test(prev) && prev.length <= 32) ||
       (prev.length <= 24 && /(?:기준|사항|점검|절차|유도자|분전반)$/.test(prev))
     );
-    const prevEndsSentence = /(?:다|함|됨|음|요|임)[.!?]$/.test(prev);
-    if (merged.length > 0 && !/^(?:\*|\d+\)|\d+\.\d+|[①-⑩•\-·▪])/.test(cl) && !prevIsHeading && !prevEndsSentence) {
+    const prevEndsSentence = /(?:다|함|됨|음|요|임|것)[.!?]?$/.test(prev);
+    const curStartsNew = /^(?:\*|\d+[\).]\s*|\d+\.\d+|(?:(?:산업)?안전보건(?:기준에\s*관한\s*)?규칙\s*)?제\d+조|[①-⑩•\-·▪])/.test(cl);
+    if (merged.length > 0 && !curStartsNew && !prevIsHeading && !prevEndsSentence) {
       merged[merged.length - 1] = `${prev} ${cl}`.replace(/\s+/g, ' ').trim();
     } else {
       merged.push(cl);
@@ -1323,7 +1327,8 @@ ${KOREAN_OSH_LAW_GUIDE}
      * content/banner: "적재물결속2개소미실시" → "적재물 결속 2개소 미실시", "작업전선 바닥방치 및 다중사용" → "작업전선 바닥 방치 및 다중 사용", "비계워킹타워하부밑둥잡이일부 누락" → "비계 워킹타워 하부 밑둥잡이 일부 누락", "해체후미복구" → "해체 후 미복구", "미 설치" → "미설치"
      * location: "105동1901호" → "105동 1901호", "107동3층1코어" → "107동 3층 1코어", "101동 외무" → "101동 외부", "102동 수면" → "102동 후면", "104동 /C1,2호기" → "104동 L/C 1,2호기"
      * interview: 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 100% 보존하되 붙여써진 띄어쓰기("간섭되어일부해체하였고", "용역 근로자를채용하여 자재운반작업에투입하였으나 업무진행이미숙하여작업지도를위해근접하게되었음")를 완벽히 띄어쓰기 교정!
-     * proposalText/countermeasure: "- 관리자점검관리강화" → "- 관리자 점검 및 관리 강화", "- 형식적인 점검이되지않도록점검결과 SNS내등록 시스템구축" → "- 형식적인 점검이 되지 않도록 점검결과 SNS내 등록 시스템 구축"
+     * proposalText/countermeasure: 원본에 '-' 기호가 있을 때만 '-'를 유지하고, 원본에 '-'가 없으면 절대 임의로 '-'를 추가하지 말 것! ("- 관리자점검관리강화" → "- 관리자 점검 및 관리 강화", "슬래브상부작업전..." → "슬래브 상부 작업 전...")
+     * lawBody: 본문 중간에 새 법령 조항('제69조(시스템 비계의 구조)' 등)이 시작되면 반드시 줄바꿈(\\n)으로 분리하고, 11pt 3줄 칸(약 90~105자) 안에 글자크기 축소 없이 그대로 들어가도록 완결 평서문으로 정리할 것!
 5. 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
 6. cells.pmVerdict가 빈칸이면 절대 임의로 채우지 말 것.
 
