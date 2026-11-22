@@ -20,12 +20,12 @@
   <script src="js/config.js?v=20261004_2"></script>
   <!-- App logic & Modules -->
   <script src="js/classifier.js?v=20261115_v48"></script>
-  <script src="js/excel-builder.js?v=20261122_v67"></script>
+  <script src="js/excel-builder.js?v=20261122_v68"></script>
   <script src="js/onepage-generator.js?v=20261004_9"></script>
-  <script src="js/ppt-template-engine.js?v=20261122_v67"></script>
-  <script src="js/html-report-builder.js?v=20261122_v67"></script>
-  <script src="js/ppt-generator.js?v=20261122_v67"></script>
-  <script src="js/lmstudio-client.js?v=20261122_v67"></script>
+  <script src="js/ppt-template-engine.js?v=20261122_v68"></script>
+  <script src="js/html-report-builder.js?v=20261122_v68"></script>
+  <script src="js/ppt-generator.js?v=20261122_v68"></script>
+  <script src="js/lmstudio-client.js?v=20261122_v68"></script>
 </head>
 
 <body>
@@ -44,10 +44,10 @@
     <div style="display: flex; align-items: center; gap: 8px;">
       <div id="lmStudioHeaderBadge"
         style="display: flex; align-items: center; gap: 5px; font-size: 0.72rem; padding: 4px 8px; border-radius: 20px; background: #f0fdf4; color: #15803d; border: 1px solid #86efac; cursor: pointer; transition: all 0.2s;"
-        title="Cloudflare 24시간 상시 가동 Qwen AI 연결됨 (클릭하여 설정)">
+        title="Cloudflare 24시간 상시 가동 무료 클라우드 AI 연결됨 (클릭하여 설정)">
         <span id="lmStudioDot"
           style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
-        <span id="lmStudioStatusText" style="font-weight: 600;">🟢 Qwen 24h 클라우드</span>
+        <span id="lmStudioStatusText" style="font-weight: 600;">🟢 Gemma-4-26B 클라우드</span>
       </div>
       <div id="userBadge" class="user-badge" style="display: none; cursor: pointer;">
         <span id="userName">점검자</span>
@@ -96,6 +96,16 @@
             </div>
           </div>
 
+          <!-- 현재 연결된 무료 AI 모델 표시 바 -->
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; background: rgba(255,255,255,0.85); border: 1px solid #e2e8f0; border-radius: 7px; padding: 5px 9px; margin-bottom: 7px; font-size: 0.73rem;">
+            <span style="font-weight: 800; color: #0f172a;">
+              🤖 연결 AI: <span id="aiQuotaModelBadge" style="color: #1d4ed8;">Gemma-4-26B (Google · Cloudflare 24h 무료 클라우드)</span>
+            </span>
+            <span id="aiQuotaFallbackChain" style="font-size: 0.68rem; color: #64748b;">
+              자동 폴백: GLM-4.7-Flash → GPT-OSS-20B → Llama-3.3-70B → Qwen-3.8-27B
+            </span>
+          </div>
+
           <!-- 잔여율 게이지 바 -->
           <div style="width: 100%; height: 7px; background: #e2e8f0; border-radius: 999px; overflow: hidden; margin-bottom: 8px;">
             <div id="aiQuotaBarFill"
@@ -108,15 +118,15 @@
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 6px 9px;">
               <div style="font-size: 0.71rem; color: #64748b; font-weight: 600;">📕 PDF 일괄 등록 가능</div>
               <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 1px; flex-wrap: wrap;">
-                <strong id="aiQuotaEstPdf" style="font-size: 0.94rem; color: #1d4ed8;">계산 중...</strong>
-                <span id="aiQuotaPdfSub" style="font-size: 0.68rem; color: #64748b;">(일 최대 약 44건)</span>
+                <strong id="aiQuotaEstPdf" style="font-size: 0.96rem; color: #1d4ed8;">계산 중...</strong>
+                <span id="aiQuotaPdfSub" style="font-size: 0.68rem; color: #64748b;">(일 최대 약 256건)</span>
               </div>
             </div>
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 6px 9px;">
               <div style="font-size: 0.71rem; color: #64748b; font-weight: 600;">✍️ 수기 등록 가능</div>
               <div style="display: flex; align-items: baseline; gap: 5px; margin-top: 1px; flex-wrap: wrap;">
-                <strong id="aiQuotaEstManual" style="font-size: 0.94rem; color: #0f766e;">계산 중...</strong>
-                <span id="aiQuotaManualSub" style="font-size: 0.68rem; color: #64748b;">(일 최대 약 27건)</span>
+                <strong id="aiQuotaEstManual" style="font-size: 0.96rem; color: #0f766e;">계산 중...</strong>
+                <span id="aiQuotaManualSub" style="font-size: 0.68rem; color: #64748b;">(일 최대 약 102건)</span>
               </div>
             </div>
           </div>
@@ -146,6 +156,10 @@
                 PPT(.pptx) 또는 장표 이미지 선택</span>
               <span style="font-size: 0.80rem; color: #4b5563; margin-top: 4px; display: block;">
                 다량 점검장표(100장 내외) PDF 업로드 시 <strong>일반 글씨/간지 페이지는 자동 생략</strong>하고 점검장표 사진·내용만 정밀 추출합니다
+              </span>
+              <span id="importDropzoneQuotaLine"
+                style="display: inline-block; margin-top: 8px; padding: 4px 10px; border-radius: 999px; background: #ffffff; border: 1px solid #c7d2fe; font-size: 0.75rem; font-weight: 700; color: #3730a3;">
+                ⚡ 오늘 PDF 일괄 등록 가능: 계산 중... (연결 AI: Gemma-4-26B)
               </span>
             </label>
           </div>
@@ -1600,7 +1614,7 @@
   <div id="toasts"></div>
 
   <!-- Entry Script -->
-  <script type="module" src="js/app.js?v=20261122_v67"></script>
+  <script type="module" src="js/app.js?v=20261122_v68"></script>
 </body>
 
 </html>

@@ -1,8 +1,8 @@
-import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v67';
-import { store } from './store.js?v=20261122_v67';
+import { $, $$, h, todayStr, monthStr, toast, debounce, downloadBlob, saveAndEmail } from './util.js?v=20261122_v68';
+import { store } from './store.js?v=20261122_v68';
 import { processImageFile } from './image-processor.js?v=20261025_jangpyo_fix';
 import { determineStandardStage, STANDARD_STAGES, PRODUCT_TYPES } from './progress-standardizer.js?v=20261010_1';
-import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v67';
+import { parsePPTX, parsePDF, parseImage, filterOnlyOccupationalSafetyLaw, deriveConcreteBanner, sanitizeInspectorValue } from './pptx-importer-v2.js?v=20261122_v68';
 import {
   WORK_GROUP_TREE,
   WORK_GROUP_MID_LIST,
@@ -12,7 +12,7 @@ import {
   WORK_METHODS_9X9_IMPROVED,
   normalizeWorkMethod9x9,
   SafeGuidelineMemory
-} from './text-normalizer.js?v=20261122_v67';
+} from './text-normalizer.js?v=20261122_v68';
 
 const WORK_METHODS_9X9 = WORK_METHODS_9X9_IMPROVED;
 
@@ -3866,15 +3866,15 @@ function initLmStudio() {
       if (res.ok) {
         if (dot) dot.style.background = '#22c55e';
         if (res.isCloud) {
-          if (statusText) statusText.textContent = '🟢 Qwen 24h 클라우드';
+          if (statusText) statusText.textContent = '🟢 Gemma-4-26B 클라우드';
           if (badge) {
             badge.style.background = '#f0fdf4';
             badge.style.borderColor = '#86efac';
             badge.style.color = '#15803d';
-            badge.title = 'Cloudflare 24시간 상시 가동 Qwen AI 연결됨 (클릭하여 설정)';
+            badge.title = 'Cloudflare 24시간 상시 가동 무료 클라우드 AI (Gemma-4-26B) 연결됨 (클릭하여 설정)';
           }
           if ($('#lmStudioInlineStatus')) {
-            $('#lmStudioInlineStatus').textContent = '🟢 Qwen 24시간 클라우드 AI 준비 완료 (365일 24시간 가동)';
+            $('#lmStudioInlineStatus').textContent = '🟢 Gemma-4-26B 24시간 무료 클라우드 AI 준비 완료 (노트북 꺼져도 24시간 가동)';
             $('#lmStudioInlineStatus').style.color = '#16a34a';
           }
         } else {
@@ -3944,6 +3944,9 @@ function initLmStudio() {
     const qManualSub = $('#aiQuotaManualSub');
     const qNotice = $('#aiQuotaExhaustedNotice');
     const qReset = $('#aiQuotaResetInfo');
+    const qModelBadge = $('#aiQuotaModelBadge');
+    const qFallbackChain = $('#aiQuotaFallbackChain');
+    const dropQuotaLine = $('#importDropzoneQuotaLine');
 
     const limit = Number(q.limitNeurons || 10000);
     const remaining = Math.max(0, Number(q.remainingNeurons ?? (limit - Number(q.usedNeurons || 0))));
@@ -3952,10 +3955,38 @@ function initLmStudio() {
     const isLow = !isExhausted && remPct <= 30;
     const estPdf = Math.max(0, Number(q.estRemainingPdfRecords ?? 0));
     const estManual = Math.max(0, Number(q.estRemainingManualRecords ?? 0));
-    const maxPdf = Number(q.dailyMaxPdfRecords || 44);
-    const maxManual = Number(q.dailyMaxManualRecords || 27);
-    const nPerPdf = Number(q.neuronsPerPdfRecord || 226);
-    const nPerManual = Number(q.neuronsPerManualRecord || 363);
+    const maxPdf = Number(q.dailyMaxPdfRecords || 256);
+    const maxManual = Number(q.dailyMaxManualRecords || 102);
+    const nPerPdf = Number(q.neuronsPerPdfRecord || 39);
+    const nPerManual = Number(q.neuronsPerManualRecord || 98);
+    const modelShort = String(q.primaryModelShortName || 'Gemma-4-26B');
+    const modelLabel = String(q.primaryModelLabel || `${modelShort} (Cloudflare 24h 무료 클라우드)`);
+    const fallbackNames = Array.isArray(q.fallbackChainNames) && q.fallbackChainNames.length > 1
+      ? q.fallbackChainNames.slice(1).join(' → ')
+      : 'GLM-4.7-Flash → GPT-OSS-20B → Llama-3.3-70B → Qwen-3.8-27B';
+
+    if (qModelBadge) {
+      qModelBadge.textContent = modelLabel;
+    }
+    if (qFallbackChain) {
+      qFallbackChain.textContent = `자동 폴백: ${fallbackNames}`;
+    }
+    if (dropQuotaLine) {
+      if (isExhausted && !q.hasGeminiFallback) {
+        dropQuotaLine.textContent = `⚠️ 오늘 PDF 일괄 등록 가능: 0건 (한도 소진 · 연결 AI: ${modelShort} · 내일 09시 약 ${maxPdf}건 충전)`;
+        dropQuotaLine.style.background = '#fee2e2';
+        dropQuotaLine.style.borderColor = '#fca5a5';
+        dropQuotaLine.style.color = '#991b1b';
+      } else {
+        dropQuotaLine.textContent = `⚡ 오늘 PDF 일괄 등록 가능: 약 ${estPdf}건 (일 최대 약 ${maxPdf}건 · 연결 AI: ${modelShort})`;
+        dropQuotaLine.style.background = isLow ? '#fef3c7' : '#ffffff';
+        dropQuotaLine.style.borderColor = isLow ? '#fcd34d' : '#c7d2fe';
+        dropQuotaLine.style.color = isLow ? '#92400e' : '#3730a3';
+      }
+    }
+    if ($('#lmStudioInlineStatus')) {
+      $('#lmStudioInlineStatus').textContent = `🟢 ${modelShort} 24시간 무료 클라우드 AI 연결됨 (노트북 꺼져도 24시간 가동)`;
+    }
 
     if (widget) {
       widget.style.background = isExhausted ? '#fef2f2' : (isLow ? '#fffbeb' : '#f0fdf4');
@@ -4007,29 +4038,29 @@ function initLmStudio() {
       qReset.textContent = formatResetCountdownText(q);
     }
 
-    // 상단 헤더 배지에도 무료 한도 잔여율/소진 상태 실시간 반영
+    // 상단 헤더 배지에도 현재 연결 무료 AI 모델명 + 잔여 건수/소진 상태 실시간 반영
     if (badge && statusText && dot) {
       if (isExhausted && !q.hasGeminiFallback) {
         dot.style.background = '#ef4444';
-        statusText.textContent = '🔴 AI 한도소진 (09시 초기화)';
+        statusText.textContent = `🔴 ${modelShort} · 한도소진(09시)`;
         badge.style.background = '#fef2f2';
         badge.style.borderColor = '#fca5a5';
         badge.style.color = '#b91c1c';
-        badge.title = 'Cloudflare Workers AI 일일 무료 한도(10,000 Neurons) 소진 — 매일 오전 09:00 자동 초기화';
+        badge.title = `연결 AI: ${modelLabel} — 오늘 무료 한도(10,000 Neurons) 소진, 내일 오전 09:00 자동 초기화(일 최대 PDF 약 ${maxPdf}건)`;
       } else if (isLow) {
         dot.style.background = '#f59e0b';
-        statusText.textContent = `🟠 AI 남음 ${remPct}% (PDF ~${estPdf}건)`;
+        statusText.textContent = `🟠 ${modelShort} · PDF ~${estPdf}건`;
         badge.style.background = '#fffbeb';
         badge.style.borderColor = '#fcd34d';
         badge.style.color = '#b45309';
-        badge.title = `오늘 무료 AI 잔여 ${remaining.toLocaleString()} / ${limit.toLocaleString()} Neurons (PDF 약 ${estPdf}건 / 수기 약 ${estManual}건)`;
+        badge.title = `연결 AI: ${modelLabel} — 잔여 ${remaining.toLocaleString()} / ${limit.toLocaleString()} Neurons (PDF 약 ${estPdf}건 / 수기 약 ${estManual}건)`;
       } else {
         dot.style.background = '#22c55e';
-        statusText.textContent = `🟢 AI 남음 ${remPct}% (PDF ~${estPdf}건)`;
+        statusText.textContent = `🟢 ${modelShort} · PDF ~${estPdf}건`;
         badge.style.background = '#f0fdf4';
         badge.style.borderColor = '#86efac';
         badge.style.color = '#15803d';
-        badge.title = `오늘 무료 AI 잔여 ${remaining.toLocaleString()} / ${limit.toLocaleString()} Neurons (PDF 약 ${estPdf}건 / 수기 약 ${estManual}건)`;
+        badge.title = `연결 AI: ${modelLabel} — 잔여 ${remaining.toLocaleString()} / ${limit.toLocaleString()} Neurons (PDF 약 ${estPdf}건 / 수기 약 ${estManual}건)`;
       }
     }
   }
