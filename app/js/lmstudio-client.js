@@ -25,6 +25,33 @@
   let currentModel = storage.getItem('sp_lmstudio_model') || 'qwen3.5-9b-deepseek-v4-flash';
   let isConnected = true;
   let isCloudMode = true; // 기본 24시간 Cloudflare 클라우드 Qwen AI 모드
+  let _aiFailures = [];
+
+  function clearAiFailures() {
+    _aiFailures = [];
+  }
+
+  function recordAiFailure(stage, reason, failedCount = 1, quotaExceeded = false) {
+    const cleanReason = String(reason || 'AI 서버로부터 응답을 받지 못했습니다.').trim();
+    _aiFailures.push({
+      stage: String(stage || 'AI 분석'),
+      reason: cleanReason,
+      failedCount: Number(failedCount) || 1,
+      quotaExceeded: Boolean(quotaExceeded),
+      at: Date.now()
+    });
+  }
+
+  function getAiFailureSummary() {
+    if (!_aiFailures.length) {
+      return { hasFailure: false, failedCount: 0, quotaExceeded: false, reasons: [], stages: [] };
+    }
+    const reasons = [...new Set(_aiFailures.map(f => f.reason).filter(Boolean))];
+    const stages = [...new Set(_aiFailures.map(f => f.stage).filter(Boolean))];
+    const failedCount = _aiFailures.reduce((acc, f) => acc + (f.failedCount || 1), 0);
+    const quotaExceeded = _aiFailures.some(f => f.quotaExceeded);
+    return { hasFailure: true, failedCount, quotaExceeded, reasons, stages };
+  }
 
   async function checkConnection(url = currentEndpoint) {
     const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || (typeof globalThis !== 'undefined' ? globalThis.SAFEPATROL_CONFIG?.workerUrl : null) || 'https://safepatrol-relay.abraxass0511.workers.dev';
@@ -182,6 +209,7 @@
 
     // ── [1단계-A] 클라우드 모드: Cloudflare 24시간 LLM (+ 모호 시 자동 Vision) 통합 분석 ──
     const workerUrl = (typeof window !== 'undefined' ? window.SAFEPATROL_CONFIG?.workerUrl : null) || CLOUDFLARE_AI_URL;
+    let lastCloudFailReason = '';
     if (isCloudMode && workerUrl) {
       onProgress({ phase: 'connecting', message: imageBase64 ? '☁️ 텍스트가 모호하여 Vision + Cloud AI가 사진·산안법·학습지침을 자동 판독 중...' : '☁️ Cloud AI가 부적합 내용·산안법·표준분류를 분석 중...' });
       try {
@@ -207,10 +235,14 @@
 
         if (cfRes.ok) {
           const data = await cfRes.json();
-          const isRealAi = Boolean(data.source && !String(data.source).includes('rule_engine'));
-          const lawTitle = isRealAi ? String(data.law || '').trim() : '';
+          const isRealAi = Boolean(!data.aiFailed && data.source && !String(data.source).includes('rule_engine') && !data.quotaExceeded);
+          if (!isRealAi) {
+            lastCloudFailReason = data.aiFailureReason || (data.quotaExceeded ? 'Cloudflare AI 일일 무료 한도 초과(4006)' : '5단계 클라우드 AI 폴백 모델 모두 응답 실패');
+            recordAiFailure('AI 분석', lastCloudFailReason, 1, Boolean(data.quotaExceeded));
+          } else {
+          const lawTitle = String(data.law || '').trim();
           const norm = getNormHelper();
-          let lawBody = isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '';
+          let lawBody = String(data.lawBody || data.cleanedFields?.lawBody || '').trim();
           if (lawBody && norm && typeof norm.stripGuidelinePrefixes === 'function') {
             lawBody = norm.stripGuidelinePrefixes(lawBody);
           }
@@ -251,8 +283,14 @@
             photo2Banner: data.photo2Banner || '',
             source: data.source || 'cloudflare_cloud_qwen'
           };
+          }
+        } else {
+          lastCloudFailReason = `클라우드 AI 서버 HTTP 오류 (${cfRes.status})`;
+          recordAiFailure('AI 분석', lastCloudFailReason, 1, cfRes.status === 429);
         }
       } catch (cfErr) {
+        lastCloudFailReason = `클라우드 AI 네트워크/타임아웃 오류 (${cfErr?.message || '연결 실패'})`;
+        recordAiFailure('AI 분석', lastCloudFailReason, 1, false);
         console.warn('Cloudflare AI 호출 오류, 로컬 LM Studio 시도:', cfErr);
       }
     }
@@ -459,25 +497,28 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
           });
           if (cfRes.ok) {
             const data = await cfRes.json();
-            const isRealAi = Boolean(data.source && !String(data.source).includes('rule_engine'));
-            return {
-              severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
-              law: isRealAi ? String(data.law || '').trim() : '',
-              lawBody: isRealAi ? String(data.lawBody || data.cleanedFields?.lawBody || '').trim() : '',
-              hazardType: data.hazardType || data.type || '',
-              item: data.item || '',
-              mgmtCauses: Array.isArray(data.mgmtCauses) ? data.mgmtCauses : [],
-              holdPoint: Boolean(data.holdPoint),
-              analysis: data.analysis || '',
-              pmVerdict: '',
-              photoBanner: data.photoBanner || '',
-              photo2Banner: data.photo2Banner || '',
-              source: data.source || 'cloudflare_cloud_qwen'
-            };
+            const isRealAi = Boolean(!data.aiFailed && data.source && !String(data.source).includes('rule_engine') && !data.quotaExceeded);
+            if (isRealAi) {
+              return {
+                severity: data.severity?.includes('중부적합') ? '중부적합' : '경부적합',
+                law: String(data.law || '').trim(),
+                lawBody: String(data.lawBody || data.cleanedFields?.lawBody || '').trim(),
+                hazardType: data.hazardType || data.type || '',
+                item: data.item || '',
+                mgmtCauses: Array.isArray(data.mgmtCauses) ? data.mgmtCauses : [],
+                holdPoint: Boolean(data.holdPoint),
+                analysis: data.analysis || '',
+                pmVerdict: '',
+                photoBanner: data.photoBanner || '',
+                photo2Banner: data.photo2Banner || '',
+                source: data.source || 'cloudflare_cloud_qwen'
+              };
+            }
+            if (data.aiFailureReason) lastCloudFailReason = data.aiFailureReason;
           }
         } catch (cfErr) {}
       }
-      throw new Error('Qwen AI 서버에 연결할 수 없습니다. 네트워크 또는 LM Studio 연결을 확인해주세요.');
+      throw new Error(lastCloudFailReason || 'AI 서버(Cloudflare 5단계 폴백 + 로컬 LM Studio) 모두 응답하지 않았습니다. 네트워크 또는 일일 한도를 확인해주세요.');
     }
   }
 
@@ -1452,6 +1493,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     if (!Array.isArray(records) || records.length === 0) return records;
     const forceLocal = storage.getItem('sp_ai_provider') === 'local';
     if (forceLocal || Date.now() < _cfQuotaCooldownUntil || Date.now() < _cfTransientBackoffUntil) {
+      const skipReason = Date.now() < _cfQuotaCooldownUntil
+        ? 'Cloudflare Workers AI 일일 무료 한도 초과(4006)로 쿨다운 대기 중입니다.'
+        : (forceLocal ? '로컬 LM Studio 모드로 설정되어 클라우드 일괄 AI 분류가 생략되었습니다.' : '클라우드 AI 서버 일시 오류 백오프 대기 중입니다.');
+      recordAiFailure('일괄 AI 분류·법규 보완', skipReason, records.length, Date.now() < _cfQuotaCooldownUntil);
       return applyLocalTaxonomyToRecords(records);
     }
 
@@ -1536,8 +1581,10 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         if (!res.ok) {
           if (res.status === 429) {
             _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+            recordAiFailure('일괄 AI 분류·법규 보완', 'Cloudflare AI 요청 한도 초과 (HTTP 429)', chunkRecords.length, true);
           } else {
             consecutiveFailures++;
+            recordAiFailure('일괄 AI 분류·법규 보완', `클라우드 AI 서버 HTTP 오류 (${res.status})`, chunkRecords.length, false);
             if (consecutiveFailures >= 2) _cfTransientBackoffUntil = Date.now() + 10 * 1000;
           }
           return false;
@@ -1545,10 +1592,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         const data = await res.json();
         if (data?.quotaExceeded) {
           _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+          recordAiFailure('일괄 AI 분류·법규 보완', data.aiFailureReason || 'Cloudflare Workers AI 일일 무료 한도(10,000 Neurons) 초과 (4006)', chunkRecords.length, true);
           return false;
         }
-        if (String(data?.source || '').includes('rule') || !Array.isArray(data?.results)) {
+        if (data?.aiFailed || String(data?.source || '').includes('rule') || !Array.isArray(data?.results)) {
           consecutiveFailures++;
+          recordAiFailure('일괄 AI 분류·법규 보완', data?.aiFailureReason || `5단계 클라우드 AI 폴백 모델 모두 응답 실패 (${data?.error || '응답 없음'})`, chunkRecords.length, false);
           return false;
         }
         consecutiveFailures = 0;
@@ -1743,6 +1792,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       } catch (e) {
         clearTimeout(timer);
         consecutiveFailures++;
+        const isAbort = e && (e.name === 'AbortError' || /abort|timeout/i.test(String(e.message || '')));
+        recordAiFailure('일괄 AI 분류·법규 보완', isAbort ? 'AI 응답 시간 초과(60초 Timeout)' : `AI 통신 네트워크 오류 (${e?.message || '연결 실패'})`, chunkRecords.length, false);
         if (consecutiveFailures >= 3) _cfTransientBackoffUntil = Date.now() + 8 * 1000;
         console.warn('[SafePatrol] classifyBatchRecords chunk warning:', e);
         return false;
@@ -1947,16 +1998,23 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             clearTimeout(timer);
             if (!res.ok) {
               if (res.status === 429) {
+                quotaExceeded = true;
                 _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+                recordAiFailure('등록 전 AI 최종 검증', 'Cloudflare AI 요청 한도 초과 (HTTP 429)', chunk.length, true);
                 break;
               }
+              recordAiFailure('등록 전 AI 최종 검증', `클라우드 AI 서버 HTTP 오류 (${res.status})`, chunk.length, false);
               continue;
             }
             const data = await res.json();
             if (data?.quotaExceeded) {
               quotaExceeded = true;
               _cfQuotaCooldownUntil = Date.now() + 20 * 60 * 1000;
+              recordAiFailure('등록 전 AI 최종 검증', data.aiFailureReason || 'Cloudflare Workers AI 일일 무료 한도(10,000 Neurons) 초과 (4006)', chunk.length, true);
               break;
+            }
+            if (data?.aiFailed || String(data?.source || '').includes('fallback')) {
+              recordAiFailure('등록 전 AI 최종 검증', data?.aiFailureReason || `5단계 클라우드 AI 폴백 모델 모두 응답 실패 (${data?.error || '응답 없음'})`, chunk.length, Boolean(data?.quotaExceeded));
             }
             if (Array.isArray(data?.results)) {
               if (data.source === 'qwen3_30b_verify') usedAi = true;
@@ -2072,6 +2130,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
               });
             }
           } catch (err) {
+            const isAbort = err && (err.name === 'AbortError' || /abort|timeout/i.test(String(err.message || '')));
+            recordAiFailure('등록 전 AI 최종 검증', isAbort ? 'AI 응답 시간 초과(60초 Timeout)' : `AI 통신 네트워크 오류 (${err?.message || '연결 실패'})`, chunk.length, false);
             console.warn('[SafePatrol] verifyRecordsBeforeSave chunk warning:', err);
           } finally {
             doneCnt += chunk.length;
@@ -2089,12 +2149,15 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       }
     });
 
+    const failSummary = getAiFailureSummary();
     return {
       ok: true,
       records,
       modifiedCount,
       source: usedAi ? 'qwen3_30b_verify' : 'local_normalizer',
-      quotaExceeded
+      quotaExceeded,
+      aiFailed: failSummary.hasFailure,
+      aiFailureSummary: failSummary
     };
   }
 
@@ -2297,6 +2360,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
         clearTimeout(timer);
         if (!res.ok) continue;
         const data = await res.json();
+        if (data?.aiFailed) {
+          recordAiFailure('관련기준 칸 맞춤 정리', data.aiFailureReason || '5단계 클라우드 AI 폴백 모델 모두 응답 실패', chunk.length, Boolean(data.quotaExceeded));
+        }
         if (data?.ok && Array.isArray(data.results)) {
           chunk.forEach((rec, idx) => {
             const key = String(rec.id || `rec_${i + idx}`);
@@ -2330,6 +2396,8 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     condenseOverflowLawBodiesWithAI,
     auditAndFilterGuidelinesWithAI,
     isQuotaCoolingDown,
+    clearAiFailures,
+    getAiFailureSummary,
     completeGuidedRecord,
     getEndpoint: () => currentEndpoint,
     setEndpoint: ep => { currentEndpoint = ep; storage.setItem('sp_lmstudio_endpoint', ep); },

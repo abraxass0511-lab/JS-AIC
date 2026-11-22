@@ -1152,13 +1152,13 @@
     ['관리정보(자동)', '점검자', 8, null, r => {
       const clean = (v) => {
         const s = String(v || '')
-          .replace(/^.*?(?:[점적정서섬성선]\s*[검겸견]\s*[자사시차])\s*[:：.;]?\s*/g, '')
+          .replace(/^.*?(?:[점적정서섬성선심]\s*[검겸견]\s*[자사시차])\s*[:：.;]?\s*/g, '')
           .replace(/[^가-힣a-zA-Z0-9\s]/g, '')
           .replace(/\s+/g, ' ')
           .trim();
-        return (!s || /^(?:[점적정서섬성선][검겸견][자사시차])$/i.test(s) || s.length <= 1) ? '' : s;
+        return (!s || /^(?:[점적정서섬성선심][검겸견][자사시차])$/i.test(s) || s.length <= 1) ? '' : s;
       };
-      return clean(r.inspector) || clean(r.inspectUser) || clean(r.user) || '';
+      return clean(r.inspector) || clean(r.inspectUser) || clean(r.user) || clean(r.updatedBy) || '';
     }],
   ];
 
@@ -1428,7 +1428,7 @@
           }
         }
       }
-      const CONCURRENCY = 12;
+      const CONCURRENCY = 18;
       let nextIdx = 0;
       let loadedCnt = 0;
       const worker = async () => {

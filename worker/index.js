@@ -101,6 +101,23 @@ function parseJsonObjectFromAiText(raw) {
   }
 }
 
+function buildAiFailureReasonKo(quotaHit = false, errors = [], errMsg = '') {
+  const joined = [String(errMsg || ''), ...(Array.isArray(errors) ? errors : [])].filter(Boolean).join(' | ');
+  if (quotaHit || /4006|daily free allocation|quota|neurons|rate.?limit/i.test(joined)) {
+    return 'Cloudflare Workers AI 일일 무료 사용 한도(10,000 Neurons)를 초과했습니다. (오류코드 4006 — UTC 자정 초기화 또는 외부 무료 AI 키 설정 필요)';
+  }
+  if (/no_ai_binding|no_env_ai/i.test(joined)) {
+    return 'Cloudflare Worker에 Workers AI 바인딩(env.AI)이 연결되어 있지 않습니다.';
+  }
+  if (/timeout|abort/i.test(joined)) {
+    return 'AI 서버 응답 시간 초과(Timeout)가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+  }
+  if (/invalid_json|parse_fallback/i.test(joined)) {
+    return `5단계 클라우드 AI 폴백 모델이 유효한 JSON 형식을 반환하지 못했습니다. (${joined.slice(0, 140)})`;
+  }
+  return `5단계 클라우드 AI 폴백 모델(Llama-3.3 / Gemma-4 / GLM-4.7 / Qwen-3.8 / GPT-OSS) 모두 응답에 실패했습니다.${joined ? ` (${joined.slice(0, 160)})` : ''}`;
+}
+
 async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 0.05, requireJson = true } = {}) {
   const errors = [];
   let quotaHit = false;
@@ -891,6 +908,8 @@ export default {
           const items = body.items.slice(0, 10);
           const buildFallbackBatch = (quota = false, errMsg = '') => ({
             ok: true,
+            aiFailed: true,
+            aiFailureReason: buildAiFailureReasonKo(quota, [], errMsg),
             source: 'cloudflare_rule_batch',
             quotaExceeded: quota,
             error: errMsg || undefined,
@@ -1182,6 +1201,8 @@ ${TAXONOMY_STANDARD_PROMPT}
           };
           const buildVerifyFallback = (quota = false, errMsg = '') => ({
             ok: true,
+            aiFailed: true,
+            aiFailureReason: buildAiFailureReasonKo(quota, [], errMsg),
             source: 'cloudflare_verify_fallback',
             quotaExceeded: quota,
             error: errMsg || undefined,
@@ -1448,7 +1469,7 @@ ${KOREAN_OSH_LAW_GUIDE}
 아래 규칙에 따라 **원본 PDF 문장의 핵심 내용·단어·수치를 최대한 그대로 보존하면서** 칸을 넘는 부분만 최소한으로 덜어내라:
 1. 전체 길이는 공백 포함 **75~102자(2.5~3줄 꽉 차게)**로 작성할 것! **절대 20~55자짜리 1줄 짧은 문장으로 과도하게 축약하지 말 것!**
 2. 원본에 있는 '(이하 이 조에서 "난간등"이라 한다)' 같은 법률 괄호 정의나 중복 표현만 우선 덜어내고, 핵심 안전 기준(강도·설치기준·뒤집힘/떨어짐 방지·수치 등)과 원본 문체는 최대한 그대로 유지하라.
-3. 반드시 자연스럽고 완결된 한국어 평서문('~하여야 한다.', '~한다.')으로 끝낼 것 (단어 중간 절단, 말줄임표 '...' 금지).
+3. 반드시 자연스럽고 완결된 한국어 평서문('~하여야 한다.', '~한다.', '~금지한다.')으로 끝낼 것! 절대 '튼튼하게', '안전하게', '동바리최상단과'처럼 부사·조사·단어 중간에서 잘린 문장이나 말줄임표('...') 금지!
 4. 순수 한국어만 사용 (한자·중국어 혼입 절대 금지).
 5. 만약 입력 lawTitle이 비어 있거나 모순이면 lawTitle도 함께 보완하라.
 
@@ -1458,6 +1479,7 @@ ${KOREAN_OSH_LAW_GUIDE}
     { "id": "원본 id", "lawTitle": "제목(변경 필요시만)", "lawBody": "원본 문장을 최대한 살려 75~102자(3줄 이내)로 최소 정리한 완결 한국어 본문" }
   ]
 }`;
+          let condenseFailureReason = '';
           try {
             const llmRes = await runCloudTextLLM(env, [
               { role: 'system', content: condensePrompt },
@@ -1480,8 +1502,11 @@ ${KOREAN_OSH_LAW_GUIDE}
                 headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
               });
             }
-          } catch (cErr) {}
-          return new Response(JSON.stringify({ ok: false, results: [] }), {
+            condenseFailureReason = buildAiFailureReasonKo(llmRes.quotaHit, llmRes.errors);
+          } catch (cErr) {
+            condenseFailureReason = buildAiFailureReasonKo(false, [], String(cErr?.message || cErr));
+          }
+          return new Response(JSON.stringify({ ok: false, aiFailed: true, aiFailureReason: condenseFailureReason || buildAiFailureReasonKo(false, []), results: [] }), {
             status: 200,
             headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
@@ -1546,9 +1571,12 @@ JSON 형식:
         const makeRuleFallbackResponse = (errs, isQuota = false) => {
           const fallbackCleaned = buildFallbackCleanedFields(content, body.fallbackRecord);
           const needsClientOcr = !String(content).trim() && !fallbackCleaned.content;
+          const failureReasonKo = buildAiFailureReasonKo(isQuota, errs);
           const payload = needsClientOcr
             ? {
                 ok: true,
+                aiFailed: true,
+                aiFailureReason: failureReasonKo,
                 source: 'cloudflare_rule_engine',
                 needsClientOcr: true,
                 quotaExceeded: !!isQuota,
@@ -1562,6 +1590,8 @@ JSON 형식:
               }
             : {
                 ok: true,
+                aiFailed: true,
+                aiFailureReason: failureReasonKo,
                 source: 'cloudflare_rule_engine',
                 needsClientOcr: false,
                 quotaExceeded: !!isQuota,

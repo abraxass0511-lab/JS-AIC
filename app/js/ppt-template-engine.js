@@ -2254,12 +2254,20 @@
   }
 
   /**
-   * [v62] 어절/문장 경계 기반 안전 축약 (단어 중간 절단 '안전고리를체', 1~2글자 잔여 '- 그' 원천 금지)
+   * [v65] 어절/문장 경계 기반 안전 축약 (단어 중간 절단 및 부사·조사 종결 '튼튼하게', '동바리최상단과' 원천 금지!)
    */
-  function trimTextAtCleanBoundary(body, budgetPt, fontPt) {
-    const clean = String(body || '').replace(/\s+/g, ' ').trim();
+  function trimTextAtCleanBoundary(body, budgetPt, fontPt, opts = {}) {
+    let clean = String(body || '').replace(/\s+/g, ' ').trim();
     if (!clean) return '';
     if (estimateVisualWidthUnits(clean) * fontPt <= budgetPt) return clean;
+    if (opts.isLawBody) {
+      const noBoilerplate = clean
+        .replace(/\(\s*이하\s*(?:이\s*조에서\s*)?["'“”‘’]?[가-힣A-Za-z0-9\s]+["'“”‘’]?(?:이)?라\s*한다\s*\)/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (noBoilerplate && estimateVisualWidthUnits(noBoilerplate) * fontPt <= budgetPt) return noBoilerplate;
+      if (noBoilerplate && noBoilerplate.length < clean.length) clean = noBoilerplate;
+    }
     // 1순위: 완결 문장 경계(., !, ?) 중 예산 내에 들어오는 가장 긴 접두문
     const sentEnds = [...clean.matchAll(/[.!?](?=\s|$)/g)].map(m => m.index + 1);
     for (let i = sentEnds.length - 1; i >= 0; i--) {
@@ -2268,10 +2276,32 @@
         return cand;
       }
     }
-    // 2순위: 어절(공백) 단위로 뒤에서부터 축소 (절대 어절 중간 글자 자르기 금지!)
+    // 1.5순위(관련기준): 연결절('하여야 하며,', '설치하고', '있으며,', '금지하며,') 경계에서 '~다.' 완결 문장으로 자연 종결
+    if (opts.isLawBody) {
+      const clauseRe = /(?:(?:하여야|해야|되어야|있어야|없어야|않아야)\s*(?:하며|하고)|(?:금지|설치|유지|확보|준수|실시|점검|관리|조치|체결|고정|확인)하(?:며|고)|(?:있으며|없으며|되며))\s*,?/g;
+      const clauseMatches = [...clean.matchAll(clauseRe)];
+      for (let i = clauseMatches.length - 1; i >= 0; i--) {
+        const m = clauseMatches[i];
+        let cand = clean.slice(0, m.index + m[0].length).replace(/,\s*$/, '').trim();
+        cand = cand
+          .replace(/(하여야|해야|되어야|있어야|없어야|않아야)\s*(?:하며|하고)$/, '$1 한다.')
+          .replace(/([가-힣]{2,})하(?:며|고)$/, '$1하여야 한다.')
+          .replace(/있으며$/, '있다.')
+          .replace(/없으며$/, '없다.')
+          .replace(/되며$/, '된다.');
+        if (cand.length >= 12 && estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
+          return cand;
+        }
+      }
+    }
+    // 2순위: 어절(공백) 단위로 뒤에서부터 축소 (절대 어절 중간 글자 자르기 금지 + 부사·조사·연결어미 끝단 제거)
+    const DANGLING_END_RE = /(?:하게|히|으로|로|에서|에게|에는|과|와|을|를|은|는|이|가|의|에|및|또는|등|위한|위하여|따른|대한|있는|없는|하는|되는|경우|경우에는|때에는|않도록|하도록|하며|하고)$/;
     const words = clean.split(' ').filter(Boolean);
     while (words.length > 1) {
       words.pop();
+      while (words.length > 1 && DANGLING_END_RE.test(words[words.length - 1].replace(/[,.;:]+$/, ''))) {
+        words.pop();
+      }
       const cand = words.join(' ').replace(/[,/;·\-:(\s]+$/g, '').trim();
       if (cand && estimateVisualWidthUnits(cand) * fontPt <= budgetPt) {
         return cand;
@@ -2286,44 +2316,51 @@
   }
 
   /**
-   * [v62] 원본 글자크기 100% 고정 + 원문 최대 보존 다중줄 피팅 엔진
-   * - 글자크기(fontPt)는 절대 줄이지 않음!
-   * - 원문이 넘칠 때는 먼저 단락 간격(spcAft)과 줄 간격(lnSpc 1.0->0.94)만 미세 조정하여 원문 100%를 무절단 수용
-   * - 물리적 박스 한계를 진짜로 초과할 때만 비례 줄 배분 + 문장/어절 경계 안전 축약 수행 (단어 중간 절단 금지)
+   * [v65] 원문 최대 보존 다중줄 피팅 엔진
+   * - 관련기준 본문(isLawBody)은 11pt에서 넘칠 때 문장 중간('튼튼하게', '동바리최상단과')을 절대 자르지 않고
+   *   먼저 괄호 법률정의 제거 → 폰트 미세 자동 맞춤(10.5pt→10pt→9.5pt→9pt→8.5pt)으로 '~다.' 완결 문장 100% 보존!
    */
   function fitMultilineSmart(lines, widthIn, heightIn, fontPt, lnSpcRatio = 1.0, spcAftPt = 0, options = {}) {
     let cleanLines = (Array.isArray(lines) ? lines : [lines])
       .map((l) => String(l || '').replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim())
       .filter(Boolean);
-    if (!cleanLines.length) return { lines: [], lnSpcRatio, spcAftPt };
+    if (!cleanLines.length) return { lines: [], lnSpcRatio, spcAftPt, fontPt };
 
-    const lineWidthPt = Math.max(36, widthIn * 72 - (options.isLawBody ? 46 : 8));
     const availH = Math.max(fontPt * 1.3, heightIn * 72 - 3);
-    const countWrapped = (str) => {
-      const words = String(str || '').trim().split(/\s+/).filter(Boolean);
-      if (!words.length) return 1;
-      const spPt = 0.34 * fontPt;
-      let curPt = 0;
-      let wrapped = 1;
-      for (const w of words) {
-        const wPt = estimateVisualWidthUnits(w) * fontPt;
-        if (curPt > 0 && curPt + spPt + wPt > lineWidthPt) {
-          wrapped++;
-          curPt = wPt;
-        } else {
-          curPt = curPt > 0 ? (curPt + spPt + wPt) : wPt;
+    const makeMeasurer = (pt) => {
+      const lw = Math.max(36, widthIn * 72 - (options.isLawBody ? 24 : 8));
+      const countWrappedAt = (str) => {
+        const words = String(str || '').trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return 1;
+        const spPt = 0.34 * pt;
+        let curPt = 0;
+        let wrapped = 1;
+        for (const w of words) {
+          const wPt = estimateVisualWidthUnits(w) * pt;
+          if (curPt > 0 && curPt + spPt + wPt > lw) {
+            wrapped++;
+            curPt = wPt;
+          } else {
+            curPt = curPt > 0 ? (curPt + spPt + wPt) : wPt;
+          }
+          while (curPt > lw) {
+            wrapped++;
+            curPt -= lw;
+          }
         }
-        while (curPt > lineWidthPt) {
-          wrapped++;
-          curPt -= lineWidthPt;
-        }
-      }
-      return wrapped;
+        return wrapped;
+      };
+      const calcHeightAt = (arr, lnR, spcA) => {
+        const lineH = pt * lnR * 1.22;
+        return arr.reduce((sum, l, i) => sum + countWrappedAt(l) * lineH + (i < arr.length - 1 ? spcA : 0), 0);
+      };
+      return { lw, countWrappedAt, calcHeightAt };
     };
-    const calcHeight = (arr, lnR, spcA) => {
-      const lineH = fontPt * lnR * 1.22;
-      return arr.reduce((sum, l, i) => sum + countWrapped(l) * lineH + (i < arr.length - 1 ? spcA : 0), 0);
-    };
+
+    const baseM = makeMeasurer(fontPt);
+    const lineWidthPt = baseM.lw;
+    const countWrapped = baseM.countWrappedAt;
+    const calcHeight = baseM.calcHeightAt;
 
     // 1단계: 원본 간격 -> 단락 간격 미세 축소 -> 줄간격 미세 조정으로 원문 100% 보존 시도
     const tiers = [
@@ -2334,35 +2371,61 @@
     ];
     for (const t of tiers) {
       if (calcHeight(cleanLines, t.lnR, t.spcA) <= availH) {
-        return { lines: cleanLines, lnSpcRatio: t.lnR, spcAftPt: t.spcA };
+        return { lines: cleanLines, lnSpcRatio: t.lnR, spcAftPt: t.spcA, fontPt };
       }
     }
 
-    // 관련기준 본문(isLawBody)에서 첫 줄이 순수 절 제목('7.7.1 A/F 설치')이고 뒤에 실제 수칙 문장이 있으면 절 제목 생략 후 재시도
-    if (options.isLawBody && cleanLines.length >= 2) {
-      const firstIsSubHeading = /^\d+\.\d+(?:\.\d+)?\s+/.test(cleanLines[0]) && !/[.다함됨요]$/.test(cleanLines[0]);
-      if (firstIsSubHeading) {
-        const withoutHead = cleanLines.slice(1);
+    // 관련기준 본문(isLawBody) 처리: 절 제목 생략 -> 법률 괄호정의 정리 -> 10.5~8.5pt 자동 폰트 맞춤으로 문장 중간 절단 0건 보장!
+    if (options.isLawBody) {
+      if (cleanLines.length >= 2) {
+        const firstIsSubHeading = /^\d+\.\d+(?:\.\d+)?\s+/.test(cleanLines[0]) && !/[.다함됨요]$/.test(cleanLines[0]);
+        if (firstIsSubHeading) {
+          const withoutHead = cleanLines.slice(1);
+          for (const t of tiers) {
+            if (calcHeight(withoutHead, t.lnR, t.spcA) <= availH) {
+              return { lines: withoutHead, lnSpcRatio: t.lnR, spcAftPt: t.spcA, fontPt };
+            }
+          }
+          cleanLines = withoutHead;
+        }
+      }
+      const strippedBoilerplate = cleanLines.map(l => l.replace(/\(\s*이하\s*(?:이\s*조에서\s*)?["'“”‘’]?[가-힣A-Za-z0-9\s]+["'“”‘’]?(?:이)?라\s*한다\s*\)/g, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+      if (strippedBoilerplate.length) {
         for (const t of tiers) {
-          if (calcHeight(withoutHead, t.lnR, t.spcA) <= availH) {
-            return { lines: withoutHead, lnSpcRatio: t.lnR, spcAftPt: t.spcA };
+          if (calcHeight(strippedBoilerplate, t.lnR, t.spcA) <= availH) {
+            return { lines: strippedBoilerplate, lnSpcRatio: t.lnR, spcAftPt: t.spcA, fontPt };
           }
         }
-        cleanLines = withoutHead;
       }
+      // [v65] 완결 문장 보존을 위해 10.5pt -> 10pt -> 9.5pt -> 9pt -> 8.5pt -> 8pt 단계적 자동 맞춤 (문장 중간 절단 원천 방지!)
+      for (const tryPt of [10.5, 10, 9.5, 9, 8.5, 8]) {
+        if (tryPt >= fontPt) continue;
+        const mTry = makeMeasurer(tryPt);
+        for (const tryLines of [cleanLines, strippedBoilerplate]) {
+          if (!tryLines.length) continue;
+          if (mTry.calcHeightAt(tryLines, 0.96, 0) <= availH) {
+            return { lines: tryLines, lnSpcRatio: 0.96, spcAftPt: 0, fontPt: tryPt };
+          }
+          if (mTry.calcHeightAt(tryLines, 0.92, 0) <= availH) {
+            return { lines: tryLines, lnSpcRatio: 0.92, spcAftPt: 0, fontPt: tryPt };
+          }
+        }
+      }
+      if (strippedBoilerplate.length) cleanLines = strippedBoilerplate;
     }
 
-    // 2단계: 물리적 박스 한계 초과 시 최소 간격(spcA=0, lnR=0.92) 기준으로 항목별 비례 줄 배분 + 문장/어절 경계 축약
+    // 2단계: 최소 폰트에서도 물리적 박스 한계를 초과하는 초대형 장문만 문장/절 경계('~다.')로 안전 축약
+    const activePt = options.isLawBody ? Math.min(fontPt, 8.5) : fontPt;
+    const activeM = makeMeasurer(activePt);
     const bestLnR = Math.min(lnSpcRatio, 0.92);
     const bestSpcA = 0;
-    const singleLineH = fontPt * bestLnR * 1.22;
+    const singleLineH = activePt * bestLnR * 1.22;
     const totalAvailLines = Math.max(1, Math.floor(availH / singleLineH));
     const maxItems = Math.min(cleanLines.length, totalAvailLines);
     const kept = cleanLines.slice(0, maxItems);
-    const needed = kept.map(countWrapped);
+    const needed = kept.map(activeM.countWrappedAt);
     const alloc = kept.map(() => 1);
     let remaining = Math.max(0, totalAvailLines - kept.length);
-    // 실제 줄 수가 부족한 항목부터 순서대로 여유 줄 배분 (1줄짜리에 불필요하게 낭비하지 않음)
     while (remaining > 0) {
       let progressed = false;
       for (let i = 0; i < kept.length && remaining > 0; i++) {
@@ -2380,11 +2443,11 @@
       const prefixMatch = ln.match(/^((?:[-•▪]\s+|\d+[\.)]\s+))/);
       const prefix = prefixMatch ? prefixMatch[1] : '';
       const body = prefix ? ln.slice(prefix.length).trim() : ln;
-      const budgetPt = lineWidthPt * alloc[idx] - estimateVisualWidthUnits(prefix) * fontPt - fontPt * 0.35;
-      const trimmed = trimTextAtCleanBoundary(body, budgetPt, fontPt);
+      const budgetPt = activeM.lw * alloc[idx] - estimateVisualWidthUnits(prefix) * activePt - activePt * 0.35;
+      const trimmed = trimTextAtCleanBoundary(body, budgetPt, activePt, options);
       return `${prefix}${trimmed}`.trim();
     });
-    return { lines: fitted, lnSpcRatio: bestLnR, spcAftPt: bestSpcA };
+    return { lines: fitted, lnSpcRatio: bestLnR, spcAftPt: bestSpcA, fontPt: activePt };
   }
 
   /**
@@ -2695,19 +2758,21 @@
       },
     });
 
-    // 2. 관련기준 본문 박스 (TextBox 1, id=2): 원본 11pt 일반체 100% 고정 (초과 시 3줄 이내 안전 축약) + lstStyle glow 제거
+    // 2. 관련기준 본문 박스 (TextBox 1, id=2): 기본 11pt + 3줄 초과 시 문장 중간 절단 없이 폰트 미세 맞춤(10.5~8.5pt)으로 '~다.' 완결 문장 100% 보존
     const rawLawBodyLines = splitBulletLines(data.lawBody || '');
     const lawFit = fitMultilineSmart(rawLawBodyLines, 5.42, 0.64, 11, 1.0, 0, { isLawBody: true });
     const lawBodyLines = lawFit.lines;
     const lawLnSpcXml = Math.round(lawFit.lnSpcRatio * 100000);
-    // malgun.ttf 실측: 11pt '- ' = 106,680 EMU (원문에 '-'가 있을 때만 내어쓰기 적용)
-    const lawHangEmu = 106680;
+    const lawFontPt = lawFit.fontPt || 11;
+    const lawFontSz = Math.round(lawFontPt * 100);
+    // malgun.ttf 실측: 11pt '- ' = 106,680 EMU (폰트 크기 비례 내어쓰기 적용)
+    const lawHangEmu = Math.round(106680 * (lawFontPt / 11));
     const lawBodyParas = lawBodyLines.length
       ? lawBodyLines.map((line) => {
           const isDash = /^[-•▪]\s+/.test(line);
           return {
             text: line,
-            sz: 1100,
+            sz: lawFontSz,
             bold: false,
             color: BLACK,
             algn: 'l',
@@ -3161,7 +3226,7 @@
         if (p2Path) tasks.push({ slideIdx: i, slot: 'p2', path: p2Path, rec, photoIndex: 1 });
       }
       if (tasks.length > 0) {
-        const CONCURRENCY = 12;
+        const CONCURRENCY = 18;
         let nextT = 0;
         const runPhotoWorker = async () => {
           while (nextT < tasks.length) {
