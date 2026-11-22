@@ -7,8 +7,8 @@
  * - 디지털 PDF 텍스트 레이어 + 영역별 클린 OCR + Qwen AI(LM Studio / 24h 클라우드) 연동으로 엑셀 대장 완벽 기록
  */
 
-import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261122_v63';
-import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261122_v63';
+import { analyzeSheetLayout, findRedBanners, findPhotoBoxes, detectCheckboxesFromLayout, preprocessCellCanvas } from './sheet-layout.js?v=20261122_v64';
+import { initPaddleOcr, recognizeCellWithPaddle } from './paddle-ocr-client.js?v=20261122_v64';
 import {
   normalizeRoundText,
   normalizeFieldText,
@@ -32,7 +32,7 @@ import {
   inferSafetyDomain,
   SafeGuidelineMemory,
   parseInterviewOpinions
-} from './text-normalizer.js?v=20261122_v63';
+} from './text-normalizer.js?v=20261122_v64';
 
 function cropCanvas(sourceCanvas, rect) {
   const c = document.createElement('canvas');
@@ -48,29 +48,7 @@ export function deriveConcreteBanner(content) {
   let c = normalizeKoreanSpacing(healSafetyKoreanLexicon(content))
     .replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '')
     .trim();
-  c = stripBannerSecondItemTail(c).replace(/^(?:지하\s*\d+층|\d+동(?:\s*후면|\s*상가동|\s*외부)?)\s*/i, '');
   const firstLine = stripBannerSecondItemTail(c.split('\n')[0]).replace(/^(?:[①②③④⑤⑥⑦⑧⑨⑩]|\(?\d{1,2}\)?[.)]|[-•·ㆍ.,:;\s])+/g, '').trim();
-  if (firstLine.includes('전도방지 파이프 미사용')) return '대형 벽체 조립 설치 시 전도방지 파이프 미사용';
-  if (firstLine.includes('버팀대') && (firstLine.includes('각도') || firstLine.includes('미준수') || firstLine.includes('불량'))) return '외부비계 벽이음용 버팀대 설치각도 기준 미준수';
-  if (firstLine.includes('이격거리')) return '외부비계와 구조물 벽체 간 이격거리 과다';
-  if (firstLine.includes('가새')) return '비계 설치구간 가새 설치 누락';
-  if (firstLine.includes('주변 통제')) return '비계 설치 작업 시 주변 통제 미실시';
-  if (firstLine.includes('밑둥잡이')) return '비계 워킹타워 하부 밑둥잡이 일부 누락';
-  if (firstLine.includes('동바리') && (firstLine.includes('해체') || firstLine.includes('미복구'))) return '콘크리트 타설 중 계단참 AL Form 동바리 미복구';
-  if (/Gang\s*Form|선해체|갱폼/i.test(firstLine)) return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
-  if (firstLine.includes('지게차') && firstLine.includes('근접')) {
-    return '유도원·근로자 지게차 근접 작업';
-  }
-  if (/접지선/.test(firstLine) && (/고정\s*불량|용량\s*부족|볼트/.test(firstLine))) {
-    return '접지선 볼트 고정 불량 및 용량 부족';
-  }
-  if (firstLine.includes('충전부') && firstLine.includes('노출')) {
-    if (/전등|소켓|조명|심선|단자부/.test(firstLine) && !/분전함|분전반|차단기/.test(firstLine)) {
-      return '전등 소켓 충전부 노출 및 절연 불량';
-    }
-    return '분전함 차단기 충전부 노출';
-  }
-
   return stripBannerSecondItemTail(extractCoreViolationBanner('', c) || firstLine || '');
 }
 
@@ -610,12 +588,11 @@ export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
       .replace(/(\d{2})cm\s*호(?=\s|$|[^가-힣])/gi, '$101호')
       .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
-    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용
+    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용 (임의 단어 삭제 mSecond 절단 폐지!)
+    s = s.replace(/(\d{1,4}\s*동)\s*(\d+,\d+)3(코어)/g, '$1 $2,3$3');
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
     s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
-    s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
-    // '106동1,23코어' -> '106동 1,2코어' (3이 코어/층 앞 오인식 시 106동 절대 누락 방지!)
-    s = s.replace(/(\d{1,4}동)\s*(\d+,\d+)3(코어)/g, '$1 $2$3');
+    s = s.replace(/(?<![,\d])\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
     s = normalizeKoreanSpacing(s);
 
     if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
@@ -624,17 +601,7 @@ export function cleanLocation(rawLoc, fallbackLocText = '', contentText = '') {
     }
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
 
-    // L/C 1,2호기 · T/C · 세대 호수(1501호) · 코어/기초사면 등이 포함된 정상 위치는 잘리지 않고 그대로 보존
-    if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣])|\d+,\d+\s*코어|기초\s*사면|기초)/i.test(s)) {
-      return normalizeKoreanSpacing(s).replace(/\s+/g, ' ').trim();
-    }
-
-    const mSecond = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|[BPbp]?\d+\s*층|\d+(?:,\d+)*\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|복도|주차장|상가동|주변|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|기초|사면|세대|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
-    if (mSecond && mSecond[0] && mSecond[0].trim().length >= 2) {
-      return normalizeKoreanSpacing(mSecond[0]).replace(/\s+/g, ' ').trim();
-    }
-
-    return normalizeKoreanSpacing(s) || '';
+    return normalizeKoreanSpacing(s).replace(/\s+/g, ' ').trim();
 }
 
 export function cleanBannerText(rawBanner, content = '', location = '') {
@@ -851,10 +818,6 @@ export function cleanProposalText(raw) {
 export function cleanActionPlan(raw) {
   if (!raw) return '';
   const rawStr = healSafetyKoreanLexicon(String(raw)).replace(/^[-—_]{2,}\s*(?=[가-힣A-Za-z0-9(\[])/gm, '- ');
-  const origHasDash = /^\s*[-—•*·▪]/.test(rawStr);
-  if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-    return `${origHasDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-  }
   const preBulletStr = rawStr
     .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
     .replace(/시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|패널티|페널티/gi, '')
@@ -876,11 +839,7 @@ export function cleanActionPlan(raw) {
     const hasExplicitBullet = hasDash || /^\.\s*|^\d+[\).]/s.test(line);
     let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
     if (!cl || cl.length < 2) continue;
-    if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업팀\s*교육)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
-
-    if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-      return `${hasDash || origHasDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-    }
+    if (/^(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기)$/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
     if (items.length === 0 || hasExplicitBullet) {
       items.push({ text: cl, hasDash });
@@ -2320,8 +2279,8 @@ export function parseCellTextsIntoFields(cellTexts, canvas, layout, mgmtCauses, 
     _hasOriginalBanner,
     _originalBannerText,
     mgmtCauses,
-    condition: mgmtCauses.includes('불안전 상태') ? '물(物) 자체의 결함 (자재·부재 손상)' : '해당없음',
-    action: mgmtCauses.includes('불안전 행동') ? '불안전한 동작·자세' : '해당없음',
+    condition: mgmtCauses.includes('불안전 상태') ? '' : '해당없음',
+    action: mgmtCauses.includes('불안전 행동') ? '' : '해당없음',
     interviewAuthor,
     interviewAuthorTitle,
     interviewOpinion,

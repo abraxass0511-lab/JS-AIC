@@ -553,11 +553,11 @@
       .replace(/@@GF@@/g, 'G/F')
       .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
-    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용
+    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용 (임의 단어 삭제 mSecond 폐지)
+    s = s.replace(/(\d{1,4}\s*동)\s*(\d+,\d+)3(코어)/g, '$1 $2,3$3');
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
     s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
-    s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
-    s = s.replace(/(\d{1,4}동)\s*(\d+,\d+)3(코어)/g, '$1 $2$3');
+    s = s.replace(/(?<![,\d])\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
     s = _normSpacing(s);
 
     if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
@@ -566,16 +566,7 @@
     }
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
 
-    if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣])|\d+,\d+\s*코어|기초\s*사면|기초)/.test(s)) {
-      return _normSpacing(s).replace(/\s+/g, ' ').trim();
-    }
-
-    const mSecond = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|[BPbp]?\d+\s*층|\d+(?:,\d+)*\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|E\/V|L\/C|T\/C|G\/F|\d+(?:,\d+)*\s*호기|\d{2,4}\s*호|복도|주차장|상가동|주변|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|기초|사면|세대|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
-    if (mSecond && mSecond[0] && mSecond[0].trim().length >= 2) {
-      return _normSpacing(mSecond[0]).replace(/\s+/g, ' ').trim();
-    }
-
-    return _normSpacing(s) || '';
+    return _normSpacing(s).replace(/\s+/g, ' ').trim();
   }
 
   // 부적합 내용(지적사항) 숫자/한자 오인식('5)'->'등)', '5560ㅁ7'/'5500'->'55cm') 및 하단 깨진 중복줄 정제 함수
@@ -857,9 +848,6 @@
     const raw = (r.fix && r.fix.content) || r.actionPlan || r.countermeasure || '';
     if (!raw || raw === '(미조치)') return '(미조치)';
     const rawStr = healSafetyKoreanLexicon(String(raw));
-    if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-      return '- 비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행';
-    }
     let cleanedStr = rawStr
       .replace(/^[-—_]{2,}\s*(?=[가-힣A-Za-z0-9(\[])/gm, '- ')
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/g, '')
@@ -891,11 +879,7 @@
       const hasExplicitBullet = hasDash || /^\.\s*|^\d+[\).]\s*/.test(line);
       let cl = line.replace(/^[\s|ㅣ¦_!~—\-*•·.&]+/, '').replace(/[\s|ㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
-      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
-
-      if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return `${hasDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-      }
+      if (/^(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)$/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (items.length === 0 || hasExplicitBullet) {
         items.push({ text: cl, hasDash });
@@ -1129,19 +1113,8 @@
     ['부적합 분류', '기인물(중)', 14, 'agentsMid', r => resolveAgentHierarchy(r).mid],
     ['부적합 분류', '기인물(소)', 18, 'agentsMinor', r => resolveAgentHierarchy(r).minor],
 
-    // [관련근거] (원본 제목 모순/구버전 레코드로 law·rawLaw가 비어 있을 때도 문맥 기반 산안법 자동 보완하여 공란 0건 보장)
-    ['관련근거', '산업안전보건법', 24, 'laws', r => {
-      const direct = String(r.law || r.rawLaw || (r.basis && r.basis.law) || '').trim();
-      if (direct) return direct;
-      const ctx = `${r.content || ''} ${r.workGroup || ''} ${r.lawBody || ''}`;
-      if (/생명줄|안전대\s*부착/.test(ctx)) return '산업안전보건기준에 관한 규칙 제44조(안전대의 부착설비 등)';
-      if (/고소작업대|시저형|고소작업차/.test(ctx)) return '산업안전보건기준에 관한 규칙 제186조(고소작업대)';
-      if (/보\s*설치|양중.*하부.*진입|인양.*하부/.test(ctx)) return '산업안전보건기준에 관한 규칙 제146조(크레인 작업 시의 조치)';
-      if (/벽이음|벽버팀/.test(ctx)) return '산업안전보건기준에 관한 규칙 제60조(강관비계의 구조)';
-      const localAi = (typeof globalThis !== 'undefined' && globalThis.SafeLocalAI) || (typeof window !== 'undefined' && window.SafeLocalAI) || null;
-      const hit = (localAi && typeof localAi.quickRuleAnalysis === 'function') ? localAi.quickRuleAnalysis(ctx) : null;
-      return (hit && hit.law) || '산업안전보건기준에 관한 규칙 제42조(추락의 방지)';
-    }],
+    // [관련근거] (등록 시점 PDF 원본 및 AI 분류로 확정된 기준/법규 사용)
+    ['관련근거', '산업안전보건법', 24, 'laws', r => String(r.law || r.rawLaw || (r.basis && r.basis.law) || '').trim()],
 
     // [불안전 상황]
     ['불안전 상황', '상태', 18, 'conditions', r => resolveCondition(r)],

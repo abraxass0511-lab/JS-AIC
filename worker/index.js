@@ -674,10 +674,11 @@ function cleanLocationWorker(loc, content = '') {
     .replace(/(\d{2})cm\s*호(?=\s|$|[^가-힣])/gi, '$101호')
     .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
-  // 1075 35 1코어 복원 (동=5, 층=5 오인식 정밀 복원)
+  // 1075 35 1코어 복원 + 106동 1,2,3코어 보존 (임의 단어 절단 mFull 폐지)
+  s = s.replace(/(\d{1,4}\s*동)\s*(\d+,\d+)3(코어)/g, '$1 $2,3$3');
   s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
   s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
-  s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
+  s = s.replace(/(?<![,\d])\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
 
   // 11023, 1023 등 숫자로만 오인식된 건물/동 패턴 자동 치유
   if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
@@ -688,20 +689,7 @@ function cleanLocationWorker(loc, content = '') {
   }
 
   s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
-
-  // L/C 1,2호기 · T/C · 세대 호수(1501호) 등이 포함된 정상 위치는 그대로 보존
-  if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣]))/i.test(s)) {
-    return s.replace(/\s+/g, ' ').trim();
-  }
-
-  // 107동 3층 1코어, 101동 외부 등 온전한 건물/동/층/코어/구간 명칭 보존 (끝부분의 무작위 단어 탐욕 매칭 배제)
-  const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
-  if (mFull && mFull[0] && mFull[0].trim().length >= 2) {
-    const candidate = mFull[0].replace(/\s+/g, ' ').trim();
-    if (!/^[a-zA-Z\s,]+$/.test(candidate)) return candidate;
-  }
-
-  return s;
+  return s.replace(/\s+/g, ' ').trim();
 }
 
 function buildFallbackCleanedFields(rawOcr, fb) {
