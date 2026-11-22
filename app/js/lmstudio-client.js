@@ -641,12 +641,12 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       .replace(/@@GF@@/g, 'G/F')
       .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
-    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용
+    // 3. 1075 35 1코어 등 숫자 오인식 치유 + 동/층/호/코어/기초 띄어쓰기 전수 적용 (임의 단어 절단 mSecond 폐지)
     const normSp = (str) => getNormHelper()?.normalizeKoreanSpacing ? getNormHelper().normalizeKoreanSpacing(str) : str;
+    s = s.replace(/(\d{1,4}\s*동)\s*(\d+,\d+)3(코어)/g, '$1 $2,3$3');
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
     s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
-    s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
-    s = s.replace(/(\d{1,4}동)\s*(\d+,\d+)3(코어)/g, '$1 $2$3');
+    s = s.replace(/(?<![,\d])\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
     s = normSp(s);
 
     if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
@@ -655,16 +655,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     }
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
 
-    if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{2,4}\s*호(?=\s|$|[^가-힣])|\d+,\d+\s*코어|기초\s*사면|기초)/.test(s)) {
-      return normSp(s).replace(/\s+/g, ' ').trim();
-    }
-
-    const mSecond = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|[BPbp]?\d+\s*층|\d+(?:,\d+)*\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V\s*최상부|E\/V|L\/C|T\/C|G\/F|\d+(?:,\d+)*\s*호기|\d{2,4}\s*호|복도|주차장|상가동|주변|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|기초|사면|세대|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장))+/i);
-    if (mSecond && mSecond[0] && mSecond[0].trim().length >= 2) {
-      return normSp(mSecond[0]).replace(/\s+/g, ' ').trim();
-    }
-
-    return normSp(s) || '';
+    return normSp(s).replace(/\s+/g, ' ').trim();
   }
 
   function summarizeContentToBanner(content) {
@@ -673,9 +664,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
     }
     const c = healSafetyKoreanLexicon(String(content || '').replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim());
     if (!c) return '';
-    if (c.includes('지게차') && c.includes('근접')) return '유도원·근로자 지게차 근접 작업';
-    if (c.includes('접지선') && /고정\s*불량/.test(c) && /용량\s*부족/.test(c)) return '접지선 볼트 고정 불량 및 용량 부족';
-    if (c.includes('충전부') && c.includes('노출')) return '분전함 차단기 충전부 노출';
     return c.split('\n')[0].replace(/^(?:[①②③④⑤⑥⑦⑧⑨⑩]|\(?\d{1,2}\)?[.)]|[-•·ㆍ.,:;\s])+/g, '').trim();
   }
 
@@ -848,9 +836,6 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
   function cleanActionPlan(txt) {
     if (!txt) return '';
     const rawStr = healSafetyKoreanLexicon(String(txt));
-    if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-      return `${/^[-•▪]\s*/.test(rawStr.trim()) ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-    }
     let cleanedStr = rawStr
       .replace(/^[-—_]{2,}\s*(?=[가-힣A-Za-z0-9(\[])/gm, '- ')
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
@@ -872,11 +857,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
       const hasExplicitBullet = hasDash || /^\.\s*|^\d+[\).]/s.test(line);
       let cl = line.replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/^\d+[\).]\s*/, '').replace(/^[|\sㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|\sㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
-      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기|작업팀\s*교육)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
-
-      if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return `${hasDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-      }
+      if (/^(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]?\s*징계|해당\s*작업팀\s*대기)$/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       if (items.length === 0 || hasExplicitBullet) {
         items.push({ text: cl, hasDash });
@@ -1647,10 +1628,9 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             const origLawBodyLen = String(rec.lawBody || '').trim().length;
             const candCondenseBody = String(ff.lawBody || aiItem.lawBody || '').trim();
             const isOverCompressedBody = Boolean(
-              recTierState.priorityTier === 'original_valid' &&
-              origLawBodyLen >= 90 &&
+              origLawBodyLen >= 55 &&
               candCondenseBody.length > 0 &&
-              candCondenseBody.length < 52
+              (candCondenseBody.length < 55 || candCondenseBody.length < Math.min(72, origLawBodyLen * 0.65))
             );
             if (recTierState.priorityTier !== 'original_valid') {
               applyFixedField('rawLaw', ff.rawLaw || ff.lawRaw || aiItem.rawLaw, null, null, 2.8);
@@ -1716,23 +1696,24 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
             rec.guidelineApplied = aiItem.guidelineApplied;
           }
           const origBodyLenBefore = String(rec.lawBody || '').trim().length;
+          const hasValidExistingBody = Boolean(origBodyLenBefore >= 20 && !normH?.hasGarbledKoreanNoise?.(rec.lawBody || ''));
           const aiBodyStr = String(aiItem.lawBody || '').trim();
           const aiBodyOverCompressed = Boolean(
-            recTierForLaw.priorityTier === 'original_valid' &&
-            origBodyLenBefore >= 90 &&
+            hasValidExistingBody &&
+            origBodyLenBefore >= 55 &&
             aiBodyStr.length > 0 &&
-            aiBodyStr.length < 52
+            (aiBodyStr.length < 55 || aiBodyStr.length < Math.min(72, origBodyLenBefore * 0.65))
           );
           if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law || !rec.rawLaw || !rec.lawBody || normH?.isLawBodyOverflowing?.(rec.lawBody || '')) {
             if (aiItem.law && !/^(?:산업안전보건(?:기준에\s*관한\s*)?규칙|안전보건규칙)$/.test(String(aiItem.law).trim())) {
-              if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law) {
+              if (recTierForLaw.priorityTier !== 'original_valid' || !rec.law || !rec.rawLaw) {
                 rec.law = aiItem.law;
                 if (!rec.rawLaw || recTierForLaw.priorityTier !== 'original_valid') rec.rawLaw = aiItem.law;
                 if (rec.basis) rec.basis.law = aiItem.law;
               }
             }
-            if (aiBodyStr && !aiBodyOverCompressed && (!rec.lawBody || recTierForLaw.priorityTier !== 'original_valid' || normH?.isLawBodyOverflowing?.(rec.lawBody || ''))) {
-              rec.lawBody = (recTierForLaw.priorityTier === 'original_valid')
+            if (aiBodyStr && !aiBodyOverCompressed && (!hasValidExistingBody || normH?.isLawBodyOverflowing?.(rec.lawBody || ''))) {
+              rec.lawBody = (recTierForLaw.priorityTier === 'original_valid' || hasValidExistingBody)
                 ? aiBodyStr
                 : ((normH && typeof normH.stripGuidelinePrefixes === 'function')
                     ? normH.stripGuidelinePrefixes(aiBodyStr)
@@ -2052,7 +2033,7 @@ ${extraContext.progressRate ? `공정률: ${extraContext.progressRate}%` : ''}
                   const healedBody = norm?.normalizeSafetyLawBody ? norm.normalizeSafetyLawBody(candLawBody) : healSafetyKoreanLexicon(candLawBody.trim());
                   const origBodyLen = String(rec.lawBody || '').trim().length;
                   const wasOverflowing = Boolean(norm?.isLawBodyOverflowing?.(rec.lawBody || ''));
-                  const overCompressed = recLawState.priorityTier === 'original_valid' && origBodyLen >= 90 && healedBody.length < 52;
+                  const overCompressed = origBodyLen >= 55 && (healedBody.length < 55 || healedBody.length < Math.min(72, origBodyLen * 0.65));
                   if (!overCompressed && (!preserveOrigTitle || wasOverflowing || healedBody.length >= origBodyLen * 0.7)) {
                     rec.lawBody = healedBody;
                   }

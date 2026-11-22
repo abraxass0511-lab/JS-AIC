@@ -174,14 +174,40 @@ function bands(len, test, minLen) {
 
 function rowDarkFrac(img, y, x0, x1) {
   const { data, width, height } = img;
-  const yNext = Math.min((height || y + 1) - 1, y + 1);
-  let c = 0;
-  for (let x = x0; x <= x1; x++) {
-    const l0 = lumAt(data, (y * width + x) * 4);
-    const l1 = lumAt(data, (yNext * width + x) * 4);
-    if (Math.min(l0, l1) < 185) c++;
+  const H = height || Math.round(data.length / (width * 4));
+  const totalW = Math.max(1, x1 - x0 + 1);
+  if (totalW < 160) {
+    const yNext = Math.min(H - 1, y + 1);
+    let c = 0;
+    for (let x = x0; x <= x1; x++) {
+      const l0 = lumAt(data, (y * width + x) * 4);
+      const l1 = lumAt(data, (yNext * width + x) * 4);
+      if (Math.min(l0, l1) < 185) c++;
+    }
+    return c / totalW;
   }
-  return c / Math.max(1, x1 - x0 + 1);
+  // 미세 기울어짐(0.1~0.3도, 폭 800px 기준 2~4px 편차)에도 수평 구분선을 놓치지 않도록 4등분 세그먼트별 탐색
+  const K = 4;
+  let totalDark = 0;
+  for (let s = 0; s < K; s++) {
+    const sx0 = x0 + Math.floor((totalW * s) / K);
+    const sx1 = (s === K - 1) ? x1 : (x0 + Math.floor((totalW * (s + 1)) / K) - 1);
+    const maxShift = (s === 1 || s === 2) ? 1 : 2;
+    let bestSegDark = 0;
+    for (let dy = -maxShift; dy <= maxShift; dy++) {
+      const yy0 = Math.max(0, Math.min(H - 1, y + dy));
+      const yy1 = Math.max(0, Math.min(H - 1, yy0 + 1));
+      let c = 0;
+      for (let x = sx0; x <= sx1; x++) {
+        const l0 = lumAt(data, (yy0 * width + x) * 4);
+        const l1 = lumAt(data, (yy1 * width + x) * 4);
+        if (Math.min(l0, l1) < 188) c++;
+      }
+      if (c > bestSegDark) bestSegDark = c;
+    }
+    totalDark += bestSegDark;
+  }
+  return totalDark / totalW;
 }
 
 function colDarkFrac(img, x, y0, y1) {
@@ -424,13 +450,13 @@ export function analyzeSheetLayout(img) {
     locCell: rect(mv2 + 3, mRow.y + 2, mv3 - 3, metaSplit - 2),
     userCell: rect(mv3 + 3, mRow.y + 2, mv4 - 3, metaSplit - 2),
     roundCell: rect(mv4 + 3, mRow.y + 2, x1 - 2, metaSplit - 2),
-    contentRow: rect(metaX0, metaSplit + 2, x1 - pad, Math.max(metaSplit + 10, ly1 - 4)),
+    contentRow: rect(metaX0, metaSplit + 2, x1 - 2, Math.max(metaSplit + 10, ly1 - 4)),
     photoArea: rect(x0 + 8, ly1 + 10, px1 - 8, cmBot - 6),
-    interview: rect(px1 + pad, spanTop + 3, px2 - pad, Math.max(spanTop + 12, interviewBottom - 3)),
-    proposalType: rect(px1 + pad, propTop + 2, propSplit - pad, Math.max(propTop + 10, propBot - 3)),
-    proposalText: rect(propSplit + pad, propTop + 2, px2 - pad, Math.max(propTop + 10, propBot - 3)),
-    countermeasure: rect(px1 + pad, cmTop + 3, cmSplit - pad, Math.max(cmTop + 10, cmBot - 3)),
-    pmCell: rect(cmSplit + pad, cmTop + 3, px2 - pad, Math.max(cmTop + 10, cmBot - 3))
+    interview: rect(px1 + pad, spanTop + 3, px2 - 2, Math.max(spanTop + 12, interviewBottom - 3)),
+    proposalType: rect(px1 + pad, propTop + 2, propSplit - 2, Math.max(propTop + 10, propBot - 3)),
+    proposalText: rect(propSplit + pad, propTop + 2, px2 - 2, Math.max(propTop + 10, propBot - 3)),
+    countermeasure: rect(px1 + pad, cmTop + 3, cmSplit - 2, Math.max(cmTop + 10, cmBot - 3)),
+    pmCell: rect(cmSplit + pad, cmTop + 3, px2 - 2, Math.max(cmTop + 10, cmBot - 3))
   };
 }
 
@@ -1223,8 +1249,41 @@ export function preprocessCellCanvas(rawCanvas, shavePx = 2, padPx = 8, options 
     }
   }
 
-  // 3) [관련 기준] 셀 연파랑 음영 박스(#D9E1F2) 배경 백색화 및 얇은 세리프 텍스트 대비 보강
+  // 3) [관련 기준] 셀 연파랑 음영 박스(#D9E1F2) 배경 백색화, 우측 삽입 사진(예: p20 참고 썸네일) 마스킹 및 얇은 세리프 텍스트 대비 보강
   if (cellKey === 'law') {
+    // 우측 끝(x >= sw * 0.78)에 세로로 긴 고밀도 이미지/썸네일 박스가 삽입된 경우 텍스트 줄 분할 방해 원천 차단
+    const rxStart = Math.floor(sw * 0.78);
+    if (sw - rxStart >= 60 && sh >= 80) {
+      let darkCols = 0;
+      for (let x = rxStart; x < sw; x++) {
+        let colDark = 0;
+        for (let y = Math.floor(sh * 0.12); y < Math.floor(sh * 0.92); y++) {
+          const k = (y * sw + x) * 4;
+          const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+          if (lum < 175) colDark++;
+        }
+        if (colDark > sh * 0.35) darkCols++;
+      }
+      if (darkCols >= (sw - rxStart) * 0.45) {
+        let maskX0 = rxStart;
+        for (let x = rxStart; x < sw; x++) {
+          let colDark = 0;
+          for (let y = Math.floor(sh * 0.12); y < Math.floor(sh * 0.92); y++) {
+            const k = (y * sw + x) * 4;
+            const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+            if (lum < 180) colDark++;
+          }
+          if (colDark > sh * 0.45) { maskX0 = Math.max(rxStart - 12, x - 6); break; }
+        }
+        for (let y = 0; y < sh; y++) {
+          for (let x = maskX0; x < sw; x++) {
+            const k = (y * sw + x) * 4;
+            data[k] = 255; data[k + 1] = 255; data[k + 2] = 255;
+          }
+        }
+      }
+    }
+
     const pxCount = sw * sh;
     for (let i = 0; i < pxCount; i++) {
       const k = i * 4;
@@ -1289,13 +1348,22 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
     // 1px 고립 노이즈(셀 우측/좌측 테두리 점 등)를 제외하고 실제 문자 획 밀집 열만 포함하여 빈 꼬리 트림
     let minX = w;
     let maxX = -1;
+    let gapRun = 0;
     for (let x = xStart; x < xEnd; x++) {
       let winSum = colDark[x];
       if (x > xStart) winSum += colDark[x - 1];
       if (x + 1 < xEnd) winSum += colDark[x + 1];
       if (colDark[x] >= 2 || winSum >= 4) {
+        // 좌측 본문 단어가 끝난 뒤 55px 이상 완전 공백이 이어졌다면 우측 끝의 미세한 이웃 줄 번짐 노이즈는 포함하지 않음
+        if (maxX >= minX + 36 && gapRun >= 55 && colDark[x] <= 3 && winSum <= 7) {
+          gapRun++;
+          continue;
+        }
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
+        gapRun = 0;
+      } else if (maxX >= minX) {
+        gapRun++;
       }
     }
     if (maxX - minX < 5) return null;
@@ -1326,16 +1394,25 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
   }
 
   const rowDensity = new Float32Array(h);
+  const leftEnd = Math.min(xEnd, xStart + Math.min(420, Math.max(120, Math.round(spanW * 0.45))));
+  const leftSpanW = Math.max(1, leftEnd - xStart);
+  const rowLeftDensity = new Float32Array(h);
   for (let y = 0; y < h; y++) {
     let dark = 0;
+    let leftDark = 0;
     for (let x = xStart; x < xEnd; x++) {
       const k = (y * w + x) * 4;
       const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
-      if (lum < 195) dark++;
+      if (lum < 195) {
+        dark++;
+        if (x < leftEnd) leftDark++;
+      }
     }
     const d = dark / spanW;
+    const ld = leftDark / leftSpanW;
     // 가로 표 구분선(밀도 72% 초과)은 0으로 억제
     rowDensity[y] = d > 0.72 ? 0 : d;
+    rowLeftDensity[y] = d > 0.72 ? 0 : ld;
   }
 
   const rawBands = [];
@@ -1372,32 +1449,37 @@ export function splitCanvasIntoLineCanvases(cellCanvas, options = {}) {
 
   const finalSlices = [];
   const minSplitBandH = options.isBanner ? 44 : 33;
-  const minHalfH = options.isBanner ? 16 : 14;
+  const minHalfH = options.isBanner ? 16 : 13;
   const splitBandByValleys = (y0, y1, depth = 0) => {
     const bh = y1 - y0 + 1;
     // 단일 한글 줄(bh < 33px)의 초·중성과 종성(받침) 사이 밀도 골짜기를 줄 경계로 오인 분할하지 않음
-    if (bh >= minSplitBandH && depth < 3) {
-      const scanStart = y0 + Math.max(minHalfH, Math.floor(bh * 0.28));
-      const scanEnd = y1 - Math.max(minHalfH, Math.floor(bh * 0.28));
+    if (bh >= minSplitBandH && depth < 4) {
+      const scanStart = y0 + Math.max(minHalfH, Math.floor(bh * 0.22));
+      const scanEnd = y1 - Math.max(minHalfH, Math.floor(bh * 0.22));
       let bestY = -1;
       let bestRatio = 1.0;
-      const maxRatio = bh >= 95 ? 0.32 : (bh >= 44 ? 0.24 : 0.16);
-      const maxVal = bh >= 95 ? 0.10 : (bh >= 44 ? 0.055 : 0.032);
+      const maxRatio = bh >= 95 ? 0.35 : (bh >= 38 ? 0.28 : 0.18);
+      const maxVal = bh >= 95 ? 0.10 : (bh >= 38 ? 0.065 : 0.035);
       for (let y = scanStart; y <= scanEnd; y++) {
         if ((y - y0) < minHalfH || (y1 - y) < minHalfH) continue;
-        const val = rowDensity[y];
+        // 넓은 셀(관련기준 등 960px 폭)이 미세하게 기울어진 경우 좌측 45% 구간의 줄간 여백(rowLeftDensity)도 함께 참조
+        const val = (!options.isBanner && spanW >= 360)
+          ? Math.min(rowDensity[y], rowLeftDensity[y])
+          : rowDensity[y];
         let peakTop = 0;
         for (let ty = y0; ty < y; ty++) {
-          if (rowDensity[ty] > peakTop) peakTop = rowDensity[ty];
+          const p = (!options.isBanner && spanW >= 360) ? Math.max(rowDensity[ty], rowLeftDensity[ty]) : rowDensity[ty];
+          if (p > peakTop) peakTop = p;
         }
         let peakBot = 0;
         for (let by = y + 1; by <= y1; by++) {
-          if (rowDensity[by] > peakBot) peakBot = rowDensity[by];
+          const p = (!options.isBanner && spanW >= 360) ? Math.max(rowDensity[by], rowLeftDensity[by]) : rowDensity[by];
+          if (p > peakBot) peakBot = p;
         }
         const minPeak = Math.min(peakTop, peakBot);
-        if (minPeak >= 0.035) {
+        if (minPeak >= 0.032) {
           const ratio = val / minPeak;
-          if ((val <= 0.015 || (ratio < maxRatio && val < maxVal)) && ratio < bestRatio) {
+          if ((val <= 0.018 || (ratio < maxRatio && val < maxVal)) && ratio < bestRatio) {
             bestRatio = ratio;
             bestY = y;
           }

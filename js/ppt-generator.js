@@ -232,10 +232,12 @@
       .replace(/@@GF@@/g, 'G/F')
       .replace(/(L\/C|T\/C)\s*(\d)/g, '$1 $2');
 
-    // 1075 35 1코어 복원 (동=5, 층=5 오인식 정밀 복원)
+    // 1075 35 1코어 복원 + 106동 1,2,3코어 보존 (임의 단어 절단 mFull 폐지)
+    s = s.replace(/(\d{1,4}\s*동)\s*(\d+,\d+)3(코어)/g, '$1 $2,3$3');
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[358등]\s+([1-9]|1\d|2\d|3\d)[358측증]\s*(?=\d+\s*코어|코어)/g, '$1동 $2층 ');
     s = s.replace(/(\d{1,4}\s*동)\s*(\d{1,2})\s+(?=\d+\s*코어)/g, '$1 $2층 ');
-    s = s.replace(/\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
+    s = s.replace(/(?<![,\d])\b(\d{1,2})[358측증]\b(?=\s*(?:\d+\s*코어|코어|PIT|피트))/g, '$1층');
+    s = _normSpacing(s);
 
     // 11023, 1023 등 숫자로만 오인식된 건물/동 패턴 자동 치유
     if (/^(?:1?(?:10[1-9]|1[1-9]\d)[385]?|\d{3,5})$/.test(s)) {
@@ -246,18 +248,7 @@
     }
 
     s = s.replace(/\b1?(10[1-9]|1[1-9]\d)[385등]\b(?!\s*동)/g, '$1동');
-    if (/(?:L\/C|T\/C|E\/V|G\/F|\d+\s*호기|\d{3,4}\s*호)/.test(s)) {
-      return s.replace(/\s+/g, ' ').trim();
-    }
-
-    // 107동 3층 1코어, 101동 외부 등 온전한 건물/동/층/코어/구간 명칭 보존
-    const mFull = s.match(/(?:\d{1,4}\s*동|상가동|주차장동|본동|복리시설동)?(?:\s*(?:지[상하]\s*\d+\s*층|\d+\s*층|\d+\s*코어|코어|PIT|피트|옥상|지붕|단부|계단실|EV홀|E\/V|L\/C|T\/C|G\/F|\d+(?:,\d+)*\s*호기|\d{2,4}\s*호|복도|주차장|상가동|후면|전면|측면|외부|내부|동측|서측|남측|북측|외부비계|워킹타워|\d+구간|\w+구간|외벽|내벽|슬래브|바닥|천장|[0-9가-힣]+))+/i);
-    if (mFull && mFull[0] && mFull[0].trim().length >= 2) {
-      const candidate = mFull[0].replace(/\s+/g, ' ').trim();
-      if (!/^[a-zA-Z\s,]+$/.test(candidate)) return candidate;
-    }
-
-    return s;
+    return _normSpacing(s).replace(/\s+/g, ' ').trim();
   }
 
   function cleanSubcontractor(raw) {
@@ -661,10 +652,6 @@
   function cleanActionPlan(raw) {
     if (!raw) return '';
     const rawStr = healSafetyKoreanLexicon(String(raw));
-    const origStartsWithDash = /^\s*[-•*·▪]\s*/.test(rawStr);
-    if (rawStr.includes('보완/개선') && rawStr.includes('Process')) {
-      return `${origStartsWithDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-    }
     const cleanedStr = rawStr
       .replace(/^[-—_]{2,}\s*(?=[가-힣A-Za-z0-9(\[])/gm, '- ')
       .replace(/\[?\s*PM\s*판정\s*결과\s*\]?/gi, '')
@@ -691,11 +678,7 @@
       const hasExplicitBullet = /^[-•*·▪]\s*/.test(line);
       let cl = line.replace(/^[|ㅣ¦_!~—\-*•·.\s&]+/, '').replace(/[|ㅣ¦_!~—\-&]+$/, '').trim();
       if (!cl || cl.length < 2) continue;
-      if (/(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
-
-      if (cl.includes('비계 승인점검 후 보완/개선') || cl.includes('Process 이행')) {
-        return `${hasExplicitBullet || origStartsWithDash ? '- ' : ''}비계 승인점검 후 보완/개선 필요사항 조치완료 후 최종승인 및 Tag 부착 Process 이행`;
-      }
+      if (/^(?:사각후크|그림\s*참조|상하\s*방향|900mm|보강\s*예|시스템\s*개선|교육\s*[\/·]\s*코칭|제재\s*[\/·]\s*징계|&제레)$/i.test(cl) || /[&제테텍레]{3,}/.test(cl)) continue;
 
       const isContinuation = /^(?:재수립\s*후|모니터링\s*강화|전수\s*점검|받침목\s*추가|\(또는\s*버림틀|낙하물\s*방지망\s*추가|이격거리\s*30cm|이격거리\s*표기|설치\s*완료|조치완료\s*후|방안\s*수립)/.test(cl);
       const isDistinctNewItem = hasExplicitBullet || (!isContinuation && (
@@ -783,9 +766,6 @@
 
     // 결과/우려 꼬리 제거 및 복수 항목('1)...2)...') 핵심 위반사항만 추출
     const cAll = stripSecondItem(_normSpacing(healSafetyKoreanLexicon(String(content || s).replace(/^부적합\s*(?:내용|사항)\s*[:;：]?\s*/, '').trim())));
-    if (/접지선/.test(cAll) && /고정\s*불량|용량\s*부족/.test(cAll)) return '접지선 볼트 고정 불량 및 용량 부족';
-    if (/지게차/.test(cAll) && /근접/.test(cAll)) return '유도원·근로자 지게차 근접 작업';
-    if (/충전부/.test(cAll) && /노출/.test(cAll)) return '분전함 차단기 충전부 노출';
 
     s = stripSecondItem(s);
     if (/[2-9]\)|발생\s*시|충돌\s*우려|감전\s*우려|대지로\s*방전/.test(s)) {
@@ -860,98 +840,7 @@
       }
     }
 
-    // 0-A. 지게차 근접 작업 / 접지선 / 충전부 노출 등 핵심 위반사항 우선 정밀 요약
-    if (/접지선/.test(text) && (/고정\s*불량|용량\s*부족/.test(text) || /볼트/.test(text))) {
-      return '접지선 볼트 고정 불량 및 용량 부족';
-    }
-    if (/지게차/.test(text) && /근접/.test(text)) {
-      return '유도원·근로자 지게차 근접 작업';
-    }
-    if (/충전부/.test(text) && /노출/.test(text)) {
-      if (/전등|소켓|조명|심선|단자부/.test(text) && !/분전함|분전반|차단기/.test(text)) {
-        return '전등 소켓 충전부 노출 및 절연 불량';
-      }
-      return '분전함 차단기 충전부 노출';
-    }
-
-    // 0. Gang Form / 갱폼 및 선해체 방지커버
-    if (/Gang\s*Form|선해체|갱폼/i.test(text)) {
-      return 'Gang Form 낙하방지용 선해체방지커버 설치 불량';
-    }
-    // 1. 양중작업 시 손으로 화물 직접 잡음 (이미지 4번 실물 점검장표 100% 일치)
-    if (text.includes('손으로') || text.includes('직접 잡') || (text.includes('유도로프') && (text.includes('손') || text.includes('당기')))) {
-      return '양중작업 시 화물을 직접 손으로 잡음';
-    }
-    // 2. 양중작업 시 수평양중 미실시 (이미지 5번 실물 점검장표 100% 일치)
-    if (text.includes('수평') || text.includes('로프간격') || text.includes('수평양중')) {
-      return '양중작업 시 화물의 수평양중 미실시';
-    }
-    // 3. 양중작업 시 유도로프 미사용 (이미지 4번 2번 사진 배너)
-    if (text.includes('유도로프')) {
-      return '양중작업 시 유도로프 미사용';
-    }
-    // 4. 통로 바닥 가설전선 거치 및 정리 미실시 (이미지 1번 지적사항 정밀 일치)
-    if ((text.includes('전선') || text.includes('케이블') || text.includes('리드선')) &&
-      (text.includes('통로') || text.includes('바닥') || text.includes('정리') || text.includes('걸려') || text.includes('넘어') || text.includes('방치') || text.includes('통행'))) {
-      return '통로 바닥 가설전선 거치 및 정리 미실시';
-    }
-    // 5. 보 상부작업 승인 미실시 및 불안전 자세 (이미지 2번 지적사항 정밀 일치)
-    if (text.includes('보 상부') || text.includes('다이빙') || (text.includes('보') && text.includes('승인') && (text.includes('자세') || text.includes('작업')))) {
-      return '보 상부 승인 미실시 및 불안전 자세 작업';
-    }
-    // 6. 구획된 바닥 안전통로 내 거푸집/자재 방치 (이미지 3번 지적사항 정밀 일치)
-    if ((text.includes('통로') || text.includes('통행')) && (text.includes('자재') || text.includes('거푸집') || text.includes('방치') || text.includes('적치'))) {
-      return '구획된 바닥 안전통로 내 거푸집 자재 방치';
-    }
-    // 7. 말비계 / 우마 (단부 추락, 모서리 등)
-    if (text.includes('말비계') || text.includes('우마')) {
-      if (text.includes('모서리') || text.includes('단부') || text.includes('추락')) {
-        return '말비계 모서리 구간 단부 추락방지 미조치';
-      }
-      return '말비계 안전기준 및 전도방지 미조치';
-    }
-    // 8. 바닥 개구부 덮개 미설치
-    if (text.includes('개구부') || text.includes('덮개') || text.includes('피트')) {
-      return '바닥 개구부 덮개 미설치 및 고정 미흡';
-    }
-    // 9. 안전난간대 미설치
-    if (text.includes('안전난간') || text.includes('난간') || (text.includes('단부') && text.includes('슬래브'))) {
-      return '작업발판 단부 안전난간 미설치';
-    }
-    // 10. 안전대 미체결
-    if (text.includes('안전대') && (text.includes('미체결') || text.includes('미착용') || text.includes('체결') || text.includes('구명줄'))) {
-      return '고소작업 시 안전대 미체결';
-    }
-    // 11. 안전모 턱끈 미체결
-    if (text.includes('안전모') || text.includes('턱끈')) {
-      return '작업구간 내 안전모 턱끈 미체결';
-    }
-    // 12. 작업발판 전면 미설치 및 틈새
-    if (text.includes('작업발판') || text.includes('발판') || text.includes('틈새')) {
-      return '작업발판 전면 미설치 및 틈새 방치';
-    }
-    // 13. 사다리 작업
-    if (text.includes('사다리')) {
-      return '이동식 사다리 최상부 발판 작업';
-    }
-    // 14. 임시 분전함 외함 접지 및 누전차단기
-    if (text.includes('누전') || text.includes('차단기') || text.includes('접지') || text.includes('분전함')) {
-      return '임시 분전함 외함 접지 및 누전차단기 미설치';
-    }
-    // 15. 동바리 / 서포트
-    if (text.includes('동바리') || text.includes('서포트') || text.includes('수평연결재')) {
-      return '동바리 수평연결재 2방향 미체결';
-    }
-    // 16. 신호수 미배치
-    if (text.includes('신호수')) {
-      return '양중 및 중장비 작업 전담 신호수 미배치';
-    }
-    // 17. 작업계획서 미수립
-    if (text.includes('작업계획서') || text.includes('계획 미수립')) {
-      return '위험기계 작업 전 작업계획서 미수립';
-    }
-
-    // 18. 사용자가 입력한 구체적 불안전 행동이 일반 카테고리가 아니면 사용
+    // 사용자가 입력한 구체적 불안전 행동이 일반 카테고리가 아니면 사용
     if (r.action && !isGenericTaxonomyLabel(r.action) && r.action.length <= 25) {
       return r.action.trim();
     }
@@ -1317,29 +1206,6 @@
       lawBody = resolvedSpec.body !== undefined ? resolvedSpec.body : lawBody;
     } else if (!lawTitle && r.law) {
       lawTitle = simplifyLawTitle(r.law, `${text} ${lawBody}`);
-    }
-    // [v63 B4/B8/B11] 구버전 저장 레코드나 원본 제목 모순(예: p63 지게차 제목+생명줄 본문, 고소작업대+제56조 삭제본, 보 설치+제목 누락본)에서도
-    // 관련기준 큰글씨(lawTitle)와 본문(lawBody)이 절대 공란이 되지 않도록 문맥 기반 산안법 조문 자동 복원
-    if (!lawTitle || !lawBody) {
-      const fullLawCtx = `${rawContent} ${r.workGroup || ''} ${lawBody || ''}`;
-      const localAi = (typeof globalThis !== 'undefined' && globalThis.SafeLocalAI) || (typeof window !== 'undefined' && window.SafeLocalAI) || null;
-      const ruleHit = (localAi && typeof localAi.quickRuleAnalysis === 'function') ? localAi.quickRuleAnalysis(fullLawCtx) : null;
-      if (!lawTitle) {
-        if (/생명줄|안전대\s*부착/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제44조(안전대의 부착설비 등)';
-        else if (/고소작업대|시저형|고소작업차/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제186조(고소작업대)';
-        else if (/보\s*설치|양중.*하부.*진입|인양.*하부/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제146조(크레인 작업 시의 조치)';
-        else if (/벽이음|벽버팀/.test(fullLawCtx)) lawTitle = '산업안전보건기준에 관한 규칙 제60조(강관비계의 구조)';
-        else if (ruleHit && ruleHit.law) lawTitle = ruleHit.law;
-      }
-      if (!lawBody) {
-        if (/고소작업대|시저형|고소작업차/.test(fullLawCtx)) {
-          lawBody = '고소작업대 작업 시 작업반경 내 구획을 설정하여 관계자 외 출입을 통제하고 유도자를 배치하여 안전하게 유도하여야 한다.';
-        } else if (/벽이음|벽버팀/.test(fullLawCtx)) {
-          lawBody = '비계의 최상단과 가장자리 끝 및 수직·수평 조립간격 기준에 따라 벽이음 및 버팀을 견고하게 설치하여야 한다.';
-        } else if (ruleHit && ruleHit.analysis) {
-          lawBody = String(ruleHit.analysis).replace(/^관련\s*법규\s*[:：]\s*/, '').trim();
-        }
-      }
     }
     lawTitle = _normSpacing(lawTitle);
 
