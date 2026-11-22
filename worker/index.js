@@ -952,19 +952,20 @@ export default {
    - **원본 배너가 있는 경우(hasOriginalBanner === true 또는 cells.banner에 정상 한국어 배너 문구가 있는 경우)**: 절대 새로 요약·축약하거나 괄호((60도↓), (볼트 노출), (L/C 설치구간) 등)를 지우지 말고 **원본 cells.banner 문구 그대로** photoBanner에 출력하라(단순 띄어쓰기/OCR 오타만 교정)!
    - **원본 장표에 적색 배너 박스가 아예 없거나(cells.banner 공란) 자모가 깨진 경우에만**: cells.content의 첫 번째 핵심 위반 항목을 **반드시 끝에 위반 상태/행동 서술어('통제 미흡', '출입통제 미실시', '미설치', '미복구', '불량', '누락', '위반' 등)가 포함된 완결 한국어 명사구(10~32자)**로 작성하라!
    - **절대 금지**: 위반 서술어가 빠진 채 명사만 남은 불완전 문구(예: '이동식크레인 설치시 아우트리거 주변', '믹서트럭 이동 지게차 자재운반'), 선두 마침표 '. ', '1. ', '2) ...', 미완성 어미('~상태로', '~않는')!
-3. **[관련 기준] 3단계 우선순위 + 제목(law)·본문(lawBody) 둘 다 100% 필수 기입(공란·칸초과·오조문 혼합 절대 금지!)**:
-   - **[1순위 — 원본 유효 기준 보존 + 칸 초과 시 AI 요약]**: 입력 lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 도메인 모순·깨짐 없이 존재하면 원본 지침을 보존하라. 단, 원본 lawBody가 11pt 3줄 박스(약 90자)를 초과(needsCondenseLawBody === true)하면 핵심 수치·의무는 그대로 유지하면서 2~3줄(90자 이내)의 완결 문장으로 자연 축약하여 칸을 넘지 않게 하라!
-   - **[2순위 — 학습된 안전작업지침 AI 적합성 검증 후 적용]**: 입력에 learnedGuidelines 후보 배열이 제공된 경우, 반드시 **부적합 내용(cells.content)·작업상황과 100% 적합한지, 또한 학습 지침 본문에 OCR 오타/이상 문구가 없는지 직접 검토**하라. 완벽히 적합하고 정상 문장일 때만 채택("guidelineApplied": true)하며 본문 앞의 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 문장(90자 이내)으로 정리하라. 조금이라도 맞지 않거나 이상하면 기각("guidelineApplied": false)하고 3순위로 직접 판단하라.
-   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law(제목)와 lawBody(본문) 둘 다 절대 공란 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/lawBody 중 하나라도 공란, 또는 도메인 모순(예: 벽이음에 제56조 작업발판 오적용, 고소작업대에 제56조 오적용, 거푸집 양중 유도로프에 제332조 오적용) 시 아래 대한민국 산업안전보건기준에 관한 규칙 기준에 따라 실제 위반 내용과 100% 일치하는 **조문 제목(law, rawLaw)**과 **핵심 법적 의무 기준 1~2문장(lawBody, 90자 이내, '~하여야 한다.' 문체, 과거형 위반서술 '~않았다' 금지!)**을 **반드시 둘 다** 작성하라!
-     * **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침으로 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 같은 불필요한 기호나 번호를 절대 붙이지 말고 순수 완결 평서문('~하여야 한다.')으로 한 줄씩(총 90자 이내)만 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호 유지하되 3줄 초과 시에만 90자 이내로 간결 요약!)
+3. **[관련 기준] 3단계 우선순위 + 제목(law)·본문(lawBody) 둘 다 100% 필수 기입(공란·칸초과·과도축약·오조문 혼합 절대 금지!)**:
+   - **[1순위 — 원본 유효 기준 보존 + 칸 초과 시 최소한만 축약]**: 입력 lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 도메인 모순·깨짐 없이 존재하면 원본 지침을 최대한 그대로 보존하라. 단, 원본 lawBody가 11pt 3줄 박스(약 102자)를 초과(needsCondenseLawBody === true)할 때만, **원본 PDF의 핵심 단어·수치·설치/방호 조건을 그대로 유지한 채** 불필요한 괄호 법률 정의('(이하 이 조에서 "난간등"이라 한다)' 등)나 중복 수식어만 최소한으로 덜어내어 **공백 포함 75~102자(2.5~3줄 꽉 차게)**의 완결 문장으로 정리하라! **절대 20~50자짜리 1줄 짧은 문장으로 과도 요약 금지!**
+   - **[2순위 — 학습된 안전작업지침 AI 적합성 검증 후 적용]**: 입력에 learnedGuidelines 후보 배열이 제공된 경우, 반드시 **부적합 내용(cells.content)·작업상황과 100% 적합한지, 또한 학습 지침 본문에 OCR 오타/이상 문구가 없는지 직접 검토**하라. 완벽히 적합하고 정상 문장일 때만 채택("guidelineApplied": true)하며 본문 앞의 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 문장(70~100자)으로 정리하라. 조금이라도 맞지 않거나 이상하면 기각("guidelineApplied": false)하고 3순위로 직접 판단하라.
+   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law(제목)와 lawBody(본문) 둘 다 절대 공란 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/lawBody 중 하나라도 공란, 또는 도메인 모순(예: 벽이음에 제56조 작업발판 오적용, 고소작업대에 제56조 오적용, 거푸집 양중 유도로프에 제332조 오적용) 시 아래 대한민국 산업안전보건기준에 관한 규칙 기준에 따라 실제 위반 내용과 100% 일치하는 **조문 제목(law, rawLaw)**과 **핵심 법적 의무 기준 1~2문장(lawBody, 65~100자, '~하여야 한다.' 문체, 과거형 위반서술 '~않았다' 금지!)**을 **반드시 둘 다** 작성하라!
+     * **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침으로 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 같은 불필요한 기호나 번호를 절대 붙이지 말고 순수 완결 평서문('~하여야 한다.')으로 한 줄씩(총 100자 이내)만 작성하라! (원본 PDF에 이미 있던 1순위 원문은 원본 기호와 문구를 최대한 유지하되 3줄 초과 시에만 75~102자로 최소 축약!)
 ${KOREAN_OSH_LAW_GUIDE}
-4. **[한국어 OCR 띄어쓰기·오탈자 전수 교정 — edits 필수 작성!]**:
-   - 입력 cells의 **content, location, interview, proposalText, countermeasure**를 한 글자씩 검수하여 **띄어쓰기 누락·붙여쓰기 오류·OCR 오타**가 하나라도 있으면 반드시 교정된 전체 문장을 \`edits\` 객체에 담아 반환하라! (원문의 의미·내용을 임의 축약/삭제하지 말고 띄어쓰기와 명백한 OCR 오타만 교정!)
+4. **[한국어 OCR 띄어쓰기·오탈자 전수 교정 — needsSpacingFields 필수 기입!]**:
+   - 입력 항목에 \`needsSpacingFields\` 배열(예: \`["interview", "proposalText", "content"]\`)이 포함되어 있으면, **그 배열에 지정된 모든 필드는 반드시 한국어 띄어쓰기와 OCR 오타를 100% 완벽히 교정하여 \`edits\` 객체에 전문을 반환하라(절대 생략 금지!)**.
+   - 그 외 필드(content, location, interview, proposalText, countermeasure)에도 띄어쓰기 누락이나 명백한 OCR 오타가 있으면 반드시 \`edits\`에 전문을 담아 반환하라! (원문의 의미·항목·숫자는 절대 축약/삭제하지 말고 오직 띄어쓰기와 명백한 OCR 오타만 교정!)
    - 주요 교정 예시:
-     * content/banner: "적재물결속2개소미실시" → "적재물 결속 2개소 미실시", "비계워킹타워하부밑둥잡이일부 누락" → "비계 워킹타워 하부 밑둥잡이 일부 누락", "해체후미복구" → "해체 후 미복구", "미 설치" → "미설치", "내측난간대미설치" → "내측 난간대 미설치", "중계단참" → "중 계단참"
-     * location: "101동 외무" → "101동 외부", "102동 수면" → "102동 후면", "104동 /C1,2호기" → "104동 L/C 1,2호기", "104동 15cm 호" → "104동 1501호"
-     * proposalText: "- 관리자점검관리강화" → "- 관리자 점검 및 관리 강화", "- 형식적인 점검이되지않도록점검결과 SNS내등록 시스템구축" → "- 형식적인 점검이 되지 않도록 점검결과 SNS내 등록 시스템 구축"
-     * interview: 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 100% 보존하되 붙여써진 띄어쓰기("해당구간담당자연차로인한" → "해당 구간 담당자 연차로 인한")만 교정!
+     * content/banner: "적재물결속2개소미실시" → "적재물 결속 2개소 미실시", "작업전선 바닥방치 및 다중사용" → "작업전선 바닥 방치 및 다중 사용", "비계워킹타워하부밑둥잡이일부 누락" → "비계 워킹타워 하부 밑둥잡이 일부 누락", "해체후미복구" → "해체 후 미복구", "미 설치" → "미설치"
+     * location: "105동1901호" → "105동 1901호", "107동3층1코어" → "107동 3층 1코어", "101동 외무" → "101동 외부", "102동 수면" → "102동 후면", "104동 /C1,2호기" → "104동 L/C 1,2호기"
+     * interview: 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 100% 보존하되 붙여써진 띄어쓰기("간섭되어일부해체하였고", "용역 근로자를채용하여 자재운반작업에투입하였으나 업무진행이미숙하여작업지도를위해근접하게되었음")를 완벽히 띄어쓰기 교정!
+     * proposalText/countermeasure: "- 관리자점검관리강화" → "- 관리자 점검 및 관리 강화", "- 형식적인 점검이되지않도록점검결과 SNS내등록 시스템구축" → "- 형식적인 점검이 되지 않도록 점검결과 SNS내 등록 시스템 구축"
 5. 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
 6. cells.pmVerdict가 빈칸이면 절대 임의로 채우지 말 것.
 
@@ -1067,7 +1068,14 @@ ${TAXONOMY_STANDARD_PROMPT}
                   out.law = '';
                 }
                 if (typeof out.lawBody === 'string' && out.lawBody.trim()) {
-                  out.lawBody = normalizeWorkerLawBody(out.lawBody, isOriginalValid && !srcItem.needsCondenseLawBody);
+                  const normOutBody = normalizeWorkerLawBody(out.lawBody, isOriginalValid);
+                  // [v63 B9 과도 축약 원천 차단] 원본 PDF 본문이 90자 이상인데 AI가 52자 미만(1줄)으로 과도 축약한 경우 채택 거부!
+                  const origBodyLen = String(srcCells.lawBody || '').trim().length;
+                  if (isOriginalValid && origBodyLen >= 90 && normOutBody.length < 52) {
+                    out.lawBody = '';
+                  } else {
+                    out.lawBody = normOutBody;
+                  }
                 }
                 const rawEdits = (out.edits && typeof out.edits === 'object')
                   ? out.edits
@@ -1245,14 +1253,14 @@ ${TAXONOMY_STANDARD_PROMPT}
 1. [사진 요약(photoBanner) 검증 — 원본 배너 보존 + 위반 서술어 필수]:
    - 입력 hasOriginalBanner === true 이면 원본 photoBanner 문구를 절대 축약·요약하지 말고 그대로 유지하라(오직 단순 띄어쓰기/오타만 교정)!
    - 원본 배너가 없거나(hasOriginalBanner === false) 자모 깨짐/선두 마침표('. ')/공란/위반 서술어 누락(예: '이동식크레인 설치시 아우트리거 주변', '믹서트럭 이동 지게차 자재운반'처럼 끝의 '통제 미흡'/'미설치'가 잘린 문구)이면 반드시 content의 핵심 위반 내용에 위반 서술어('통제 미흡', '출입통제 미실시', '미설치', '불량', '누락' 등)가 포함된 완결 한국어 명사구(10~32자)로 교정하라!
-2. [관련 기준(law, rawLaw, lawBody) — 3단계 우선순위 + 제목·본문 둘 다 100% 필수 + 칸 초과 시 90자 이내 축약!]:
-   - **[1순위 — 원본 유효 기준 보존 + 칸 초과 시 AI 요약]**: lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 깨짐·도메인 모순 없이 존재하면 원본 지침을 보존하라. 단, 원본 lawBody가 11pt 3줄 칸(약 90자)을 초과(needsCondenseLawBody === true)하면 핵심 수치·의무 기준을 유지한 채 2~3줄(90자 이내)의 완결 평서문으로 자연 축약하라!
-   - **[2순위 — 학습된 안전작업지침 적합성 검증]**: 입력에 learnedGuideline이 제공된 경우 부적합 내용과 100% 적합하고 오타/이상 문구가 없을 때만 채택하며, 본문 앞 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 평서문(90자 이내)으로 정리하라. 조금이라도 맞지 않으면 기각하고 3순위로 직접 판단하라.
-   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law(제목)·lawBody(본문) 둘 다 절대 공란 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/law/lawBody 중 하나라도 공란, 또는 도메인 모순(벽이음에 제56조 작업발판 오적용, 고소작업대에 제56조 오적용, 과거형 위반 서술 '~않았다')이면 반드시 아래 대한민국 산업안전보건기준에 관한 규칙 기준으로 정확한 조문 제목(law, rawLaw)과 핵심 법적 의무 기준 1~2문장(lawBody, 90자 이내, '~하여야 한다.' 문체)을 작성하라!
-   - **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침을 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 등 기호/번호를 절대 붙이지 말고 순수 완결 평서문('~하여야 한다.')으로 한 줄씩(총 90자 이내) 작성하라!
+2. [관련 기준(law, rawLaw, lawBody) — 3단계 우선순위 + 제목·본문 둘 다 100% 필수 + 칸 초과 시 최소한만 정리!]:
+   - **[1순위 — 원본 유효 기준 보존 + 칸 초과 시 최소한만 덜어내기]**: lawPriorityTier === 'original_valid'이고 올바른 지침/법규명(rawLaw)·본문(lawBody)이 깨짐·도메인 모순 없이 존재하면 원본 지침을 최대한 그대로 보존하라. 단, 원본 lawBody가 11pt 3줄 칸(약 102자)을 초과(needsCondenseLawBody === true)할 때만, **원본 PDF의 핵심 단어·수치·방호조건을 그대로 유지한 채** 괄호 법률 정의나 불필요 수식어만 최소한으로 덜어내어 **공백 포함 75~102자(2.5~3줄)**의 완결 문장으로 정리하라! **절대 20~50자짜리 1줄 짧은 문장으로 과도 축약 금지!**
+   - **[2순위 — 학습된 안전작업지침 적합성 검증]**: 입력에 learnedGuideline이 제공된 경우 부적합 내용과 100% 적합하고 오타/이상 문구가 없을 때만 채택하며, 본문 앞 '-', '1)', '9)' 등 불필요한 기호/번호는 제거해 순수 평서문(70~100자)으로 정리하라. 조금이라도 맞지 않으면 기각하고 3순위로 직접 판단하라.
+   - **[3순위 — 공란/깨짐/모순 시 AI 산안법 직접 판단 — law(제목)·lawBody(본문) 둘 다 절대 공란 금지!]**: needsAiLaw === true, hasGarbledLaw === true, rawLaw/law/lawBody 중 하나라도 공란, 또는 도메인 모순(벽이음에 제56조 작업발판 오적용, 고소작업대에 제56조 오적용, 과거형 위반 서술 '~않았다')이면 반드시 아래 대한민국 산업안전보건기준에 관한 규칙 기준으로 정확한 조문 제목(law, rawLaw)과 핵심 법적 의무 기준 1~2문장(lawBody, 65~100자, '~하여야 한다.' 문체)을 작성하라!
+   - **중요 서식 규칙**: AI가 새로 작성하거나 학습 지침을 채우는 lawBody에는 앞에 '-', '•', '1)', '2)' 등 기호/번호를 절대 붙이지 말고 순수 완결 평서문('~하여야 한다.')으로 한 줄씩(총 100자 이내) 작성하라!
 ${KOREAN_OSH_LAW_GUIDE}
-3. [한국어 띄어쓰기·OCR 오탈자 전수 교정 — corrections 필수 기입]:
-   - content, location, interviewOpinion, auditProposal, actionPlan, photoBanner를 검수하여 띄어쓰기 누락('적재물결속2개소미실시'→'적재물 결속 2개소 미실시', '비계워킹타워하부밑둥잡이일부 누락', '해체후미복구', '미 설치', '내측난간대미설치', '- 관리자점검관리강화')이나 OCR 오타('101동 외무'→'101동 외부', '102동 수면'→'102동 후면', '104동 /C1,2호기'→'104동 L/C 1,2호기')가 있으면 반드시 교정된 전문을 corrections 객체에 담아 반환하라!
+3. [한국어 띄어쓰기·OCR 오탈자 전수 교정 — needsSpacingFields 및 corrections 필수 기입]:
+   - 입력 항목에 needsSpacingFields가 있으면 그 모든 필드를 반드시 교정하고, content, location, interviewOpinion, auditProposal, actionPlan, photoBanner에 띄어쓰기 누락이나 OCR 오타가 있으면 반드시 교정된 전문을 corrections 객체에 담아 반환하라! (원문 의미 축약 금지, 띄어쓰기·오타만 교정)
 4. [복수 인터뷰 의견 100% 보존 및 점검차수 한자('上'/'下') 유지]:
    - interviewOpinion에 복수 의견이 있으면 모든 '[역할 의견 : 작성자]' 헤더와 항목 전체를 유지하고, 점검차수 한자('上'/'下')는 절대 한글로 바꾸지 말 것.
 5. [표준 분류 검증]: ${TAXONOMY_STANDARD_PROMPT} 기준에 어긋나는 locationCategory/workGroupMid/workGroup/workMethod/agentMajor/agentMid/agentMinor는 정확히 교정.
@@ -1447,19 +1455,19 @@ ${KOREAN_OSH_LAW_GUIDE}
               headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
             });
           }
-          const condensePrompt = `너는 대한민국 건설안전 법령·안전작업지침 문장 축약 전문가 AI이다.
-입력된 각 항목의 관련기준 본문(lawBody)이 점검장표 PPT의 11pt 3줄 칸(가로 5.42in × 세로 0.64in, 최대 약 88자)을 넘어가고 있다.
-아래 규칙에 따라 각 항목의 lawBody를 핵심 수치·안전 의무 기준은 100% 살리면서 칸을 넘지 않는 간결한 문장으로 축약하라:
-1. 전체 길이는 공백 포함 **88자 이내**(최대 2~3줄)로 작성할 것.
-2. 반드시 자연스럽고 완결된 한국어 평서문('~하여야 한다.', '~한다.')으로 끝낼 것 (단어 중간 절단, 말줄임표 '...' 금지).
-3. 순수 한국어만 사용 (한자·중국어 혼입 절대 금지).
-4. 입력에 절 번호('7.7.1 ...')가 첫 줄에 있더라도 공간이 부족하면 절 번호를 생략하고 핵심 수칙 본문만 간결하게 담아라.
+          const condensePrompt = `너는 대한민국 건설안전 법령·안전작업지침 문장 정리 전문가 AI이다.
+입력된 각 항목의 관련기준 본문(lawBody)이 점검장표 PPT의 11pt 3줄 칸(가로 5.42in × 세로 0.64in, 최대 약 102자)을 살짝 넘어가고 있다.
+아래 규칙에 따라 **원본 PDF 문장의 핵심 내용·단어·수치를 최대한 그대로 보존하면서** 칸을 넘는 부분만 최소한으로 덜어내라:
+1. 전체 길이는 공백 포함 **75~102자(2.5~3줄 꽉 차게)**로 작성할 것! **절대 20~55자짜리 1줄 짧은 문장으로 과도하게 축약하지 말 것!**
+2. 원본에 있는 '(이하 이 조에서 "난간등"이라 한다)' 같은 법률 괄호 정의나 중복 표현만 우선 덜어내고, 핵심 안전 기준(강도·설치기준·뒤집힘/떨어짐 방지·수치 등)과 원본 문체는 최대한 그대로 유지하라.
+3. 반드시 자연스럽고 완결된 한국어 평서문('~하여야 한다.', '~한다.')으로 끝낼 것 (단어 중간 절단, 말줄임표 '...' 금지).
+4. 순수 한국어만 사용 (한자·중국어 혼입 절대 금지).
 5. 만약 입력 lawTitle이 비어 있거나 모순이면 lawTitle도 함께 보완하라.
 
 반드시 아래 JSON 형식으로만 응답하라 (설명 금지):
 {
   "results": [
-    { "id": "원본 id", "lawTitle": "제목(변경 필요시만)", "lawBody": "88자 이내로 간결 요약된 완결 한국어 본문" }
+    { "id": "원본 id", "lawTitle": "제목(변경 필요시만)", "lawBody": "원본 문장을 최대한 살려 75~102자(3줄 이내)로 최소 정리한 완결 한국어 본문" }
   ]
 }`;
           try {
@@ -1468,11 +1476,17 @@ ${KOREAN_OSH_LAW_GUIDE}
               { role: 'user', content: JSON.stringify(items) }
             ], { maxTokens: 1600, temperature: 0.05, requireJson: true });
             if (llmRes.ok && Array.isArray(llmRes.parsed?.results)) {
-              const cleaned = llmRes.parsed.results.map(r => ({
-                id: r.id,
-                lawTitle: typeof r.lawTitle === 'string' ? r.lawTitle.replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : '')).trim() : '',
-                lawBody: typeof r.lawBody === 'string' ? r.lawBody.replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : '')).trim() : ''
-              }));
+              const cleaned = llmRes.parsed.results.map(r => {
+                const srcIt = items.find(x => String(x.id) === String(r.id));
+                const origLen = String(srcIt?.lawBody || '').trim().length;
+                let lb = typeof r.lawBody === 'string' ? r.lawBody.replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : '')).trim() : '';
+                if (origLen >= 90 && lb.length < 52) lb = '';
+                return {
+                  id: r.id,
+                  lawTitle: typeof r.lawTitle === 'string' ? r.lawTitle.replace(/[\u4E00-\u9FFF]+/g, m => (/^[上下中]$/.test(m) ? m : '')).trim() : '',
+                  lawBody: lb
+                };
+              });
               return new Response(JSON.stringify({ ok: true, model: llmRes.modelLabel, results: cleaned }), {
                 status: 200,
                 headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }

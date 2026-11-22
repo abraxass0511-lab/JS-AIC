@@ -551,14 +551,113 @@ export function findRedBanners(img, area) {
 }
 
 /**
+ * [v63] 사진 영역 우측 상단의 '[ ] Hold Point 위반 (N/A)' 테두리 박스 정밀 탐지
+ * - 상단 적색 배너 우측(x >= 74% of photoArea)에서 순백·무채색 내부와 뚜렷한 하단 검은 가로 테두리선을 찾아
+ *   박스 전체 영역({ x, y, w, h, botY })을 반환 (경부적합 등 Hold Point 박스가 없는 장표는 null 반환)
+ */
+export function findHoldPointBox(img, area) {
+  if (!img || !area || area.w < 100 || area.h < 100) return null;
+  const { data, width: W, height: H } = img;
+  const xProbe0 = area.x + Math.round(area.w * 0.74);
+  const xProbe1 = area.x + Math.round(area.w * 0.985);
+  if (xProbe1 <= xProbe0 + 10) return null;
+  const yMin = area.y + Math.round(area.h * 0.03);
+  const yMax = Math.min(H - 1, area.y + Math.round(area.h * 0.165));
+
+  const rowDarkRatio = (gy, x0, x1) => {
+    let dark = 0, tot = 0;
+    for (let x = x0; x <= x1; x++) {
+      tot++;
+      const k = (gy * W + x) * 4;
+      const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+      if (lum < 165) dark++;
+    }
+    return dark / Math.max(1, tot);
+  };
+
+  let botY = -1;
+  for (let gy = yMin; gy <= yMax; gy++) {
+    const d = rowDarkRatio(gy, xProbe0, xProbe1);
+    if (d >= 0.48) {
+      let wh = 0, sat = 0, tot = 0;
+      const iy0 = Math.max(area.y, gy - Math.round(area.h * 0.075));
+      const iy1 = Math.max(iy0 + 4, gy - 4);
+      for (let iy = iy0; iy <= iy1; iy += 2) {
+        for (let ix = xProbe0; ix <= xProbe1; ix += 2) {
+          tot++;
+          const k = (iy * W + ix) * 4;
+          const r = data[k], g = data[k + 1], b = data[k + 2];
+          const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+          if (r > 215 && g > 215 && b > 215) wh++;
+          if ((mx - mn) > 35) sat++;
+        }
+      }
+      if (tot > 0 && (wh / tot) >= 0.50 && (sat / tot) <= 0.07) {
+        if (gy > botY) botY = gy;
+      }
+    }
+  }
+  if (botY < 0) return null;
+
+  let leftX = xProbe0;
+  let miss = 0;
+  const xLeftLimit = area.x + Math.round(area.w * 0.44);
+  for (let x = xProbe0; x >= xLeftLimit; x--) {
+    let hit = false;
+    for (let dy = -2; dy <= 2; dy++) {
+      const gy = botY + dy;
+      if (gy < 0 || gy >= H) continue;
+      const k = (gy * W + x) * 4;
+      const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+      if (lum < 175) { hit = true; break; }
+    }
+    if (hit) {
+      leftX = x;
+      miss = 0;
+    } else {
+      miss++;
+      if (miss >= 6) break;
+    }
+  }
+
+  let rightX = xProbe1;
+  for (let x = xProbe1; x < area.x + area.w; x++) {
+    let hit = false;
+    for (let dy = -2; dy <= 2; dy++) {
+      const gy = botY + dy;
+      if (gy < 0 || gy >= H) continue;
+      const k = (gy * W + x) * 4;
+      const lum = 0.299 * data[k] + 0.587 * data[k + 1] + 0.114 * data[k + 2];
+      if (lum < 175) { hit = true; break; }
+    }
+    if (hit) rightX = x;
+  }
+
+  const x0 = Math.max(area.x, leftX - 4);
+  const x1 = Math.min(area.x + area.w, rightX + 4);
+  return {
+    x: x0,
+    y: area.y,
+    w: Math.max(10, x1 - x0),
+    h: Math.max(10, (botY + 4) - area.y),
+    botY
+  };
+}
+
+/**
  * 사진 영역에서 실제 현장 사진 박스 추출 (XY-cut, 순백 간격 기준 분할)
- * - 적색 배너는 마스킹하여 사진에서 제외
+ * - 적색 배너 및 우측 상단 Hold Point 박스는 마스킹하여 사진에서 100% 제외
  * - 흰 바탕 + 글씨 위주의 기준/참고 문서 캡처는 isReference=true 로 표시
  */
-export function findPhotoBoxes(img, area, banners = []) {
+export function findPhotoBoxes(img, area, banners = [], holdPointBox = undefined) {
   const { data, width: W } = img;
+  const sf = Math.max(1, W / 1440);
   const padB = Math.max(5, Math.round(area.h * 0.012));
+  const hpBox = holdPointBox === undefined ? findHoldPointBox(img, area) : holdPointBox;
+  const hpPad = Math.max(4, Math.round(4 * sf));
   const inBanner = (x, y) => banners.some(b => x >= b.x - padB && x <= b.x + b.w + padB && y >= b.y - padB && y <= b.y + b.h + padB);
+  const inHoldPoint = (x, y) => Boolean(hpBox && x >= hpBox.x - hpPad && x <= hpBox.x + hpBox.w + hpPad && y >= hpBox.y - 2 && y <= hpBox.botY + hpPad);
+  const inHeader = (x, y) => inBanner(x, y) || inHoldPoint(x, y);
   const mw = area.w, mh = area.h;
   const minSide = Math.round(Math.min(mw, mh) * 0.14);
 
@@ -566,14 +665,13 @@ export function findPhotoBoxes(img, area, banners = []) {
     let c = 0;
     for (let y = 0; y < mh; y++) {
       const gx = area.x + x, gy = area.y + y;
-      if (!inBanner(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
+      if (!inHeader(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
     }
     return c;
   };
   const colEmpty = x => colCount(x) <= Math.max(2, mh * 0.01);
 
   // 1) X축 기준 1차 컬럼 분리 (해상도 스케일 팩터 sf 반영)
-  const sf = Math.max(1, W / 1440);
   const minGapPx = Math.max(2, Math.round(2 * sf));
   const xSegs = [];
   let s = 0, gap = 0;
@@ -605,7 +703,7 @@ export function findPhotoBoxes(img, area, banners = []) {
         const ix = area.x + rx;
         let whiteCnt = 0, totalCnt = 0;
         for (let iy = yProbeStart; iy < yProbeEnd; iy++) {
-          if (inBanner(ix, iy)) continue;
+          if (inHeader(ix, iy)) continue;
           const k = (iy * W + ix) * 4;
           totalCnt++;
           if (data[k] > 218 && data[k + 1] > 218 && data[k + 2] > 218) whiteCnt++;
@@ -642,7 +740,7 @@ export function findPhotoBoxes(img, area, banners = []) {
         const ix = area.x + rx;
         let nonWhite = 0, tot = 0;
         for (let iy = hpTop0; iy < hpTop1; iy += 2) {
-          if (inBanner(ix, iy)) continue;
+          if (inHeader(ix, iy)) continue;
           tot++;
           const k = (iy * W + ix) * 4;
           const rv = data[k], gv = data[k + 1], bv = data[k + 2];
@@ -738,7 +836,7 @@ export function findPhotoBoxes(img, area, banners = []) {
       let c = 0;
       for (let x = xa; x <= xb; x++) {
         const gx = area.x + x, gy = area.y + y;
-        if (!inBanner(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
+        if (!inHeader(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
       }
       return c;
     };
@@ -753,17 +851,28 @@ export function findPhotoBoxes(img, area, banners = []) {
     r = trimRedBannerFromBox(data, W, r, banners);
     if (r.w < minSide || r.h < minSide) continue;
 
-    // 상/하단 공백 재정밀 트림 (적색 배너 제거 후 남은 여백 정리)
+    // 상/하단 공백 재정밀 트림 (적색 배너 및 Hold Point 박스 제거 후 남은 여백 정리)
     let ty0 = r.y, ty1 = r.y + r.h - 1;
     const isRowBlank = gy => {
       let c = 0;
       for (let gx = r.x; gx < r.x + r.w; gx++) {
-        if (!inBanner(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
+        if (!inHeader(gx, gy) && isNonWhite(data, (gy * W + gx) * 4)) c++;
       }
       return c <= Math.max(2, r.w * 0.01);
     };
     while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
     while (ty1 > ty0 && isRowBlank(ty1)) ty1--;
+
+    // [v63] 탐지된 Hold Point 박스(hpBox)와 가로로 겹치는 모든 사진 박스는 hpBox 하단 테두리 아래로 100% 강제 절단!
+    // (기존 공백 기반 추정 실패로 Hold Point 박스 텍스트·하단 검은 선이 사진 상단에 혼입되는 현상 원천 차단)
+    if (hpBox) {
+      const hpOvX = Math.max(0, Math.min(r.x + r.w, hpBox.x + hpBox.w) - Math.max(r.x, hpBox.x));
+      const hpCutY = hpBox.botY + hpPad + 1;
+      if (hpOvX >= Math.min(r.w, hpBox.w) * 0.12 && ty0 < hpCutY && hpCutY < ty1 - minSide) {
+        ty0 = hpCutY;
+        while (ty0 < ty1 && isRowBlank(ty0)) ty0++;
+      }
+    }
 
     // 우측 상단 '[ ] Hold Point 위반 (N/A)' 분리형 소형 박스 및 상단 배너 잔영 완전 제거:
     // [v62] 기존 첫 3px 공백에서 즉시 break하던 버그(Hold Point 박스 내부 상단 여백에서 멈춰 텍스트·하단 테두리가 사진에 포함됨) 해결!
