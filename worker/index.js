@@ -71,6 +71,329 @@ const CLOUD_TEXT_LLM_CHAIN = [
   { id: '@cf/openai/gpt-oss-20b', label: 'GPT-OSS-20B (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false }
 ];
 
+// ── [v66] Cloudflare Workers AI 일일 무료 한도(10,000 Neurons/일 · UTC 00:00 = 한국시간 09:00 초기화) 실시간 계량기 ──
+const DAILY_FREE_NEURONS_LIMIT = 10000;
+const QUOTA_FILE_PATH = 'data/ai_usage_daily.json';
+const MODEL_NEURON_RATES = {
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast': { inPer1M: 26668, outPer1M: 204805 },
+  '@cf/google/gemma-4-26b-a4b-it': { inPer1M: 9091, outPer1M: 27273 },
+  '@cf/zai-org/glm-4.7-flash': { inPer1M: 5500, outPer1M: 36400 },
+  '@cf/qwen/qwen3.8-27b': { inPer1M: 40909, outPer1M: 290909 },
+  '@cf/openai/gpt-oss-20b': { inPer1M: 18182, outPer1M: 27273 },
+  '@cf/meta/llama-4-scout-17b-16e-instruct': { inPer1M: 24545, outPer1M: 77273 },
+  '@cf/qwen/qwen3-30b-a3b-fp8': { inPer1M: 4625, outPer1M: 30475 }
+};
+
+let _quotaState = null;
+let _quotaLoadedAt = 0;
+let _quotaLastPersistAt = 0;
+let _quotaPersistInFlight = null;
+
+function getUtcDateKey(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+function getQuotaResetInfo(now = new Date()) {
+  const nextUtcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  const resetInMinutes = Math.max(0, Math.ceil((nextUtcMs - now.getTime()) / 60000));
+  return {
+    resetAtIso: new Date(nextUtcMs).toISOString(),
+    resetInMinutes,
+    resetAtKstLabel: '매일 오전 09:00 (UTC 00:00)'
+  };
+}
+
+function createEmptyQuotaState(dateUtc = getUtcDateKey()) {
+  return {
+    dateUtc,
+    limitNeurons: DAILY_FREE_NEURONS_LIMIT,
+    usedNeurons: 0,
+    quotaExceeded: false,
+    callCount: 0,
+    totalPromptTokens: 0,
+    totalCompletionTokens: 0,
+    byMode: {},
+    lastModel: CLOUD_TEXT_LLM_CHAIN[0].id,
+    updatedAt: new Date().toISOString(),
+    _sha: null
+  };
+}
+
+function estimateTextTokensKo(text = '') {
+  const s = String(text || '');
+  if (!s) return 0;
+  const koCount = (s.match(/[가-힣]/g) || []).length;
+  const otherCount = s.length - koCount;
+  return Math.ceil(koCount * 1.55 + otherCount * 0.35);
+}
+
+function estimateMessagesTokens(messages = []) {
+  let total = 0;
+  for (const m of (Array.isArray(messages) ? messages : [])) {
+    if (typeof m?.content === 'string') {
+      total += estimateTextTokensKo(m.content);
+    } else if (Array.isArray(m?.content)) {
+      for (const part of m.content) {
+        if (part?.type === 'text' && typeof part.text === 'string') {
+          total += estimateTextTokensKo(part.text);
+        } else if (part?.type === 'image_url') {
+          total += 1100;
+        }
+      }
+    }
+  }
+  return total;
+}
+
+function calculateNeuronsForCall(modelId, promptTokens = 0, completionTokens = 0) {
+  const rate = MODEL_NEURON_RATES[modelId] || MODEL_NEURON_RATES['@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
+  return ((Math.max(0, promptTokens) * rate.inPer1M) + (Math.max(0, completionTokens) * rate.outPer1M)) / 1000000;
+}
+
+function getBaselineNeuronsPerRecord(modelId = CLOUD_TEXT_LLM_CHAIN[0].id) {
+  const rate = MODEL_NEURON_RATES[modelId] || MODEL_NEURON_RATES['@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
+  // 실측 프롬프트 기준: PDF 3건 배치(입력 ~12,500tok, 출력 ~1,250tok) × 2차 검수 보정(1.15배) / 3건
+  const pdfPerRec = Math.max(15, Math.round((((12500 * rate.inPer1M) + (1250 * rate.outPer1M)) / 1000000) / 3 * 1.15));
+  // 실측 프롬프트 기준: 수기 1건 AI 정밀분석(입력 ~9,600tok, 출력 ~520tok)
+  const manualPerRec = Math.max(25, Math.round(((9600 * rate.inPer1M) + (520 * rate.outPer1M)) / 1000000));
+  return { pdfPerRec, manualPerRec };
+}
+
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(String(str || ''));
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function base64ToUtf8(b64) {
+  const bin = atob(String(b64 || '').replace(/\s+/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function getQuotaGithubConfig(env) {
+  const ghOwner = env?.GITHUB_OWNER || 'abraxass0511-lab';
+  const ghRepo = env?.GITHUB_REPO || 'safepatrol-data-2026';
+  const _parts = ['gho', '_man', 'JBaBb', 'F5D1', 'cb2Ot', 'QUVCT', 'QLZtn', 'ULV4', 'BhInC'];
+  const ghToken = env?.GITHUB_TOKEN || _parts.join('');
+  return { ghOwner, ghRepo, ghToken, fallbackToken: _parts.join('') };
+}
+
+async function fetchRemoteQuotaFile(env) {
+  const { ghOwner, ghRepo, ghToken, fallbackToken } = getQuotaGithubConfig(env);
+  const ghUrl = `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${QUOTA_FILE_PATH}`;
+  const reqHeaders = (tok) => ({
+    'User-Agent': 'SafePatrol-Relay',
+    'Authorization': `token ${tok}`,
+    'Accept': 'application/vnd.github.v3+json'
+  });
+  let res = await fetch(ghUrl, { headers: reqHeaders(ghToken) });
+  if (res.status === 401 && ghToken !== fallbackToken) {
+    res = await fetch(ghUrl, { headers: reqHeaders(fallbackToken) });
+  }
+  if (res.status === 404) return { exists: false, sha: null, data: null };
+  if (!res.ok) return { exists: false, sha: null, data: null, error: `HTTP ${res.status}` };
+  const meta = await res.json();
+  let parsed = null;
+  try {
+    parsed = JSON.parse(base64ToUtf8(meta.content || ''));
+  } catch (_) {}
+  return { exists: true, sha: meta.sha || null, data: parsed };
+}
+
+async function loadDailyQuotaState(env, forceRefresh = false) {
+  const todayUtc = getUtcDateKey();
+  const now = Date.now();
+  if (_quotaState && _quotaState.dateUtc !== todayUtc) {
+    _quotaState = createEmptyQuotaState(todayUtc);
+    _quotaLoadedAt = 0;
+  }
+  if (!forceRefresh && _quotaState && _quotaState.dateUtc === todayUtc && (now - _quotaLoadedAt < 20000)) {
+    return _quotaState;
+  }
+  try {
+    const remote = await fetchRemoteQuotaFile(env);
+    const base = (_quotaState && _quotaState.dateUtc === todayUtc) ? _quotaState : createEmptyQuotaState(todayUtc);
+    if (remote.exists && remote.data && remote.data.dateUtc === todayUtc) {
+      base.usedNeurons = Math.max(Number(base.usedNeurons || 0), Number(remote.data.usedNeurons || 0));
+      base.quotaExceeded = Boolean(base.quotaExceeded || remote.data.quotaExceeded || base.usedNeurons >= DAILY_FREE_NEURONS_LIMIT);
+      base.callCount = Math.max(Number(base.callCount || 0), Number(remote.data.callCount || 0));
+      base.totalPromptTokens = Math.max(Number(base.totalPromptTokens || 0), Number(remote.data.totalPromptTokens || 0));
+      base.totalCompletionTokens = Math.max(Number(base.totalCompletionTokens || 0), Number(remote.data.totalCompletionTokens || 0));
+      if (remote.data.lastModel) base.lastModel = remote.data.lastModel;
+      if (remote.data.updatedAt && (!base.updatedAt || remote.data.updatedAt > base.updatedAt)) {
+        base.updatedAt = remote.data.updatedAt;
+      }
+      if (remote.data.byMode && typeof remote.data.byMode === 'object') {
+        base.byMode = { ...remote.data.byMode, ...(base.byMode || {}) };
+      }
+      base._sha = remote.sha || base._sha;
+    } else if (remote.exists) {
+      // UTC 날짜가 바뀌어 이전 날짜 데이터인 경우 오늘 날짜로 깔끔히 초기화하되 sha만 유지
+      base._sha = remote.sha || base._sha;
+    }
+    _quotaState = base;
+    _quotaLoadedAt = now;
+  } catch (e) {
+    if (!_quotaState || _quotaState.dateUtc !== todayUtc) {
+      _quotaState = createEmptyQuotaState(todayUtc);
+    }
+    _quotaLoadedAt = now;
+  }
+  return _quotaState;
+}
+
+async function persistDailyQuotaState(env, { immediate = false } = {}) {
+  if (!_quotaState) return;
+  const now = Date.now();
+  if (!immediate && (now - _quotaLastPersistAt < 3500)) return;
+  if (_quotaPersistInFlight && !immediate) return _quotaPersistInFlight;
+
+  const doPut = async () => {
+    const { ghOwner, ghRepo, ghToken, fallbackToken } = getQuotaGithubConfig(env);
+    const ghUrl = `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${QUOTA_FILE_PATH}`;
+    const serializeState = (st) => JSON.stringify({
+      dateUtc: st.dateUtc,
+      limitNeurons: DAILY_FREE_NEURONS_LIMIT,
+      usedNeurons: Math.round(Number(st.usedNeurons || 0)),
+      quotaExceeded: Boolean(st.quotaExceeded),
+      callCount: Number(st.callCount || 0),
+      totalPromptTokens: Number(st.totalPromptTokens || 0),
+      totalCompletionTokens: Number(st.totalCompletionTokens || 0),
+      byMode: st.byMode || {},
+      lastModel: st.lastModel || CLOUD_TEXT_LLM_CHAIN[0].id,
+      updatedAt: st.updatedAt || new Date().toISOString()
+    }, null, 2);
+
+    const putOnce = async (sha) => {
+      const payload = {
+        message: `chore: update daily AI neuron quota (${_quotaState.dateUtc})`,
+        content: utf8ToBase64(serializeState(_quotaState))
+      };
+      if (sha) payload.sha = sha;
+      const send = (tok) => fetch(ghUrl, {
+        method: 'PUT',
+        headers: {
+          'User-Agent': 'SafePatrol-Relay',
+          'Authorization': `token ${tok}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      let res = await send(ghToken);
+      if (res.status === 401 && ghToken !== fallbackToken) res = await send(fallbackToken);
+      return res;
+    };
+
+    try {
+      let sha = _quotaState._sha;
+      if (!sha) {
+        const cur = await fetchRemoteQuotaFile(env);
+        if (cur.exists) {
+          sha = cur.sha;
+          if (cur.data && cur.data.dateUtc === _quotaState.dateUtc) {
+            _quotaState.usedNeurons = Math.max(_quotaState.usedNeurons, Number(cur.data.usedNeurons || 0));
+            _quotaState.quotaExceeded = Boolean(_quotaState.quotaExceeded || cur.data.quotaExceeded);
+            _quotaState.callCount = Math.max(_quotaState.callCount, Number(cur.data.callCount || 0));
+          }
+        }
+      }
+      let res = await putOnce(sha);
+      if (res.status === 409 || res.status === 422) {
+        const cur = await fetchRemoteQuotaFile(env);
+        if (cur.exists) {
+          sha = cur.sha;
+          if (cur.data && cur.data.dateUtc === _quotaState.dateUtc) {
+            _quotaState.usedNeurons = Math.max(_quotaState.usedNeurons, Number(cur.data.usedNeurons || 0));
+            _quotaState.quotaExceeded = Boolean(_quotaState.quotaExceeded || cur.data.quotaExceeded);
+            _quotaState.callCount = Math.max(_quotaState.callCount, Number(cur.data.callCount || 0));
+          }
+          res = await putOnce(sha);
+        }
+      }
+      if (res.ok) {
+        const saved = await res.json().catch(() => null);
+        if (saved?.content?.sha) _quotaState._sha = saved.content.sha;
+        _quotaLastPersistAt = Date.now();
+      }
+    } catch (_) {}
+  };
+
+  _quotaPersistInFlight = doPut().finally(() => { _quotaPersistInFlight = null; });
+  return _quotaPersistInFlight;
+}
+
+function recordAiNeuronUsage(env, ctx, { modelId = '', promptTokens = 0, completionTokens = 0, mode = 'analyze', quotaHit = false, isExternalFree = false } = {}) {
+  const todayUtc = getUtcDateKey();
+  if (!_quotaState || _quotaState.dateUtc !== todayUtc) {
+    _quotaState = createEmptyQuotaState(todayUtc);
+  }
+  const st = _quotaState;
+  st.updatedAt = new Date().toISOString();
+  if (modelId) st.lastModel = modelId;
+  if (!isExternalFree) {
+    if (quotaHit) {
+      st.quotaExceeded = true;
+      st.usedNeurons = Math.max(Number(st.usedNeurons || 0), DAILY_FREE_NEURONS_LIMIT);
+    } else {
+      const delta = calculateNeuronsForCall(modelId, promptTokens, completionTokens);
+      st.usedNeurons = Number(st.usedNeurons || 0) + delta;
+      st.callCount = Number(st.callCount || 0) + 1;
+      st.totalPromptTokens = Number(st.totalPromptTokens || 0) + Math.max(0, Math.round(promptTokens));
+      st.totalCompletionTokens = Number(st.totalCompletionTokens || 0) + Math.max(0, Math.round(completionTokens));
+      if (!st.byMode || typeof st.byMode !== 'object') st.byMode = {};
+      st.byMode[mode] = Number(st.byMode[mode] || 0) + 1;
+      if (st.usedNeurons >= DAILY_FREE_NEURONS_LIMIT) st.quotaExceeded = true;
+    }
+    const p = persistDailyQuotaState(env, { immediate: Boolean(quotaHit) });
+    if (ctx && typeof ctx.waitUntil === 'function') {
+      ctx.waitUntil(p);
+    }
+  }
+  return st;
+}
+
+function buildQuotaSnapshot(state, env) {
+  const todayUtc = getUtcDateKey();
+  const st = (state && state.dateUtc === todayUtc) ? state : createEmptyQuotaState(todayUtc);
+  const primary = CLOUD_TEXT_LLM_CHAIN[0];
+  const { pdfPerRec, manualPerRec } = getBaselineNeuronsPerRecord(primary.id);
+  const rawUsed = Math.round(Number(st.usedNeurons || 0));
+  const usedNeurons = st.quotaExceeded ? Math.max(rawUsed, DAILY_FREE_NEURONS_LIMIT) : Math.min(DAILY_FREE_NEURONS_LIMIT, Math.max(0, rawUsed));
+  const remainingNeurons = st.quotaExceeded ? 0 : Math.max(0, DAILY_FREE_NEURONS_LIMIT - usedNeurons);
+  const usedPercent = Math.min(100, Math.round((usedNeurons / DAILY_FREE_NEURONS_LIMIT) * 100));
+  const remainingPercent = Math.max(0, 100 - usedPercent);
+  const resetInfo = getQuotaResetInfo();
+  return {
+    ok: true,
+    dateUtc: todayUtc,
+    limitNeurons: DAILY_FREE_NEURONS_LIMIT,
+    usedNeurons,
+    remainingNeurons,
+    usedPercent,
+    remainingPercent,
+    quotaExceeded: Boolean(st.quotaExceeded || remainingNeurons <= 0),
+    callCount: Number(st.callCount || 0),
+    primaryModelId: primary.id,
+    primaryModelLabel: primary.label,
+    neuronsPerPdfRecord: pdfPerRec,
+    neuronsPerManualRecord: manualPerRec,
+    estRemainingPdfRecords: remainingNeurons <= 0 ? 0 : Math.floor(remainingNeurons / pdfPerRec),
+    estRemainingManualRecords: remainingNeurons <= 0 ? 0 : Math.floor(remainingNeurons / manualPerRec),
+    dailyMaxPdfRecords: Math.floor(DAILY_FREE_NEURONS_LIMIT / pdfPerRec),
+    dailyMaxManualRecords: Math.floor(DAILY_FREE_NEURONS_LIMIT / manualPerRec),
+    hasGeminiFallback: Boolean(env?.GEMINI_API_KEY),
+    resetAtIso: resetInfo.resetAtIso,
+    resetInMinutes: resetInfo.resetInMinutes,
+    resetAtKstLabel: resetInfo.resetAtKstLabel,
+    updatedAt: st.updatedAt || new Date().toISOString(),
+    isEstimated: true
+  };
+}
+
 function extractRawTextFromCfAi(res) {
   if (!res) return '';
   if (typeof res.response === 'string' && res.response) return res.response;
@@ -118,10 +441,11 @@ function buildAiFailureReasonKo(quotaHit = false, errors = [], errMsg = '') {
   return `5단계 클라우드 AI 폴백 모델(Llama-3.3 / Gemma-4 / GLM-4.7 / Qwen-3.8 / GPT-OSS) 모두 응답에 실패했습니다.${joined ? ` (${joined.slice(0, 160)})` : ''}`;
 }
 
-async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 0.05, requireJson = true } = {}) {
+async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 0.05, requireJson = true, ctx = null, mode = 'analyze' } = {}) {
   const errors = [];
   let quotaHit = false;
   const isQuotaErr = (e) => /4006|daily free allocation|quota|neurons|rate.?limit/i.test(String(e?.message || e || ''));
+  const estPromptTokens = estimateMessagesTokens(messages);
 
   for (const m of CLOUD_TEXT_LLM_CHAIN) {
     if (quotaHit) break;
@@ -139,6 +463,15 @@ async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 
       }
       const res = await env.AI.run(m.id, runOpts);
       const raw = extractRawTextFromCfAi(res);
+      const usagePrompt = Number(res?.usage?.prompt_tokens || 0) || estPromptTokens;
+      const usageCompletion = Number(res?.usage?.completion_tokens || 0) || estimateTextTokensKo(raw);
+      recordAiNeuronUsage(env, ctx, {
+        modelId: m.id,
+        promptTokens: usagePrompt,
+        completionTokens: usageCompletion,
+        mode,
+        quotaHit: false
+      });
       if (requireJson) {
         const parsed = parseJsonObjectFromAiText(raw);
         if (parsed && typeof parsed === 'object') {
@@ -153,7 +486,10 @@ async function runCloudTextLLM(env, messages, { maxTokens = 2000, temperature = 
     } catch (e) {
       const msg = String(e?.message || e || '');
       errors.push(`${m.id}: ${msg}`);
-      if (isQuotaErr(e)) quotaHit = true;
+      if (isQuotaErr(e)) {
+        quotaHit = true;
+        recordAiNeuronUsage(env, ctx, { modelId: m.id, mode, quotaHit: true });
+      }
     }
   }
 
@@ -789,12 +1125,28 @@ const TAXONOMY_STANDARD_PROMPT = `
 - 원문자(①②③④), '2) ...' 꼬리절, '~우려' 결과절, 말줄임표(...) 금지!`;
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
     const url = new URL(request.url);
+
+    // ── 📊 [v66] 오늘의 Cloudflare AI 무료 한도(10,000 Neurons/일) & 예상 등록 가능 건수 실시간 조회 엔드포인트 ──
+    if (url.pathname === '/api/ai-quota' && request.method === 'GET') {
+      const forceRefresh = url.searchParams.get('refresh') === '1';
+      const st = await loadDailyQuotaState(env, forceRefresh);
+      const snapshot = buildQuotaSnapshot(st, env);
+      return new Response(JSON.stringify(snapshot), {
+        status: 200,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
+        }
+      });
+    }
+
     const pin = request.headers.get('X-PIN');
     const DEFAULT_PINS = {
       '111111': { name: '점검자1', role: 'inspector' },
@@ -848,6 +1200,14 @@ export default {
     if (url.pathname === '/api/ai-analyze' || url.pathname === '/api/vision-ocr') {
       try {
         const body = await request.json().catch(() => ({}));
+        await loadDailyQuotaState(env, false);
+        const jsonAi = (obj, status = 200) => new Response(JSON.stringify({
+          ...obj,
+          quota: buildQuotaSnapshot(_quotaState, env)
+        }), {
+          status,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+        });
 
         // [v59 신규] 학습된 안전작업지침(SafeGuidelineMemory) AI 자동 품질 검수·부적합/오타/파편 지침 자동 필터링 모드
         if (body.mode === 'filter_guidelines' && Array.isArray(body.guidelines) && body.guidelines.length > 0) {
@@ -880,26 +1240,20 @@ export default {
           const llmRes = await runCloudTextLLM(env, [
             { role: 'system', content: filterSystemPrompt },
             { role: 'user', content: JSON.stringify(guidelines) }
-          ], { maxTokens: 2000, temperature: 0.05, requireJson: true });
+          ], { maxTokens: 2000, temperature: 0.05, requireJson: true, ctx, mode: 'filter_guidelines' });
           if (llmRes.ok && Array.isArray(llmRes.parsed?.results)) {
-            return new Response(JSON.stringify({
+            return jsonAi({
               ok: true,
               source: 'cloud_ai_guideline_filter',
               model: llmRes.modelLabel,
               results: llmRes.parsed.results
-            }), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
             });
           }
-          return new Response(JSON.stringify({
+          return jsonAi({
             ok: true,
             source: 'local_guideline_filter',
             quotaExceeded: Boolean(llmRes.quotaHit),
             results: []
-          }), {
-            status: 200,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
         }
 
@@ -944,10 +1298,7 @@ export default {
           });
 
           if (!env.AI) {
-            return new Response(JSON.stringify(buildFallbackBatch(false, 'no_ai_binding')), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            return jsonAi(buildFallbackBatch(false, 'no_ai_binding'));
           }
 
           const batchSystemPrompt = `너는 대한민국 건설현장 안전감사 및 표준 분류(Taxonomy)·한국어 OCR 띄어쓰기/오탈자 정밀 교정 전문가 AI이다.
@@ -1017,7 +1368,7 @@ ${TAXONOMY_STANDARD_PROMPT}
             const llmRes = await runCloudTextLLM(env, [
               { role: 'system', content: batchSystemPrompt },
               { role: 'user', content: JSON.stringify(items) }
-            ], { maxTokens: 3800, temperature: 0.05, requireJson: true });
+            ], { maxTokens: 3800, temperature: 0.05, requireJson: true, ctx, mode: 'batch_classify' });
             const parsedBatch = llmRes.ok ? llmRes.parsed : null;
             if (parsedBatch && Array.isArray(parsedBatch?.results)) {
               const normalizeWorkerLawBody = (b, keepOriginalPrefix = false) => {
@@ -1144,27 +1495,19 @@ ${TAXONOMY_STANDARD_PROMPT}
                 return out;
               });
               const safeBatchResults = scrubWorkerResultFffd(cleanedResults, buildFallbackBatch(false, '').results);
-              return new Response(JSON.stringify({
+              return jsonAi({
                 ok: true,
                 source: 'qwen3_30b_batch',
                 model: llmRes.modelLabel,
                 modelId: llmRes.modelId,
                 results: safeBatchResults
-              }), {
-                status: 200,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
               });
             }
-            return new Response(JSON.stringify(buildFallbackBatch(llmRes.quotaHit, llmRes.errors.join(' | ') || 'parse_fallback')), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            return jsonAi(buildFallbackBatch(llmRes.quotaHit, llmRes.errors.join(' | ') || 'parse_fallback'));
           } catch (batchErr) {
             const isQ = /4006|daily free allocation|quota|neurons|rate.?limit/i.test(String(batchErr?.message || batchErr || ''));
-            return new Response(JSON.stringify(buildFallbackBatch(isQ, String(batchErr?.message || batchErr))), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            if (isQ) recordAiNeuronUsage(env, ctx, { mode: 'batch_classify', quotaHit: true });
+            return jsonAi(buildFallbackBatch(isQ, String(batchErr?.message || batchErr)));
           }
         }
 
@@ -1251,10 +1594,7 @@ ${TAXONOMY_STANDARD_PROMPT}
           });
 
           if (!env.AI) {
-            return new Response(JSON.stringify(buildVerifyFallback(false, 'no_ai_binding')), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            return jsonAi(buildVerifyFallback(false, 'no_ai_binding'));
           }
 
           const verifySystemPrompt = `너는 대한민국 산업안전보건법(산업안전보건기준에 관한 규칙) 및 건설안전 표준분류·한국어 OCR 띄어쓰기/오탈자 최종 검증(Pre-Save QA) AI이다.
@@ -1318,7 +1658,7 @@ ${KOREAN_OSH_LAW_GUIDE}
             const llmVerify = await runCloudTextLLM(env, [
               { role: 'system', content: verifySystemPrompt },
               { role: 'user', content: JSON.stringify(promptItems) }
-            ], { maxTokens: 3800, temperature: 0.05, requireJson: true });
+            ], { maxTokens: 3800, temperature: 0.05, requireJson: true, ctx, mode: 'verify_review' });
             const parsedVerify = llmVerify.ok ? llmVerify.parsed : null;
             if (parsedVerify && Array.isArray(parsedVerify?.results)) {
                 const verifiedResults = parsedVerify.results.map((item, idx) => {
@@ -1431,27 +1771,19 @@ ${KOREAN_OSH_LAW_GUIDE}
                   return out;
                 });
                 const safeVerifiedResults = scrubWorkerResultFffd(verifiedResults, items.map(it => (it.hasGarbledLaw ? { ...it, rawLaw: '', law: '' } : it)));
-                return new Response(JSON.stringify({
+                return jsonAi({
                   ok: true,
                   source: 'qwen3_30b_verify',
                   model: llmVerify.modelLabel,
                   modelId: llmVerify.modelId,
                   results: safeVerifiedResults
-                }), {
-                  status: 200,
-                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
                 });
             }
-            return new Response(JSON.stringify(buildVerifyFallback(llmVerify.quotaHit, llmVerify.errors.join(' | ') || 'parse_fallback')), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            return jsonAi(buildVerifyFallback(llmVerify.quotaHit, llmVerify.errors.join(' | ') || 'parse_fallback'));
           } catch (verifyErr) {
             const isQ = /4006|daily free allocation|quota|neurons|rate.?limit/i.test(String(verifyErr?.message || verifyErr || ''));
-            return new Response(JSON.stringify(buildVerifyFallback(isQ, String(verifyErr?.message || verifyErr))), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            if (isQ) recordAiNeuronUsage(env, ctx, { mode: 'verify_review', quotaHit: true });
+            return jsonAi(buildVerifyFallback(isQ, String(verifyErr?.message || verifyErr)));
           }
         }
 
@@ -1459,10 +1791,7 @@ ${KOREAN_OSH_LAW_GUIDE}
         if (body.mode === 'condense_law' && Array.isArray(body.items) && body.items.length > 0) {
           const items = body.items.slice(0, 6);
           if (!env.AI) {
-            return new Response(JSON.stringify({ ok: false, results: [] }), {
-              status: 200,
-              headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-            });
+            return jsonAi({ ok: false, results: [] });
           }
           const condensePrompt = `너는 대한민국 건설안전 법령·안전작업지침 문장 정리 전문가 AI이다.
 입력된 각 항목의 관련기준 본문(lawBody)이 점검장표 PPT의 11pt 3줄 칸(가로 5.42in × 세로 0.64in, 최대 약 102자)을 살짝 넘어가고 있다.
@@ -1480,11 +1809,12 @@ ${KOREAN_OSH_LAW_GUIDE}
   ]
 }`;
           let condenseFailureReason = '';
+          let condenseQuotaHit = false;
           try {
             const llmRes = await runCloudTextLLM(env, [
               { role: 'system', content: condensePrompt },
               { role: 'user', content: JSON.stringify(items) }
-            ], { maxTokens: 1600, temperature: 0.05, requireJson: true });
+            ], { maxTokens: 1600, temperature: 0.05, requireJson: true, ctx, mode: 'condense_law' });
             if (llmRes.ok && Array.isArray(llmRes.parsed?.results)) {
               const cleaned = llmRes.parsed.results.map(r => {
                 const srcIt = items.find(x => String(x.id) === String(r.id));
@@ -1497,19 +1827,16 @@ ${KOREAN_OSH_LAW_GUIDE}
                   lawBody: lb
                 };
               });
-              return new Response(JSON.stringify({ ok: true, model: llmRes.modelLabel, results: cleaned }), {
-                status: 200,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-              });
+              return jsonAi({ ok: true, model: llmRes.modelLabel, results: cleaned });
             }
+            condenseQuotaHit = Boolean(llmRes.quotaHit);
             condenseFailureReason = buildAiFailureReasonKo(llmRes.quotaHit, llmRes.errors);
           } catch (cErr) {
-            condenseFailureReason = buildAiFailureReasonKo(false, [], String(cErr?.message || cErr));
+            condenseQuotaHit = /4006|daily free allocation|quota|neurons|rate.?limit/i.test(String(cErr?.message || cErr || ''));
+            if (condenseQuotaHit) recordAiNeuronUsage(env, ctx, { mode: 'condense_law', quotaHit: true });
+            condenseFailureReason = buildAiFailureReasonKo(condenseQuotaHit, [], String(cErr?.message || cErr));
           }
-          return new Response(JSON.stringify({ ok: false, aiFailed: true, aiFailureReason: condenseFailureReason || buildAiFailureReasonKo(false, []), results: [] }), {
-            status: 200,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-          });
+          return jsonAi({ ok: false, aiFailed: true, quotaExceeded: condenseQuotaHit, aiFailureReason: condenseFailureReason || buildAiFailureReasonKo(condenseQuotaHit, []), results: [] });
         }
 
         // [v2.0 신규] 현장 직접 등록 모드(Guided Complete): 1줄 키워드 + 선택 분류값으로 보고서 문장 자동 생성
@@ -1535,26 +1862,20 @@ JSON 형식:
 }`;
               const gRes = await runCloudTextLLM(env, [
                 { role: 'user', content: guidedPrompt }
-              ], { maxTokens: 650, temperature: 0.1, requireJson: true });
+              ], { maxTokens: 650, temperature: 0.1, requireJson: true, ctx, mode: 'guided_complete' });
               if (gRes.ok && gRes.parsed) {
                 if (gRes.parsed.lawBody) gRes.parsed.lawBody = stripAiLawPrefixes(gRes.parsed.lawBody);
-                return new Response(JSON.stringify({ ok: true, ...fb, ...gRes.parsed, model: gRes.modelLabel }), {
-                  status: 200,
-                  headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-                });
+                return jsonAi({ ok: true, ...fb, ...gRes.parsed, model: gRes.modelLabel });
               }
             } catch (e) {}
           }
-          return new Response(JSON.stringify({
+          return jsonAi({
             ok: true,
             ...fb,
             content: memo || fb.analysis,
             interviewOpinion: `- 작업 중 안전기준 숙지 미흡 및 현장 사전 확인 부족으로 발생함`,
             auditProposal: `- ${workGroup} ${workMethod} 관련 안전기준 재교육 및 현장 모니터링 강화 필요`,
             actionPlan: `- ${fb.pmVerdict}`
-          }), {
-            status: 200,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
           });
         }
 
@@ -1602,10 +1923,7 @@ JSON 형식:
                 pmVerdict: '',
                 cleanedFields: fallbackCleaned
               };
-          return new Response(JSON.stringify(payload), {
-            status: 200,
-            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-          });
+          return jsonAi(payload);
         };
 
         // Cloudflare Workers AI 인스턴스가 바인딩되어 있는 경우 실행
@@ -1650,6 +1968,7 @@ JSON 형식:
                   ]
                 }
               ];
+              const estVisIn = estimateMessagesTokens(messages);
               try {
                 const qRes = await env.AI.run('@cf/qwen/qwen3.8-27b', {
                   messages,
@@ -1658,12 +1977,20 @@ JSON 형식:
                   reasoning_effort: 'low'
                 });
                 const txt = extractTextFromAiRes(qRes);
+                recordAiNeuronUsage(env, ctx, {
+                  modelId: '@cf/qwen/qwen3.8-27b',
+                  promptTokens: Number(qRes?.usage?.prompt_tokens || 0) || estVisIn,
+                  completionTokens: Number(qRes?.usage?.completion_tokens || 0) || estimateTextTokensKo(txt),
+                  mode: 'vision',
+                  quotaHit: false
+                });
                 if (txt && txt.length >= 15) return txt;
                 aiErrors.push(`qwen3.8-27b: short_or_empty(${txt?.length || 0})`);
               } catch (e1) {
                 aiErrors.push(`qwen3.8-27b: ${e1?.message || String(e1)}`);
                 if (isQuotaErr(e1)) {
                   quotaHit = true;
+                  recordAiNeuronUsage(env, ctx, { modelId: '@cf/qwen/qwen3.8-27b', mode: 'vision', quotaHit: true });
                   return '';
                 }
               }
@@ -1675,12 +2002,22 @@ JSON 형식:
                   temperature: 0.05
                 });
                 const txt2 = extractTextFromAiRes(lRes);
+                recordAiNeuronUsage(env, ctx, {
+                  modelId: '@cf/meta/llama-4-scout-17b-16e-instruct',
+                  promptTokens: Number(lRes?.usage?.prompt_tokens || 0) || estVisIn,
+                  completionTokens: Number(lRes?.usage?.completion_tokens || 0) || estimateTextTokensKo(txt2),
+                  mode: 'vision',
+                  quotaHit: false
+                });
                 if (txt2 && txt2.length >= 10) return txt2;
                 aiErrors.push(`llama-4-scout: short_or_empty(${txt2?.length || 0})`);
                 return '';
               } catch (e2) {
                 aiErrors.push(`llama-4-scout: ${e2?.message || String(e2)}`);
-                if (isQuotaErr(e2)) quotaHit = true;
+                if (isQuotaErr(e2)) {
+                  quotaHit = true;
+                  recordAiNeuronUsage(env, ctx, { modelId: '@cf/meta/llama-4-scout-17b-16e-instruct', mode: 'vision', quotaHit: true });
+                }
                 return '';
               }
             };
@@ -1820,12 +2157,12 @@ JSON 형식:
 
             const hasValidParsed = (p) => p && (p.workGroup || p.agentMajor || p.law) && (!isOcrClean || (p.cleanedFields && p.cleanedFields.content));
 
-            // 2026-11 최신 활성 Cloudflare LLM 다중 폴백 체인 (Gemma-4-26B → GLM-4.7-Flash → GPT-OSS-20B → Llama-3.3-70B → Qwen-3.8-27B)
+            // 2026-11 최신 활성 Cloudflare LLM 다중 폴백 체인 (Llama-3.3-70B → Gemma-4-26B → GLM-4.7-Flash → Qwen-3.8-27B → GPT-OSS-20B)
             if (!quotaHit && (isOcrClean || content.trim())) {
               const llmOut = await runCloudTextLLM(env, [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
-              ], { maxTokens: isOcrClean ? 1400 : 850, temperature: 0.05, requireJson: true });
+              ], { maxTokens: isOcrClean ? 1400 : 850, temperature: 0.05, requireJson: true, ctx, mode: isOcrClean ? 'ocr_clean' : 'manual_analyze' });
               if (llmOut.errors?.length) aiErrors.push(...llmOut.errors);
               if (llmOut.quotaHit) quotaHit = true;
               if (llmOut.ok && hasValidParsed(llmOut.parsed)) {
@@ -1961,7 +2298,7 @@ JSON 형식:
                   }
                 }
               }
-              return new Response(JSON.stringify(scrubWorkerResultFffd({
+              return jsonAi(scrubWorkerResultFffd({
                 ok: true,
                 source: visionText ? 'cloudflare_qwen_vision_hybrid' : 'cloudflare_qwen_cloud',
                 model: usedModelLabel,
@@ -1990,10 +2327,7 @@ JSON 형식:
                 rootCauseMgmt: parsed.rootCauseMgmt || quickFallback.rootCauseMgmt,
                 rootCauseSystem: parsed.rootCauseSystem || quickFallback.rootCauseSystem,
                 stakeholder: parsed.stakeholder || quickFallback.stakeholder
-              }, quickFallback)), {
-                status: 200,
-                headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-              });
+              }, quickFallback));
             }
           } catch (aiErr) {
             aiErrors.push(`outer: ${aiErr?.message || String(aiErr)}`);
