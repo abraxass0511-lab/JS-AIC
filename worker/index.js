@@ -62,13 +62,13 @@ function stripWorkerBannerTail(raw = '') {
   return hasWorkerGarbledText(cleaned) ? '' : cleaned;
 }
 
-// ── 2026-11 최신 Cloudflare Workers AI 활성 텍스트 LLM 자동 다중 폴백 체인 (비사고 초고속 70B 1순위 + 5단계 자동 폴백으로 5028 퇴역·타임아웃 영구 방지) ──
+// ── [v68] 2026-11 초저뉴런·최상급 한국어 MoE 1순위(Gemma-4-26B) + 5단계 무료 클라우드 자동 폴백 체인 (하루 PDF 250건+ 무료 처리) ──
 const CLOUD_TEXT_LLM_CHAIN = [
-  { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Llama-3.3-70B-FP8-Fast (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: true },
-  { id: '@cf/google/gemma-4-26b-a4b-it', label: 'Gemma-4-26B (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false },
-  { id: '@cf/zai-org/glm-4.7-flash', label: 'GLM-4.7-Flash (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false },
-  { id: '@cf/qwen/qwen3.8-27b', label: 'Qwen-3.8-27B (Cloudflare 24h Cloud)', noThinkSuffix: true, supportsJsonFormat: false },
-  { id: '@cf/openai/gpt-oss-20b', label: 'GPT-OSS-20B (Cloudflare 24h Cloud)', noThinkSuffix: false, supportsJsonFormat: false }
+  { id: '@cf/google/gemma-4-26b-a4b-it', shortName: 'Gemma-4-26B', label: 'Gemma-4-26B (Google · Cloudflare 24h 무료 클라우드)', noThinkSuffix: false, supportsJsonFormat: false },
+  { id: '@cf/zai-org/glm-4.7-flash', shortName: 'GLM-4.7-Flash', label: 'GLM-4.7-Flash (Cloudflare 24h 무료 클라우드)', noThinkSuffix: false, supportsJsonFormat: false },
+  { id: '@cf/openai/gpt-oss-20b', shortName: 'GPT-OSS-20B', label: 'GPT-OSS-20B (Cloudflare 24h 무료 클라우드)', noThinkSuffix: false, supportsJsonFormat: false },
+  { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', shortName: 'Llama-3.3-70B', label: 'Llama-3.3-70B (Cloudflare 24h 무료 클라우드)', noThinkSuffix: false, supportsJsonFormat: true },
+  { id: '@cf/qwen/qwen3.8-27b', shortName: 'Qwen-3.8-27B', label: 'Qwen-3.8-27B (Cloudflare 24h 무료 클라우드)', noThinkSuffix: true, supportsJsonFormat: false }
 ];
 
 // ── [v66] Cloudflare Workers AI 일일 무료 한도(10,000 Neurons/일 · UTC 00:00 = 한국시간 09:00 초기화) 실시간 계량기 ──
@@ -151,11 +151,11 @@ function calculateNeuronsForCall(modelId, promptTokens = 0, completionTokens = 0
 }
 
 function getBaselineNeuronsPerRecord(modelId = CLOUD_TEXT_LLM_CHAIN[0].id) {
-  const rate = MODEL_NEURON_RATES[modelId] || MODEL_NEURON_RATES['@cf/meta/llama-3.3-70b-instruct-fp8-fast'];
-  // 실측 프롬프트 기준: PDF 3건 배치(입력 ~12,500tok, 출력 ~1,250tok) × 2차 검수 보정(1.15배) / 3건
-  const pdfPerRec = Math.max(15, Math.round((((12500 * rate.inPer1M) + (1250 * rate.outPer1M)) / 1000000) / 3 * 1.15));
-  // 실측 프롬프트 기준: 수기 1건 AI 정밀분석(입력 ~9,600tok, 출력 ~520tok)
-  const manualPerRec = Math.max(25, Math.round(((9600 * rate.inPer1M) + (520 * rate.outPer1M)) / 1000000));
+  const rate = MODEL_NEURON_RATES[modelId] || MODEL_NEURON_RATES['@cf/google/gemma-4-26b-a4b-it'];
+  // [v68] 5건 묶음 배치 기준: 시스템 프롬프트(~10,500tok) + 5건 입력(~2,200tok) = 12,700tok, 출력 ~1,850tok × 2차 검수 보정(1.15배) / 5건
+  const pdfPerRec = Math.max(15, Math.round((((12700 * rate.inPer1M) + (1850 * rate.outPer1M)) / 1000000) / 5 * 1.15));
+  // 실측 프롬프트 기준: 수기 1건 AI 정밀분석(입력 ~9,200tok, 출력 ~520tok)
+  const manualPerRec = Math.max(25, Math.round(((9200 * rate.inPer1M) + (520 * rate.outPer1M)) / 1000000));
   return { pdfPerRec, manualPerRec };
 }
 
@@ -378,7 +378,9 @@ function buildQuotaSnapshot(state, env) {
     quotaExceeded: Boolean(st.quotaExceeded || remainingNeurons <= 0),
     callCount: Number(st.callCount || 0),
     primaryModelId: primary.id,
+    primaryModelShortName: primary.shortName || 'Gemma-4-26B',
     primaryModelLabel: primary.label,
+    fallbackChainNames: CLOUD_TEXT_LLM_CHAIN.map(m => m.shortName || m.label),
     neuronsPerPdfRecord: pdfPerRec,
     neuronsPerManualRecord: manualPerRec,
     estRemainingPdfRecords: remainingNeurons <= 0 ? 0 : Math.floor(remainingNeurons / pdfPerRec),
@@ -411,7 +413,9 @@ function extractRawTextFromCfAi(res) {
 
 function parseJsonObjectFromAiText(raw) {
   const cleaned = String(raw || '')
-    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/<\|thought\|>[\s\S]*?<\|\/thought\|>/gi, '')
     .replace(/```json|```/g, '')
     .trim();
   const sIdx = cleaned.indexOf('{');
@@ -1373,7 +1377,7 @@ ${TAXONOMY_STANDARD_PROMPT}
             const llmRes = await runCloudTextLLM(env, [
               { role: 'system', content: batchSystemPrompt },
               { role: 'user', content: JSON.stringify(items) }
-            ], { maxTokens: 3800, temperature: 0.05, requireJson: true, ctx, mode: 'batch_classify' });
+            ], { maxTokens: 4600, temperature: 0.05, requireJson: true, ctx, mode: 'batch_classify' });
             const parsedBatch = llmRes.ok ? llmRes.parsed : null;
             if (parsedBatch && Array.isArray(parsedBatch?.results)) {
               const normalizeWorkerLawBody = (b, keepOriginalPrefix = false) => {
@@ -1663,7 +1667,7 @@ ${KOREAN_OSH_LAW_GUIDE}
             const llmVerify = await runCloudTextLLM(env, [
               { role: 'system', content: verifySystemPrompt },
               { role: 'user', content: JSON.stringify(promptItems) }
-            ], { maxTokens: 3800, temperature: 0.05, requireJson: true, ctx, mode: 'verify_review' });
+            ], { maxTokens: 4600, temperature: 0.05, requireJson: true, ctx, mode: 'verify_review' });
             const parsedVerify = llmVerify.ok ? llmVerify.parsed : null;
             if (parsedVerify && Array.isArray(parsedVerify?.results)) {
                 const verifiedResults = parsedVerify.results.map((item, idx) => {
